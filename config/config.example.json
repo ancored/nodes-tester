@@ -1,0 +1,179 @@
+{
+  "$schema": "config.schema.json",
+  "clash_api": {
+    "base_url": "http://192.168.1.1:9090",
+    "secret": "",
+    "timeout": 5
+  },
+  "testing_groups": [
+    {
+      "tag": "main",
+      "connection": {
+        "type": "socks5",
+        "host": "127.0.0.1",
+        "port": 2080,
+        "username": null,
+        "password": null
+      },
+      "selector": {
+        "group": "nodes-tester",
+        "exclude": [
+          "DIRECT",
+          "REJECT",
+          "direct",
+          "block"
+        ]
+      }
+    }
+  ],
+  "region_groups": {
+    "enabled": true,
+    "recognition": "by_selector",
+    "list": [],
+    "exclude": []
+  },
+  "run": {
+    "default": {
+      "tests_enabled": [
+        "connectivity",
+        "latency",
+        "jitter",
+        "download",
+        "stability",
+        "reachability"
+      ],
+      "loop": true,
+      "pass_pause": 60,
+      "switch_delay": 1.0,
+      "group_pause": 30,
+      "rounds": 1,
+      "request_timeout": 10,
+      "restore_selection": true
+    },
+    "testing_groups_specifics": [],
+    "region_groups_specifics": []
+  },
+  "tests": {
+    "connectivity": {
+      "url": "https://cloudflare.com/cdn-cgi/trace"
+    },
+    "latency": {
+      "url": "https://speed.cloudflare.com/__down?bytes=0"
+    },
+    "jitter": {
+      "url": "https://speed.cloudflare.com/__down?bytes=0",
+      "samples": 5,
+      "interval": 0.2
+    },
+    "download": {
+      "url": "https://speed.cloudflare.com/__down?bytes=10000000",
+      "timeout": 30
+    },
+    "stability": {
+      "every": 3,
+      "url": "https://speed.cloudflare.com/__down?bytes=10000000",
+      "duration": 20,
+      "window": 5
+    },
+    "reachability": {
+      "timeout": 8,
+      "workers": 8,
+      "urls": [
+        "https://www.google.com/generate_204",
+        "https://www.gstatic.com/generate_204",
+        "https://connectivitycheck.gstatic.com/generate_204",
+        "http://clients3.google.com/generate_204",
+        "http://cp.cloudflare.com/",
+        "https://www.cloudflare.com/cdn-cgi/trace",
+        "http://captive.apple.com/hotspot-detect.html",
+        "http://detectportal.firefox.com/success.txt",
+        "http://edge-http.microsoft.com/captiveportal/generate_204",
+        "http://www.msftconnecttest.com/connecttest.txt",
+        "https://www.youtube.com/generate_204",
+        "https://discord.com/api/v10/gateway",
+        "https://www.instagram.com/",
+        "https://x.com/",
+        "https://www.wikipedia.org/"
+      ]
+    }
+  },
+  "report": {
+    "enabled": true,
+    "dir": "./results",
+    "format": "jsonl",
+    "filename": "",
+    "console": true
+  },
+  "scoring": {
+    "enabled": true,
+    "file": "./results/score.csv",
+    "alpha": 0.3,
+    "flap_lambda": 0.5,
+    "avail_floor": 0.7,
+    "avail_full": 0.9,
+    "thresholds": {
+      "ttfb_good": 150,
+      "ttfb_bad": 1500,
+      "jitter_good": 15,
+      "jitter_bad": 250,
+      "loss_gate": 50,
+      "dl_min": 2,
+      "dl_target": 25,
+      "throttle_bad": 0.3,
+      "throttle_good": 0.9,
+      "hold_min": 5,
+      "hold_target": 20,
+      "cv_good": 0.1,
+      "cv_bad": 0.8
+    },
+    "weights": {
+      "reliability": 0.35,
+      "consistency": 0.2,
+      "throttle": 0.15,
+      "jitter": 0.1,
+      "latency": 0.1,
+      "throughput": 0.1
+    }
+  },
+  "switching": {
+    "enabled": true,
+    "quality_margin": 15,
+    "confirm_cycles": 2,
+    "comfort_floor": 50,
+    "cooldown": 300,
+    "exclude_test_groups": true,
+    "freeze_groups": [
+      "global-auto-out"
+    ],
+    "state_file": "./results/switch_state.json",
+    "rotation": {
+      "enabled": true,
+      "interval": 10800,
+      "jitter": 900,
+      "min_dwell": 1800,
+      "top_k": 5,
+      "min_score": 55,
+      "avoid_recent": 2
+    }
+  },
+  "monitor": {
+    "enabled": true,
+    "interval": 20,
+    "probe_url": "http://cp.cloudflare.com",
+    "probe_timeout": 5000,
+    "fails": 2,
+    "reassert_drift": true
+  },
+  "storage": {
+    "enabled": true,
+    "db_file": "./results/stats.db",
+    "nodes_file": "/etc/sing-box-subscribe/nodes.json",
+    "retention_days": 30,
+    "store_results": true,
+    "traffic": {
+      "enabled": true,
+      "poll_interval": 5,
+      "flush_interval": 60
+    }
+  }
+}

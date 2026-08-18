@@ -1,0 +1,9 @@
+# --- Тестер (nodes_tester) ---
+requests>=2.31
+PySocks>=1.7.1        # SOCKS5 для requests
+
+# --- Переименователь (subscribe) ---
+PyYAML>=6.0           # чтение clash-подписок
+ruamel.yaml>=0.17
+
+# json / sqlite3 / zlib — из стандартной библиотеки

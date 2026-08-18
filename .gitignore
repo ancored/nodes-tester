@@ -1,0 +1,12 @@
+# Результаты прогонов и БД статистики
+results/
+*.db
+*.db-wal
+*.db-shm
+
+# Python / IDE
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/

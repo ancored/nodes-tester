@@ -1,0 +1,397 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nodes-tester/config.schema.json",
+  "title": "nodes-tester config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clash_api",
+    "testing_groups"
+  ],
+  "definitions": {
+    "runParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tests_enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "pass_pause": {
+          "type": "number"
+        },
+        "switch_delay": {
+          "type": "number"
+        },
+        "group_pause": {
+          "type": "number"
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "request_timeout": {
+          "type": "number"
+        },
+        "restore_selection": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "clash_api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number"
+        }
+      }
+    },
+    "testing_groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selector"
+        ],
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "enum": [
+                  "socks5"
+                ]
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "password": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "selector": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "group"
+            ],
+            "properties": {
+              "group": {
+                "type": "string"
+              },
+              "exclude": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "region_groups": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "recognition": {
+          "enum": [
+            "by_selector",
+            "parse",
+            "manually"
+          ]
+        },
+        "list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tag": {
+                "type": "string"
+              },
+              "nodes_list": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "$ref": "#/definitions/runParams"
+        },
+        "testing_groups_specifics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "testing_group_tag": {
+                "type": "string"
+              },
+              "default_overrides": {
+                "$ref": "#/definitions/runParams"
+              }
+            }
+          }
+        },
+        "region_groups_specifics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "region_group_tag": {
+                "type": "string"
+              },
+              "default_overrides": {
+                "$ref": "#/definitions/runParams"
+              }
+            }
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "jsonl",
+            "json",
+            "csv"
+          ]
+        },
+        "filename": {
+          "type": "string"
+        },
+        "console": {
+          "type": "boolean"
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "alpha": {
+          "type": "number"
+        },
+        "flap_lambda": {
+          "type": "number"
+        },
+        "avail_floor": {
+          "type": "number"
+        },
+        "avail_full": {
+          "type": "number"
+        },
+        "file": {
+          "type": "string"
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "switching": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "quality_margin": {
+          "type": "number"
+        },
+        "confirm_cycles": {
+          "type": "integer"
+        },
+        "comfort_floor": {
+          "type": "number"
+        },
+        "cooldown": {
+          "type": "number"
+        },
+        "exclude_test_groups": {
+          "type": "boolean"
+        },
+        "freeze_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "state_file": {
+          "type": "string"
+        },
+        "rotation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "interval": {
+              "type": "number"
+            },
+            "jitter": {
+              "type": "number"
+            },
+            "min_dwell": {
+              "type": "number"
+            },
+            "top_k": {
+              "type": "integer"
+            },
+            "min_score": {
+              "type": "number"
+            },
+            "avoid_recent": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "monitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "number"
+        },
+        "probe_url": {
+          "type": "string"
+        },
+        "probe_timeout": {
+          "type": "integer"
+        },
+        "fails": {
+          "type": "integer"
+        },
+        "reassert_drift": {
+          "type": "boolean"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "db_file": {
+          "type": "string"
+        },
+        "nodes_file": {
+          "type": "string"
+        },
+        "retention_days": {
+          "type": "integer"
+        },
+        "store_results": {
+          "type": "boolean"
+        },
+        "traffic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "poll_interval": {
+              "type": "number"
+            },
+            "flush_interval": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    }
+  }
+}
