@@ -2,7 +2,7 @@
   "$schema": "config.schema.json",
   "clash_api": {
     "base_url": "http://192.168.1.1:9090",
-    "secret": "",
+    "secret": "YOUR-CLASH-API-SECRET",
     "timeout": 5
   },
   "testing_groups": [
@@ -30,7 +30,9 @@
     "enabled": true,
     "recognition": "by_selector",
     "list": [],
-    "exclude": []
+    "exclude": [
+      "ru"
+    ]
   },
   "run": {
     "default": {
@@ -39,41 +41,58 @@
         "latency",
         "jitter",
         "download",
-        "stability",
         "reachability"
       ],
       "loop": true,
+      "rotation_bound": true,
       "pass_pause": 60,
       "switch_delay": 1.0,
       "group_pause": 30,
       "rounds": 1,
       "request_timeout": 10,
-      "restore_selection": true
+      "restore_selection": true,
+      "heavy_candidates": 3,
+      "heavy_veto_hours": 6
     },
     "testing_groups_specifics": [],
     "region_groups_specifics": []
   },
   "tests": {
     "connectivity": {
-      "url": "https://cloudflare.com/cdn-cgi/trace"
+      "service": "cloudflare",
+      "service_by_region": {
+        "ru": "curlmyip"
+      }
     },
     "latency": {
-      "url": "https://speed.cloudflare.com/__down?bytes=0"
+      "url": "https://speed.cloudflare.com/__down?bytes=0",
+      "url_by_region": {
+        "ru": "https://speedtest.selectel.ru/0MB"
+      }
     },
     "jitter": {
       "url": "https://speed.cloudflare.com/__down?bytes=0",
+      "url_by_region": {
+        "ru": "https://speedtest.selectel.ru/0MB"
+      },
       "samples": 5,
       "interval": 0.2
     },
     "download": {
       "url": "https://speed.cloudflare.com/__down?bytes=10000000",
-      "timeout": 30
+      "url_by_region": {
+        "ru": "https://speedtest.selectel.ru/10MB"
+      },
+      "window_bytes": 2000000,
+      "duration": 20
     },
-    "stability": {
-      "every": 3,
-      "url": "https://speed.cloudflare.com/__down?bytes=10000000",
-      "duration": 20,
-      "window": 5
+    "heavy_download": {
+      "url": "https://speed.cloudflare.com/__down?bytes=50000000",
+      "url_by_region": {
+        "ru": "https://speedtest.selectel.ru/100MB"
+      },
+      "window_bytes": 2000000,
+      "duration": 30
     },
     "reachability": {
       "timeout": 8,
@@ -94,13 +113,32 @@
         "https://www.instagram.com/",
         "https://x.com/",
         "https://www.wikipedia.org/"
-      ]
+      ],
+      "urls_by_region": {
+        "ru": [
+          "https://yandex.ru/",
+          "https://ozon.ru/",
+          "https://wb.ru/",
+          "https://kinopoisk.ru/",
+          "https://mail.ru/",
+          "https://vk.com/",
+          "https://gosuslugi.ru/",
+          "https://avito.ru/",
+          "https://dzen.ru/",
+          "https://rutube.ru/",
+          "https://sberbank.ru/",
+          "https://gismeteo.ru/",
+          "https://2gis.ru/",
+          "https://aliexpress.ru/",
+          "https://market.yandex.ru/"
+        ]
+      }
     }
   },
   "report": {
     "enabled": true,
     "dir": "./results",
-    "format": "jsonl",
+    "format": "csv",
     "filename": "",
     "console": true
   },
@@ -148,12 +186,19 @@
     "state_file": "./results/switch_state.json",
     "rotation": {
       "enabled": true,
-      "interval": 10800,
+      "interval": 5400,
       "jitter": 900,
       "min_dwell": 1800,
       "top_k": 5,
       "min_score": 55,
-      "avoid_recent": 2
+      "avoid_recent": 2,
+      "load_balance": {
+        "enabled": true,
+        "window_hours": 24,
+        "provider_strength": 1.0,
+        "country_strength": 1.0,
+        "protocol_strength": 0.3
+      }
     }
   },
   "monitor": {
@@ -175,5 +220,10 @@
       "poll_interval": 5,
       "flush_interval": 60
     }
+  },
+  "cooldown": {
+    "enabled": true,
+    "max_skip": 32,
+    "garbage_hours": 72
   }
 }

@@ -17,6 +17,5 @@ from .base import (  # noqa: F401
 from . import connectivity  # noqa: F401,E402
 from . import latency       # noqa: F401,E402
 from . import jitter        # noqa: F401,E402
-from . import download      # noqa: F401,E402
-from . import stability     # noqa: F401,E402
+from . import download      # noqa: F401,E402  (единый транспорт-тест: скорость+троттлинг+hold)
 from . import reachability  # noqa: F401,E402

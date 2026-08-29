@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import os
+import time
 from typing import Optional
 
 from . import scoring
@@ -20,10 +21,13 @@ _COLUMNS = [
     "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
     "score_ewma", "avail", "flap", "samples", "last_seen",
+    "heavy_ok", "heavy_ts",
 ]
 _FLOAT_COLS = {"score", "score_ewma", "avail", "flap",
                *scoring.COMPONENTS}
-_INT_COLS = {"active", "samples"}
+# heavy_ok намеренно НЕ в _INT_COLS: значения "" (не проверялась) / "1" (ok) / "0"
+# (провалила тяжёлый download) — пустая строка не должна схлопываться в 0=провал.
+_INT_COLS = {"active", "samples", "heavy_ts"}
 
 
 class Scoreboard:
@@ -33,11 +37,17 @@ class Scoreboard:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.rows: dict[str, dict] = _load(path)
         self._seen: set[str] = set()
+        self._heavy_veto_secs = 0.0        # 0 = veto не истекает по времени
 
     # --- Прогон --------------------------------------------------------
 
     def begin_pass(self) -> None:
         self._seen = set()
+
+    def keep(self, tag: str) -> None:
+        """Пометить ноду «встреченной» без нового замера — чтобы end_pass её не
+        удалил (для cooldown-пропуска: строка и её последний score сохраняются)."""
+        self._seen.add(tag)
 
     def record(self, ident: NodeIdentity, region: str, tests: dict) -> tuple[float, float, bool]:
         """Обновить рейтинг ноды по её тестам.
@@ -69,6 +79,9 @@ class Scoreboard:
             "id": ident.node_id,
             "active": (prev.get("active", 0) if prev else 0),
             "last_seen": self._pass_no,
+            # veto тяжёлого download не относится к лёгкому прогону — переносим как есть
+            "heavy_ok": (prev.get("heavy_ok", "") if prev else ""),
+            "heavy_ts": (prev.get("heavy_ts", 0) if prev else 0),
         }
         for comp in scoring.COMPONENTS:
             v = comps.get(comp)
@@ -99,11 +112,38 @@ class Scoreboard:
     def get(self, node: str) -> Optional[dict]:
         return self.rows.get(node)
 
+    # --- Тяжёлый download как veto (двухуровневое тестирование) ---------
+    # heavy_ok=="0" (нода провалила sustained 50MB) исключает её из кандидатов —
+    # но лишь при наличии не-vetoed альтернатив: при малом числе нод выбираем из
+    # имеющихся. Veto протухает по TTL, тогда нода снова попадёт на тяжёлую пробу.
+
+    def set_heavy_veto_ttl(self, seconds: float) -> None:
+        self._heavy_veto_secs = max(0.0, float(seconds or 0))
+
+    def set_heavy(self, node: str, ok: bool) -> None:
+        """Зафиксировать результат тяжёлого download для ноды (veto-фильтр)."""
+        r = self.rows.get(node)
+        if r is not None:
+            r["heavy_ok"] = "1" if ok else "0"
+            r["heavy_ts"] = int(time.time())
+
+    def _vetoed(self, r: dict) -> bool:
+        if str(r.get("heavy_ok", "")) != "0":
+            return False
+        if self._heavy_veto_secs <= 0:
+            return True                       # veto без TTL — действует, пока не пере-проверят
+        age = time.time() - int(r.get("heavy_ts", 0) or 0)
+        return age < self._heavy_veto_secs    # свежий veto действует, протухший — нет
+
     def candidates(self, region: str) -> list[dict]:
-        """Здоровые ноды региона (score > 0), по убыванию score."""
-        rows = [r for r in list(self.rows.values())
-                if r["region"] == region and float(r.get("score", 0)) > 0]
-        return sorted(rows, key=lambda r: float(r["score"]), reverse=True)
+        """Здоровые ноды региона (score > 0), по убыванию score. Свежий heavy-veto
+        исключается — но если не-vetoed не осталось, возвращаем vetoed (мало нод →
+        выбираем из имеющихся, конструкция не разваливается)."""
+        healthy = [r for r in list(self.rows.values())
+                   if r["region"] == region and float(r.get("score", 0)) > 0]
+        non_veto = [r for r in healthy if not self._vetoed(r)]
+        chosen = non_veto or healthy
+        return sorted(chosen, key=lambda r: float(r["score"]), reverse=True)
 
     def regions(self) -> list[str]:
         return sorted({r["region"] for r in list(self.rows.values()) if r["region"]})

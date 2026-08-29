@@ -85,6 +85,49 @@ def parse_node(tag: str) -> NodeIdentity:
                         country=country, node_id=node_id, label=label)
 
 
+# Коарс-регионы (префикс имени группы) и токены протоколов (хвост имени группы).
+_COARSE_REGIONS = {"eu", "us", "ru", "other"}
+_PROTO_TOKENS = {
+    "vless", "vmess", "trojan", "ss", "shadowsocks", "tuic",
+    "hysteria", "hysteria2", "hy2", "wireguard", "wg", "anytls", "http", "socks",
+}
+
+
+def parse_group(tag: str) -> tuple[str, str] | None:
+    """Разбор имени группы-аутбаунда `{region}-{provider}[-{proto}]-out[-failsafe]`.
+
+    Возвращает (provider, region) для провайдер-группы; иначе None —
+    для auto/global-групп, direct и leaf-нод (провайдера в них не выделить).
+
+    Примеры:
+        'eu-LUNA-vless|reality-out-failsafe' -> ('LUNA', 'eu')
+        'ru-LUNA-out-failsafe'               -> ('LUNA', 'ru')
+        'eu-hynet-XYZ89-vless|reality-out'   -> ('hynet-XYZ89', 'eu')
+        'eu-auto-out-failsafe'               -> None
+        'global-auto-out' / 'direct-out'     -> None
+    """
+    body = tag.strip()
+    if body.endswith("-failsafe"):
+        body = body[: -len("-failsafe")]
+    if body.endswith("-out"):
+        body = body[: -len("-out")]
+    else:
+        return None                       # не групповой аутбаунд
+
+    region, _, rest = body.partition("-")
+    if region not in _COARSE_REGIONS:
+        return None                       # global / прочее — не провайдер-группа
+    if not rest or rest == "auto":
+        return None                       # auto-группа — провайдера нет
+
+    # rest = provider[-proto]; отделяем proto (последний сегмент с '|' или из набора).
+    if "-" in rest:
+        head, _, last = rest.rpartition("-")
+        if "|" in last or last.lower() in _PROTO_TOKENS:
+            return (head, region)
+    return (rest, region)
+
+
 def region_label(member_tag: str, group_tag: str) -> str:
     """Коарс-регион из тега под-селектора: 'eu-nodes-tester' + 'nodes-tester' -> 'eu'."""
     suffix = f"-{group_tag}"

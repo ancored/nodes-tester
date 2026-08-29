@@ -39,6 +39,10 @@ def main(argv=None) -> int:
         "--list-tests", action="store_true",
         help="показать доступные тесты и выйти",
     )
+    parser.add_argument(
+        "--vacuum", action="store_true",
+        help="выполнить VACUUM БД и выйти (тяжёлый, для cron раз в месяц)",
+    )
     args = parser.parse_args(argv)
 
     if args.list_tests:
@@ -50,6 +54,19 @@ def main(argv=None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"Ошибка конфигурации: {exc}", file=sys.stderr)
         return 2
+
+    if args.vacuum:
+        from .storage import Storage
+        st = Storage(cfg.storage)
+        try:
+            st.vacuum()
+            print("VACUUM выполнен.")
+        except Exception as exc:  # noqa: BLE001 — БД занята/ошибка: не роняем cron трейсбеком
+            print(f"VACUUM не выполнен: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            st.close()
+        return 0
 
     try:
         path = Runner(cfg).run()

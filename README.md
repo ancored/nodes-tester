@@ -15,7 +15,7 @@ inbound, меряет, пишет рейтинг и (опционально) с�
   nodes-tester┤                                                 │
       │ 1. PUT /proxies/nodes-tester = <нода>   (Clash API)     │
       │ 2. HTTP через SOCKS5 inbound ─► route ─► nodes-tester ─► нода ─► интернет
-      │ 3. замер (TTFB, jitter, download, stability, reachability, exit-IP)
+      │ 3. замер (TTFB, jitter, download[скорость+троттлинг], reachability, exit-IP)
       │ 4. рейтинг → score.csv;  сырые результаты → файл + SQLite
       │ 5. (опц.) автопереключение боевых селекторов на лучшую ноду
       └─────────────────────────────────────────────────────────┘
@@ -39,13 +39,14 @@ EU·vless(reality)·LUNA, затем пауза `group_pause`, потом EU·vl
 | `connectivity` | факт выхода в интернет, выходной IP, страна, colo          |
 | `latency`      | TTFB (time-to-first-byte), мс                              |
 | `jitter`       | avg/min/max латентности, jitter (stdev), packet loss       |
-| `download`     | скорость скачивания, Мбит/с                                 |
-| `stability`    | RST-resistance (survive_seconds) **и** throttle_ratio за одну закачку |
+| `download`     | за ОДНУ закачку файла: скорость (Мбит/с), throttle_ratio (замедление ТСПУ по байтовым окнам), hold_ratio (устойчивость); `limited` при 429 |
 | `reachability` | доступность 10–15 целей параллельно (селективная блокировка)|
 
 Какие тесты активны — список `run.default.tests_enabled` (переопределяем по группе/
-региону). Опции каждого теста — в секции `tests`. `stability` — тяжёлый, поэтому
-`every: N` (раз в N прогонов). Реестр расширяемый — см. [Добавить тест](#добавить-свой-тест).
+региону). Опции каждого теста — в секции `tests`. `download` — единый транспорт-тест
+(раньше был отдельный `stability`, качавший те же 10 МБ; слиты). URL теста переопределяется
+`url_by_region` (напр. RU → `speedtest.selectel.ru/10MB`), сервис connectivity —
+`service_by_region`. Реестр расширяемый — см. [Добавить тест](#добавить-свой-тест).
 
 ---
 
@@ -131,20 +132,21 @@ cp config.example.json config.json
   },
 
   "run": {
-    "default": { "tests_enabled": ["connectivity","latency","jitter","download","stability","reachability"],
+    "default": { "tests_enabled": ["connectivity","latency","jitter","download","reachability"],
                  "loop": true, "pass_pause": 60, "switch_delay": 1.0, "group_pause": 30,
                  "rounds": 1, "request_timeout": 10, "restore_selection": true },
     "testing_groups_specifics": [ { "testing_group_tag": "main", "default_overrides": { "group_pause": 60 } } ],
     "region_groups_specifics":  [ { "region_group_tag": "ru",   "default_overrides": { "tests_enabled": ["connectivity"] } } ]
   },
 
-  "tests":     { "stability": { "every": 3, "duration": 20, "window": 5 }, "…": {} },
+  "tests":     { "download": { "url_by_region": {"ru":"https://speedtest.selectel.ru/10MB"}, "window_bytes": 2000000, "duration": 20 }, "…": {} },
   "report":    { "enabled": true, "format": "jsonl" },
   "scoring":   { "enabled": true },
   "switching": { "enabled": true },        // ВНИМАНИЕ: меняет БОЕВЫЕ группы
   "monitor":   { "enabled": true },
   "storage":   { "enabled": true, "nodes_file": "/etc/sing-box-subscribe/nodes.json",
-                 "traffic": { "enabled": true } }
+                 "traffic": { "enabled": true } },
+  "cooldown":  { "enabled": true, "max_skip": 32 }   // backoff по провалу gate
 }
 ```
 
@@ -173,10 +175,10 @@ python -m nodes_tester --list-tests
 
 Пример вывода:
 ```
-Группа 'nodes-tester' (recognition=by_selector); тесты: connectivity, latency, jitter, download, stability, reachability; непрерывно, Ctrl+C для остановки
+Группа 'nodes-tester' (recognition=by_selector); тесты: connectivity, latency, jitter, download, reachability; непрерывно, Ctrl+C для остановки
 ===== Прогон #1: групп 8, нод 24 =====
 ── EU · vless(reality) · LUNA — нод: 3 ──
-  lt 1111: conn=OK[LT 5.6.7.8]  ttfb=71.4ms  jitter=4.2ms loss=0.0%  dl=48.6Mbps  hold=20.0s thr=0.9  reach=15/15
+  lt 1111: conn=OK[LT 5.6.7.8]  ttfb=71.4ms  jitter=4.2ms loss=0.0%  dl=48.6Mbps thr=0.9  reach=15/15
   … пауза между группами 30s
 ```
 
@@ -188,7 +190,8 @@ python -m nodes_tester --list-tests
 — писать только в SQLite.
 
 **SQLite** (секция `storage`, `results/stats.db`) — описания нод + трафик + сырые
-результаты, всё связано по **CRC ноды**:
+результаты + история переключений; всё связано по **CRC ноды** (стабильный
+fingerprint настроек, переживает переименования тегов):
 
 | Таблица | Смысл |
 |---|---|
@@ -196,6 +199,55 @@ python -m nodes_tester --list-tests
 | `results` | сырые результаты тестов (ts, pass_no, crc, test, ok, url, metrics, error) |
 | `traffic` | временной ряд объёма по ноде (up/down/conns, is_tester) |
 | `endpoints` | топ источников↔назначений по ноде |
+| `activations` | история активаций боевых нод (когда / куда / почему переключились) |
+
+### Полная схема
+
+```sql
+CREATE TABLE nodes (
+  crc TEXT PRIMARY KEY, tag TEXT, provider TEXT, protocol TEXT, country TEXT, label TEXT,
+  type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
+  first_seen INTEGER, last_seen INTEGER);
+
+CREATE TABLE traffic (
+  ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
+CREATE INDEX idx_traffic_ts  ON traffic(ts);
+CREATE INDEX idx_traffic_crc ON traffic(crc);
+
+CREATE TABLE endpoints (
+  crc TEXT, source_ip TEXT, dest_host TEXT, network TEXT,
+  up INTEGER, down INTEGER, flows INTEGER, last_seen INTEGER,
+  PRIMARY KEY (crc, source_ip, dest_host, network));
+
+CREATE TABLE results (
+  ts INTEGER, pass_no INTEGER, crc TEXT, test TEXT, ok INTEGER,
+  url TEXT, metrics TEXT, error TEXT);
+CREATE INDEX idx_results_ts  ON results(ts);
+CREATE INDEX idx_results_crc ON results(crc);
+
+CREATE TABLE activations (
+  ts INTEGER, region TEXT, crc TEXT, tag TEXT, reason TEXT, score REAL, prev TEXT);
+CREATE INDEX idx_activations_ts  ON activations(ts);
+CREATE INDEX idx_activations_crc ON activations(crc);
+```
+
+- `results.metrics` — JSON; ключи по тестам: connectivity `exit_ip/country/colo` или
+  `asn/as_org`; latency `ttfb_ms`; jitter `jitter_ms/avg_ms/loss_pct`; download
+  `speed_mbps/throttle_ratio/hold_ratio/limited`; reachability `total/reached/loss_pct/endpoints`.
+- `activations.reason` ∈ `init | emergency | quality | rotation`; `prev` — CRC предыдущей активной.
+- `traffic/endpoints.crc` может быть не-нодовым (`direct-out`, urltest-группа) — тогда строки
+  без соответствия в `nodes` (в витрине помечаются `unspecified`/`direct`).
+
+### Очистка БД
+
+Единый процесс `cleanup()` (раз в сутки в непрерывном режиме + при остановке): удаляет
+ноды с `last_seen` старше `retention_days` (30) и **каскадом** все их строки во всех таблицах
+(по CRC — без сирот). Историю живых нод не трогает. Строки не-нодовых аутбаундов
+(`direct-out`, нераспознанные группы) режутся по тому же возрасту. **VACUUM** — отдельно
+(тяжёлый), под cron раз в месяц:
+```bash
+python3 -m nodes_tester --vacuum -c config/config.json
+```
 
 Пример запроса «боевой трафик по ноде»:
 ```sql
@@ -218,6 +270,20 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 размазать нагрузку) → stay. Действие — по цепочке вверх: нода → её leaf-группа →
 региональный селектор (`eu-auto-out`); `switching.freeze_groups` (по умолчанию
 `global-auto-out`) и тестовые группы не трогаются. Состояние — `results/switch_state.json`.
+
+**Балансировка трафика** (`switching.rotation.load_balance`). При ротации кандидат
+выбирается взвешенно так, чтобы размазывать боевой трафик по **осям концентрации** за окно
+(`window_hours`): недогруженные **провайдер** (`provider_strength`) и **страна**
+(`country_strength`) выпадают чаще — это реальные оси риска (общая инфра/ASN и гео).
+Протокол (`protocol_strength`, мягко ~0.3) — лёгкая диверсификация сигнатуры, не нагрузка.
+Множители по осям перемножаются (`∝ scale/(scale+bytes)`), 0 = ось выключена; score и гейт
+первичны. Только для ROTATION.
+
+**Cooldown** (`cooldown.enabled`, по умолчанию включён). Нода, провалившая GATE
+(заблокирована/мертва прямо сейчас), пропускает следующие прогоны с экспоненциальным
+backoff: **1, 2, 4, 8, …** (удвоение за каждый подряд провал), потолок `cooldown.max_skip`
+(32). Успешный gate сбрасывает счётчик. Смысл — не гонять трафик через дохлые ноды и не
+раздувать их в БД. Пропущенная нода сохраняет свой последний рейтинг (не выпадает из score.csv).
 
 ## 7. Монитор активных нод (`monitor.enabled`)
 
@@ -245,10 +311,14 @@ nodes_tester/     — ТЕСТЕР  (python -m nodes_tester --config config/conf
   clash_api.py    клиент Clash API (proxies, select, delay, connections)
   proxy.py, reporter.py, scoring.py, scoreboard.py, switcher.py,
   monitor.py, storage.py, traffic.py, runner.py, __main__.py
-  tests/          connectivity, latency, jitter, download, stability, reachability
+  tests/          connectivity, latency, jitter, download, reachability
 
 subscribe/        — ПЕРЕИМЕНОВАТЕЛЬ  (python -m subscribe) — см. subscribe/README.md
   main.py, tool.py, groups.py, parsers/
+
+dashboard/        — ВЕБ-ДАШБОРД  (python -m dashboard) — история переключений, рейтинг,
+                    результаты, качество провайдеров, трафик (табы), топ назначений;
+                    region-переключатели, пагинация; read-only, stdlib, авто-обновление, LAN
 
 config/           — пользовательские конфиги
   config.json, config.example.json, config.schema.json,

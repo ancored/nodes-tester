@@ -77,19 +77,29 @@ class RegionGroupsConfig:
 
 # --- Run: default + послойные override'ы --------------------------------
 
-_DEFAULT_TESTS = ["connectivity", "latency", "jitter", "download", "stability", "reachability"]
+_DEFAULT_TESTS = ["connectivity", "latency", "jitter", "download", "reachability"]
 
 
 @dataclass
 class RunParams:
     tests_enabled: list[str] = field(default_factory=lambda: list(_DEFAULT_TESTS))
     loop: bool = True
+    # rotation_bound: не гонять тесты непрерывно, а просыпаться к ближайшему сроку
+    # ротации (switcher.rotate_deadline) и делать один прогон. Emergency между
+    # прогонами ловит монитор. Работает только при loop + switching.rotation.enabled;
+    # иначе игнорируется (обычный цикл с pass_pause).
+    rotation_bound: bool = True
     pass_pause: float = 60.0
     switch_delay: float = 1.0
     group_pause: float = 30.0
     rounds: int = 1
     request_timeout: float = 10.0
     restore_selection: bool = True
+    # Двухуровневое тестирование: лёгкие тесты (tests_enabled, вкл. 10МБ download)
+    # скорят ВСЕ ноды; затем тяжёлый 50МБ download гоняется как pass/fail veto только
+    # для heavy_candidates лучших нод региона (+ активная). 0 = двухуровневость выкл.
+    heavy_candidates: int = 0
+    heavy_veto_hours: float = 6.0          # сколько держится veto, пока не пере-проверим
 
     def merged(self, overrides: dict) -> "RunParams":
         """Копия с наложенными override'ами (мелкий мердж по известным полям)."""
@@ -150,6 +160,20 @@ class ScoringConfig:
 
 
 @dataclass
+class LoadBalanceConfig:
+    """Балансировка трафика в ротации: недогруженные ПРОВАЙДЕРЫ и СТРАНЫ (общие
+    оси концентрации — инфра/ASN и гео) чаще выпадают при принудительной ротации.
+    Протокол — мягко, низким весом (диверсификация сигнатуры, не нагрузка).
+    Веса перемножаются; 0 = ось выключена. Влияет ТОЛЬКО на выбор кандидата
+    ротации, базовый score не трогается."""
+    enabled: bool = False
+    window_hours: float = 24.0
+    provider_strength: float = 1.0
+    country_strength: float = 1.0
+    protocol_strength: float = 0.3
+
+
+@dataclass
 class RotationConfig:
     enabled: bool = True
     interval: float = 10800.0
@@ -158,6 +182,7 @@ class RotationConfig:
     top_k: int = 5
     min_score: float = 55.0
     avoid_recent: int = 2
+    load_balance: LoadBalanceConfig = field(default_factory=LoadBalanceConfig)
 
 
 @dataclass
@@ -201,6 +226,20 @@ class StorageConfig:
 
 
 @dataclass
+class CooldownConfig:
+    """Экспоненциальный backoff для нод, проваливших gate: пропуск прогонов
+    1,2,4,8,… (удваивается за каждый подряд провал), с потолком max_skip.
+    Успешный gate сбрасывает счётчик. Смысл — не теребить мёртвые ноды.
+
+    Дойдя до max_skip, нода признаётся МУСОРНОЙ и исключается из тестов на
+    garbage_hours (карантин переживает рестарт — см. storage.garbage). После
+    истечения даётся одна проба; провал gate → снова карантин, успех → снятие."""
+    enabled: bool = True
+    max_skip: int = 32
+    garbage_hours: float = 72.0
+
+
+@dataclass
 class Config:
     clash_api: ClashApiConfig
     testing_groups: list[TestingGroupConfig]
@@ -211,6 +250,7 @@ class Config:
     switching: SwitchingConfig
     monitor: MonitorConfig
     storage: StorageConfig
+    cooldown: CooldownConfig = field(default_factory=CooldownConfig)
     tests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -258,6 +298,7 @@ def load_config(path: str) -> Config:
         switching=_load_switching(_section(data, "switching")),
         monitor=MonitorConfig(**_section(data, "monitor")),
         storage=_load_storage(_section(data, "storage")),
+        cooldown=CooldownConfig(**_section(data, "cooldown")),
         tests=_section(data, "tests"),
     )
     _validate(cfg)
@@ -303,8 +344,10 @@ def _load_scoring(sc: dict) -> ScoringConfig:
 
 def _load_switching(sw: dict) -> SwitchingConfig:
     rot = sw.get("rotation") or {}
+    lb = rot.get("load_balance") or {}
     cfg = SwitchingConfig(**{k: v for k, v in sw.items() if k != "rotation"})
-    cfg.rotation = RotationConfig(**rot)
+    cfg.rotation = RotationConfig(**{k: v for k, v in rot.items() if k != "load_balance"})
+    cfg.rotation.load_balance = LoadBalanceConfig(**lb)
     return cfg
 
 

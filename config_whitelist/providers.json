@@ -1,0 +1,29 @@
+{
+    "subscribes": [
+        {
+            "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt#Vless-Reality-White-Lists-Rus-Mobile",
+            "tag": "WH-Mobile150"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt",
+            "tag": "WH-FULL"
+        },
+        {
+            "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-checked.txt",
+            "tag": "WH-CHECKED"
+        },
+	{
+            "url": "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-SNI-RU-all.txt",
+            "tag": "WH-SNI"
+        }
+    ],
+    "save_config_path": "/etc/sing-box-subscribe/whnodes.json",
+    "exclude_protocol": "ssr",
+    "exclude_countries": [],
+    "domain_resolver_tag": "dns-whitelist",
+    "labels": {
+        "AI": ["Gemini", "OpenAI", "ChatGPT", "Claude", "Anthropic"],
+        "Media": ["Netflix", "Disney", "YouTube"],
+	"LTE": ["LTE"]
+    }
+}

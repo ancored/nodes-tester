@@ -4,14 +4,17 @@ from datetime import datetime
 from urllib.parse import urlparse
 from parsers.clash2base64 import clash2v2ray
 import groups
+import happ
 
 parsers_mod = {}
 providers = None
 
 
 def init_parsers():
-    b = os.walk('parsers')
-    for path, dirs, files in b:
+    # Папка парсеров — рядом с этим модулем (не относительно cwd), иначе при
+    # запуске `python -m subscribe` из корня репо os.walk('parsers') не найдёт её.
+    parsers_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'parsers')
+    for path, dirs, files in os.walk(parsers_dir):
         for file in files:
             f = os.path.splitext(file)
             if f[1] == '.py':
@@ -27,9 +30,24 @@ def process_subscribes(subscribes):
     for subscribe in subscribes:
         if 'enabled' in subscribe and not subscribe['enabled']:
             continue
-        if 'sing-box-subscribe-doraemon.vercel.app' in subscribe['url']:
-            continue
-        _nodes = get_nodes(subscribe['url'])
+        if subscribe.get('file'):                       # подписка из локального файла
+            try:
+                _nodes = get_nodes_from_file(subscribe['file'])
+            except Exception as exc:  # noqa: BLE001 — нет файла/битый: пропуск, не роняем генерацию
+                print(f"  [subscribe] файл подписки недоступен ({subscribe['file']}): "
+                      f"{exc.__class__.__name__} — пропуск")
+                _nodes = []
+        elif happ.is_happ_link(subscribe.get('url', '')):   # зашифрованная ссылка Happ
+            try:
+                _nodes = get_nodes_from_happ(subscribe['url'], subscribe)
+            except Exception as exc:  # noqa: BLE001 — не роняем генерацию из-за одной подписки
+                print(f"  [subscribe] Happ-подписка недоступна: "
+                      f"{exc.__class__.__name__}: {exc} — пропуск")
+                _nodes = []
+        else:
+            if 'sing-box-subscribe-doraemon.vercel.app' in subscribe.get('url', ''):
+                continue
+            _nodes = get_nodes(subscribe['url'])
         if _nodes and len(_nodes) > 0:
             add_prefix(_nodes, subscribe)
             add_emoji(_nodes, subscribe)
@@ -92,15 +110,25 @@ def _match_label(title, labels):
     return ''
 
 
-def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), labels=None):
+def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), labels=None,
+                   group_user_nodes=True):
     '''
     Rename every node, make tags unique, keep detour references valid and add the
     domain resolver to the subscription nodes. Returns the flat node list, each
     node carrying a '_meta' dict used by groups.build.
+
+    group_user_nodes=False → ноды из user_nodes КОПИРУЮТСЯ в вывод как есть (без
+    rename/группировки/CRC/exclude): у них нет '_meta', поэтому groups.build их не
+    группирует, а свой тег/настройки сохраняются 1:1.
     '''
     # drop XHTTP (plain vless / vmess) nodes entirely, before any renaming
     sub_nodes = [n for n in sub_nodes if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS]
-    user_nodes = [n for n in user_nodes if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS]
+    raw_users = []
+    if group_user_nodes:
+        user_nodes = [n for n in user_nodes if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS]
+    else:
+        raw_users = user_nodes            # как есть, без какой-либо обработки
+        user_nodes = []
     original = [node.get('tag') for node in sub_nodes]
     for node in sub_nodes:
         node['_label'] = _match_label(node.get('tag', ''), labels)  # из исходного названия
@@ -125,7 +153,7 @@ def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), la
     for node in nodelist:
         if node.get('detour') in renamed:
             node['detour'] = renamed[node['detour']]
-    return nodelist
+    return nodelist + raw_users          # raw_users — как есть (пусто, если group_user_nodes)
 
 
 def add_domain_resolver(nodelist, resolver_tag):
@@ -210,6 +238,36 @@ def get_nodes(url):
         return processed_list
 
 
+def get_nodes_from_file(path):
+    '''Прочитать подписку из локального файла: raw share-links (.txt) или clash .yaml.
+    Возвращает список нод, как get_nodes для url.'''
+    content = get_content_form_file(path)     # .yaml → share-links, иначе текст файла
+    data = parse_content(content)
+    processed_list = []
+    for item in data:
+        if isinstance(item, tuple):
+            processed_list.extend([item[0], item[1]])  # shadowtls
+        else:
+            processed_list.append(item)
+    return processed_list
+
+
+def get_nodes_from_happ(url, subscribe=None):
+    '''Подписка Happ: happ://crypt…/… → расшифровать URL → скачать с happ-заголовками →
+    ноды (как get_nodes). Необязательный ключ подписки `happ_headers` — оверрайд заголовков
+    (напр. свой X-Hwid при упоре в лимит устройств).'''
+    headers = (subscribe or {}).get('happ_headers') or None
+    content = happ.subscription_text(url, headers)
+    data = parse_content(content)
+    processed_list = []
+    for item in data:
+        if isinstance(item, tuple):
+            processed_list.extend([item[0], item[1]])  # shadowtls
+        else:
+            processed_list.append(item)
+    return processed_list
+
+
 def parse_content(content):
     # firstline = tool.firstLine(content)
     # # print(firstline)
@@ -261,7 +319,7 @@ def get_content_from_url(url, n=10):
     for subscribe in providers["subscribes"]:
         if 'enabled' in subscribe and not subscribe['enabled']:
             continue
-        if subscribe['url'] == url:
+        if subscribe.get('url') == url:
             UA = subscribe.get('User-Agent', '')
     response = tool.getResponse(url, custom_user_agent=UA)
     concount = 1
@@ -371,19 +429,28 @@ if __name__ == '__main__':
     init_parsers()
     parser = argparse.ArgumentParser()
     parser.add_argument('--temp_json_data', type=parse_json, help='inline providers JSON, overrides providers.json')
+    parser.add_argument('--config-dir', dest='config_dir',
+                        help='папка config (providers.json/user_nodes.json/groups_params.json) '
+                             'для независимой генерации из другого набора конфигов')
     args = parser.parse_args()
+    # Пути конфигов: по умолчанию config/ этого проекта; --config-dir переопределяет всё.
+    providers_path = os.path.join(args.config_dir, 'providers.json') if args.config_dir else PROVIDERS_PATH
+    user_nodes_path = os.path.join(args.config_dir, 'user_nodes.json') if args.config_dir else USER_NODES_PATH
+    if args.config_dir:
+        groups.load_params(args.config_dir)     # групповые параметры из той же папки
     temp_json_data = args.temp_json_data
     if temp_json_data and temp_json_data != '{}':
-        providers = temp_json_data
+        providers = temp_json_data              # inline-JSON перебивает providers.json
     else:
-        providers = load_json(PROVIDERS_PATH)  # config/providers.json
+        providers = load_json(providers_path)
     nodes = process_subscribes(providers["subscribes"])
     sub_nodes = [node for contents in nodes.values() for node in contents]
-    user_nodes = load_user_nodes(USER_NODES_PATH)
+    user_nodes = load_user_nodes(user_nodes_path)
     resolver_tag = providers.get('domain_resolver_tag') or 'bootstrap'
     leaf_nodes = finalize_nodes(sub_nodes, user_nodes, resolver_tag,
                                 providers.get('exclude_countries', []),
-                                providers.get('labels') or {})
+                                providers.get('labels') or {},
+                                group_user_nodes=not groups.raw_user_nodes())
     # build the selector / urltest groups, then drop the grouping metadata
     group_outbounds = groups.build(leaf_nodes)
     for node in leaf_nodes:

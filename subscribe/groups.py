@@ -14,16 +14,17 @@ Leaf groups collect nodes as:
     us / ru    : by provider only           -> "us-LUNA-out"
 
 Each selector gets a matching "-failsafe" urltest holding the same members and
-used as its default. Region "-auto-out" selectors gather the leaf groups, a top
-"global-auto-out" selector gathers the region groups, and "ru-predef-out" lists
-every ru node plus the ru failsafe.
+used as its default. Region "-auto-out" selectors gather the leaf groups, and a top
+"global-auto-out" selector gathers the region groups.
 
 Plain "vless" / "vmess" nodes (no transport, no reality — e.g. XHTTP) are dropped
 from the output entirely by main.finalize_nodes before this runs.
 
 Nodes whose name could not be parsed (no flag emoji / no Provider-CC form, so
 '_meta' is None) stay in the output with their original tag but are never placed
-into any group.
+into any group. Nodes with an undetermined country ('_meta' country == 'undef')
+are likewise left ungrouped (they must NOT fall into the 'other' region, which is
+reserved for real non-eu/us/ru countries).
 '''
 import json
 import os
@@ -34,13 +35,42 @@ from collections import OrderedDict
 # touching the code. Keys: "selector" and "urltest".
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # корень репо
 _PARAMS_PATH = os.path.join(_ROOT, 'config', 'groups_params.json')
-with open(_PARAMS_PATH, encoding='utf-8') as _f:
-    _PARAMS = json.load(_f)
-_SELECTOR_PARAMS = _PARAMS.get('selector', {})
-_URLTEST_PARAMS = _PARAMS.get('urltest', {})
-# Что генерировать. emit.nodes_tester — создавать ли тестовые селекторы
-# nodes-tester + {region}-nodes-tester (нужны тестеру в режиме by_selector).
-_EMIT = _PARAMS.get('emit', {})
+_PARAMS = {}
+_SELECTOR_PARAMS = {}
+_URLTEST_PARAMS = {}
+# _EMIT.nodes_tester — создавать ли тестовые селекторы nodes-tester +
+# {region}-nodes-tester (нужны тестеру в режиме by_selector).
+_EMIT = {}
+# raw_user_nodes: true → ноды из user_nodes.json НЕ сшиваются в группы, а копируются
+# в вывод как есть (без rename/группировки/CRC). По умолчанию false.
+_RAW_USER_NODES = False
+
+
+def load_params(config_dir=None):
+    '''(Пере)загрузить групповые параметры из groups_params.json. config_dir —
+    альтернативная папка config (для отдельной генерации через --config-dir).
+    Файл опционален: если отсутствует — параметры пустые (emit.nodes_tester=True).'''
+    global _PARAMS, _SELECTOR_PARAMS, _URLTEST_PARAMS, _EMIT, _RAW_USER_NODES
+    path = os.path.join(config_dir, 'groups_params.json') if config_dir else _PARAMS_PATH
+    try:
+        with open(path, encoding='utf-8') as f:
+            _PARAMS = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(f"  [groups] groups_params.json не прочитан ({path}): "
+              f"{exc.__class__.__name__} — пустые параметры")
+        _PARAMS = {}
+    _SELECTOR_PARAMS = _PARAMS.get('selector', {})
+    _URLTEST_PARAMS = _PARAMS.get('urltest', {})
+    _EMIT = _PARAMS.get('emit', {})
+    _RAW_USER_NODES = bool(_PARAMS.get('raw_user_nodes', False))
+
+
+def raw_user_nodes():
+    '''Копировать user-ноды как есть (не группировать)? — из groups_params.raw_user_nodes.'''
+    return _RAW_USER_NODES
+
+
+load_params()   # по умолчанию — из config/ этого проекта
 
 _OUT = '-out'
 _FAILSAFE = '-failsafe'
@@ -69,12 +99,13 @@ def build(nodelist):
     '''Return the list of selector / urltest outbounds for the given nodes.'''
     leaf = OrderedDict()             # leaf_tag -> [member node tags]
     region_leaves = OrderedDict()    # region -> [leaf_tag, ...]
-    ru_nodes = []                    # every ru node tag, for ru-predef-out
 
     for node in nodelist:
         meta = node.get('_meta')
         if meta is None:                          # name could not be parsed: the node
             continue                              # stays in the output but is never grouped
+        if meta['country'] == 'undef':            # страна не определена — НЕ в 'other',
+            continue                              # нода остаётся в выводе, но вне групп
         protocol = meta['protocol']
         if protocol in UNGROUPED_PROTOCOLS:       # XHTTP and the like are not grouped
             continue
@@ -88,8 +119,6 @@ def build(nodelist):
         region_leaves.setdefault(region, [])
         if leaf_tag not in region_leaves[region]:
             region_leaves[region].append(leaf_tag)
-        if region == 'ru':
-            ru_nodes.append(node['tag'])
 
     # Leaf group selectors + their failsafe urltests
     leaf_selectors, leaf_urltests = [], []
@@ -110,6 +139,24 @@ def build(nodelist):
         region_auto[region] = auto
         region_selectors.append(_selector(auto, [auto_fs] + leaves, auto_fs))
         region_urltests.append(_urltest(auto_fs, [lt + _FAILSAFE for lt in leaves]))
+
+    # Мало нод: если требуемый регион остался БЕЗ нод, его {region}-auto-out всё равно
+    # обязан существовать — иначе основной конфиг sing-box, ссылающийся на него по имени,
+    # не стартует ("outbound not found"). Заполняем такой регион кросс-региональным
+    # фолбэком (все имеющиеся leaf-группы): селектор валиден, а failsafe-urltest сам
+    # выберет лучшую ноду. ensure_regions — из groups_params.emit (деф. eu/us/other).
+    ensure = _EMIT.get('ensure_regions', ['eu', 'us', 'other'])
+    all_leaf_tags = list(leaf.keys())
+    for region in _REGION_ORDER:
+        if region in region_auto or region not in ensure or not all_leaf_tags:
+            continue
+        auto = '{}-auto{}'.format(region, _OUT)
+        auto_fs = auto + _FAILSAFE
+        region_auto[region] = auto
+        region_selectors.append(_selector(auto, [auto_fs] + all_leaf_tags, auto_fs))
+        region_urltests.append(_urltest(auto_fs, [lt + _FAILSAFE for lt in all_leaf_tags]))
+        print(f"  [groups] регион '{region}': нод нет — auto-селектор заполнен "
+              f"фолбэком из {len(all_leaf_tags)} групп (config sing-box не сломается)")
 
     # Standalone "{region}-nodes-tester" selectors: a flat list of every leaf node
     # of the region, gathered under a top "nodes-tester" selector. Not referenced
@@ -132,12 +179,18 @@ def build(nodelist):
 
     top = []
     if region_auto:
-        default = region_auto.get('eu') or next(iter(region_auto.values()))
-        top.append(_selector('global-auto-out', list(region_auto.values()), default))
+        # канонический порядок регионов (фолбэк-заполненные добавлялись в конце)
+        region_autos = [region_auto[r] for r in _REGION_ORDER if r in region_auto]
+        if _EMIT.get('global_failsafe', False):
+            # global-auto-out = [global-failsafe] + региональные auto; default — failsafe.
+            # global failsafe — urltest над региональными failsafe'ами (как у региональных групп).
+            gfs = 'global-auto-out' + _FAILSAFE
+            top.append(_selector('global-auto-out', [gfs] + region_autos, gfs))
+            region_urltests.append(_urltest(gfs, [t + _FAILSAFE for t in region_autos]))
+        else:
+            default = region_auto.get('eu') or region_autos[0]
+            top.append(_selector('global-auto-out', region_autos, default))
     top += region_selectors
-    if 'ru' in region_auto:
-        ru_fs = region_auto['ru'] + _FAILSAFE
-        top.append(_selector('ru-predef-out', [ru_fs] + ru_nodes, ru_fs))
     top += leaf_selectors + testers
 
     return top + region_urltests + leaf_urltests

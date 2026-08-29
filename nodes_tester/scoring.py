@@ -82,26 +82,28 @@ def components(tests: dict, th: dict) -> dict[str, float]:
             comps["consistency"] = 0.0
             rel_req = 0.0
 
+    # Единый транспорт-тест download даёт сразу три показателя: speed_mbps
+    # (throughput), throttle_ratio и hold_ratio. limited=True — сервер отбил
+    # запрос (429/5xx), НЕ вина ноды: не штрафуем.
     dl = tests.get("download")
     if dl is not None:
-        comps["throughput"] = (
-            higher_better(dl.get("speed_mbps"), th["dl_min"], th["dl_target"])
-            if dl.get("ok") else 0.0
-        )
-
-    # stability даёт сразу два показателя: throttle_ratio и survive_seconds.
-    stab = tests.get("stability")
-    if stab is not None:
-        ratio = stab.get("throttle_ratio")
+        limited = bool(dl.get("limited"))
+        if dl.get("ok"):
+            tp = higher_better(dl.get("speed_mbps"), th["dl_min"], th["dl_target"])
+            if tp is not None:                 # нет скорости (напр. limited) — не оцениваем
+                comps["throughput"] = tp
+        else:
+            comps["throughput"] = 0.0
+        ratio = dl.get("throttle_ratio")
         if ratio is not None:
             comps["throttle"] = higher_better(ratio, th["throttle_bad"], th["throttle_good"])
-        elif not stab.get("ok"):
+        elif not dl.get("ok") and not limited:
             comps["throttle"] = 0.0
-        sv = stab.get("survive_seconds")
-        if sv is not None:
-            target = stab.get("target") or th.get("hold_target", 20)
-            rel_hold = higher_better(sv, th["hold_min"], target)
-        elif not stab.get("ok"):
+        if limited:
+            pass  # отказ сервера — hold не оцениваем
+        elif dl.get("hold_ratio") is not None:
+            rel_hold = clamp01(dl["hold_ratio"])
+        elif not dl.get("ok"):
             rel_hold = 0.0
 
     reach = tests.get("reachability")

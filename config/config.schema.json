@@ -22,6 +22,10 @@
         "loop": {
           "type": "boolean"
         },
+        "rotation_bound": {
+          "type": "boolean",
+          "description": "Прогон только к сроку ротации (не непрерывно); emergency ловит монитор. Действует при loop + switching.rotation.enabled."
+        },
         "pass_pause": {
           "type": "number"
         },
@@ -39,6 +43,16 @@
         },
         "restore_selection": {
           "type": "boolean"
+        },
+        "heavy_candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Двухуровневое тестирование: сколько лучших нод региона (+активная) получают тяжёлый 50МБ download-veto. 0 = выкл."
+        },
+        "heavy_veto_hours": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Сколько часов действует heavy-veto, пока ноду не пере-проверят тяжёлым download."
         }
       }
     }
@@ -328,6 +342,27 @@
             },
             "avoid_recent": {
               "type": "integer"
+            },
+            "load_balance": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "window_hours": {
+                  "type": "number"
+                },
+                "provider_strength": {
+                  "type": "number"
+                },
+                "country_strength": {
+                  "type": "number"
+                },
+                "protocol_strength": {
+                  "type": "number"
+                }
+              }
             }
           }
         }
@@ -390,6 +425,23 @@
               "type": "number"
             }
           }
+        }
+      }
+    },
+    "cooldown": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "max_skip": {
+          "type": "integer"
+        },
+        "garbage_hours": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Дойдя до max_skip, нода признаётся мусорной и исключается из тестов на столько часов (переживает рестарт)."
         }
       }
     }

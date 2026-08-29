@@ -19,19 +19,27 @@ from __future__ import annotations
 import json
 import os
 import random
+import statistics
 import threading
 import time
 
 from .clash_api import ClashApiError, ClashApiClient
+from .identity import parse_node
 from .scoreboard import Scoreboard
 
 
 class Switcher:
-    def __init__(self, cfg, clash: ClashApiClient, scoreboard: Scoreboard, tester_group: str):
+    def __init__(self, cfg, clash: ClashApiClient, scoreboard: Scoreboard,
+                 tester_group: str, traffic_provider=None, storage=None):
         self.cfg = cfg                      # SwitchingConfig
         self.clash = clash
         self.board = scoreboard
         self._tester_group = tester_group
+        # Балансировка нагрузки в ротации (Вариант A): callable → {crc: bytes за окно}.
+        # None → множитель недогруза = 1.0 (поведение как без балансировки).
+        self._traffic_provider = traffic_provider
+        # Хранилище для истории активаций (опц.); None → не пишем.
+        self._storage = storage
         self.state: dict[str, dict] = _load_state(cfg.state_file)
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
@@ -66,6 +74,14 @@ class Switcher:
             st = self.state.get(region)
             return st.get("active") if st else None
 
+    def next_rotate_deadline(self) -> "float | None":
+        """Ближайший срок ротации среди активных регионов (для rotation_bound-режима
+        тестера). None — если ни один регион ещё не активирован."""
+        with self._lock:
+            ds = [st.get("rotate_deadline") for st in self.state.values()
+                  if st.get("active") and st.get("rotate_deadline")]
+        return min(ds) if ds else None
+
     def reassert_chain(self, region: str, proxies: dict) -> int:
         """Если выбор в боевых селекторах слетел — вернуть активную ноду по цепочке.
 
@@ -96,11 +112,16 @@ class Switcher:
             self._evaluate_region_locked(region, emergency)
 
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
+        st = self.state.setdefault(region, _new_region_state())
         cands = self.board.candidates(region)
         if not cands:
-            return  # нет здоровых нод — переключать не на что, оставляем как есть
+            # Нет здоровых нод — переключать не на что. Если это emergency (активная
+            # заблокирована ТСПУ, замены нет) — фиксируем «застряли», чтобы факт
+            # блокировки без восстановления остался в истории.
+            if emergency:
+                self._note_emergency_stuck(region, st, "no-candidates")
+            return
 
-        st = self.state.setdefault(region, _new_region_state())
         active = st.get("active")
         active_row = self.board.get(active) if active else None
         active_score = float(active_row["score"]) if active_row else 0.0
@@ -116,7 +137,10 @@ class Switcher:
             others = [c for c in cands if c["node"] != active]
             if others:
                 self._activate(others[0], region, st, now, "emergency")
+            else:
+                self._note_emergency_stuck(region, st, "no-other")  # замены нет
             return
+        st.pop("emg_stuck", None)     # активная жива — вышли из залипшего emergency
 
         # 3. Принудительная ротация по таймеру.
         if (self.cfg.rotation.enabled
@@ -138,6 +162,21 @@ class Switcher:
             return
         st["quality_count"] = 0
 
+    def _note_emergency_stuck(self, region: str, st: dict, detail: str) -> None:
+        """Emergency без замены (ТСПУ заблокировал активную, здоровых кандидатов нет).
+        Пишем в историю ОДИН раз за эпизод (флаг emg_stuck), чтобы не спамить каждый
+        прогон; сбрасывается, когда активная снова ожила или произошло переключение."""
+        if st.get("emg_stuck"):
+            return
+        st["emg_stuck"] = True
+        active = st.get("active")
+        print(f"  [switch] EMERGENCY {region}: замены нет ({detail}) — застряли на "
+              f"заблокированной ноде")
+        if self._storage is not None:
+            crc = parse_node(active).node_id if active else ""
+            self._storage.add_activation(region, crc, active or "", "emergency-stuck",
+                                         0.0, active)
+
     # --- Выбор кандидата для ротации -----------------------------------
 
     def _pick_rotation(self, cands, st) -> dict:
@@ -151,10 +190,21 @@ class Switcher:
         pool = (filtered[: self.cfg.rotation.top_k]
                 or [c for c in cands if c["node"] != active]
                 or cands)
-        return _weighted_choice(pool, st.get("activations", {}))
+        dims, strengths = {}, {}
+        lb = self.cfg.rotation.load_balance
+        if lb.enabled and self._traffic_provider is not None:
+            try:
+                dims = self._traffic_provider() or {}
+            except Exception as exc:  # noqa: BLE001 — балансировка не должна ронять ротацию
+                print(f"  [switch] балансировка: не удалось получить трафик: {exc}")
+            strengths = {"provider": lb.provider_strength,
+                         "country": lb.country_strength,
+                         "protocol": lb.protocol_strength}
+        return _weighted_choice(pool, st.get("activations", {}), dims, strengths)
 
     def _activate(self, cand: dict, region: str, st: dict, now: float, reason: str) -> None:
         node = cand["node"]
+        prev = st.get("active")             # предыдущая активная (для истории переходов)
         if node == st.get("active") and reason not in ("init",):
             return
         try:
@@ -185,11 +235,17 @@ class Switcher:
         st["active"] = node
         st["last_switch"] = now
         st["quality_count"] = 0
+        st.pop("emg_stuck", None)           # переключились — эпизод emergency закрыт
         st["rotate_deadline"] = now + self._rotate_delay()
         recent = [node] + [n for n in st.get("recent", []) if n != node]
         st["recent"] = recent[:10]
         st.setdefault("activations", {})
         st["activations"][node] = st["activations"].get(node, 0) + 1
+        if self._storage is not None:
+            prev_crc = parse_node(prev).node_id if prev else None
+            self._storage.add_activation(
+                region, cand.get("id") or parse_node(node).node_id,
+                node, reason, cand.get("score"), prev_crc)
         self.board.set_active(region, node)
         partial = f", ЧАСТИЧНО {done}/{len(pairs)}" if done < len(pairs) else ""
         print(f"  [switch] {region}: {reason.upper()} → {node} "
@@ -240,12 +296,43 @@ class Switcher:
         return base + random.uniform(-j, j) if j else base
 
 
-def _weighted_choice(pool: list[dict], activations: dict) -> dict:
-    """Взвешенный случайный выбор: вес ~ score / (1 + число активаций)."""
+# Оси балансировки: (ключ поля кандидата, ключ агрегата в dims).
+_LB_AXES = (("provider", "provider"), ("country", "country"), ("protocol", "protocol"))
+
+
+def _weighted_choice(pool: list[dict], activations: dict,
+                     dims: "dict | None" = None, strengths: "dict | None" = None) -> dict:
+    """Взвешенный случайный выбор кандидата ротации.
+
+    Базовый вес ~ score / (1 + число активаций). Балансировка трафика — множитель
+    недогруза по ОСЯМ (провайдер/страна/протокол), перемножаются:
+        underuse(axis) = scale / (scale + bytes),  scale = медиана байтов по пулу,
+    где bytes — суммарный трафик за окно для значения оси у кандидата (напр. весь
+    трафик провайдера этой ноды). Недогруженная ось → больший вес; перегруженная →
+    меньший, но не 0. Масштаб адаптивный. Ось с strength<=0 или без данных не влияет.
+    """
+    dims = dims or {}
+    strengths = strengths or {}
+    # Предрасчёт медианного масштаба по каждой активной оси (по значениям в пуле).
+    scales: dict[str, float] = {}
+    for axis, field in _LB_AXES:
+        s = strengths.get(axis, 0.0)
+        if s and s > 0:
+            amap = dims.get(axis) or {}
+            vals = [amap.get(c.get(field), 0) for c in pool]
+            sc = statistics.median(vals) if vals else 0.0
+            if sc > 0:
+                scales[axis] = sc
     weights = []
     for c in pool:
-        used = activations.get(c["node"], 0)
-        weights.append(max(0.01, float(c["score"])) / (1.0 + used))
+        acts = activations.get(c["node"], 0)
+        w = max(0.01, float(c["score"])) / (1.0 + acts)
+        for axis, field in _LB_AXES:
+            sc = scales.get(axis)
+            if sc:
+                b = (dims.get(axis) or {}).get(c.get(field), 0)
+                w *= (sc / (sc + b)) ** strengths[axis]
+        weights.append(w)
     total = sum(weights)
     if total <= 0:
         return pool[0]

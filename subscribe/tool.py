@@ -356,7 +356,7 @@ def getResponse(url, custom_user_agent=None):
         #'User-Agent': 'clash.meta'
     }
     try:
-        response = requests.get(url,headers=headers,timeout=(5,30))  # connect/read, сек
+        response = requests.get(url,headers=headers,timeout=(30,120))  # connect/read, сек — роутер тоннелирует DNS/connect, нужен запас
         if response.status_code==200:
             return response
         else:

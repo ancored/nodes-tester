@@ -9,8 +9,8 @@
         "interrupt_exist_connections": true
     },
     "emit": {
-        "nodes_tester": true,
-        "global_failsafe": false
+        "nodes_tester": false,
+        "global_failsafe": true
     },
-    "raw_user_nodes": false
+    "raw_user_nodes": true
 }
