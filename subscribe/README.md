@@ -94,7 +94,10 @@ python -m subscribe
 
 После сборки нод `groups.build` добавляет selector/urltest-группы. Ноды делятся на
 регионы по стране (`ru`, `us`, `eu`, `other`) — через общий `naming.coarse_region`.
-Группировка: eu/other — по провайдеру И протоколу; us/ru — по провайдеру.
+Структура **плоская**: ноды каждого региона — прямые члены `{region}-auto-out`
+(selector, default = failsafe) и `{region}-auto-out-failsafe` (urltest); промежуточных
+провайдер/протокол-групп между `-auto-out` и нодами нет. Сверху `global-auto-out`
+собирает регионы (+ опц. `global-auto-out-failsafe` при `emit.global_failsafe`).
 
 **`config/groups_params.json`** — параметры групп и что генерировать:
 ```json
@@ -105,10 +108,12 @@ python -m subscribe
 }
 ```
 - `selector`/`urltest` — доп. поля на каждую группу соответствующего типа.
-- **`emit.nodes_tester`** — создавать ли тестовые селекторы `nodes-tester` +
-  `{region}-nodes-tester` (нужны тестеру в режиме `recognition: by_selector`).
-  `false` — не создавать (напр. если тестер работает в режиме `parse`/`manually`
-  на плоском селекторе, который вы собираете иначе).
+- **`emit.nodes_tester`** — создавать ли плоский тестовый селектор `nodes-tester`
+  (все ноды прямыми членами; тестер выбирает ноду прямо в нём, регион берёт из имени
+  ноды — `recognition: parse`). `false` — не создавать (напр. для клиентских конфигов).
+- **`emit.ensure_regions`** — список регионов (деф. `["eu","us","other"]`), для которых
+  `{region}-auto-out` создаётся всегда: пустой регион заполняется всеми нодами (фолбэк),
+  чтобы основной конфиг sing-box не падал по «outbound not found». `[]` — выключить.
 
 ## user_nodes.json
 

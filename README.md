@@ -21,16 +21,17 @@ inbound, меряет, пишет рейтинг и (опционально) с�
       └─────────────────────────────────────────────────────────┘
 ```
 
-**Определение региона ноды** задаётся в `region_groups.recognition`:
+**Определение региона ноды** задаётся в `region_groups.recognition` (структура
+`nodes-tester` всегда плоская — все ноды прямыми членами, один PUT на ноду):
 
-| Режим | Структура `nodes-tester` | Как берётся регион | Переключение |
-|---|---|---|---|
-| `by_selector` | двухуровневая: `nodes-tester` → `{eu,us,ru,other}-nodes-tester` → leaf | из тега под-селектора | два PUT (регион, затем нода) |
-| `parse` | плоская: `nodes-tester` → все leaf | из страны в имени ноды (eu/us/ru/other) | один PUT (нода) |
-| `manually` | плоская | по спискам `region_groups.list` | один PUT (нода) |
+| Режим | Как берётся регион |
+|---|---|
+| `parse` | из страны в имени ноды (eu/us/ru/other) |
+| `manually` | по спискам `region_groups.list` |
 
-**Порядок теста** — по группам `Регион · Протокол · Провайдер` (сначала все
-EU·vless(reality)·LUNA, затем пауза `group_pause`, потом EU·vless(reality)·VSPACE …).
+**Порядок обхода** — host-aware (анти-ТСПУ): очередь раскладывается так, чтобы ноды
+одного хоста стояли максимально далеко, плюс зазор `run.min_host_gap` (сек) между
+обращениями к одному хосту с РАЗНЫМ портом/протоколом. Групповых/межпрогонных пауз нет.
 
 ## Тесты
 
@@ -60,24 +61,14 @@ EU·vless(reality)·LUNA, затем пауза `group_pause`, потом EU·vl
 { "type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080 }
 ```
 
-### б) selector-группа `nodes-tester`
-
-**Для `recognition: by_selector`** — двухуровневая (верхний селектор + региональные):
-```json
-{ "type": "selector", "tag": "nodes-tester", "default": "eu-nodes-tester",
-  "outbounds": ["eu-nodes-tester","us-nodes-tester","ru-nodes-tester","other-nodes-tester"],
-  "interrupt_exist_connections": true },
-{ "type": "selector", "tag": "eu-nodes-tester",
-  "outbounds": ["LUNA-vless|reality-lt-out [1111]", "..."],
-  "interrupt_exist_connections": true }
-```
-
-**Для `recognition: parse` или `manually`** — один плоский селектор со всеми leaf:
+### б) selector-группа `nodes-tester` — один плоский селектор со всеми нодами
 ```json
 { "type": "selector", "tag": "nodes-tester",
   "outbounds": ["LUNA-vless|reality-lt-out [1111]", "hynet-XYZ89-vmess|http|tls-us-out [a734b55d]", "..."],
   "interrupt_exist_connections": true }
 ```
+Генерируется subscribe при `emit.nodes_tester: true`. Тестер выбирает ноду прямо в нём,
+регион берёт из имени ноды (`recognition: parse`).
 
 Имя leaf-ноды: `<Провайдер>-<Протокол>-<Страна>-out [метка] [CRC]` (метка опц.), где
 протокол — `база|транспорт|маскировка` (`vless|grpc|reality`). Генерируется
@@ -126,16 +117,17 @@ cp config.example.json config.json
 
   "region_groups": {
     "enabled": true,
-    "recognition": "by_selector",          // by_selector | parse | manually
+    "recognition": "parse",                 // parse | manually
     "list": [ { "tag": "eu", "nodes_list": ["node_tag_1"] } ],  // для manually
     "exclude": ["ru"]                       // регионы, которые не тестировать
   },
 
   "run": {
     "default": { "tests_enabled": ["connectivity","latency","jitter","download","reachability"],
-                 "loop": true, "pass_pause": 60, "switch_delay": 1.0, "group_pause": 30,
-                 "rounds": 1, "request_timeout": 10, "restore_selection": true },
-    "testing_groups_specifics": [ { "testing_group_tag": "main", "default_overrides": { "group_pause": 60 } } ],
+                 "loop": true, "rotation_bound": true, "pass_pause": 0, "switch_delay": 1.0,
+                 "min_host_gap": 120, "rounds": 1, "request_timeout": 10, "restore_selection": true,
+                 "heavy_candidates": 3, "heavy_veto_hours": 6 },
+    "testing_groups_specifics": [ { "testing_group_tag": "main", "default_overrides": { "min_host_gap": 180 } } ],
     "region_groups_specifics":  [ { "region_group_tag": "ru",   "default_overrides": { "tests_enabled": ["connectivity"] } } ]
   },
 
@@ -152,7 +144,7 @@ cp config.example.json config.json
 
 **Послойные параметры прогона.** Эффективные `run`-параметры = `default` →
 переопределения по `testing_group` → по `region` (мелкий мердж перечисленных полей).
-Так можно, напр., гонять в RU только `connectivity`, а `group_pause` увеличить для
+Так можно, напр., гонять в RU только `connectivity`, а `min_host_gap` увеличить для
 группы `main`.
 
 > `base_url` = адрес `external_controller` (обычно `192.168.1.1:9090`, не `127.0.0.1`).
@@ -175,11 +167,12 @@ python -m nodes_tester --list-tests
 
 Пример вывода:
 ```
-Группа 'nodes-tester' (recognition=by_selector); тесты: connectivity, latency, jitter, download, reachability; непрерывно, Ctrl+C для остановки
-===== Прогон #1: групп 8, нод 24 =====
-── EU · vless(reality) · LUNA — нод: 3 ──
+Группа 'nodes-tester' (recognition=parse); тесты: connectivity, latency, jitter, download, reachability; rotation_bound (прогон к сроку ротации), Ctrl+C для остановки
+===== Прогон #1: нод 24 =====
   lt 1111: conn=OK[LT 5.6.7.8]  ttfb=71.4ms  jitter=4.2ms loss=0.0%  dl=48.6Mbps thr=0.9  reach=15/15
-  … пауза между группами 30s
+  … анти-ТСПУ пауза 120s (хост 5.6.7.8)
+── Фаза 2 · тяжёлый download-veto — нод: 3 ──
+  lt 2222: heavy=OK 47.9Mbps
 ```
 
 ## 5. Результаты

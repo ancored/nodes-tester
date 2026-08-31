@@ -57,12 +57,12 @@ class RegionGroupsConfig:
     """Как определять регион ноды.
 
     recognition:
-      by_selector — регион из тега под-селектора (двухуровневая nodes-tester);
-      parse       — коарс-регион из страны в имени ноды (eu/us/ru/other);
-      manually    — явные списки регион→теги нод (см. list).
+      parse    — коарс-регион из страны в имени ноды (eu/us/ru/other); дефолт,
+                 подходит для плоского nodes-tester;
+      manually — явные списки регион→теги нод (см. list).
     """
     enabled: bool = True
-    recognition: str = "by_selector"
+    recognition: str = "parse"
     list: list[dict] = field(default_factory=list)      # [{tag, nodes_list}]
     exclude: list[str] = field(default_factory=list)     # регионы, которые не тестировать
 
@@ -78,6 +78,9 @@ class RegionGroupsConfig:
 # --- Run: default + послойные override'ы --------------------------------
 
 _DEFAULT_TESTS = ["connectivity", "latency", "jitter", "download", "reachability"]
+# Тесты, дающие scoring-компоненты (connectivity — только gate, компонента нет;
+# heavy_download — veto, в score не входит). Набор без пересечения с этим → score 0.
+_SCORING_TESTS = {"latency", "jitter", "download", "reachability"}
 
 
 @dataclass
@@ -89,9 +92,13 @@ class RunParams:
     # прогонами ловит монитор. Работает только при loop + switching.rotation.enabled;
     # иначе игнорируется (обычный цикл с pass_pause).
     rotation_bound: bool = True
-    pass_pause: float = 60.0
+    pass_pause: float = 0.0                 # пауза между прогонами (в rotation_bound не нужна)
     switch_delay: float = 1.0
-    group_pause: float = 30.0
+    # min_host_gap: анти-ТСПУ. Минимум секунд между обращениями к ОДНОМУ хосту с
+    # РАЗНЫМ (порт/протокол). Тот же хост+порт+протокол (та же нода) ожидания не ждёт.
+    # Обход нод строится так, чтобы одинаковые хосты стояли максимально далеко; зазор —
+    # «пол» по времени на случай малого числа хостов. Групповых/межпрогонных пауз нет.
+    min_host_gap: float = 120.0
     rounds: int = 1
     request_timeout: float = 10.0
     restore_selection: bool = True
@@ -227,14 +234,15 @@ class StorageConfig:
 
 @dataclass
 class CooldownConfig:
-    """Экспоненциальный backoff для нод, проваливших gate: пропуск прогонов
-    1,2,4,8,… (удваивается за каждый подряд провал), с потолком max_skip.
-    Успешный gate сбрасывает счётчик. Смысл — не теребить мёртвые ноды.
-
-    Дойдя до max_skip, нода признаётся МУСОРНОЙ и исключается из тестов на
-    garbage_hours (карантин переживает рестарт — см. storage.garbage). После
-    истечения даётся одна проба; провал gate → снова карантин, успех → снятие."""
+    """Единый ВРЕМЕННОЙ backoff для нод, проваливших gate. После каждого подряд
+    провала нода не тестируется `base_seconds · 2^(n-1)` секунд (удвоение), с потолком
+    `garbage_hours`. Дойдя до потолка — считается МУСОРНОЙ (карантин `garbage_hours`).
+    Успешный gate снимает backoff. Состояние персистентно (переживает рестарт) и
+    измеряется ВРЕМЕНЕМ, а не номерами прогонов — это совместимо с rotation_bound, где
+    проходов в сутки мало и суточный pass_no сбрасывается (иначе pass-based cooldown
+    залипал бы, см. review.md P1). `max_skip` — верхняя граница числа удвоений."""
     enabled: bool = True
+    base_seconds: float = 600.0
     max_skip: int = 32
     garbage_hours: float = 72.0
 
@@ -269,6 +277,12 @@ def _section(data: dict, key: str) -> dict:
     return value
 
 
+def _filtered(cls, data: dict) -> dict:
+    """Только поля датакласса cls — терпимость к неизвестным/устаревшим ключам."""
+    known = {f.name for f in dataclasses.fields(cls)}
+    return {k: v for k, v in (data or {}).items() if k in known}
+
+
 def load_config(path: str) -> Config:
     if not os.path.exists(path):
         raise FileNotFoundError(
@@ -298,7 +312,7 @@ def load_config(path: str) -> Config:
         switching=_load_switching(_section(data, "switching")),
         monitor=MonitorConfig(**_section(data, "monitor")),
         storage=_load_storage(_section(data, "storage")),
-        cooldown=CooldownConfig(**_section(data, "cooldown")),
+        cooldown=CooldownConfig(**_filtered(CooldownConfig, _section(data, "cooldown"))),
         tests=_section(data, "tests"),
     )
     _validate(cfg)
@@ -314,7 +328,10 @@ def _load_testing_group(t: dict) -> TestingGroupConfig:
 
 
 def _load_run(run: dict) -> RunConfig:
-    default = RunParams(**(run.get("default") or {}))
+    # Терпимость к неизвестным/устаревшим ключам (напр. удалённый group_pause):
+    # берём только поля RunParams, чтобы старые конфиги не роняли загрузку.
+    known = {f.name for f in dataclasses.fields(RunParams)}
+    default = RunParams(**{k: v for k, v in (run.get("default") or {}).items() if k in known})
     group_overrides = {
         spec.get("testing_group_tag", ""): spec.get("default_overrides") or {}
         for spec in (run.get("testing_groups_specifics") or [])
@@ -379,9 +396,9 @@ def _validate(cfg: Config) -> None:
         raise ValueError("testing_groups[].selector.group не задан")
     if not (1 <= tg.connection.port <= 65535):
         raise ValueError(f"Некорректный порт: {tg.connection.port}")
-    if cfg.region_groups.recognition not in ("by_selector", "parse", "manually"):
+    if cfg.region_groups.recognition not in ("parse", "manually"):
         raise ValueError(
-            f"region_groups.recognition должен быть by_selector|parse|manually, "
+            f"region_groups.recognition должен быть parse|manually, "
             f"а не {cfg.region_groups.recognition!r}")
     if cfg.report.format not in ("jsonl", "json", "csv"):
         raise ValueError(f"Неизвестный report.format: {cfg.report.format}")
@@ -393,3 +410,16 @@ def _validate(cfg: Config) -> None:
         raise ValueError(f"run.default.rounds должен быть >= 1: {cfg.run.default.rounds}")
     if cfg.monitor.enabled and cfg.monitor.interval <= 0:
         raise ValueError("monitor.interval должен быть > 0")
+    # Предупреждение: набор тестов без scoring-компонента даёт всем нодам score 0
+    # (напр. только connectivity — он лишь gate). Тогда candidates() пуст → нет выбора.
+    excl = {r.lower() for r in cfg.region_groups.exclude}
+    if not (set(cfg.run.default.tests_enabled) & _SCORING_TESTS):
+        print("  [config] ВНИМАНИЕ: run.default.tests_enabled без scoring-теста "
+              f"(нужен один из {sorted(_SCORING_TESTS)}) → score будет 0")
+    for tag in cfg.run.region_overrides:
+        if tag.lower() in excl:
+            continue                          # регион не тестируется — не предупреждаем
+        eff = cfg.run.for_region(cfg.run.default, tag).tests_enabled
+        if not (set(eff) & _SCORING_TESTS):
+            print(f"  [config] ВНИМАНИЕ: регион '{tag}' tests_enabled={eff} без scoring-"
+                  f"теста → score 0, ноды региона не станут кандидатами")

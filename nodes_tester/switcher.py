@@ -62,7 +62,7 @@ class Switcher:
             return
         with self._lock:
             for region in self.board.regions():
-                self.evaluate_region(region)
+                self._evaluate_region_locked(region, emergency=False)
             _save_state(self.cfg.state_file, self.state)
 
     def active_regions(self) -> list[str]:
@@ -94,7 +94,7 @@ class Switcher:
                 return 0
             skip = self._test_groups(proxies) | set(self.cfg.freeze_groups)
             fixed = 0
-            for sel, child in self._chain_pairs(node, proxies, skip):
+            for sel, child in self._chain_pairs(node, proxies, skip, region):
                 if str(proxies.get(sel, {}).get("now", "")) != child:
                     try:
                         self.clash.select(sel, child)
@@ -108,8 +108,12 @@ class Switcher:
     # --- Ядро -----------------------------------------------------------
 
     def evaluate_region(self, region: str, emergency: bool = False) -> None:
+        # Сохраняем state СРАЗУ после изменения: emergency/emg_stuck от монитора между
+        # прогонами (в rotation_bound ожидание — часы) иначе теряются при рестарте до
+        # следующего evaluate_all (см. review.md P1).
         with self._lock:
             self._evaluate_region_locked(region, emergency)
+            _save_state(self.cfg.state_file, self.state)
 
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
         st = self.state.setdefault(region, _new_region_state())
@@ -213,7 +217,7 @@ class Switcher:
             print(f"  [switch] {region}: не удалось получить прокси: {exc}")
             return
         skip = self._test_groups(proxies) | set(self.cfg.freeze_groups)
-        pairs = self._chain_pairs(node, proxies, skip)
+        pairs = self._chain_pairs(node, proxies, skip, region)
         if not pairs:
             print(f"  [switch] {region}: у '{node}' нет цепочки selector-групп — пропуск")
             return
@@ -251,12 +255,15 @@ class Switcher:
         print(f"  [switch] {region}: {reason.upper()} → {node} "
               f"(score {cand['score']}, PUT {done}{partial})")
 
-    def _chain_pairs(self, node: str, proxies: dict, skip: set) -> list[tuple[str, str]]:
+    def _chain_pairs(self, node: str, proxies: dict, skip: set,
+                     region: str) -> list[tuple[str, str]]:
         """Пары (селектор, желаемый_член) по ЦЕПОЧКЕ вверх от ноды.
 
-        node → его leaf-группа (eu-LUNA-vless(ws)-out) → эта группа в родительском
-        селекторе (eu-auto-out) → и так далее. Группы из skip (тестовые + freeze,
-        напр. global-auto-out) не трогаем и выше них не поднимаемся.
+        node → {region}-auto-out → его родители. Группы из skip (тестовые + freeze,
+        напр. global-auto-out) не трогаем. ЧУЖИЕ региональные auto-селекторы ({R}-auto-out
+        для R != region) пропускаем: при малом числе нод нода может быть фолбэк-членом
+        нескольких региональных групп, но переключение региона X не должно менять выбор в
+        группах региона Y (region-aware, см. review.md P1).
         """
         selectors = {t: info for t, info in proxies.items()
                      if str(info.get("type", "")).lower() == "selector"}
@@ -266,7 +273,8 @@ class Switcher:
         while queue:
             child = queue.pop(0)
             for tag, info in selectors.items():
-                if tag in skip or child not in (info.get("all") or []):
+                if (tag in skip or _foreign_region_auto(tag, region)
+                        or child not in (info.get("all") or [])):
                     continue
                 pairs.append((tag, child))
                 if tag not in seen:
@@ -294,6 +302,18 @@ class Switcher:
         base = self.cfg.rotation.interval
         j = self.cfg.rotation.jitter
         return base + random.uniform(-j, j) if j else base
+
+
+# Коарс-регионы (префикс тега {region}-auto-out) — для region-aware цепочки.
+_COARSE_REGIONS = {"eu", "us", "ru", "other"}
+
+
+def _foreign_region_auto(tag: str, region: str) -> bool:
+    """tag = '{R}-auto-out' с R != region → чужой региональный auto-селектор."""
+    if not tag.endswith("-auto-out"):
+        return False
+    r = tag.split("-", 1)[0]
+    return r in _COARSE_REGIONS and r != region
 
 
 # Оси балансировки: (ключ поля кандидата, ключ агрегата в dims).

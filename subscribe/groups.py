@@ -9,13 +9,11 @@ unparsed user node). Nodes are classified into regions by country:
     a European cc -> eu
     anything else -> other
 
-Leaf groups collect nodes as:
-    eu / other : by provider AND protocol   -> "eu-LUNA-vless(reality)-out"
-    us / ru    : by provider only           -> "us-LUNA-out"
-
-Each selector gets a matching "-failsafe" urltest holding the same members and
-used as its default. Region "-auto-out" selectors gather the leaf groups, and a top
-"global-auto-out" selector gathers the region groups.
+Плоская структура: ноды каждого региона — ПРЯМЫЕ члены "{region}-auto-out"
+(selector) и "{region}-auto-out-failsafe" (urltest, он же default селектора).
+Промежуточных провайдер/leaf-групп между "-auto-out" и нодами больше нет. Сверху
+"global-auto-out" собирает регионы. Тестовый селектор "nodes-tester" (если включён)
+— плоский список всех нод; регион тестер берёт из имени ноды (recognition=parse).
 
 Plain "vless" / "vmess" nodes (no transport, no reality — e.g. XHTTP) are dropped
 from the output entirely by main.finalize_nodes before this runs.
@@ -38,8 +36,8 @@ _PARAMS_PATH = os.path.join(_ROOT, 'config', 'groups_params.json')
 _PARAMS = {}
 _SELECTOR_PARAMS = {}
 _URLTEST_PARAMS = {}
-# _EMIT.nodes_tester — создавать ли тестовые селекторы nodes-tester +
-# {region}-nodes-tester (нужны тестеру в режиме by_selector).
+# _EMIT.nodes_tester — создавать ли плоский тестовый селектор nodes-tester
+# (все ноды прямыми членами; нужен тестеру, регион берётся из имени ноды).
 _EMIT = {}
 # raw_user_nodes: true → ноды из user_nodes.json НЕ сшиваются в группы, а копируются
 # в вывод как есть (без rename/группировки/CRC). По умолчанию false.
@@ -79,8 +77,6 @@ _FAILSAFE = '-failsafe'
 UNGROUPED_PROTOCOLS = {'vless', 'vmess'}
 # Region order used wherever regions are listed together
 _REGION_ORDER = ('eu', 'us', 'ru', 'other')
-# Regions grouped by provider + protocol (the rest are grouped by provider only)
-_BY_PROVIDER_AND_PROTOCOL = ('eu', 'other')
 
 # Коарс-регион — из общего naming (та же логика, что у тестера).
 from naming import coarse_region as _region
@@ -97,8 +93,7 @@ def _urltest(tag, members):
 
 def build(nodelist):
     '''Return the list of selector / urltest outbounds for the given nodes.'''
-    leaf = OrderedDict()             # leaf_tag -> [member node tags]
-    region_leaves = OrderedDict()    # region -> [leaf_tag, ...]
+    region_nodes = OrderedDict()     # region -> [node tags] (ноды — прямые члены)
 
     for node in nodelist:
         meta = node.get('_meta')
@@ -106,76 +101,42 @@ def build(nodelist):
             continue                              # stays in the output but is never grouped
         if meta['country'] == 'undef':            # страна не определена — НЕ в 'other',
             continue                              # нода остаётся в выводе, но вне групп
-        protocol = meta['protocol']
-        if protocol in UNGROUPED_PROTOCOLS:       # XHTTP and the like are not grouped
+        if meta['protocol'] in UNGROUPED_PROTOCOLS:   # XHTTP and the like are not grouped
             continue
         region = _region(meta['country'])
-        provider = meta['provider']
-        if region in _BY_PROVIDER_AND_PROTOCOL:
-            leaf_tag = '{}-{}-{}{}'.format(region, provider, protocol, _OUT)
-        else:
-            leaf_tag = '{}-{}{}'.format(region, provider, _OUT)
-        leaf.setdefault(leaf_tag, []).append(node['tag'])
-        region_leaves.setdefault(region, [])
-        if leaf_tag not in region_leaves[region]:
-            region_leaves[region].append(leaf_tag)
+        region_nodes.setdefault(region, []).append(node['tag'])
 
-    # Leaf group selectors + their failsafe urltests
-    leaf_selectors, leaf_urltests = [], []
-    for leaf_tag, members in leaf.items():
-        fs = leaf_tag + _FAILSAFE
-        leaf_selectors.append(_selector(leaf_tag, [fs] + members, fs))
-        leaf_urltests.append(_urltest(fs, list(members)))
+    all_nodes = [t for tags in region_nodes.values() for t in tags]
 
-    # Region "auto" selectors + failsafes, in canonical region order
+    # Region "auto" selectors + failsafe urltests: ноды — ПРЯМЫЕ члены (плоско, без
+    # промежуточных провайдер/leaf-групп). "{region}-auto-out" (selector, default =
+    # failsafe) и "{region}-auto-out-failsafe" (urltest) держат один и тот же список
+    # всех нод региона.
+    # Мало нод: требуемый регион (ensure_regions, деф. eu/us/other) без нод всё равно
+    # обязан существовать — иначе основной конфиг sing-box, ссылающийся на него по имени,
+    # не стартует ("outbound not found"). Пустой регион заполняем всеми нодами (фолбэк).
+    ensure = _EMIT.get('ensure_regions', ['eu', 'us', 'other'])
     region_auto = OrderedDict()      # region -> auto selector tag
     region_selectors, region_urltests = [], []
     for region in _REGION_ORDER:
-        leaves = region_leaves.get(region)
-        if not leaves:
-            continue
-        auto = '{}-auto{}'.format(region, _OUT)
-        auto_fs = auto + _FAILSAFE
-        region_auto[region] = auto
-        region_selectors.append(_selector(auto, [auto_fs] + leaves, auto_fs))
-        region_urltests.append(_urltest(auto_fs, [lt + _FAILSAFE for lt in leaves]))
-
-    # Мало нод: если требуемый регион остался БЕЗ нод, его {region}-auto-out всё равно
-    # обязан существовать — иначе основной конфиг sing-box, ссылающийся на него по имени,
-    # не стартует ("outbound not found"). Заполняем такой регион кросс-региональным
-    # фолбэком (все имеющиеся leaf-группы): селектор валиден, а failsafe-urltest сам
-    # выберет лучшую ноду. ensure_regions — из groups_params.emit (деф. eu/us/other).
-    ensure = _EMIT.get('ensure_regions', ['eu', 'us', 'other'])
-    all_leaf_tags = list(leaf.keys())
-    for region in _REGION_ORDER:
-        if region in region_auto or region not in ensure or not all_leaf_tags:
-            continue
-        auto = '{}-auto{}'.format(region, _OUT)
-        auto_fs = auto + _FAILSAFE
-        region_auto[region] = auto
-        region_selectors.append(_selector(auto, [auto_fs] + all_leaf_tags, auto_fs))
-        region_urltests.append(_urltest(auto_fs, [lt + _FAILSAFE for lt in all_leaf_tags]))
-        print(f"  [groups] регион '{region}': нод нет — auto-селектор заполнен "
-              f"фолбэком из {len(all_leaf_tags)} групп (config sing-box не сломается)")
-
-    # Standalone "{region}-nodes-tester" selectors: a flat list of every leaf node
-    # of the region, gathered under a top "nodes-tester" selector. Not referenced
-    # by any other group — used only for testing. Эмиссия — по флагу emit.nodes_tester.
-    testers = []
-    if _EMIT.get('nodes_tester', True):
-        tester_tags = []
-        for region in _REGION_ORDER:
-            leaves = region_leaves.get(region)
-            if not leaves:
+        members = region_nodes.get(region)
+        if not members:
+            if region not in ensure or not all_nodes:
                 continue
-            tester_tag = '{}-nodes-tester'.format(region)
-            region_nodes = [tag for lt in leaves for tag in leaf[lt]]
-            testers.append({'tag': tester_tag, 'type': 'selector',
-                            'outbounds': region_nodes, **_SELECTOR_PARAMS})
-            tester_tags.append(tester_tag)
-        if tester_tags:
-            default = 'eu-nodes-tester' if 'eu-nodes-tester' in tester_tags else tester_tags[0]
-            testers.insert(0, _selector('nodes-tester', list(tester_tags), default))
+            members = all_nodes
+            print(f"  [groups] регион '{region}': нод нет — auto-селектор заполнен "
+                  f"фолбэком из {len(all_nodes)} нод (config sing-box не сломается)")
+        auto = '{}-auto{}'.format(region, _OUT)
+        auto_fs = auto + _FAILSAFE
+        region_auto[region] = auto
+        region_selectors.append(_selector(auto, [auto_fs] + members, auto_fs))
+        region_urltests.append(_urltest(auto_fs, list(members)))
+
+    # Плоский тестовый селектор: ВСЕ тестируемые ноды прямыми членами. Регион тестер
+    # берёт из имени ноды (recognition=parse). Эмиссия — по флагу emit.nodes_tester.
+    testers = []
+    if _EMIT.get('nodes_tester', True) and all_nodes:
+        testers.append(_selector('nodes-tester', list(all_nodes), all_nodes[0]))
 
     top = []
     if region_auto:
@@ -190,7 +151,6 @@ def build(nodelist):
         else:
             default = region_auto.get('eu') or region_autos[0]
             top.append(_selector('global-auto-out', region_autos, default))
-    top += region_selectors
-    top += leaf_selectors + testers
+    top += region_selectors + testers
 
-    return top + region_urltests + leaf_urltests
+    return top + region_urltests

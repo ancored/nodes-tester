@@ -26,6 +26,22 @@ class ClashApiClient:
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
+    def _ok_json(self, resp, what: str):
+        """Проверить статус и распарсить JSON, ЛЮБУЮ ошибку → ClashApiError.
+
+        Иначе HTTP 500 (requests.HTTPError) или битый JSON (ValueError) минуют
+        доменную обработку и роняют весь процесс — главный цикл ловит только
+        ClashApiError. См. review.md (P1: часть ошибок Clash API обходит обработку).
+        """
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise ClashApiError(f"Clash API {what}: HTTP {resp.status_code}") from exc
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise ClashApiError(f"Clash API {what}: некорректный JSON в ответе") from exc
+
     def ping(self) -> None:
         """Проверить доступность API (иначе — понятная ошибка)."""
         try:
@@ -36,7 +52,7 @@ class ClashApiClient:
             ) from exc
         if resp.status_code == 401:
             raise ClashApiError("Clash API вернул 401 — неверный secret")
-        resp.raise_for_status()
+        self._ok_json(resp, "/version")
 
     def _get(self, path: str):
         """GET с конвертацией сетевых ошибок в ClashApiError.
@@ -65,8 +81,7 @@ class ClashApiClient:
         resp = self._get(f"/proxies/{quote(name, safe='')}")
         if resp.status_code == 404:
             raise ClashApiError(f"Прокси/группа '{name}' не найдена в Clash API")
-        resp.raise_for_status()
-        return resp.json()
+        return self._ok_json(resp, f"/proxies/{name}")
 
     def list_group_members(self, group: str) -> list[str]:
         """Члены selector-группы (поле 'all')."""
@@ -96,14 +111,12 @@ class ClashApiClient:
     def all_proxies(self) -> dict:
         """GET /proxies — все прокси/группы (name -> {type, all, now, ...})."""
         resp = self._get("/proxies")
-        resp.raise_for_status()
-        return resp.json().get("proxies", {})
+        return self._ok_json(resp, "/proxies").get("proxies", {})
 
     def connections(self) -> list[dict]:
         """GET /connections — активные соединения (байты, метадата, chains)."""
         resp = self._get("/connections")
-        resp.raise_for_status()
-        return resp.json().get("connections") or []
+        return self._ok_json(resp, "/connections").get("connections") or []
 
     def delay(self, node: str, url: str, timeout_ms: int) -> "int | None":
         """GET /proxies/{node}/delay — sing-box сам дозванивается до ноды.

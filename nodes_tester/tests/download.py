@@ -29,9 +29,9 @@ class DownloadTest(BaseTest):
 
     def run(self, ctx: TestContext) -> TestResult:
         url = self.url_for(ctx)
-        duration = float(self.options.get("duration", 20))
-        window_bytes = int(self.options.get("window_bytes", 2_000_000))
-        connect_timeout = float(self.options.get("connect_timeout", 10))
+        duration = max(1.0, float(self.options.get("duration", 20)))       # >0 (валидация)
+        window_bytes = max(1, int(self.options.get("window_bytes", 2_000_000)))
+        connect_timeout = max(1.0, float(self.options.get("connect_timeout", 10)))
 
         r = stream_single(ctx.session, url, duration, connect_timeout)
         total, expected, samples, secs = r["total"], r["expected"], r["samples"], r["seconds"]
@@ -54,15 +54,28 @@ class DownloadTest(BaseTest):
                 metrics["last_mbps"] = round(last_bps * 8 / 1_000_000, 2)
 
         if r["server_limit"]:
-            # Сервер отбил запрос (429/5xx) — туннель жив, это НЕ FAIL ноды.
+            # Сервер занят (429/5xx) — туннель жив, это НЕ FAIL ноды.
             metrics["limited"] = True
             return TestResult(self.name, ok=True, metrics=metrics, url=url)
+        if r.get("http_error"):
+            # Клиентская ошибка (401/403/404): сервер ответил, но замер не состоялся —
+            # это проблема url/блока/auth, НЕ обрыв транспорта ноды. Отдельный исход:
+            # ok=false, но скоринг не штрафует пропускную (см. scoring: http_error).
+            metrics["http_error"] = True
+            metrics["http_status"] = r.get("http_status")
+            return TestResult(self.name, ok=False, metrics=metrics,
+                              error=f"HTTP {r.get('http_status')}", url=url)
         if r["broken"]:
             # Реальный обрыв транспорта — нестабильность.
             return TestResult(self.name, ok=False, metrics=metrics,
                               error=r["error"], url=url)
-        # Завершилось без обрыва: ok если скачали (почти) весь файл.
-        ok = (total >= expected * 0.95) if expected else (not r["capped"] and total > 0)
+        # Упёрлись в duration, но поток шёл без обрыва — sustained-успех (медленную, но
+        # СТАБИЛЬНУЮ ноду не заваливаем неполной закачкой). Иначе — докачали ли файл.
+        if r["capped"]:
+            metrics["duration_reached"] = True
+            ok = total > 0
+        else:
+            ok = (total >= expected * 0.95) if expected else (total > 0)
         return TestResult(self.name, ok=ok, metrics=metrics,
                           error=None if ok else "неполная закачка", url=url)
 

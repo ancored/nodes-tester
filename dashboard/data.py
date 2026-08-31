@@ -245,8 +245,10 @@ def _results(db: str) -> dict:
             "provider": r.get("provider"), "protocol": r.get("protocol"),
             "country": r.get("country"), "crc": crc, "ts": 0, "pass_no": 0, "cells": {}})
         node["cells"][r["test"]] = _cell(r["test"], r["ok"], r["metrics"], r.get("error"))
-        node["ts"] = max(node["ts"], r["ts"] or 0)
-        node["pass_no"] = max(node["pass_no"], r.get("pass_no") or 0)
+        ts = r["ts"] or 0
+        if ts >= node["ts"]:                  # pass_no берём из строки с самым свежим ts,
+            node["ts"] = ts                   # иначе через полночь свежая дата склеится
+            node["pass_no"] = r.get("pass_no") or 0   # со старым большим номером прогона
     cols = [t for t in _TEST_ORDER if t in tests_seen]
     cols += sorted(tests_seen - set(cols))
     node_rows = sorted(by_node.values(), key=lambda x: x["ts"], reverse=True)

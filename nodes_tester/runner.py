@@ -1,26 +1,26 @@
 """Оркестратор прогона.
 
 Определение региона ноды — по region_groups.recognition:
-  by_selector — nodes-tester содержит РЕГИОНАЛЬНЫЕ под-селекторы (двухуровнево):
-                PUT nodes-tester = <регион>-nodes-tester; PUT <регион> = <leaf>.
-  parse       — nodes-tester ПЛОСКИЙ (все leaf), регион из страны в имени ноды:
-                PUT nodes-tester = <leaf>.
-  manually    — плоский nodes-tester, регион по спискам из конфига.
+  parse    — nodes-tester ПЛОСКИЙ (все ноды), регион из страны в имени ноды;
+  manually — плоский nodes-tester, регион по спискам из конфига.
+Тестер выбирает ноду прямо в nodes-tester (PUT nodes-tester = <нода>).
 
-Порядок теста: группируем leaf по (регион · протокол · провайдер), между группами
-пауза group_pause. Параметры прогона послойные: default → testing_group → регион.
+Порядок обхода — host-aware (анти-ТСПУ): очередь раскладывается так, чтобы ноды
+одного хоста стояли максимально далеко, плюс зазор min_host_gap между обращениями к
+одному хосту с РАЗНЫМ портом/протоколом. Групповых/межпрогонных пауз нет. Параметры
+прогона послойные: default → testing_group → регион.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
 from .clash_api import ClashApiClient, ClashApiError
 from .config import Config
-from .identity import NodeIdentity, coarse_region, parse_node, region_label
+from .identity import NodeIdentity, coarse_region, parse_node
 from .monitor import ProductionMonitor
 from .proxy import make_session
 from .reporter import Reporter, run_timestamp
@@ -33,6 +33,9 @@ from .traffic import TrafficCollector
 
 # Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, cron).
 _CLEANUP_INTERVAL = 24 * 3600
+# Пауза после пустого/сорванного прохода — чтобы не крутить цикл вплотную (пустой
+# selector, недоступный API, просроченный rotate_deadline). См. review.md P1.
+_EMPTY_PASS_RETRY = 30.0
 
 
 def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0):
@@ -48,19 +51,6 @@ def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0)
         return cache["data"]
 
     return provider
-
-
-@dataclass
-class TestGroup:
-    region: str                       # коарс-регион (eu/us/ru/other)
-    regional_tag: Optional[str]       # тег под-селектора (by_selector) или None (flat)
-    protocol: str
-    provider: str
-    nodes: list[NodeIdentity] = field(default_factory=list)
-
-    @property
-    def title(self) -> str:
-        return f"{self.region.upper()} · {self.protocol} · {self.provider}"
 
 
 class Runner:
@@ -100,44 +90,72 @@ class Runner:
 
     # --- Планирование --------------------------------------------------
 
-    def _enumerate_leaves(self):
-        """(region, regional_tag|None, NodeIdentity) для всех тестируемых нод."""
+    def _enumerate_nodes(self) -> list[tuple]:
+        """[(region, NodeIdentity)] для всех тестируемых нод (плоский nodes-tester)."""
         top = self._top
         exclude = set(self.cfg.testing_group.selector.exclude) | {top}
         rg = self.cfg.region_groups
         excl_regions = {r.lower() for r in rg.exclude}
+        manual = rg.manual_map() if rg.recognition == "manually" else {}
+        out, skipped = [], 0
+        for leaf in self.clash.list_group_members(top):
+            if leaf in exclude:
+                continue
+            ident = parse_node(leaf)
+            if not ident.node_id:              # нет CRC → не leaf-нода (под-селектор/группа):
+                skipped += 1                   # напр. старый двухуровневый nodes-tester
+                continue
+            region = (manual.get(leaf, "other") if rg.recognition == "manually"
+                      else coarse_region(ident.country))
+            if region.lower() not in excl_regions:
+                out.append((region, ident))
+        if skipped:
+            print(f"  [!] в '{top}' пропущено {skipped} членов без CRC — это не leaf-ноды "
+                  f"(под-селекторы/группы). Плоский конфиг перегенерирован? nodes-tester "
+                  f"должен содержать сами ноды, а не {{region}}-nodes-tester")
+        return out
 
-        if rg.recognition == "by_selector":
-            regionals = [m for m in self.clash.list_group_members(top) if m not in exclude]
-            for regional_tag in regionals:
-                region = region_label(regional_tag, top)
-                if region.lower() in excl_regions:
-                    continue
-                for leaf in self.clash.list_group_members(regional_tag):
-                    if leaf not in exclude:
-                        yield region, regional_tag, parse_node(leaf)
-        else:
-            manual = rg.manual_map() if rg.recognition == "manually" else {}
-            for leaf in self.clash.list_group_members(top):
-                if leaf in exclude:
-                    continue
-                ident = parse_node(leaf)
-                region = (coarse_region(ident.country) if rg.recognition == "parse"
-                          else manual.get(leaf, "other"))
-                if region.lower() not in excl_regions:
-                    yield region, None, ident
+    # --- Host-aware обход (анти-ТСПУ) ----------------------------------
 
-    def _build_plan(self) -> list[TestGroup]:
-        order: list[tuple] = []
-        buckets: dict[tuple, TestGroup] = {}
-        for region, regional_tag, ident in self._enumerate_leaves():
-            key = (region, regional_tag, ident.protocol, ident.provider)
-            if key not in buckets:
-                buckets[key] = TestGroup(region=region, regional_tag=regional_tag,
-                                         protocol=ident.protocol, provider=ident.provider)
-                order.append(key)
-            buckets[key].nodes.append(ident)
-        return [buckets[k] for k in order]
+    def _host_of(self, ident: NodeIdentity) -> str:
+        """Хост ноды (server из storage). Фолбэк без storage/server — провайдер/CRC."""
+        ep = self._endpoints.get(ident.node_id)
+        if ep and ep[0]:
+            return ep[0]
+        return f"prov:{ident.provider}" if ident.provider else f"crc:{ident.node_id}"
+
+    def _ep_sig(self, ident: NodeIdentity) -> tuple:
+        """Сигнатура эндпоинта (порт, протокол) — для условия зазора «тот же хост,
+        но другой порт/протокол»."""
+        ep = self._endpoints.get(ident.node_id)
+        return ((ep[1] if ep else None), ident.protocol)
+
+    def _order_by_host(self, items: list[tuple]) -> list[tuple]:
+        """Разложить [(region, ident)] так, чтобы ноды одного хоста стояли максимально
+        далеко: round-robin по корзинам-хостам (большие корзины первыми)."""
+        buckets: dict[str, deque] = {}
+        for it in items:
+            buckets.setdefault(self._host_of(it[1]), deque()).append(it)
+        dqs = sorted(buckets.values(), key=len, reverse=True)   # большие первыми
+        ordered = []
+        while any(dqs):
+            for dq in dqs:
+                if dq:
+                    ordered.append(dq.popleft())
+        return ordered
+
+    def _respect_host_gap(self, host: str, sig: tuple, gap: float) -> None:
+        """Выдержать min_host_gap до обращения к тому же хосту с ДРУГИМ (порт/протокол).
+        Тот же (хост, порт, протокол) ожидания не вызывает. Затем отметить время."""
+        eps = self._host_ep_last.setdefault(host, {})
+        if gap > 0:
+            diff = [t for s, t in eps.items() if s != sig]
+            if diff:
+                wait = gap - (time.monotonic() - max(diff))
+                if wait > 0:
+                    print(f"  … анти-ТСПУ пауза {wait:.0f}s (хост {host})")
+                    time.sleep(wait)
+        eps[sig] = time.monotonic()
 
     def _tests_for(self, tests_enabled: list[str]):
         """Инстансы тестов для набора tests_enabled (кэшируются)."""
@@ -167,9 +185,7 @@ class Runner:
         self._tests_cache: dict = {}
         self._region_cache: dict = {}
         self._originals: dict[str, str] = {}
-        self._cooldown: dict[str, dict] = {}   # crc -> {fail_streak, resume_at} (backoff)
-        self._garbage: dict = {}
-        self._garbage_trial: set = set()
+        self._backoff: dict = {}               # crc -> (until, streak, reason), из storage
 
         if not self._base.tests_enabled:
             raise ValueError("run.default.tests_enabled пуст — нечего тестировать")
@@ -187,6 +203,9 @@ class Runner:
             mode = "непрерывно, Ctrl+C для остановки"
         print(f"Группа '{self._top}' (recognition={self.cfg.region_groups.recognition}); "
               f"тесты: {', '.join(self._base.tests_enabled)}; {mode}")
+        if self._base.loop and not self._rotation_bound_active() and self._base.pass_pause <= 0:
+            print("  [!] loop без rotation_bound и pass_pause<=0 — прогоны идут вплотную "
+                  "(пауза только host-gap внутри прохода). Задайте pass_pause при желании.")
         print(f"Результаты: {reporter.path if reporter else 'только в SQLite'}")
         if self.monitor is not None:
             print(f"Монитор активных нод: каждые {self.cfg.monitor.interval}s")
@@ -218,10 +237,12 @@ class Runner:
                 if today != current_day:           # наступила полночь → новый день, сброс
                     current_day, pass_no = today, 0
                 pass_no += 1
+                empty = False
                 try:
-                    self._run_pass(pass_no, reporter)
+                    empty = self._run_pass(pass_no, reporter)
                 except ClashApiError as exc:
                     print(f"[!] Прогон #{pass_no} прерван ошибкой Clash API: {exc}")
+                    empty = True                       # API-сбой → тоже выдержим паузу
                 if self.storage is not None:
                     self.storage.set_meta("pass_day", current_day)
                     self.storage.set_meta("pass_no", pass_no)     # посуточный номер
@@ -231,7 +252,10 @@ class Runner:
                     self._last_cleanup = time.monotonic()
                 if not self._should_continue(pass_no):
                     break
-                self._wait_before_next_pass()
+                if empty:
+                    time.sleep(_EMPTY_PASS_RETRY)       # не крутим цикл на пустом проходе
+                else:
+                    self._wait_before_next_pass()
         except KeyboardInterrupt:
             print("\nОстановлено пользователем.")
         finally:
@@ -289,68 +313,50 @@ class Runner:
                 announced = wait
             time.sleep(min(wait, poll))
 
-    def _run_pass(self, pass_no: int, reporter: Optional[Reporter]) -> None:
-        """Один полный прогон. Список нод перечитывается из Clash API."""
-        plan = self._build_plan()
-        if not plan:
+    def _run_pass(self, pass_no: int, reporter: Optional[Reporter]) -> bool:
+        """Один полный прогон. Список нод перечитывается из Clash API.
+        Возвращает True, если прогон пустой (нод нет) — вызывающий выдержит retry-паузу,
+        чтобы не крутить цикл вплотную (см. review.md P1)."""
+        nodes = self._enumerate_nodes()
+        if not nodes:
             print(f"[!] Прогон #{pass_no}: в группе '{self._top}' нет нод — пропуск")
-            return
+            return True
+        print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
 
-        total = sum(len(g.nodes) for g in plan)
-        print(f"\n===== Прогон #{pass_no}: групп {len(plan)}, нод {total} =====")
-
-        # Снимок карантина на начало прогона: active — пропускаем целиком; trial —
-        # карантин истёк, даём одну пробу (провал gate → сразу назад в карантин).
-        self._garbage: dict = {}
-        self._garbage_trial: set = set()
+        # Снимок backoff на начало прогона (crc -> (until, streak, reason)): нода с
+        # until в будущем не тестируется (backoff/карантин, персистентно, по времени).
+        self._backoff = {}
+        self._endpoints: dict = {}
         if self.storage is not None:
             self.storage.maybe_load_nodes(self.cfg.storage.nodes_file)
-            gmap = self.storage.all_garbage()
-            now = time.time()
-            self._garbage = {c: u for c, u in gmap.items() if u > now}
-            self._garbage_trial = {c for c, u in gmap.items() if u <= now}
+            self._backoff = self.storage.load_backoff()
+            self._endpoints = self.storage.endpoints_by_crc()   # crc -> (server, port)
+            # присутствие в selector → не даём retention удалить живые ноды (P0)
+            self.storage.touch_seen(ident.node_id for _, ident in nodes)
+        self._host_ep_last: dict = {}         # host -> {sig: monotonic} (зазор, лёгкая+тяжёлая)
         if self.board is not None:
             self.board.set_pass(pass_no)
             self.board.begin_pass()
 
-        current_region_tag = None
-        first_group = True
-        for group in plan:
-            params = self._region_params(group.region)
-            if not first_group and params.group_pause > 0:
-                print(f"  … пауза между группами {params.group_pause}s")
-                time.sleep(params.group_pause)
-            first_group = False
-
-            # by_selector: переключаем верхний селектор на регион (при смене).
-            if group.regional_tag is not None and group.regional_tag != current_region_tag:
-                self._remember(self._top)
-                self._remember(group.regional_tag)
-                self.clash.select(self._top, group.regional_tag)
-                current_region_tag = group.regional_tag
-
-            tests = self._tests_for(params.tests_enabled)
-            print(f"\n── {group.title} — нод: {len(group.nodes)} ──")
-            for ident in group.nodes:
-                if ident.node_id in self._garbage:      # карантин (мусорная нода)
-                    if self.board is not None:
-                        self.board.keep(ident.raw)
-                    continue
-                if self._cooldown_skip(ident.node_id, pass_no):
-                    if self.board is not None:
-                        self.board.keep(ident.raw)   # чтобы end_pass не удалил ноду
-                    print(f"  · {ident.short()} — cooldown, пропуск")
-                    continue
-                record = self._test_node(group, ident, pass_no, tests, params)
-                if reporter is not None:
-                    reporter.add(record)
-                if self.storage is not None and self.cfg.storage.store_results:
-                    self.storage.add_results(record)
-                gate = self._score_and_maybe_switch(group, ident, record)
-                self._cooldown_update(ident.node_id, pass_no, gate)
+        node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
+        for region, ident in self._order_by_host(nodes):   # host-aware обход
+            params = self._region_params(region)
+            if self._backed_off(ident.node_id):     # backoff/карантин — не тестируем
+                if self.board is not None:
+                    self.board.keep(ident.raw)   # чтобы end_pass не удалил строку/score
+                continue
+            self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
+            record = self._test_node(region, ident, pass_no,
+                                     self._tests_for(params.tests_enabled), params)
+            if reporter is not None:
+                reporter.add(record)
+            if self.storage is not None and self.cfg.storage.store_results:
+                self.storage.add_results(record)
+            gate = self._score_and_maybe_switch(region, ident, record)
+            self._backoff_update(ident.node_id, gate)
 
         # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
-        self._run_heavy_pass(plan, pass_no, reporter)
+        self._run_heavy_pass(node_by_raw, pass_no, reporter)
 
         if reporter is not None:
             reporter.flush()
@@ -358,6 +364,7 @@ class Runner:
             self.board.end_pass(pass_no)
         if self.switcher is not None:
             self.switcher.evaluate_all()
+        return False
 
     def _heavy_test(self):
         """Инстанс тяжёлого download-теста (кэш). None — если тест не зарегистрирован."""
@@ -366,10 +373,9 @@ class Runner:
             self._heavy_cache = cls(self.cfg.tests.get("heavy_download") or {}) if cls else None
         return self._heavy_cache
 
-    def _heavy_targets(self, plan) -> list:
+    def _heavy_targets(self, node_by_raw: dict) -> list:
         """Кандидаты на тяжёлый download: топ-heavy_candidates по (лёгкому) score на
-        регион + активная нода. Возвращает [(group, ident), …] без повторов, по регионам."""
-        node_by_raw = {ident.raw: (g, ident) for g in plan for ident in g.nodes}
+        регион + активная нода. Возвращает [(region, ident), …] без повторов."""
         targets, picked = [], set()
         for region in self.board.regions():
             hc = int(getattr(self._region_params(region), "heavy_candidates", 0) or 0)
@@ -388,35 +394,25 @@ class Runner:
                     targets.append(ni)
         return targets
 
-    def _run_heavy_pass(self, plan, pass_no: int, reporter: Optional[Reporter]) -> None:
+    def _run_heavy_pass(self, node_by_raw: dict, pass_no: int,
+                        reporter: Optional[Reporter]) -> None:
         if self.board is None:
             return
         heavy = self._heavy_test()
         if heavy is None:
             return
-        targets = self._heavy_targets(plan)
+        targets = self._order_by_host(self._heavy_targets(node_by_raw))   # host-aware
         if not targets:
             return
         print(f"\n── Фаза 2 · тяжёлый download-veto — нод: {len(targets)} ──")
-        current_region_tag = None
-        for group, ident in targets:
-            if ident.node_id in self._garbage:      # мусорную ноду не качаем
+        for region, ident in targets:
+            if self._backed_off(ident.node_id):     # backoff/карантин — не качаем
                 continue
-            params = self._region_params(group.region)
-            # by_selector: верхний селектор → регион (при смене), затем регион → leaf.
-            if group.regional_tag is not None and group.regional_tag != current_region_tag:
-                self._remember(self._top)
-                self._remember(group.regional_tag)
-                try:
-                    self.clash.select(self._top, group.regional_tag)
-                except ClashApiError as exc:
-                    print(f"  heavy: ОШИБКА выбора региона {group.regional_tag}: {exc}")
-                    continue
-                current_region_tag = group.regional_tag
-            target = group.regional_tag if group.regional_tag is not None else self._top
-            self._remember(target)
+            params = self._region_params(region)
+            self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
+            self._remember(self._top)
             try:
-                self.clash.select(target, ident.raw)
+                self.clash.select(self._top, ident.raw)   # плоско: nodes-tester → нода
             except ClashApiError as exc:
                 print(f"  {ident.short()}: ОШИБКА переключения (heavy): {exc}")
                 continue
@@ -424,9 +420,13 @@ class Runner:
                 time.sleep(params.switch_delay)
             session = make_session(self.cfg.testing_group.connection)
             ctx = TestContext(session=session, node=ident.raw,
-                              default_timeout=params.request_timeout, region=group.region)
-            res = heavy.run(ctx).to_dict()
-            session.close()
+                              default_timeout=params.request_timeout, region=region)
+            try:
+                res = heavy.run(ctx).to_dict()
+            except Exception as exc:  # noqa: BLE001 — сбой heavy не рушит проход
+                res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            finally:
+                session.close()
             ok = bool(res.get("ok"))
             self.board.set_heavy(ident.raw, ok)     # veto-фильтр (в скоринг НЕ идёт)
             rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
@@ -439,48 +439,44 @@ class Runner:
                 print(f"  {ident.short()}: heavy={'OK' if ok else 'VETO'} "
                       f"{res.get('speed_mbps', '-')}Mbps")
 
-    def _score_and_maybe_switch(self, group, ident, record) -> bool:
+    def _score_and_maybe_switch(self, region: str, ident, record) -> bool:
         if self.board is None:
             return True                      # без борда gate неизвестен — не куладаунить
-        _final, _s_run, gate = self.board.record(ident, group.region, record.get("tests", {}))
+        _final, _s_run, gate = self.board.record(ident, region, record.get("tests", {}))
         if self.switcher is not None:
-            self.switcher.notify_score(group.region, ident.raw, blocked=not gate)
+            self.switcher.notify_score(region, ident.raw, blocked=not gate)
         return gate
 
-    # --- Cooldown / экспоненциальный backoff по провалу gate ------------
+    # --- Backoff по провалу gate (единая ВРЕМЕННАЯ модель, персистентно) --------
 
-    def _cooldown_skip(self, crc: str, pass_no: int) -> bool:
+    def _backed_off(self, crc: str) -> bool:
         if not self.cfg.cooldown.enabled or not crc:
             return False
-        cd = self._cooldown.get(crc)
-        return bool(cd and pass_no < cd["resume_at"])
+        ent = self._backoff.get(crc)
+        return bool(ent and time.time() < ent[0])   # ent = (until, streak, reason)
 
-    def _cooldown_update(self, crc: str, pass_no: int, gate: bool) -> None:
-        if not self.cfg.cooldown.enabled or not crc:
+    def _backoff_update(self, crc: str, gate: bool) -> None:
+        # Backoff персистентен → нужен storage. Без него ноды тестируются каждый проход.
+        if not self.cfg.cooldown.enabled or not crc or self.storage is None:
             return
         if gate:
-            self._cooldown.pop(crc, None)    # нода жива — сброс backoff
-            if self.storage is not None and crc in self._garbage_trial:
-                self.storage.clear_garbage(crc)          # проба после карантина удалась
-                self._garbage_trial.discard(crc)
+            if crc in self._backoff:
+                self.storage.clear_backoff(crc)      # нода жива — снять backoff/карантин
+                self._backoff.pop(crc, None)
             return
-        cd = self._cooldown.get(crc) or {"fail_streak": 0}
-        cd["fail_streak"] += 1
-        skip = min(2 ** (cd["fail_streak"] - 1), self.cfg.cooldown.max_skip)
-        cd["resume_at"] = pass_no + skip + 1
-        self._cooldown[crc] = cd
-        # Достигли потолка backoff, ИЛИ провалилась проба после карантина → в карантин
-        # на garbage_hours (переживает рестарт: больше не теребим мёртвую ноду).
-        to_garbage = (self.storage is not None
-                      and (skip >= self.cfg.cooldown.max_skip or crc in self._garbage_trial))
-        if to_garbage:
-            hours = self.cfg.cooldown.garbage_hours
-            self.storage.mark_garbage(crc, int(time.time() + hours * 3600))
-            self._garbage_trial.discard(crc)
-            self._garbage[crc] = int(time.time() + hours * 3600)   # пропуск до конца прогона
-            print(f"  · {crc}: gate-провал #{cd['fail_streak']} → карантин {hours}ч (мусорная)")
-        else:
-            print(f"  · gate-провал #{cd['fail_streak']} ({crc}) → пропуск {skip} прогонов")
+        cd = self.cfg.cooldown
+        streak = self._backoff.get(crc, (0, 0, ""))[1] + 1
+        secs = cd.base_seconds * (2 ** (streak - 1))         # удвоение за подряд провал
+        cap = cd.garbage_hours * 3600.0
+        garbage = secs >= cap or streak > cd.max_skip        # потолок → карантин (мусорная)
+        if garbage:
+            secs = cap
+        until = int(time.time() + secs)
+        reason = "garbage" if garbage else "backoff"
+        self.storage.set_backoff(crc, until, streak, reason)
+        self._backoff[crc] = (until, streak, reason)
+        tag = "карантин (мусорная)" if garbage else f"backoff #{streak}"
+        print(f"  · gate-провал {crc} → {tag}, пропуск ~{secs / 60:.0f} мин")
 
     def _remember(self, tag: str) -> None:
         if not self._base.restore_selection or tag in self._originals:
@@ -501,7 +497,7 @@ class Runner:
         if self._originals:
             print("Исходный выбор селекторов восстановлен.")
 
-    def _test_node(self, group: TestGroup, ident: NodeIdentity, pass_no: int, tests, params) -> dict:
+    def _test_node(self, region: str, ident: NodeIdentity, pass_no: int, tests, params) -> dict:
         leaf = ident.raw
         base = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -511,15 +507,14 @@ class Runner:
             "region": ident.country,          # страна из имени
             "label": ident.label,             # доп. поле из тега (напр. AI)
             "id": ident.node_id,
-            "region_group": group.region,     # коарс-регион
+            "region_group": region,           # коарс-регион
             "node": leaf,
         }
 
-        # by_selector: PUT <регион>-nodes-tester = leaf; flat: PUT nodes-tester = leaf.
-        target = group.regional_tag if group.regional_tag is not None else self._top
-        self._remember(target)
+        # Плоский nodes-tester: PUT nodes-tester = leaf.
+        self._remember(self._top)
         try:
-            self.clash.select(target, leaf)
+            self.clash.select(self._top, leaf)
         except ClashApiError as exc:
             print(f"  {ident.short()}: ОШИБКА переключения: {exc}")
             base["tests"] = {"_select": {"ok": False, "error": str(exc)}}
@@ -530,13 +525,21 @@ class Runner:
 
         session = make_session(self.cfg.testing_group.connection)
         ctx = TestContext(session=session, node=leaf,
-                          default_timeout=params.request_timeout, region=group.region)
+                          default_timeout=params.request_timeout, region=region)
         results = {}
-        for test in tests:
-            if not test.due(pass_no):      # тяжёлые тесты — раз в N прогонов (every)
-                continue
-            results[test.name] = test.run(ctx).to_dict()
-        session.close()
+        try:
+            for test in tests:
+                if not test.due(pass_no):      # тяжёлые тесты — раз в N прогонов (every)
+                    continue
+                try:
+                    res = test.run(ctx).to_dict()
+                except Exception as exc:  # noqa: BLE001 — один тест не рушит проход/ноду
+                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                results[test.name] = res
+                if test.name == "connectivity" and not res.get("ok"):
+                    break                      # нет связности → не гоняем остальное (трафик)
+        finally:
+            session.close()                    # session закрываем всегда
 
         base["tests"] = results
         if self.cfg.report.console:

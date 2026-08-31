@@ -77,9 +77,14 @@ class ConnectivityTest(BaseTest):
         except requests.RequestException as exc:
             return TestResult(self.name, ok=False, error=str(exc), url=url)
 
-        metrics: dict = {"status": resp.status_code, "service": name}
+        metrics: dict = {"status": resp.status_code, "service": name, "transport_ok": True}
         try:
             metrics.update(parser(resp.text))
         except (ValueError, KeyError, TypeError):
-            pass  # битый формат ответа → OK без гео (тест про доступность)
-        return TestResult(self.name, ok=True, metrics=metrics, url=url)
+            pass  # битый формат ответа — exit_ip не распознан
+        # Требуем ПОДТВЕРЖДЁННЫЙ выход: HTTP 200 без распознанного exit_ip может быть
+        # инъекцией/captive-порталом. transport_ok отдельной метрикой (транспорт дошёл).
+        ok = bool(metrics.get("exit_ip"))
+        return TestResult(self.name, ok=ok, metrics=metrics,
+                          error=None if ok else "ответ без exit_ip (выход не подтверждён)",
+                          url=url)

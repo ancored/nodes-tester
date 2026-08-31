@@ -87,20 +87,22 @@ def components(tests: dict, th: dict) -> dict[str, float]:
     # запрос (429/5xx), НЕ вина ноды: не штрафуем.
     dl = tests.get("download")
     if dl is not None:
-        limited = bool(dl.get("limited"))
+        # neutral: сервер ОТВЕТИЛ статусом (429/5xx = limited, либо 4xx = http_error) —
+        # это не вина транспорта ноды, пропускную/hold НЕ штрафуем.
+        neutral = bool(dl.get("limited") or dl.get("http_error"))
         if dl.get("ok"):
             tp = higher_better(dl.get("speed_mbps"), th["dl_min"], th["dl_target"])
             if tp is not None:                 # нет скорости (напр. limited) — не оцениваем
                 comps["throughput"] = tp
-        else:
-            comps["throughput"] = 0.0
+        elif not neutral:
+            comps["throughput"] = 0.0          # реальный провал транспорта
         ratio = dl.get("throttle_ratio")
         if ratio is not None:
             comps["throttle"] = higher_better(ratio, th["throttle_bad"], th["throttle_good"])
-        elif not dl.get("ok") and not limited:
+        elif not dl.get("ok") and not neutral:
             comps["throttle"] = 0.0
-        if limited:
-            pass  # отказ сервера — hold не оцениваем
+        if neutral:
+            pass  # сервер ответил — hold не оцениваем
         elif dl.get("hold_ratio") is not None:
             rel_hold = clamp01(dl["hold_ratio"])
         elif not dl.get("ok"):

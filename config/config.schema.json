@@ -32,8 +32,10 @@
         "switch_delay": {
           "type": "number"
         },
-        "group_pause": {
-          "type": "number"
+        "min_host_gap": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Анти-ТСПУ: минимум секунд между обращениями к одному хосту с разным портом/протоколом. Тот же порт/протокол ожидания не вызывает."
         },
         "rounds": {
           "type": "integer"
@@ -150,7 +152,6 @@
         },
         "recognition": {
           "enum": [
-            "by_selector",
             "parse",
             "manually"
           ]
@@ -435,13 +436,18 @@
         "enabled": {
           "type": "boolean"
         },
+        "base_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Первый backoff после провала gate (сек); удваивается за каждый подряд провал до потолка garbage_hours."
+        },
         "max_skip": {
           "type": "integer"
         },
         "garbage_hours": {
           "type": "number",
           "minimum": 0,
-          "description": "Дойдя до max_skip, нода признаётся мусорной и исключается из тестов на столько часов (переживает рестарт)."
+          "description": "Потолок backoff: дойдя до него, нода признаётся мусорной (карантин на столько часов). Модель временная, переживает рестарт."
         }
       }
     }

@@ -20,8 +20,8 @@ class JitterTest(BaseTest):
 
     def run(self, ctx: TestContext) -> TestResult:
         url = self.url_for(ctx)
-        samples = int(self.options.get("samples", 5))
-        interval = float(self.options.get("interval", 0.2))
+        samples = max(1, int(self.options.get("samples", 5)))      # >0 (валидация)
+        interval = max(0.0, float(self.options.get("interval", 0.2)))
         timeout = self.timeout(ctx)
 
         values: list[float] = []

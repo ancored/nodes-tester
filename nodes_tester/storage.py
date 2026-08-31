@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_activations_ts ON activations(ts);
 CREATE INDEX IF NOT EXISTS idx_activations_crc ON activations(crc);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS garbage (
-  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT);
+  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER);
 """
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
@@ -69,10 +69,12 @@ class Storage:
         self._db = sqlite3.connect(cfg.db_file, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(_SCHEMA)
-        try:                                   # миграция старых БД: колонка label
-            self._db.execute("ALTER TABLE nodes ADD COLUMN label TEXT")
-        except sqlite3.OperationalError:
-            pass                               # колонка уже есть
+        for tbl, col, decl in (("nodes", "label", "TEXT"),
+                                ("garbage", "streak", "INTEGER")):
+            try:                               # миграция старых БД (колонка могла отсутствовать)
+                self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
+            except sqlite3.OperationalError:
+                pass                           # колонка уже есть
         self._db.commit()
         self._lock = threading.Lock()
         self._nodes_mtime = None
@@ -137,6 +139,27 @@ class Storage:
               + (f" (CRC не сошёлся у {bad})" if bad else ""))
         return len(rows)
 
+    def touch_seen(self, crcs) -> None:
+        """Обновить last_seen для нод, реально присутствующих в selector в этом прогоне.
+        Иначе last_seen обновляется только при смене mtime nodes.json, и cleanup() через
+        retention_days удалит активно тестируемую ноду вместе со всей историей
+        (см. review.md P0). Обновляем присутствие, а не только факт замера."""
+        seen = [c for c in {c for c in crcs if c}]
+        if not seen:
+            return
+        now = int(time.time())
+        with self._lock:
+            self._db.executemany("UPDATE nodes SET last_seen = ? WHERE crc = ?",
+                                 [(now, c) for c in seen])
+            self._db.commit()
+
+    def endpoints_by_crc(self) -> dict:
+        """{crc: (server, server_port)} — хост+порт ноды для host-aware обхода тестера
+        (анти-ТСПУ раскладка очереди и зазор между обращениями к одному хосту)."""
+        with self._lock:
+            rows = self._db.execute("SELECT crc, server, server_port FROM nodes").fetchall()
+        return {r[0]: (r[1] or "", r[2]) for r in rows}
+
     # --- Результаты тестов ---------------------------------------------
 
     def add_results(self, record: dict) -> None:
@@ -166,6 +189,26 @@ class Storage:
             self._db.executemany(
                 "INSERT INTO traffic (ts,crc,up,down,conns,is_tester) "
                 "VALUES (?,?,?,?,?,?)", [(ts, *r) for r in rows])
+            self._db.commit()
+
+    def add_traffic_batch(self, ts: int, node_rows: list, ep_rows: list) -> None:
+        """traffic + endpoints ОДНОЙ транзакцией (один commit) — чтобы частичная запись
+        не рассинхронизировала витрину и не теряла дельты (см. review.md P1)."""
+        if not node_rows and not ep_rows:
+            return
+        with self._lock:
+            if node_rows:
+                self._db.executemany(
+                    "INSERT INTO traffic (ts,crc,up,down,conns,is_tester) "
+                    "VALUES (?,?,?,?,?,?)", [(ts, *r) for r in node_rows])
+            if ep_rows:
+                self._db.executemany("""
+                    INSERT INTO endpoints (crc,source_ip,dest_host,network,up,down,flows,last_seen)
+                    VALUES (?,?,?,?,?,?,?,?)
+                    ON CONFLICT(crc,source_ip,dest_host,network) DO UPDATE SET
+                      up=up+excluded.up, down=down+excluded.down,
+                      flows=flows+excluded.flows, last_seen=excluded.last_seen
+                """, [(*r, ts) for r in ep_rows])
             self._db.commit()
 
     def upsert_endpoints(self, ts: int, rows: list) -> None:
@@ -248,42 +291,37 @@ class Storage:
                 (start, end)).fetchone()
         return int(r[0]) if r and r[0] is not None else 0
 
-    # --- Мусорные ноды (провалили gate дольше max_skip → карантин на N часов) ---
-    # Переживает рестарт: иначе после перезапуска мёртвую ноду снова тестировали бы
-    # (лишние обращения к заблокированным серверам — дразним ТСПУ).
+    # --- Backoff / карантин нод (единая ВРЕМЕННАЯ модель, персистентная) --------
+    # Нода, провалившая gate, не тестируется до `until`; `streak` — число подряд
+    # провалов (для удвоения). Переживает рестарт и измеряется временем, а не
+    # номерами прогонов (совместимо с rotation_bound). reason: backoff | garbage.
 
-    def mark_garbage(self, crc: str, until: int, reason: str = "max_skip") -> None:
-        """Пометить ноду мусорной до момента until (unix ts): исключена из тестов."""
+    def load_backoff(self) -> dict:
+        """{crc: (until, streak, reason)} по всем строкам backoff (снимок на прогон)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT crc, until, streak, reason FROM garbage").fetchall()
+        return {r[0]: (int(r[1] or 0), int(r[2] or 0), r[3] or "") for r in rows}
+
+    def set_backoff(self, crc: str, until: int, streak: int, reason: str) -> None:
+        """Записать/обновить backoff ноды до момента until (unix ts)."""
         if not crc:
             return
         with self._lock:
             self._db.execute(
-                "INSERT INTO garbage (crc, since, until, reason) VALUES (?,?,?,?) "
-                "ON CONFLICT(crc) DO UPDATE SET until=excluded.until, reason=excluded.reason",
-                (crc, int(time.time()), int(until), reason))
+                "INSERT INTO garbage (crc, since, until, reason, streak) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(crc) DO UPDATE SET until=excluded.until, "
+                "reason=excluded.reason, streak=excluded.streak",
+                (crc, int(time.time()), int(until), reason, int(streak)))
             self._db.commit()
 
-    def clear_garbage(self, crc: str) -> None:
-        """Снять карантин (нода снова прошла gate)."""
+    def clear_backoff(self, crc: str) -> None:
+        """Снять backoff/карантин (нода снова прошла gate)."""
         if not crc:
             return
         with self._lock:
             self._db.execute("DELETE FROM garbage WHERE crc = ?", (crc,))
             self._db.commit()
-
-    def active_garbage(self) -> dict:
-        """{crc: until} для нод, чей карантин ещё НЕ истёк (снимок на начало прогона)."""
-        now = int(time.time())
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT crc, until FROM garbage WHERE until > ?", (now,)).fetchall()
-        return {r[0]: int(r[1]) for r in rows}
-
-    def all_garbage(self) -> dict:
-        """{crc: until} по ВСЕМ строкам карантина (истёкшие until<=now — «на пробе»)."""
-        with self._lock:
-            rows = self._db.execute("SELECT crc, until FROM garbage").fetchall()
-        return {r[0]: int(r[1]) for r in rows}
 
     # --- История активаций --------------------------------------------
 
@@ -318,17 +356,17 @@ class Storage:
                 # дочерние строки раньше родителя (порядок логический; FK нет)
                 for tbl in ("activations", "endpoints", "results", "traffic", "garbage", "nodes"):
                     self._db.execute(f"DELETE FROM {tbl} WHERE crc IN ({ph})", stale)
-            # истёкший карантин (until в прошлом) — нода снова тестируема, строка не нужна
-            self._db.execute("DELETE FROM garbage WHERE until < ?", (int(time.time()),))
-            # 2) возрастной кап НЕ-нодовых строк (direct-out, нераспознанные группы):
-            #    к ноде не привязаны, каскад их не трогает — режем по возрасту, чтобы
-            #    не пухли. Свежие (< cutoff) оставляем (нужны витрине трафика).
-            self._db.execute(
-                "DELETE FROM traffic WHERE ts < ? "
-                "AND crc NOT IN (SELECT crc FROM nodes)", (cutoff,))
-            self._db.execute(
-                "DELETE FROM endpoints WHERE last_seen < ? "
-                "AND crc NOT IN (SELECT crc FROM nodes)", (cutoff,))
+            # давно истёкший backoff (старше retention) — подчистить, чтобы не пух;
+            # свежий истёкший оставляем: его streak нужен для продолжения серии при
+            # следующей пробе, если нода снова провалит gate.
+            self._db.execute("DELETE FROM garbage WHERE until < ?", (cutoff,))
+            # 2) ВОЗРАСТНОЙ КАП сырых фактов — и у ЖИВЫХ нод тоже. Иначе results/traffic/
+            #    activations/endpoints растут без предела (дашборд агрегирует всё, БД пухнет
+            #    на роутере). Храним только последние retention_days сырья (см. review.md P2).
+            self._db.execute("DELETE FROM results WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM traffic WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM activations WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM endpoints WHERE last_seen < ?", (cutoff,))
             self._db.commit()
         if stale:
             print(f"  [storage] очистка: удалено устаревших нод {len(stale)} "

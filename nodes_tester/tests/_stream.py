@@ -39,7 +39,8 @@ def stream_single(session, url, duration, connect_timeout=10):
     samples: list[tuple[float, int]] = [(0.0, 0)]
     total = 0
     expected = None
-    capped = broken = server_limit = False
+    capped = broken = server_limit = http_error = False
+    http_status = None
     error = None
     try:
         with session.get(url, timeout=(connect_timeout, duration + 5),
@@ -56,7 +57,14 @@ def stream_single(session, url, duration, connect_timeout=10):
                     capped = True
                     break
     except requests.exceptions.HTTPError as exc:
-        server_limit = True                    # сервер ответил статусом — туннель жив
+        # Сервер ОТВЕТИЛ статусом (туннель жив). Различаем: 429/5xx — сервер занят
+        # (не вина ноды, ретраибл) vs прочие 4xx (401/403/404) — клиентская ошибка
+        # (битый url / блок / auth): это НЕ успех и НЕ нестабильность транспорта.
+        http_status = getattr(exc.response, "status_code", None)
+        if http_status == 429 or (http_status and 500 <= http_status < 600):
+            server_limit = True
+        else:
+            http_error = True
         error = str(exc)
     except requests.RequestException as exc:
         broken = True                          # обрыв транспорта — нестабильность
@@ -69,6 +77,8 @@ def stream_single(session, url, duration, connect_timeout=10):
         "capped": capped,
         "broken": broken,
         "server_limit": server_limit,
+        "http_error": http_error,
+        "http_status": http_status,
         "error": error,
     }
 

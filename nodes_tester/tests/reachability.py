@@ -32,13 +32,17 @@ class ReachabilityTest(BaseTest):
     def run(self, ctx: TestContext) -> TestResult:
         urls = self._urls(ctx)
         timeout = self.timeout(ctx)
-        workers = int(self.options.get("workers", 8))
+        workers = max(1, int(self.options.get("workers", 8)))          # >0 (валидация)
+        min_reached = max(1, int(self.options.get("min_reached", 1)))  # кворум доступности
+        # «Достигнута» = ответ 2xx/3xx (status < ok_status_below). 4xx/5xx (403/404/блок-
+        # страница) НЕ считаем доступностью — иначе засчитывали бы заблокированный сайт.
+        ok_below = int(self.options.get("ok_status_below", 400))
 
         def probe(url: str):
             try:
                 resp = ctx.session.get(url, timeout=timeout, stream=True)
                 resp.close()
-                return url, resp.status_code, resp.status_code < 500
+                return url, resp.status_code, resp.status_code < ok_below
             except requests.RequestException:
                 return url, "err", False
 
@@ -54,11 +58,12 @@ class ReachabilityTest(BaseTest):
         total = len(urls)
         loss = round(100.0 * (total - reached) / total, 1) if total else 100.0
         return TestResult(
-            self.name, ok=(reached > 0),
+            self.name, ok=(reached >= min_reached),
             metrics={
                 "total": total,
                 "reached": reached,
                 "loss_pct": loss,
+                "quorum": min_reached,
                 "endpoints": endpoints,
             },
             url=f"{total} endpoints",

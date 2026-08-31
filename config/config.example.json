@@ -28,7 +28,7 @@
   ],
   "region_groups": {
     "enabled": true,
-    "recognition": "by_selector",
+    "recognition": "parse",
     "list": [],
     "exclude": [
       "ru"
@@ -45,9 +45,9 @@
       ],
       "loop": true,
       "rotation_bound": true,
-      "pass_pause": 60,
+      "pass_pause": 0,
       "switch_delay": 1.0,
-      "group_pause": 30,
+      "min_host_gap": 120,
       "rounds": 1,
       "request_timeout": 10,
       "restore_selection": true,
@@ -223,6 +223,7 @@
   },
   "cooldown": {
     "enabled": true,
+    "base_seconds": 600,
     "max_skip": 32,
     "garbage_hours": 72
   }
