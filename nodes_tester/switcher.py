@@ -136,11 +136,14 @@ class Switcher:
             self._activate(cands[0], region, st, now, "init")
             return
 
-        # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на лучшую ДРУГУЮ.
+        # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на ДРУГУЮ, но
+        # БАЛАНСИРОВАННО (не всегда топ-score → раньше 25% переключений лили на одного
+        # провайдера мимо балансировки) и уводя от провайдера упавшей ноды.
         if emergency or active_score <= 0:
             others = [c for c in cands if c["node"] != active]
             if others:
-                self._activate(others[0], region, st, now, "emergency")
+                self._activate(self._pick_emergency(others, st, active),
+                               region, st, now, "emergency")
             else:
                 self._note_emergency_stuck(region, st, "no-other")  # замены нет
             return
@@ -194,17 +197,31 @@ class Switcher:
         pool = (filtered[: self.cfg.rotation.top_k]
                 or [c for c in cands if c["node"] != active]
                 or cands)
+        return self._balanced_choice(pool, st)
+
+    def _balanced_choice(self, pool: list, st: dict) -> dict:
+        """Взвешенный выбор из pool: fair-share по числу нод оси + underuse по трафику.
+        Общий для ротации и emergency. strengths ставим при lb.enabled даже без трафика —
+        fair-share (равномерность по провайдеру/стране) работает и без данных о трафике."""
         dims, strengths = {}, {}
         lb = self.cfg.rotation.load_balance
-        if lb.enabled and self._traffic_provider is not None:
-            try:
-                dims = self._traffic_provider() or {}
-            except Exception as exc:  # noqa: BLE001 — балансировка не должна ронять ротацию
-                print(f"  [switch] балансировка: не удалось получить трафик: {exc}")
+        if lb.enabled:
             strengths = {"provider": lb.provider_strength,
                          "country": lb.country_strength,
                          "protocol": lb.protocol_strength}
+            if self._traffic_provider is not None:
+                try:
+                    dims = self._traffic_provider() or {}
+                except Exception as exc:  # noqa: BLE001 — балансировка не должна ронять выбор
+                    print(f"  [switch] балансировка: не удалось получить трафик: {exc}")
         return _weighted_choice(pool, st.get("activations", {}), dims, strengths)
+
+    def _pick_emergency(self, others: list, st: dict, blocked: str) -> dict:
+        """Аварийный выбор: уводим от ПРОВАЙДЕРА упавшей ноды (ТСПУ часто блокирует
+        провайдера/подсеть целиком), затем балансированный взвешенный выбор среди здоровых."""
+        bp = parse_node(blocked).provider if blocked else None
+        diff = [c for c in others if c.get("provider") != bp] if bp else others
+        return self._balanced_choice(diff or others, st)
 
     def _activate(self, cand: dict, region: str, st: dict, now: float, reason: str) -> None:
         node = cand["node"]
@@ -322,18 +339,28 @@ _LB_AXES = (("provider", "provider"), ("country", "country"), ("protocol", "prot
 
 def _weighted_choice(pool: list[dict], activations: dict,
                      dims: "dict | None" = None, strengths: "dict | None" = None) -> dict:
-    """Взвешенный случайный выбор кандидата ротации.
+    """Взвешенный случайный выбор кандидата (ротация и emergency).
 
-    Базовый вес ~ score / (1 + число активаций). Балансировка трафика — множитель
-    недогруза по ОСЯМ (провайдер/страна/протокол), перемножаются:
-        underuse(axis) = scale / (scale + bytes),  scale = медиана байтов по пулу,
-    где bytes — суммарный трафик за окно для значения оси у кандидата (напр. весь
-    трафик провайдера этой ноды). Недогруженная ось → больший вес; перегруженная →
-    меньший, но не 0. Масштаб адаптивный. Ось с strength<=0 или без данных не влияет.
+    Базовый вес ~ score / (1 + число активаций). По каждой оси (провайдер/страна/
+    протокол) с strength>0 — ДВА множителя:
+      1) fair-share = (1 / число_нод_оси_в_пуле)^strength — суммарный вес провайдера
+         НЕ зависит от числа его нод: 100-нодовый и 10-нодовый получают равную
+         вероятность (это и есть «равномерно по провайдеру»);
+      2) underuse = (scale / (scale + bytes))^strength — дополнительно придавливает
+         перегруженную по ТРАФИКУ ось (scale = медиана байтов по пулу).
+    strength=0 → ось не влияет (пропорционально числу нод). fair-share работает и без
+    данных о трафике.
     """
     dims = dims or {}
     strengths = strengths or {}
-    # Предрасчёт медианного масштаба по каждой активной оси (по значениям в пуле).
+    # Число нод пула по каждому значению оси (для fair-share: провайдер со 100 нодами
+    # не должен получать в 10 раз больше веса, чем провайдер с 10).
+    counts: dict[str, dict] = {axis: {} for axis, _ in _LB_AXES}
+    for axis, field in _LB_AXES:
+        for c in pool:
+            v = c.get(field)
+            counts[axis][v] = counts[axis].get(v, 0) + 1
+    # Предрасчёт медианного масштаба байтов по каждой активной оси (для underuse).
     scales: dict[str, float] = {}
     for axis, field in _LB_AXES:
         s = strengths.get(axis, 0.0)
@@ -348,10 +375,15 @@ def _weighted_choice(pool: list[dict], activations: dict,
         acts = activations.get(c["node"], 0)
         w = max(0.01, float(c["score"])) / (1.0 + acts)
         for axis, field in _LB_AXES:
-            sc = scales.get(axis)
+            s = strengths.get(axis, 0.0)
+            if not (s and s > 0):
+                continue
+            cnt = counts[axis].get(c.get(field), 1) or 1     # 1) fair-share по числу нод
+            w *= (1.0 / cnt) ** s
+            sc = scales.get(axis)                            # 2) underuse по трафику
             if sc:
                 b = (dims.get(axis) or {}).get(c.get(field), 0)
-                w *= (sc / (sc + b)) ** strengths[axis]
+                w *= (sc / (sc + b)) ** s
         weights.append(w)
     total = sum(weights)
     if total <= 0:

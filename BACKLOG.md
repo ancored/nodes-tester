@@ -44,7 +44,43 @@ garbage-нодами (см. активные задачи по тестеру).
 
 ## Реализовано (архив — краткий журнал)
 
-- **Юнит-тесты (`tests/`, stdlib unittest):** 39 тестов, `python -m unittest discover` из корня.
+- **Фильтр `exclude_node_protocols` (исключение протоколов из генерации для клиентов):**
+  новый ключ providers.json — список токенов дескриптора протокола (`naming.node_protocol`,
+  пайп-токены), ноды с любым из них выкидываются целиком в `main.finalize_nodes` (там же, где
+  дропаются «голые» vless/vmess из `groups.UNGROUPED_PROTOCOLS`; фильтруются и sub-, и
+  user-ноды). В отличие от `exclude_protocol` (работает в `get_parser` по базовой share-ссылке
+  vless/trojan/…), ловит транспорт-уровневые протоколы: `"xhttp"` матчит `vless|xhttp|tls`,
+  `"wg"` — wireguard/awg-эндпоинты. Хелпер `main._protocol_excluded(node, tokens)` — пересечение
+  `node_protocol.split('|')` с набором. Прописан в `config_whitelist/providers.json`
+  (`["xhttp","wg"]`) — из этого набора берутся ноды для клиентов на ванильном sing-box, не
+  понимающих xhttp/amneziawg. В `config/providers.json` (роутер, форк lx) ключа нет — там всё
+  как было. Парсинг xhttp/awg не тронут (тесты `test_xhttp.py` зелёные) — только отсев на выходе.
+- **AWG-парсер + тип подписки `folder` (форк sing-box-lx, тег `with_awg`):** новый
+  `subscribe/parsers/awg.py` (`parse_file`/`load_dir`) разбирает `.conf` (WireGuard-INI с
+  AWG3-полями: Jc/S1-4/H1-4/HeaderProtectionKey/тайминги-диапазоны/ContentPaddingAddition/I1
+  дословно) в узел `type:"wireguard"`, страна — из имени файла (de/ee/fi/fr/pl/se → флаг в
+  теге). В `providers.json` — новый тип подписки `folder` (каталог отдельных файлов, ключи
+  `path`/`format`/`ext`); `main.get_nodes_from_folder` диспетчит по `format` на `parse_file`,
+  ноды идут через общий `finalize_nodes` (rename → `AWG-wg-<cc>-out [CRC]`, дедуп, группы).
+  Ассемблер: WG-узлы выделяются в `endpoints[]` (в 1.14 wireguard-outbound удалён), теги
+  остаются ссылаемыми селекторами; `add_domain_resolver` пропускает wireguard (peer — IP).
+- **XHTTP-транспорт в парсере подписок (форк sing-box-lx, тег `with_xhttp`):** ветка
+  `type=xhttp` в `subscribe/parsers/{vless,trojan}.py` → `tool.xhttp_transport(netquery)`
+  (общий хелпер в `tool.py` + `tool.xhttp_range` нормализует диапазоны в `"min-max"`).
+  Эмитим только пришедшие поля; `extra` (urlencoded-JSON) мёржится поверх query с
+  приоритетом (fallback на `unquote` при двойном энкоде, битый `extra` не роняет парсер);
+  `path` срезает `?`-суффикс, хвостовой слэш сохраняется (`stream-one`); camelCase→snake_case;
+  `sc_*`/`no_grpc_header`/`x_padding_*`; `xmux` вложенным объектом (ключи xmux тоже маппятся
+  camelCase→snake_case — MEDVED/puxvpn шлют `cMaxReuseTimes` и пр., иначе sing-box падает
+  `unknown field`; `h_keep_alive_period` — int64, из диапазона `"0-0"` берём первое число,
+  `-1`=выкл сохраняется как есть). XHTTP-нода теперь даёт
+  протокол `vless|xhttp|tls` (не «голый» vless) → не отбрасывается фильтром
+  `groups.UNGROUPED_PROTOCOLS`. Заодно закрыты пробелы `vless.py`: парсинг `alpn` (split по
+  запятой), `utls`-отпечаток из `fp` и вне reality, `flow` не выставляется для xhttp,
+  passthrough `encryption` (VLESS PQ, фича 012) на верхний уровень аутбаунда. Тесты —
+  `tests/test_xhttp.py` (18 шт., включая живой минимальный кейс провайдера и эталонный
+  packet-up с `extra`). Инструкция-источник: `sing-box-config/XHTTP-PARSER-INSTRUCTION.md`.
+- **Юнит-тесты (`tests/`, stdlib unittest):** 67 тестов, `python -m unittest discover` из корня.
   Покрывают временной backoff, P0-retention, ошибки Clash API, host-обход+зазор, heavy-veto,
   pass_label через полночь, уплощённые группы, качество измерений и блок 8–13.
 - **Качество измерений (review.md P2 «тестовая механика»):**

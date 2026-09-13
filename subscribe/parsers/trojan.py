@@ -57,6 +57,8 @@ def parse(data):
                 'type':'grpc',
                 'service_name':netquery.get('serviceName', '')
             }
+        elif netquery['type'] == 'xhttp':
+            node['transport'] = tool.xhttp_transport(netquery)
     if netquery.get('protocol') in ['smux', 'yamux', 'h2mux']:
         node['multiplex'] = {
             'enabled': True,

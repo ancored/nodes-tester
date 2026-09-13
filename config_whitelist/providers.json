@@ -19,6 +19,7 @@
     ],
     "save_config_path": "/etc/sing-box-subscribe/whnodes.json",
     "exclude_protocol": "ssr",
+    "exclude_node_protocols": ["xhttp", "wg"],
     "exclude_countries": [],
     "domain_resolver_tag": "dns-whitelist",
     "labels": {

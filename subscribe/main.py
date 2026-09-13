@@ -8,6 +8,9 @@ import happ
 
 parsers_mod = {}
 providers = None
+# Каталог config/ активной генерации — база для относительных путей folder-подписок.
+# Выставляется в __main__ (по умолчанию — config/ этого проекта, либо --config-dir).
+active_config_dir = None
 
 
 def init_parsers():
@@ -25,12 +28,43 @@ def load_json(path):
     return json.loads(tool.readFile(path))
 
 
+def get_nodes_from_folder(subscribe):
+    '''Подписка типа "folder": каталог с отдельными файлами, по одному узлу на файл.
+    Формат файлов задаётся ключом "format" (имя парсера с функцией parse_file, деф. awg),
+    расширение — "ext" (деф. .conf). Путь "path" — относительно config/ активной
+    генерации либо абсолютный. Возвращает список узлов (как get_nodes для url).'''
+    fmt = subscribe.get('format', 'awg')
+    mod = parsers_mod.get(fmt)
+    if not mod or not hasattr(mod, 'parse_file'):
+        print(f"  [subscribe] неизвестный формат folder-подписки: {fmt!r} — пропуск")
+        return []
+    folder = subscribe.get('path') or subscribe.get('folder') or ''
+    if not os.path.isabs(folder):
+        folder = os.path.join(active_config_dir or _CONFIG_DIR, folder)
+    if not os.path.isdir(folder):
+        print(f"  [subscribe] папка folder-подписки не найдена: {folder} — пропуск")
+        return []
+    ext = subscribe.get('ext', '.conf').lower()
+    print('Processing: \033[31m' + folder + '\033[0m')
+    nodes = []
+    for fn in sorted(os.listdir(folder)):
+        if not fn.lower().endswith(ext):
+            continue
+        try:
+            nodes.append(mod.parse_file(os.path.join(folder, fn)))
+        except Exception as exc:  # noqa: BLE001 — битый/неполный файл: пропуск, не роняем генерацию
+            print(f"  [subscribe] пропущен {fn} ({exc.__class__.__name__}: {exc})")
+    return nodes
+
+
 def process_subscribes(subscribes):
     nodes = {}
     for subscribe in subscribes:
         if 'enabled' in subscribe and not subscribe['enabled']:
             continue
-        if subscribe.get('file'):                       # подписка из локального файла
+        if subscribe.get('type') == 'folder':           # папка с файлами (напр. AWG .conf)
+            _nodes = get_nodes_from_folder(subscribe)
+        elif subscribe.get('file'):                     # подписка из локального файла
             try:
                 _nodes = get_nodes_from_file(subscribe['file'])
             except Exception as exc:  # noqa: BLE001 — нет файла/битый: пропуск, не роняем генерацию
@@ -110,8 +144,18 @@ def _match_label(title, labels):
     return ''
 
 
+def _protocol_excluded(node, exclude_tokens):
+    '''True, если дескриптор протокола ноды (naming.node_protocol, пайп-токены)
+    пересекается с exclude_tokens. Позволяет выкинуть транспорт-уровневые протоколы,
+    которые exclude_protocol (по базовой share-ссылке) не различает: "xhttp" ловит
+    vless|xhttp|tls, "wg" — wireguard/awg-эндпоинты.'''
+    if not exclude_tokens:
+        return False
+    return bool(set(tool.node_protocol(node).split('|')) & exclude_tokens)
+
+
 def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), labels=None,
-                   group_user_nodes=True):
+                   group_user_nodes=True, exclude_protocols=()):
     '''
     Rename every node, make tags unique, keep detour references valid and add the
     domain resolver to the subscription nodes. Returns the flat node list, each
@@ -120,12 +164,21 @@ def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), la
     group_user_nodes=False → ноды из user_nodes КОПИРУЮТСЯ в вывод как есть (без
     rename/группировки/CRC/exclude): у них нет '_meta', поэтому groups.build их не
     группирует, а свой тег/настройки сохраняются 1:1.
+
+    exclude_protocols — токены дескриптора протокола (providers.exclude_node_protocols),
+    ноды с любым из них выкидываются целиком (напр. ["xhttp","wg"] для клиентов на
+    ванильном sing-box, не понимающих xhttp-транспорт и amneziawg).
     '''
-    # drop XHTTP (plain vless / vmess) nodes entirely, before any renaming
-    sub_nodes = [n for n in sub_nodes if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS]
+    exclude_tokens = {p.strip().lower() for p in exclude_protocols if p and p.strip()}
+    # drop XHTTP (plain vless / vmess) nodes and any exclude_node_protocols, before renaming
+    sub_nodes = [n for n in sub_nodes
+                 if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS
+                 and not _protocol_excluded(n, exclude_tokens)]
     raw_users = []
     if group_user_nodes:
-        user_nodes = [n for n in user_nodes if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS]
+        user_nodes = [n for n in user_nodes
+                      if tool.node_protocol(n) not in groups.UNGROUPED_PROTOCOLS
+                      and not _protocol_excluded(n, exclude_tokens)]
     else:
         raw_users = user_nodes            # как есть, без какой-либо обработки
         user_nodes = []
@@ -157,8 +210,11 @@ def finalize_nodes(sub_nodes, user_nodes, resolver_tag, exclude_countries=(), la
 
 
 def add_domain_resolver(nodelist, resolver_tag):
-    # point every outbound's server-domain resolution at the given DNS server tag
+    # point every outbound's server-domain resolution at the given DNS server tag.
+    # WG-эндпоинты пропускаем: peer уже IP, резолвить нечего (и поле лишнее).
     for node in nodelist:
+        if node.get('type') == 'wireguard':
+            continue
         node['domain_resolver'] = resolver_tag
 
 
@@ -436,6 +492,8 @@ if __name__ == '__main__':
     # Пути конфигов: по умолчанию config/ этого проекта; --config-dir переопределяет всё.
     providers_path = os.path.join(args.config_dir, 'providers.json') if args.config_dir else PROVIDERS_PATH
     user_nodes_path = os.path.join(args.config_dir, 'user_nodes.json') if args.config_dir else USER_NODES_PATH
+    # база для относительных путей folder-подписок (см. get_nodes_from_folder)
+    active_config_dir = args.config_dir or _CONFIG_DIR
     if args.config_dir:
         groups.load_params(args.config_dir)     # групповые параметры из той же папки
     temp_json_data = args.temp_json_data
@@ -450,7 +508,8 @@ if __name__ == '__main__':
     leaf_nodes = finalize_nodes(sub_nodes, user_nodes, resolver_tag,
                                 providers.get('exclude_countries', []),
                                 providers.get('labels') or {},
-                                group_user_nodes=not groups.raw_user_nodes())
+                                group_user_nodes=not groups.raw_user_nodes(),
+                                exclude_protocols=providers.get('exclude_node_protocols', []))
     # build the selector / urltest groups, then drop the grouping metadata
     group_outbounds = groups.build(leaf_nodes)
     for node in leaf_nodes:
@@ -458,6 +517,13 @@ if __name__ == '__main__':
         node.pop('_provider', None)
         node.pop('_label', None)
     # wrap as a sing-box config fragment so it can be merged into the main config
-    # via: sing-box merge <output> -c config.json -c nodes.json
-    final_config = {'outbounds': leaf_nodes + group_outbounds}
+    # via: sing-box merge <output> -c config.json -c nodes.json.
+    # В sing-box 1.14 wireguard-outbound удалён: WG-узлы живут в endpoints[]
+    # (type:"wireguard"). Их теги остаются в едином пространстве с outbounds, поэтому
+    # селекторы/urltest по-прежнему на них ссылаются.
+    wg_eps = [n for n in leaf_nodes if n.get('type') == 'wireguard']
+    non_wg = [n for n in leaf_nodes if n.get('type') != 'wireguard']
+    final_config = {'outbounds': non_wg + group_outbounds}
+    if wg_eps:
+        final_config['endpoints'] = wg_eps
     save_config(providers["save_config_path"], final_config)

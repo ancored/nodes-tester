@@ -33,7 +33,7 @@ def parse(data):
         'uuid': _netloc[0].split(':', 1)[-1],
         'packet_encoding': netquery.get('packetEncoding', 'xudp')
     }
-    if netquery.get('flow'):
+    if netquery.get('flow') and netquery.get('type') != 'xhttp':
         node['flow'] = 'xtls-rprx-vision'
     if netquery.get('security', '') not in ['None', 'none', ''] or netquery.get('tls') == '1':
         node['tls'] = {
@@ -46,6 +46,13 @@ def parse(data):
         node['tls']['server_name'] = netquery.get('sni', '') or netquery.get('peer', '')
         if node['tls']['server_name'] == 'None':
             node['tls']['server_name'] = ''
+        if netquery.get('alpn') and netquery.get('alpn') != 'None':
+            node['tls']['alpn'] = netquery['alpn'].split(',')
+        if netquery.get('fp'):          # uTLS-отпечаток и вне reality (напр. XHTTP+tls)
+            node['tls']['utls'] = {
+                'enabled': True,
+                'fingerprint': netquery['fp']
+            }
         if netquery.get('security') == 'reality' or netquery.get('pbk'): #shadowrocket
             node['tls']['reality'] = {
                 'enabled': True,
@@ -89,6 +96,8 @@ def parse(data):
                 'type':'grpc',
                 'service_name':netquery.get('serviceName', '')
             }
+        elif netquery['type'] == 'xhttp':
+            node['transport'] = tool.xhttp_transport(netquery)
     elif netquery.get('obfs'):  #shadowrocket
         if netquery['obfs'] == 'websocket':
             matches = re.search(r'\?ed=(\d+)$', netquery.get('path', '/'))
@@ -118,4 +127,8 @@ def parse(data):
             node['multiplex']['min_streams'] = int(netquery['min-streams'])
         if netquery.get('padding') == 'True':
             node['multiplex']['padding'] = True
+    # VLESS encryption (PQ, фича 012) — пробрасываем на верхний уровень аутбаунда.
+    # Ядро должно быть собрано с поддержкой; иначе такие ноды фильтровать.
+    if netquery.get('encryption') and netquery.get('encryption') not in ('none', 'None'):
+        node['encryption'] = netquery['encryption']
     return node
