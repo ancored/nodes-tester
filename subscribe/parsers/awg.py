@@ -40,12 +40,6 @@ _IFACE_STR = {
     'I1': 'i1', 'I2': 'i2', 'I3': 'i3', 'I4': 'i4', 'I5': 'i5',
 }
 
-# имя файла (stem) -> подпись с флагом (для downstream naming: group_meta
-# вытащит страну из флага, custom_rename соберёт {provider}-wg-{cc}-out).
-_COUNTRY = {
-    'de': '🇩🇪 Germany', 'ee': '🇪🇪 Estonia', 'fi': '🇫🇮 Finland',
-    'fr': '🇫🇷 France', 'pl': '🇵🇱 Poland', 'se': '🇸🇪 Sweden',
-}
 
 
 def _addr_list(v):
@@ -108,8 +102,13 @@ def parse_file(path):
                     peer['reserved'] = [int(x) for x in val.split(',')]
     if not peer.get('public_key'):
         raise ValueError('no [Peer] public_key')     # битый файл -> пропуск с логом
+    # У .conf нет ни флага, ни названия страны — cc известен ТОЛЬКО из имени файла.
+    # Отдаём его как подсказку в '_file_cc'; group_meta берёт страну по приоритету
+    # флаг → название страны в тексте → _file_cc (см. tool.group_meta). Тег — только для
+    # отображения, custom_rename всё равно соберёт {provider}-wg-{cc}-out.
     stem = os.path.splitext(os.path.basename(path))[0].lower()
-    node['tag'] = f"{_COUNTRY.get(stem, stem.upper())} | AWG"
+    node['_file_cc'] = stem if (len(stem) == 2 and stem.isalpha()) else ''
+    node['tag'] = f"AWG | {stem.upper()}"
     return node
 
 

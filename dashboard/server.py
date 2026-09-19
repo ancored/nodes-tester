@@ -14,7 +14,7 @@ _PAGE = r"""<!doctype html><html lang=ru><head><meta charset=utf-8>
 :root{color-scheme:dark light;
   --bg:#0f131c;--panel:#171d29;--panel2:#1c2330;--line:#28313f;
   --text:#e7eaf0;--muted:#7c8797;--accent:#4dabf7;
-  --good:#51cf9a;--bad:#ff6b6b;--num:#c4ccd8;--active:#123a24;
+  --good:#51cf9a;--bad:#ff6b6b;--num:#c4ccd8;--active:#123a24;--heavy:#e0a92e;
   --hover:rgba(77,171,247,.10);--shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.14)}
 *{box-sizing:border-box}
 body{margin:0;font:13.5px/1.5 system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
@@ -41,12 +41,17 @@ tbody tr:hover{background:var(--hover)}
 td.l,th.l{text-align:left}
 table tbody tr.active,table tbody tr.active:hover{background:var(--active)}
 .num{color:var(--num)}.good{color:var(--good)}.bad{color:var(--bad)}.mut{color:var(--muted)}
+.heavy.good{color:var(--heavy)}.heavy.bad{color:var(--bad)}
 .tag{max-width:340px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .tabs button{font:inherit;font-size:12px;cursor:pointer;padding:5px 13px;border:1px solid var(--line);
   background:var(--panel);color:var(--muted);border-radius:999px;transition:.12s}
 .tabs button:hover{color:var(--text);border-color:var(--muted)}
 .tabs button.on{background:var(--accent);color:#08121f;border-color:var(--accent);font-weight:600}
+.fllab{align-self:center;color:var(--muted);font-size:11px;margin-right:2px;min-width:66px;text-align:right}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+svg polyline{vector-effect:non-scaling-stroke}
 .pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;
   padding:9px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
 .pager button{font:inherit;cursor:pointer;width:28px;height:28px;line-height:1;
@@ -56,7 +61,8 @@ table tbody tr.active,table tbody tr.active:hover{background:var(--active)}
 @media (prefers-color-scheme:light){:root{
   --bg:#f5f7fb;--panel:#fff;--panel2:#f4f6fa;--line:#e6e9ef;--text:#232b38;
   --muted:#6b7684;--accent:#206bc4;--num:#39424f;--active:#e3f5ea;
-  --hover:rgba(32,107,196,.07);--shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(0,0,0,.05)}
+  --hover:rgba(32,107,196,.07);--shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(0,0,0,.05);
+  --heavy:#9a7310}
   .tabs button.on{color:#fff}}
 </style></head><body>
 <header><h1>nodes-tester</h1><small id=ts>загрузка…</small></header>
@@ -116,7 +122,9 @@ function renderRTBL(id){
 }
 function setRTBL(id,rg){ if(RTBL[id]){RTBL[id].region=rg; if(PG['rt:'+id])PG['rt:'+id].page=0; renderRTBL(id);} }
 // --- Пагинация (состояние переживает авто-refresh) ---
-const PG={}, HDR={_select:'переключ.',heavy_download:'dl50↓'};
+const PG={}, HDR={heavy_download:'dl50↓ *'};
+// Примечания к заголовкам колонок-тестов (tooltip на <th>).
+const HNOTE={heavy_download:'DL50 — отдельный veto-тест кандидатов, идёт вне обычного прогона (раз в N прогонов). Значение может быть из другого пасса; такие ячейки помечены *.'};
 function paginate(id,n){let per=PG[id]?PG[id].per:15,pg=PG[id]?PG[id].page:0;const pages=Math.max(1,Math.ceil(n/per));if(pg>=pages)pg=pages-1;if(pg<0)pg=0;return {pg,per,pages};}
 function pager(id,pg,pages){return `<div class=pager><button onclick="pgGo('${id}',-1)" ${pg===0?'disabled':''}>‹</button><span>${pg+1} / ${pages}</span><button onclick="pgGo('${id}',1)" ${pg>=pages-1?'disabled':''}>›</button></div>`;}
 function pagedBody(id,rows,cols,render){const {pg,per,pages}=paginate(id,rows.length);PG[id]={page:pg,per,render};return tbl(rows.slice(pg*per,(pg+1)*per),cols)+(pages>1?pager(id,pg,pages):'');}
@@ -127,10 +135,13 @@ function renderEndpoints(){const el=document.getElementById('endpbody');if(el)el
 // Результаты тестов — пивот по тестам, с пагинацией.
 function resultsTable(tests,rows){
   let h='<div class=wrap><table><thead><tr><th class=l>провайдер</th><th class=l>протокол</th><th class=l>cc</th><th class=l>crc</th><th class=l title="дата/номер прогона">прогон</th>'
-    +tests.map(t=>`<th title="${esc(t)}">${esc(HDR[t]||t)}</th>`).join('')+'</tr></thead><tbody>';
+    +tests.map(t=>`<th title="${esc(HNOTE[t]||t)}">${esc(HDR[t]||t)}</th>`).join('')+'</tr></thead><tbody>';
   for(const r of rows){
     h+='<tr><td class=l>'+esc(r.provider)+'</td><td class=l>'+esc(r.protocol)+'</td><td class=l>'+esc(r.country)+'</td><td class="l mut">'+esc(r.crc)+'</td><td class="l num">'+esc(r.pass_label)+'</td>'
-      +tests.map(t=>{const c=r.cells[t];return c?`<td class="${c.ok?'good':'bad'}" title="${esc(c.title||'')}">${esc(c.v)}</td>`:'<td class=mut>–</td>';}).join('')+'</tr>';
+      +tests.map(t=>{const c=r.cells[t];if(!c)return '<td class=mut>–</td>';
+        const cls=(c.heavy?'heavy ':'')+(c.ok?'good':'bad');
+        const v=esc(c.v)+(c.off_pass?' *':'');
+        return `<td class="${cls}" title="${esc(c.title||'')}">${v}</td>`;}).join('')+'</tr>';
   }
   return h+'</tbody></table></div>';
 }
@@ -140,6 +151,59 @@ function renderResults(){
   if(!X.rows.length){el.innerHTML='<div class=mut style="padding:10px 14px">нет данных (первый прогон ещё идёт?)</div>';return;}
   const {pg,per,pages}=paginate('res',X.rows.length); PG.res={page:pg,per,render:renderResults};
   el.innerHTML=resultsTable(X.tests,X.rows.slice(pg*per,(pg+1)*per))+(pages>1?pager('res',pg,pages):'');
+}
+// --- Фильтруемая таблица (чипы по provider/cc/protocol — как в «трафике») ---
+const FLT={};
+function filtered(id,dataKey,cols,dims){FLT[id]={dataKey,cols,dims,sel:(FLT[id]?FLT[id].sel:{})};return `<div id="fl_${id}"></div><div id="fb_${id}"></div>`;}
+function renderFLT(id){
+  const c=FLT[id]; if(!c)return; const rows=_d[c.dataKey]||[];
+  const flEl=document.getElementById('fl_'+id), fbEl=document.getElementById('fb_'+id);
+  let chips='';
+  for(const dim of c.dims){
+    const vals=['все',...[...new Set(rows.map(r=>r[dim.k]).filter(v=>v!=null&&v!==''))].map(String).sort()];
+    let cur=c.sel[dim.k]||'все'; if(!vals.includes(cur)){cur='все';c.sel[dim.k]='все';}
+    chips+='<div class=tabs><span class=fllab>'+dim.t+'</span>'+vals.map(v=>
+      `<button class="${v===cur?'on':''}" onclick="setFLT('${id}','${dim.k}',this.dataset.v)" data-v="${esc(v)}">${esc(v)}</button>`).join('')+'</div>';
+  }
+  if(flEl)flEl.innerHTML=chips;
+  const fr=rows.filter(r=>c.dims.every(d=>{const s=c.sel[d.k]||'все';return s==='все'||String(r[d.k])===s;}));
+  if(fbEl)fbEl.innerHTML=pagedBody('fl:'+id,fr,c.cols,()=>renderFLT(id));
+}
+function setFLT(id,k,v){const c=FLT[id];if(!c)return;c.sel[k]=v;if(PG['fl:'+id])PG['fl:'+id].page=0;renderFLT(id);}
+// --- Простая таблица с пагинацией ---
+const PLN={};
+function plain(id,dataKey,cols){PLN[id]={dataKey,cols};return `<div id="pl_${id}"></div>`;}
+function renderPLN(id){const c=PLN[id];if(!c)return;const el=document.getElementById('pl_'+id);if(el)el.innerHTML=pagedBody('pl:'+id,_d[c.dataKey]||[],c.cols,()=>renderPLN(id));}
+// --- Форматтеры дат/длительностей/статусов ---
+const D=e=>{if(!e)return '<span class=mut>–</span>';const d=new Date(e*1000);return `<span class=num>${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</span>`;};
+const DUR=s=>{s=+s||0;const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return '<span class=num>'+(d?`${d}д ${h}ч`:h?`${h}ч ${m}м`:`${m}м`)+'</span>';};
+const stateF=v=>v==='garbage'?'<b class=bad>карантин</b>':'<b class=num>backoff</b>';
+const delF=v=>+v===1?'<b class=bad title="ноды больше нет в подписке">● удалена</b>':'<span class=mut>·</span>';
+// --- Спарклайн истории рейтинга ноды (по crc) ---
+function spark(crc){
+  const vals=(_d.score_spark||{})[crc];
+  if(!vals||vals.length<2)return '<span class=mut>–</span>';
+  const w=76,h=18,n=vals.length;
+  const pts=vals.map((v,i)=>`${(i*(w/(n-1))).toFixed(1)},${(h-h*Math.max(0,Math.min(1,v/100))).toFixed(1)}`).join(' ');
+  const last=vals[n-1],col=last>=70?'--good':last<=20?'--bad':'--accent';
+  return `<svg width=${w} height=${h} viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill=none stroke=var(${col}) stroke-width=1.5/></svg>`;
+}
+// --- Мини-график динамики выбытия (появилось/выбыло по дням) ---
+function attritionChart(rows){
+  if(!rows||!rows.length)return '<div class=mut style="margin:0 16px">нет данных</div>';
+  rows=rows.slice(-30);
+  const H=130,pad=20,gw=Math.max(14,Math.min(30,Math.floor(760/rows.length))),bw=Math.max(4,Math.floor(gw/2)-1);
+  const W=pad*2+rows.length*gw;
+  const max=Math.max(1,...rows.map(r=>Math.max(+r.added||0,+r.removed||0)));
+  const y=v=>H-pad-(H-2*pad)*(v/max);
+  let bars='';
+  rows.forEach((r,i)=>{
+    const x=pad+i*gw,a=+r.added||0,rm=+r.removed||0,g=+r.garbage||0;
+    bars+=`<rect x=${x} y=${y(a).toFixed(1)} width=${bw} height=${(H-pad-y(a)).toFixed(1)} rx=1 fill=var(--good) opacity=.85><title>${r.day}: появилось ${a}</title></rect>`;
+    bars+=`<rect x=${x+bw+1} y=${y(rm).toFixed(1)} width=${bw} height=${(H-pad-y(rm)).toFixed(1)} rx=1 fill=var(--bad) opacity=.85><title>${r.day}: выбыло ${rm}, в мусор ${g}</title></rect>`;
+  });
+  const lbl=rows.map((r,i)=>i%Math.ceil(rows.length/8||1)?'':`<text x=${pad+i*gw} y=${H-6} fill=var(--muted) font-size=9>${r.day.slice(5)}</text>`).join('');
+  return `<div class=wrap style="padding:12px 14px"><div class=mut style="margin-bottom:8px"><b class=good>■</b> появилось &nbsp;<b class=bad>■</b> выбыло <small>(по дням)</small></div><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%"><line x1=${pad} y1=${H-pad} x2=${W-pad} y2=${H-pad} stroke=var(--line)/>${bars}${lbl}</svg></div></div>`;
 }
 async function load(){
   let d; try{ d=await (await fetch('api/data',{cache:'no-store'})).json(); }
@@ -160,11 +224,23 @@ async function load(){
     {k:'score',t:'score',f:score},{k:'active',t:'act',f:act},
     {k:'reliability',t:'rel',f:c01},{k:'consistency',t:'cons',f:c01},{k:'throttle',t:'thr',f:c01},
     {k:'jitter',t:'jit',f:c01},{k:'latency',t:'lat',f:c01},{k:'throughput',t:'dl',f:c01},
-    {k:'samples',t:'n'}];
+    {k:'id',t:'история',l:1,f:v=>spark(v)},{k:'samples',t:'n'}];
   const histCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},{k:'crc',t:'crc',l:1,f:crcf},
     {k:'ts',t:'переключено',f:T},{k:'reason',t:'причина',l:1,f:reasonf},{k:'active',t:'активная',f:act}];
   const qualCols=[{k:'provider',t:'провайдер',l:1},{k:'region',t:'регион',l:1},
     {k:'total',t:'всего нод'},{k:'dead_pct',t:'доля мёртвых',f:pct},{k:'avg',t:'ср. рейтинг живых',f:score}];
+  // --- Жизненный цикл / деградация нод ---
+  const garbCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
+    {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'state',t:'статус',f:stateF},
+    {k:'streak',t:'провалов'},{k:'garbage_count',t:'× в мусоре'},{k:'last_garbage',t:'посл. мусор',f:D},
+    {k:'in_garbage',t:'в мусоре',f:DUR},{k:'until',t:'до',f:T},{k:'deleted',t:'удалена',f:delF}];
+  const longCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
+    {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'age',t:'возраст',f:DUR},
+    {k:'score',t:'score',f:score},{k:'garbage_count',t:'× в мусоре'},{k:'fails',t:'провалов'},{k:'active',t:'act',f:act}];
+  const dropCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
+    {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'first_garbage',t:'1-й мусор',f:D},
+    {k:'lifespan',t:'прожила',f:DUR},{k:'garbage_count',t:'× в мусоре'},{k:'deleted',t:'удалена',f:delF}];
+  const FDIMS=[{k:'provider',t:'провайдер'},{k:'cc',t:'cc'},{k:'protocol',t:'протокол'}];
   const sec=(t,html)=>'<section><h2>'+t+'</h2>'+html+'</section>';
   _d=d;
   document.getElementById('root').innerHTML=
@@ -172,10 +248,16 @@ async function load(){
     sec('Рейтинг нод',regionTabbed('rating','rating',ratingCols))+
     sec('Результаты тестов','<div id=resbody></div>')+
     sec('Качество провайдеров',regionTabbed('qual','provider_quality',qualCols))+
+    sec('Мусорные / деградирующие ноды',filtered('garb','garbage',garbCols,FDIMS))+
+    sec('Динамика выбытия','<div id=attrbody></div>')+
+    sec('Долгожители <small>(живые, по возрасту ↓)</small>',plain('long','longevity',longCols))+
+    sec('Быстро выпадающие <small>(по сроку жизни до 1-го мусора ↑)</small>',plain('drop','dropouts',dropCols))+
     sec('Трафик',trafficSection())+
     sec('Топ назначений','<div id=endpbody></div>');
   renderTraf();
   renderRTBL('hist'); renderRTBL('rating'); renderRTBL('qual');
+  renderFLT('garb'); renderPLN('long'); renderPLN('drop');
+  const ab=document.getElementById('attrbody'); if(ab) ab.innerHTML=attritionChart(_d.attrition||[]);
   renderResults(); renderEndpoints();
 }
 load(); setInterval(load, INTERVAL*1000);

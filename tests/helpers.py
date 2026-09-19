@@ -14,8 +14,6 @@ def temp_dir() -> str:
 def make_config(tmp: str, **overrides) -> str:
     """Собрать рабочий config.json во временной папке (пути — в tmp). Возвращает путь."""
     cfg = json.load(open("config/config.json", encoding="utf-8"))
-    cfg["scoring"]["file"] = os.path.join(tmp, "score.csv")
-    cfg["switching"]["state_file"] = os.path.join(tmp, "switch.json")
     cfg["storage"]["db_file"] = os.path.join(tmp, "stats.db")
     cfg["storage"]["nodes_file"] = os.path.join(tmp, "nodes.json")
     cfg["switching"]["rotation"]["load_balance"]["enabled"] = False

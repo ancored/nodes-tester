@@ -10,14 +10,12 @@
 selector-группах, где она прямой член (кроме тестовых nodes-tester/*-nodes-tester
 и urltest — их не трогаем). Реализуется через Clash API.
 
-Состояние по регионам (active/таймеры/recent) сохраняется в JSON, чтобы
-переживать рестарт и корректно вести таймеры ротации/кулдауны.
+Состояние по регионам (active/таймеры/recent/activations) хранится в SQLite
+(Storage), чтобы переживать рестарт и корректно вести таймеры ротации/кулдауны.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import random
 import statistics
 import threading
@@ -40,7 +38,7 @@ class Switcher:
         self._traffic_provider = traffic_provider
         # Хранилище для истории активаций (опц.); None → не пишем.
         self._storage = storage
-        self.state: dict[str, dict] = _load_state(cfg.state_file)
+        self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
 
@@ -63,7 +61,7 @@ class Switcher:
         with self._lock:
             for region in self.board.regions():
                 self._evaluate_region_locked(region, emergency=False)
-            _save_state(self.cfg.state_file, self.state)
+            self._persist()
 
     def active_regions(self) -> list[str]:
         with self._lock:
@@ -113,7 +111,12 @@ class Switcher:
         # следующего evaluate_all (см. review.md P1).
         with self._lock:
             self._evaluate_region_locked(region, emergency)
-            _save_state(self.cfg.state_file, self.state)
+            self._persist()
+
+    def _persist(self) -> None:
+        """Сохранить состояние регионов в БД (если storage подключён)."""
+        if self._storage is not None:
+            self._storage.save_switch_state(self.state)
 
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
         st = self.state.setdefault(region, _new_region_state())
@@ -262,11 +265,14 @@ class Switcher:
         st["recent"] = recent[:10]
         st.setdefault("activations", {})
         st["activations"][node] = st["activations"].get(node, 0) + 1
+        crc = cand.get("id") or parse_node(node).node_id
         if self._storage is not None:
             prev_crc = parse_node(prev).node_id if prev else None
             self._storage.add_activation(
-                region, cand.get("id") or parse_node(node).node_id,
-                node, reason, cand.get("score"), prev_crc)
+                region, crc, node, reason, cand.get("score"), prev_crc)
+            # Держим scores.active в БД в синхроне с activations: save_scores переписывает
+            # scores лишь раз в прогон, а переключение может произойти между прогонами.
+            self._storage.set_active_crc(region, crc)
         self.board.set_active(region, node)
         partial = f", ЧАСТИЧНО {done}/{len(pairs)}" if done < len(pairs) else ""
         print(f"  [switch] {region}: {reason.upper()} → {node} "
@@ -400,19 +406,3 @@ def _weighted_choice(pool: list[dict], activations: dict,
 def _new_region_state() -> dict:
     return {"active": None, "last_switch": 0, "rotate_deadline": 0,
             "quality_count": 0, "recent": [], "activations": {}}
-
-
-def _load_state(path: str) -> dict:
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def _save_state(path: str, state: dict) -> None:
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(state, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)

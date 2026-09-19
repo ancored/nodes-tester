@@ -516,6 +516,7 @@ if __name__ == '__main__':
         node.pop('_meta', None)
         node.pop('_provider', None)
         node.pop('_label', None)
+        node.pop('_file_cc', None)
     # wrap as a sing-box config fragment so it can be merged into the main config
     # via: sing-box merge <output> -c config.json -c nodes.json.
     # В sing-box 1.14 wireguard-outbound удалён: WG-узлы живут в endpoints[]

@@ -189,8 +189,9 @@ def group_meta(node):
         provider: the subscription's tag from providers.json, stamped onto the
                   node as '_provider' (the node title is often just a flag +
                   country, with no provider name in it)
-        country:  the two-letter ISO code from the flag emoji in the title; if the
-                  title has no flag, fall back to country_from_text on the title
+        country:  two-letter ISO code, по приоритету: флаг-эмодзи в title → название
+                  страны в тексте (country_from_text) → '_file_cc' (для folder-парсеров
+                  вроде AWG, где страна известна лишь из имени файла) → 'undef'
         protocol: derived from the node fields (see node_protocol)
     '''
     title = node.get('tag', '')
@@ -198,7 +199,7 @@ def group_meta(node):
     if m:
         country = flag_to_code(m.group())
     else:
-        country = country_from_text(title) or 'undef'   # страна не распознана
+        country = country_from_text(title) or node.get('_file_cc') or 'undef'
     return {'provider': node.get('_provider', ''),
             'protocol': node_protocol(node),
             'country': country,

@@ -130,10 +130,8 @@ class RunConfig:
 
 @dataclass
 class ReportConfig:
-    enabled: bool = True
-    dir: str = "./results"
-    format: str = "jsonl"
-    filename: str = ""
+    # Файловый репортер убран — сырые результаты живут в SQLite. Осталась только
+    # печать пер-нодной сводки в консоль.
     console: bool = True
 
 
@@ -161,7 +159,6 @@ class ScoringConfig:
     flap_lambda: float = 0.5
     avail_floor: float = 0.7
     avail_full: float = 0.9
-    file: str = "./results/score.csv"
     thresholds: dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_THRESHOLDS))
     weights: dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_WEIGHTS))
 
@@ -202,18 +199,33 @@ class SwitchingConfig:
     cooldown: float = 300.0
     exclude_test_groups: bool = True
     freeze_groups: list[str] = field(default_factory=lambda: ["global-auto-out"])
-    state_file: str = "./results/switch_state.json"
     rotation: RotationConfig = field(default_factory=RotationConfig)
 
 
 @dataclass
 class MonitorConfig:
     enabled: bool = False
-    interval: float = 20.0
-    probe_url: str = "http://cp.cloudflare.com"
-    probe_timeout: int = 5000
-    fails: int = 2
-    reassert_drift: bool = True
+    interval: float = 20.0           # период тика монитора, сек
+    reassert_drift: bool = True      # пере-выставлять выбор селекторов при дрейфе
+    # --- Здоровье активной ноды: трафик-гейт + внеплановый зонд ---
+    # Идёт боевой трафик (≥ silence_floor за окно) → нода заведомо жива, не трогаем.
+    # «Тихо» дольше silence_window → внеплановый зонд (закачка ~probe_bytes через
+    # socks). Провал (нет ответа ИЛИ скорость < probe_min_mbps — так ловится throttle
+    # ТСПУ, который delay-проба пропускает) fails раз подряд → EMERGENCY.
+    silence_window: float = 300.0    # сек тишины до внепланового зонда
+    silence_floor_mb: float = 0.0    # МБ за окно = «трафик идёт»; 0 = авто (min_mbps×window)
+    probe_bytes: int = 1_000_000     # целевой объём закачки зонда, байт (~1 МБ)
+    probe_min_mbps: float = 1.0      # ниже порога → throttle → провал зонда
+    probe_timeout: float = 8.0       # предел закачки/коннекта зонда, сек
+    probe_url: str = ""              # пусто = speed.cloudflare.com c probe_bytes
+    fails: int = 2                   # провалов зонда подряд → emergency
+
+    @property
+    def silence_floor_bytes(self) -> int:
+        """Порог «трафик идёт» в байтах за окно. 0 → авто: min_mbps × window."""
+        if self.silence_floor_mb and self.silence_floor_mb > 0:
+            return int(self.silence_floor_mb * 1_000_000)
+        return int(self.probe_min_mbps * 1_000_000 / 8 * self.silence_window)
 
 
 @dataclass
@@ -308,10 +320,10 @@ def load_config(path: str) -> Config:
         testing_groups=tgs,
         region_groups=RegionGroupsConfig(**_section(data, "region_groups")),
         run=_load_run(_section(data, "run")),
-        report=ReportConfig(**_section(data, "report")),
+        report=ReportConfig(**_filtered(ReportConfig, _section(data, "report"))),
         scoring=_load_scoring(_section(data, "scoring")),
         switching=_load_switching(_section(data, "switching")),
-        monitor=MonitorConfig(**_section(data, "monitor")),
+        monitor=MonitorConfig(**_filtered(MonitorConfig, _section(data, "monitor"))),
         storage=_load_storage(_section(data, "storage")),
         cooldown=CooldownConfig(**_filtered(CooldownConfig, _section(data, "cooldown"))),
         tests=_section(data, "tests"),
@@ -353,8 +365,8 @@ def _load_storage(st: dict) -> StorageConfig:
 
 
 def _load_scoring(sc: dict) -> ScoringConfig:
-    cfg = ScoringConfig(**{k: v for k, v in sc.items()
-                           if k not in ("thresholds", "weights")})
+    cfg = ScoringConfig(**_filtered(ScoringConfig, {k: v for k, v in sc.items()
+                                                    if k not in ("thresholds", "weights")}))
     cfg.thresholds = {**_DEFAULT_THRESHOLDS, **(sc.get("thresholds") or {})}
     cfg.weights = {**_DEFAULT_WEIGHTS, **(sc.get("weights") or {})}
     return cfg
@@ -363,7 +375,8 @@ def _load_scoring(sc: dict) -> ScoringConfig:
 def _load_switching(sw: dict) -> SwitchingConfig:
     rot = sw.get("rotation") or {}
     lb = rot.get("load_balance") or {}
-    cfg = SwitchingConfig(**{k: v for k, v in sw.items() if k != "rotation"})
+    cfg = SwitchingConfig(**_filtered(SwitchingConfig, {k: v for k, v in sw.items()
+                                                        if k != "rotation"}))
     cfg.rotation = RotationConfig(**{k: v for k, v in rot.items() if k != "load_balance"})
     cfg.rotation.load_balance = LoadBalanceConfig(**lb)
     return cfg
@@ -401,8 +414,10 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"region_groups.recognition должен быть parse|manually, "
             f"а не {cfg.region_groups.recognition!r}")
-    if cfg.report.format not in ("jsonl", "json", "csv"):
-        raise ValueError(f"Неизвестный report.format: {cfg.report.format}")
+    # Рейтинг и состояние переключений теперь живут в SQLite — без storage негде
+    # хранить scores/switch_state/историю. Требуем storage при scoring/switching.
+    if (cfg.scoring.enabled or cfg.switching.enabled) and not cfg.storage.enabled:
+        raise ValueError("scoring/switching хранят состояние в БД — включите storage.enabled")
     # Диапазоны (в т.ч. защита от отрицательного retention_days — иначе prune()
     # сдвинул бы cutoff в будущее и удалил всю историю).
     if cfg.storage.retention_days < 0:

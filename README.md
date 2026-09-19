@@ -8,6 +8,10 @@
 переключает selector на очередную ноду, гоняет тестовый трафик через **SOCKS5**
 inbound, меряет, пишет рейтинг и (опционально) сам переключает боевые ноды.
 
+> **Документация проекта.** Архитектура и решения — в этом README; полная схема БД —
+> в [SCHEMA.md](SCHEMA.md); модель скоринга — в [score.md](score.md); отложенные идеи и
+> архив реализованного — в [BACKLOG.md](BACKLOG.md).
+
 ## Как это работает
 
 ```
@@ -132,7 +136,7 @@ cp config.example.json config.json
   },
 
   "tests":     { "download": { "url_by_region": {"ru":"https://speedtest.selectel.ru/10MB"}, "window_bytes": 2000000, "duration": 20 }, "…": {} },
-  "report":    { "enabled": true, "format": "jsonl" },
+  "report":    { "console": true },       // только консольная сводка; сырьё — в SQLite
   "scoring":   { "enabled": true },
   "switching": { "enabled": true },        // ВНИМАНИЕ: меняет БОЕВЫЕ группы
   "monitor":   { "enabled": true },
@@ -177,57 +181,38 @@ python -m nodes_tester --list-tests
 
 ## 5. Результаты
 
-**Файл** (секция `report`, если `enabled`): `results/results.<format>`, дозапись **в
-начало** (newest-first), старое сохраняется, атомарно. Форматы: `jsonl` (по строке
-на ноду), `json` (массив), `csv` (по строке на пару нода×тест). `report.enabled:false`
-— писать только в SQLite.
+**Всё состояние — в одной SQLite `stats.db`.** Отдельного файлового репортера
+(`results/results.<format>`), а также старых `score.csv` / `switch_state.json`
+больше нет — они слиты в БД (при первом старте однократно мигрируются, если лежат
+рядом с БД). Секция `report` теперь управляет только консольной пер-нодной сводкой
+(`report.console`).
 
 **SQLite** (секция `storage`, `results/stats.db`) — описания нод + трафик + сырые
-результаты + история переключений; всё связано по **CRC ноды** (стабильный
-fingerprint настроек, переживает переименования тегов):
+результаты + рейтинг + история переключений + журнал жизненного цикла нод; всё
+связано по **CRC ноды** (стабильный fingerprint настроек, переживает переименования
+тегов). **Полная схема со всеми таблицами и «кто пишет/читает» — в [SCHEMA.md](SCHEMA.md).**
+Ключевые таблицы:
 
 | Таблица | Смысл |
 |---|---|
-| `nodes` | описание ноды (server/uuid/tls…), читается из `nodes_file`; CRC сверяется |
+| `nodes` | описание ноды (server/uuid/tls…), читается из `nodes_file`; CRC сверяется; флаг `present` |
 | `results` | сырые результаты тестов (ts, pass_no, crc, test, ok, url, metrics, error) |
 | `traffic` | временной ряд объёма по ноде (up/down/conns, is_tester) |
 | `endpoints` | топ источников↔назначений по ноде |
 | `activations` | история активаций боевых нод (когда / куда / почему переключились) |
+| `scores` | снимок рейтинга (замена `score.csv`), перезаписывается каждый прогон |
+| `score_history` | точка рейтинга (score/s_run/gate) на каждую ноду каждый прогон — для графиков |
+| `switch_state` / `switch_recent` / `switch_activations` | состояние switcher (замена `switch_state.json`) |
+| `node_events` | журнал `added`/`removed`/`backoff`/`garbage`/`recovered` по ноде |
+| `garbage` | текущий backoff/карантин ноды (не история): `since`/`until`/`streak`/`reason` |
+| `meta` | сквозные значения между рестартами (посуточный `pass_day`/`pass_no`) |
 
-### Полная схема
-
-```sql
-CREATE TABLE nodes (
-  crc TEXT PRIMARY KEY, tag TEXT, provider TEXT, protocol TEXT, country TEXT, label TEXT,
-  type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
-  first_seen INTEGER, last_seen INTEGER);
-
-CREATE TABLE traffic (
-  ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
-CREATE INDEX idx_traffic_ts  ON traffic(ts);
-CREATE INDEX idx_traffic_crc ON traffic(crc);
-
-CREATE TABLE endpoints (
-  crc TEXT, source_ip TEXT, dest_host TEXT, network TEXT,
-  up INTEGER, down INTEGER, flows INTEGER, last_seen INTEGER,
-  PRIMARY KEY (crc, source_ip, dest_host, network));
-
-CREATE TABLE results (
-  ts INTEGER, pass_no INTEGER, crc TEXT, test TEXT, ok INTEGER,
-  url TEXT, metrics TEXT, error TEXT);
-CREATE INDEX idx_results_ts  ON results(ts);
-CREATE INDEX idx_results_crc ON results(crc);
-
-CREATE TABLE activations (
-  ts INTEGER, region TEXT, crc TEXT, tag TEXT, reason TEXT, score REAL, prev TEXT);
-CREATE INDEX idx_activations_ts  ON activations(ts);
-CREATE INDEX idx_activations_crc ON activations(crc);
-```
+Полный DDL всех таблиц, индексы и матрица «кто пишет / читает» — в [SCHEMA.md](SCHEMA.md).
 
 - `results.metrics` — JSON; ключи по тестам: connectivity `exit_ip/country/colo` или
   `asn/as_org`; latency `ttfb_ms`; jitter `jitter_ms/avg_ms/loss_pct`; download
   `speed_mbps/throttle_ratio/hold_ratio/limited`; reachability `total/reached/loss_pct/endpoints`.
-- `activations.reason` ∈ `init | emergency | quality | rotation`; `prev` — CRC предыдущей активной.
+- `activations.reason` ∈ `init | emergency | emergency-stuck | quality | rotation`; `prev` — CRC предыдущей активной.
 - `traffic/endpoints.crc` может быть не-нодовым (`direct-out`, urltest-группа) — тогда строки
   без соответствия в `nodes` (в витрине помечаются `unspecified`/`direct`).
 
@@ -302,9 +287,9 @@ naming/           — ЕДИНЫЙ источник имён/идентично�
 nodes_tester/     — ТЕСТЕР  (python -m nodes_tester --config config/config.json)
   config.py       загрузка config.json (testing_groups, region_groups, run-слои)
   clash_api.py    клиент Clash API (proxies, select, delay, connections)
-  proxy.py, reporter.py, scoring.py, scoreboard.py, switcher.py,
-  monitor.py, storage.py, traffic.py, runner.py, __main__.py
-  tests/          connectivity, latency, jitter, download, reachability
+  proxy.py, scoring.py, scoreboard.py, switcher.py,
+  monitor.py, storage.py, traffic.py, runner.py, identity.py, __main__.py
+  tests/          connectivity, latency, jitter, download (+heavy_download), reachability
 
 subscribe/        — ПЕРЕИМЕНОВАТЕЛЬ  (python -m subscribe) — см. subscribe/README.md
   main.py, tool.py, groups.py, parsers/

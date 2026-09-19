@@ -1,15 +1,15 @@
-"""Файл рейтинга нод score.csv: обновляется каждый прогон, исчезнувшие ноды
-удаляются, активные помечаются флагом. Используется switcher'ом для выбора.
+"""Рейтинг нод в SQLite (таблица scores): обновляется каждый прогон, исчезнувшие
+ноды удаляются, активные помечаются флагом. Используется switcher'ом для выбора.
 
-Строка на ноду. Хранит идентичность, итоговый score (S_final), последние
-под-скоры (для наблюдаемости) и EWMA-состояние (для продолжения между
-прогонами и после рестарта). Запись атомарна.
+В памяти держим снимок (dict по raw-тегу ноды) — как раньше при csv; персистентность
+идёт через Storage (scores + score_history). Строка хранит идентичность, итоговый
+score (S_final), последние под-скоры и EWMA-состояние (продолжение между прогонами и
+после рестарта). score_history копит точку (score/s_run/gate) на каждую ноду каждый
+прогон — для динамики рейтинга в дашборде.
 """
 
 from __future__ import annotations
 
-import csv
-import os
 import threading
 import time
 from typing import Optional
@@ -17,28 +17,15 @@ from typing import Optional
 from . import scoring
 from .identity import NodeIdentity
 
-_COLUMNS = [
-    "node", "provider", "protocol", "region", "country", "id",
-    "active", "score",
-    "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
-    "score_ewma", "avail", "flap", "samples", "last_seen",
-    "heavy_ok", "heavy_ts",
-]
-_FLOAT_COLS = {"score", "score_ewma", "avail", "flap",
-               *scoring.COMPONENTS}
-# heavy_ok намеренно НЕ в _INT_COLS: значения "" (не проверялась) / "1" (ok) / "0"
-# (провалила тяжёлый download) — пустая строка не должна схлопываться в 0=провал.
-_INT_COLS = {"active", "samples", "heavy_ts"}
-
 
 class Scoreboard:
-    def __init__(self, path: str, scoring_cfg):
-        self.path = path
+    def __init__(self, storage, scoring_cfg):
+        self.storage = storage
         self.cfg = scoring_cfg
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        self.rows: dict[str, dict] = _load(path)
+        self.rows: dict[str, dict] = storage.load_scores()
         self._seen: set[str] = set()
-        self._heavy_veto_secs = 0.0        # 0 = veto не истекает по времени
+        self._history: list[tuple] = []       # буфер точек истории за прогон
+        self._heavy_veto_secs = 0.0           # 0 = veto не истекает по времени
         # Прогон-поток пишет (record/set_heavy/end_pass/write), фоновый монитор читает
         # (candidates/get/regions) и ставит active — защищаем составные операции.
         self._lock = threading.RLock()
@@ -48,6 +35,7 @@ class Scoreboard:
     def begin_pass(self) -> None:
         with self._lock:
             self._seen = set()
+            self._history = []
 
     def keep(self, tag: str) -> None:
         """Пометить ноду «встреченной» без нового замера — чтобы end_pass её не
@@ -86,6 +74,7 @@ class Scoreboard:
             "protocol": ident.protocol,
             "region": region,
             "country": ident.country,
+            "label": ident.label,
             "id": ident.node_id,
             "active": (prev.get("active", 0) if prev else 0),
             "last_seen": self._pass_no,
@@ -99,15 +88,21 @@ class Scoreboard:
         row.update(agg)
         self.rows[ident.raw] = row
         self._seen.add(ident.raw)
+        # Точка истории рейтинга этой ноды за прогон (для динамики в дашборде).
+        self._history.append((ident.node_id, region, float(agg["score"]), s_run, gate))
         return float(agg["score"]), s_run, gate
 
     def end_pass(self, pass_no: int) -> None:
-        """Удалить исчезнувшие ноды (не встреченные в этом прогоне) и записать."""
+        """Удалить исчезнувшие ноды (не встреченные в этом прогоне), записать снимок
+        рейтинга и дописать точки истории за прогон."""
         with self._lock:
             for tag in list(self.rows):
                 if tag not in self._seen:
                     del self.rows[tag]
-            self._write_locked()
+            self.storage.save_scores(list(self.rows.values()))
+            if self._history:
+                self.storage.add_score_history(int(time.time()), self._history)
+                self._history = []
 
     @property
     def _pass_no(self):
@@ -175,49 +170,4 @@ class Scoreboard:
 
     def write(self) -> None:
         with self._lock:
-            self._write_locked()
-
-    def _write_locked(self) -> None:
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=_COLUMNS, extrasaction="ignore",
-                                    lineterminator="\n")
-            writer.writeheader()
-            # Активные сверху, далее по убыванию score.
-            for r in sorted(self.rows.values(),
-                            key=lambda r: (int(r.get("active", 0)), float(r.get("score", 0))),
-                            reverse=True):
-                writer.writerow(r)
-        os.replace(tmp, self.path)
-
-
-def _load(path: str) -> dict[str, dict]:
-    rows: dict[str, dict] = {}
-    try:
-        with open(path, "r", encoding="utf-8", newline="") as fh:
-            for raw in csv.DictReader(fh):
-                row = dict(raw)
-                for k in list(row):
-                    if k in _FLOAT_COLS:
-                        row[k] = _to_float(row[k])
-                    elif k in _INT_COLS:
-                        row[k] = _to_int(row[k])
-                if row.get("node"):
-                    rows[row["node"]] = row
-    except FileNotFoundError:
-        pass
-    return rows
-
-
-def _to_float(v):
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _to_int(v):
-    try:
-        return int(float(v))
-    except (TypeError, ValueError):
-        return 0
+            self.storage.save_scores(list(self.rows.values()))

@@ -1,8 +1,7 @@
-"""Сбор данных для дашборда из score.csv / switch_state.json / stats.db (read-only)."""
+"""Сбор данных для дашборда из единой БД stats.db (read-only)."""
 
 from __future__ import annotations
 
-import csv
 import json
 import os
 import sqlite3
@@ -10,21 +9,19 @@ import time
 
 from naming import parse_group, parse_node
 
+# Колонки рейтинга (таблица scores) в порядке для дашборда; crc отдаём как 'id',
+# last_pass — как 'last_seen' (совместимо с прежним score.csv).
+_SCORE_SELECT = (
+    "SELECT node, provider, protocol, region, country, crc AS id, active, score, "
+    "reliability, consistency, throttle, jitter, latency, throughput, "
+    "score_ewma, avail, flap, samples, last_pass AS last_seen, heavy_ok, heavy_ts "
+    "FROM scores"
+)
 
-def _read_csv(path: str) -> list[dict]:
-    try:
-        with open(path, encoding="utf-8", newline="") as fh:
-            return list(csv.DictReader(fh))
-    except (OSError, ValueError):
-        return []
 
-
-def _read_json(path: str):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {}
+def _scores(db_path: str) -> list[dict]:
+    """Снимок рейтинга из таблицы scores (замена чтения score.csv)."""
+    return _query(db_path, _SCORE_SELECT)
 
 
 def _query(db_path: str, sql: str) -> list[dict]:
@@ -42,8 +39,10 @@ def _query(db_path: str, sql: str) -> list[dict]:
 
 
 def collect(cfg) -> dict:
-    # --- Рейтинг (score.csv), активные сверху, далее по убыванию score ---
-    rating = _read_csv(cfg.scoring.file)
+    db = cfg.storage.db_file
+
+    # --- Рейтинг (таблица scores), активные сверху, далее по убыванию score ---
+    rating = _scores(db)
 
     def _key(r):
         try:
@@ -53,11 +52,9 @@ def collect(cfg) -> dict:
 
     rating.sort(key=_key, reverse=True)
 
-    db = cfg.storage.db_file
-
     # --- История переключений (таблица activations) ---
     history = _switch_history(db)
-    # --- Качество провайдеров (из score.csv) ---
+    # --- Качество провайдеров (из рейтинга) ---
     provider_quality = _provider_quality(rating)
 
     # --- Трафик (stats.db): сырьё по CRC + классификация в Python ---
@@ -84,6 +81,13 @@ def collect(cfg) -> dict:
 
     results = _results(db)
 
+    # --- Жизненный цикл / деградация нод (node_events + garbage + nodes) ---
+    ev = _event_stats(db)                 # crc -> {garbage_count, last_garbage, fails, first_garbage}
+    garbage = _garbage_table(db, ev)
+    longevity, dropouts = _degradation(db, ev)
+    attrition = _attrition(db)
+    score_spark = _score_spark(db)
+
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "rating": rating,
@@ -95,6 +99,11 @@ def collect(cfg) -> dict:
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
         "endpoints": endpoints,
+        "garbage": garbage,
+        "longevity": longevity,
+        "dropouts": dropouts,
+        "attrition": attrition,
+        "score_spark": score_spark,
     }
 
 
@@ -226,34 +235,176 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     return {"v": "ok", "ok": 1}
 
 
+def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
+    """DL50-строка относится к тому же прогону, что и лёгкие тесты: совпадают pass_no и
+    календарный день (pass_no цикличен по дням, поэтому сверяем ещё и дату)."""
+    if (hr.get("pass_no") or 0) != (pass_no or 0):
+        return False
+    ht, pt = hr.get("ts") or 0, pass_ts or 0
+    if not ht or not pt:
+        return False
+    a, b = time.localtime(ht), time.localtime(pt)
+    return (a.tm_year, a.tm_yday) == (b.tm_year, b.tm_yday)
+
+
+def _heavy_note(hr: dict, off_pass: bool) -> str:
+    """Примечание для ячейки DL50: это отдельный veto-тест кандидатов, идущий вне
+    обычного прогона (раз в N прогонов), поэтому значение может быть из другого пасса."""
+    note = "DL50 — отдельный veto-тест кандидатов, идёт вне обычного прогона."
+    if off_pass and hr.get("ts"):
+        lt = time.localtime(hr["ts"])
+        note += (f" Это значение измерено {lt.tm_mday:02d}/{lt.tm_mon:02d} "
+                 f"{lt.tm_hour:02d}:{lt.tm_min:02d} (прогон {hr.get('pass_no')}), "
+                 f"не в последнем прогоне ноды.")
+    return note
+
+
+# Тесты, не входящие в «строго последний прогон» лёгких тестов:
+#   _select      — служебная запись переключения (в таблице не показываем);
+#   heavy_download — идёт вне прогона (every N), показываем как есть, но помечаем.
+_OFF_PASS_TESTS = {"_select", "heavy_download"}
+
+
 def _results(db: str) -> dict:
-    """Свод: по ноде — свежий результат каждого теста (последний по ts)."""
+    """Свод по ноде — строго ОДИН последний прогон (все лёгкие тесты берём из пасса
+    с максимальным ts, а не независимо по каждому тесту, иначе в таблице мешаются
+    данные разных прогонов). Исключение — DL50 (heavy_download): он идёт вне прогона,
+    поэтому берём его последнее известное значение и помечаем отдельно. Служебная
+    запись _select ('переключ.') в таблицу не выводится вовсе."""
     rows = _query(db, """
         SELECT r.crc AS crc, r.test AS test, r.ok AS ok, r.metrics AS metrics,
                r.error AS error, r.ts AS ts, r.pass_no AS pass_no,
                n.provider AS provider, n.protocol AS protocol, n.country AS country
-        FROM results r
-        JOIN (SELECT crc, test, MAX(ts) mts FROM results GROUP BY crc, test) m
-          ON r.crc = m.crc AND r.test = m.test AND r.ts = m.mts
-        LEFT JOIN nodes n ON n.crc = r.crc""")
-    by_node: dict[str, dict] = {}
-    tests_seen: set[str] = set()
+        FROM results r LEFT JOIN nodes n ON n.crc = r.crc""")
+    per_node: dict[str, list] = {}
     for r in rows:
-        crc = r["crc"]
-        tests_seen.add(r["test"])
-        node = by_node.setdefault(crc, {
-            "provider": r.get("provider"), "protocol": r.get("protocol"),
-            "country": r.get("country"), "crc": crc, "ts": 0, "pass_no": 0, "cells": {}})
-        node["cells"][r["test"]] = _cell(r["test"], r["ok"], r["metrics"], r.get("error"))
-        ts = r["ts"] or 0
-        if ts >= node["ts"]:                  # pass_no берём из строки с самым свежим ts,
-            node["ts"] = ts                   # иначе через полночь свежая дата склеится
-            node["pass_no"] = r.get("pass_no") or 0   # со старым большим номером прогона
+        if r["test"] == "_select":            # служебная запись — в таблицу не идёт
+            continue
+        per_node.setdefault(r["crc"], []).append(r)
+
+    tests_seen: set[str] = set()
+    node_rows: list[dict] = []
+    for crc, rws in per_node.items():
+        light = [r for r in rws if r["test"] != "heavy_download"]
+        # ts последнего прогона — по лёгким тестам (все они пишутся одним ts за пасс).
+        base_pool = light or rws
+        base_row = max(base_pool, key=lambda r: r["ts"] or 0)
+        pass_ts = base_row["ts"] or 0
+        node = {"provider": base_row.get("provider"), "protocol": base_row.get("protocol"),
+                "country": base_row.get("country"), "crc": crc,
+                "ts": pass_ts, "pass_no": base_row.get("pass_no") or 0, "cells": {}}
+        # Лёгкие тесты — только из последнего прогона (ts == pass_ts).
+        for r in light:
+            if (r["ts"] or 0) != pass_ts:
+                continue
+            node["cells"][r["test"]] = _cell(r["test"], r["ok"], r["metrics"], r.get("error"))
+            tests_seen.add(r["test"])
+        # DL50 — последнее известное значение, вне прогона; помечаем off_pass.
+        heavy = [r for r in rws if r["test"] == "heavy_download"]
+        if heavy:
+            hr = max(heavy, key=lambda r: r["ts"] or 0)
+            cell = _cell("heavy_download", hr["ok"], hr["metrics"], hr.get("error"))
+            # DL50 пишется на пару минут позже лёгких тестов, но с тем же pass_no за тот
+            # же день — это ТОТ ЖЕ прогон. «Вне прогона» = другой pass_no или другой день
+            # (pass_no цикличен по дням, поэтому одного номера мало).
+            off_pass = not _same_pass(hr, node["pass_no"], pass_ts)
+            cell["heavy"] = 1
+            cell["off_pass"] = 1 if off_pass else 0
+            cell["title"] = _heavy_note(hr, off_pass)
+            node["cells"]["heavy_download"] = cell
+            tests_seen.add("heavy_download")
+        node_rows.append(node)
+
     cols = [t for t in _TEST_ORDER if t in tests_seen]
     cols += sorted(tests_seen - set(cols))
-    node_rows = sorted(by_node.values(), key=lambda x: x["ts"], reverse=True)
+    node_rows.sort(key=lambda x: x["ts"], reverse=True)
     for n in node_rows:                       # ярлык прогона "DD/MM-NNN" (дата из ts)
         lt = time.localtime(n["ts"]) if n.get("ts") else None
         n["pass_label"] = (f"{lt.tm_mday:02d}/{lt.tm_mon:02d}-{n['pass_no']:03d}"
                            if lt else str(n.get("pass_no", "")))
     return {"tests": cols, "rows": node_rows}
+
+
+# --- Жизненный цикл / деградация нод ------------------------------------
+
+def _event_stats(db: str) -> dict:
+    """crc -> агрегаты node_events: gcount (раз в garbage), last/first_garbage, fails."""
+    rows = _query(db, """
+        SELECT crc,
+               SUM(event = 'garbage')  AS gcount,
+               MAX(CASE WHEN event = 'garbage' THEN ts END) AS last_garbage,
+               MIN(CASE WHEN event = 'garbage' THEN ts END) AS first_garbage,
+               SUM(event IN ('backoff', 'garbage')) AS fails
+        FROM node_events GROUP BY crc""")
+    return {r["crc"]: r for r in rows}
+
+
+def _garbage_table(db: str, ev: dict) -> list[dict]:
+    """Ноды в текущем backoff/карантине + метаданные и флаг удаления из подписки."""
+    now = int(time.time())
+    rows = _query(db, """
+        SELECT g.crc AS crc, g.since AS since, g.until AS until, g.reason AS state,
+               g.streak AS streak,
+               n.provider AS provider, n.protocol AS protocol, n.country AS cc,
+               n.first_seen AS first_seen, n.present AS present
+        FROM garbage g LEFT JOIN nodes n ON n.crc = g.crc""")
+    out = []
+    for r in rows:
+        e = ev.get(r["crc"], {})
+        out.append({
+            "provider": r.get("provider"), "protocol": r.get("protocol"),
+            "cc": r.get("cc"), "crc": r["crc"], "first_seen": r.get("first_seen"),
+            "state": r.get("state"), "streak": r.get("streak"),
+            "last_garbage": e.get("last_garbage"), "garbage_count": e.get("gcount") or 0,
+            "in_garbage": max(0, now - int(r["since"] or now)), "until": r.get("until"),
+            "deleted": 1 if r.get("present") in (0, None) else 0,
+        })
+    out.sort(key=lambda x: (x["state"] != "garbage", -(x["in_garbage"] or 0)))
+    return out
+
+
+def _degradation(db: str, ev: dict) -> tuple[list, list]:
+    """Долгожители (живые, по возрасту ↓) и быстро выпадающие (по короткому сроку
+    жизни до первого garbage ↑)."""
+    now = int(time.time())
+    nodes = _query(db, """
+        SELECT n.crc AS crc, n.provider AS provider, n.protocol AS protocol,
+               n.country AS cc, n.first_seen AS first_seen, n.present AS present,
+               s.score AS score, s.active AS active
+        FROM nodes n LEFT JOIN scores s ON s.crc = n.crc""")
+    longevity, dropouts = [], []
+    for r in nodes:
+        e = ev.get(r["crc"], {})
+        fs = int(r["first_seen"] or now)
+        base = {"provider": r.get("provider"), "protocol": r.get("protocol"),
+                "cc": r.get("cc"), "crc": r["crc"], "first_seen": fs,
+                "garbage_count": e.get("gcount") or 0, "fails": e.get("fails") or 0}
+        if r.get("present") == 1:                     # живые → долгожители
+            longevity.append({**base, "age": max(0, now - fs),
+                              "score": r.get("score"), "active": r.get("active") or 0})
+        if e.get("first_garbage"):                    # была в мусоре → выпадающая
+            dropouts.append({**base, "first_garbage": e["first_garbage"],
+                             "lifespan": max(0, int(e["first_garbage"]) - fs),
+                             "deleted": 1 if r.get("present") in (0, None) else 0})
+    longevity.sort(key=lambda x: x["age"], reverse=True)     # старейшие сверху
+    dropouts.sort(key=lambda x: x["lifespan"])               # короткоживущие сверху
+    return longevity[:40], dropouts[:40]
+
+
+def _attrition(db: str) -> list[dict]:
+    """Динамика по дням: added/removed/garbage/recovered (локальная дата)."""
+    return _query(db, """
+        SELECT date(ts, 'unixepoch', 'localtime') AS day,
+               SUM(event = 'added')     AS added,
+               SUM(event = 'removed')   AS removed,
+               SUM(event = 'garbage')   AS garbage,
+               SUM(event = 'recovered') AS recovered
+        FROM node_events GROUP BY day ORDER BY day""")
+
+
+def _score_spark(db: str, points: int = 24) -> dict:
+    """crc -> последние N значений score (по ts ↑) для спарклайна истории рейтинга."""
+    out: dict[str, list] = {}
+    for r in _query(db, "SELECT crc, score FROM score_history ORDER BY crc, ts"):
+        out.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
+    return {c: v[-points:] for c, v in out.items()}

@@ -231,22 +231,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "dir": {
-          "type": "string"
-        },
-        "format": {
-          "enum": [
-            "jsonl",
-            "json",
-            "csv"
-          ]
-        },
-        "filename": {
-          "type": "string"
-        },
         "console": {
           "type": "boolean"
         }
@@ -270,9 +254,6 @@
         },
         "avail_full": {
           "type": "number"
-        },
-        "file": {
-          "type": "string"
         },
         "thresholds": {
           "type": "object",
@@ -315,9 +296,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "state_file": {
-          "type": "string"
         },
         "rotation": {
           "type": "object",
@@ -379,17 +357,29 @@
         "interval": {
           "type": "number"
         },
+        "reassert_drift": {
+          "type": "boolean"
+        },
+        "silence_window": {
+          "type": "number"
+        },
+        "silence_floor_mb": {
+          "type": "number"
+        },
+        "probe_bytes": {
+          "type": "integer"
+        },
+        "probe_min_mbps": {
+          "type": "number"
+        },
+        "probe_timeout": {
+          "type": "number"
+        },
         "probe_url": {
           "type": "string"
         },
-        "probe_timeout": {
-          "type": "integer"
-        },
         "fails": {
           "type": "integer"
-        },
-        "reassert_drift": {
-          "type": "boolean"
         }
       }
     },

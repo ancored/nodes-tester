@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Декодер ссылок happ://crypt..crypt4 в обычный URL подписки.
+Декодер ссылок happ://crypt..crypt5 в обычный URL подписки.
 
-Порт логики утилиты hpwnr (https://github.com/Omegaplexx/hpwnr) для форматов
-crypt, crypt2, crypt3, crypt4 (RSA / PKCS#1 v1.5, поблочная расшифровка).
-crypt5 (RSA + ChaCha20-Poly1305) здесь не реализован.
+Порт логики утилиты hpwnr (https://github.com/Omegaplexx/hpwnr):
+- crypt, crypt2, crypt3, crypt4 — RSA / PKCS#1 v1.5, поблочная расшифровка;
+- crypt5 — гибрид: RSA (PKCS#8-ключ по маркеру) отдаёт 32-байтный ChaCha-ключ,
+  тело зашифровано ChaCha20-Poly1305 (реализация в _chacha.py). Две раскладки
+  тела (legacy / salted+XOR) — пробуем обе, верную выбирает Poly1305-тег.
+
+Всё на чистом Python (без cryptography/pycryptodome), чтобы работать в т.ч. на
+роутере (OpenWrt/Entware), где нативных крипто-библиотек обычно нет.
 
 Использование как скрипт:
     python happ_decode.py                       # encoded_urls.txt -> decoded_urls.txt
     python happ_decode.py in.txt out.txt        # свои файлы
-    python happ_decode.py --link "happ://crypt4/..."   # одна ссылка в stdout
+    python happ_decode.py --link "happ://crypt5/..."   # одна ссылка в stdout
 
 Использование как модуль:
     from happ_decode import decode_link, decode_file
@@ -18,6 +23,13 @@ crypt5 (RSA + ChaCha20-Poly1305) здесь не реализован.
 
 import base64
 import sys
+
+try:  # пакетный запуск: python -m subscribe
+    from . import _chacha
+    from .happ_keys_crypt5 import CRYPT5_PKCS8
+except ImportError:  # запуск файла напрямую / плоские импорты (subscribe/__main__)
+    import _chacha
+    from happ_keys_crypt5 import CRYPT5_PKCS8
 
 # Расшифровка сделана на чистом Python (без внешних зависимостей вроде
 # cryptography/pycryptodome), чтобы скрипт работал где угодно — в т.ч. на роутере
@@ -37,7 +49,7 @@ PKCS1_KEYS = [
 ]
 
 _HAPP_PREFIX_TO_ORDINAL = {
-    "happ://crypt5/": 5,  # не поддерживается здесь
+    "happ://crypt5/": 5,  # RSA(PKCS#8) + ChaCha20-Poly1305, см. _decrypt_crypt5
     "happ://crypt4/": 3,
     "happ://crypt3/": 2,
     "happ://crypt2/": 1,
@@ -131,8 +143,168 @@ def _b64_dec(s: str) -> bytes:
     return base64.b64decode(data)
 
 
+# --- crypt5: RSA (PKCS#8-ключ по маркеру) + ChaCha20-Poly1305 ---
+
+def _parse_pkcs8_der(der: bytes):
+    """Извлекает (n, d) из PKCS#8 PrivateKeyInfo, обёртывающего PKCS#1 RSA-ключ.
+
+    PrivateKeyInfo ::= SEQUENCE { version, AlgorithmIdentifier SEQUENCE{OID,NULL},
+                                  privateKey OCTET STRING (= DER RSAPrivateKey) }
+    """
+    i = 0
+    if der[i] != 0x30:  # внешний SEQUENCE
+        raise ValueError("Некорректный PKCS#8: ожидался SEQUENCE")
+    i += 1
+    i, _ = _read_len(der, i)
+    # version INTEGER — пропускаем
+    if der[i] != 0x02:
+        raise ValueError("Некорректный PKCS#8: ожидался INTEGER (version)")
+    i += 1
+    i, ln = _read_len(der, i)
+    i += ln
+    # AlgorithmIdentifier SEQUENCE — пропускаем
+    if der[i] != 0x30:
+        raise ValueError("Некорректный PKCS#8: ожидался SEQUENCE (algid)")
+    i += 1
+    i, ln = _read_len(der, i)
+    i += ln
+    # privateKey OCTET STRING — внутри лежит PKCS#1 RSAPrivateKey
+    if der[i] != 0x04:
+        raise ValueError("Некорректный PKCS#8: ожидался OCTET STRING (privateKey)")
+    i += 1
+    i, ln = _read_len(der, i)
+    return _parse_pkcs1_der(der[i:i + ln])
+
+
+_CRYPT5_KEY_CACHE = {}
+
+
+def _get_crypt5_key(marker: str):
+    """(n, d, ks) для 8-символьного маркера crypt5 (первые+последние 4 символа payload)."""
+    if marker not in _CRYPT5_KEY_CACHE:
+        b64 = CRYPT5_PKCS8.get(marker)
+        if b64 is None:
+            raise ValueError(f"Неизвестный crypt5-маркер: {marker}")
+        n, d = _parse_pkcs8_der(base64.b64decode(b64))
+        ks = (n.bit_length() + 7) // 8
+        _CRYPT5_KEY_CACHE[marker] = (n, d, ks)
+    return _CRYPT5_KEY_CACHE[marker]
+
+
+def _b64_dec_bytes(data: bytes) -> bytes:
+    """Как _b64_dec, но вход — bytes (используется в crypt5, где режем срезы payload)."""
+    clean = bytearray()
+    for ch in data:
+        if ch in (0x20, 0x0A, 0x0D, 0x09):  # пробел/\n/\r/\t
+            continue
+        if ch == 0x2D:      # '-'
+            clean.append(0x2B)  # '+'
+        elif ch == 0x5F:    # '_'
+            clean.append(0x2F)  # '/'
+        else:
+            clean.append(ch)
+    r = len(clean) % 4
+    if r:
+        clean.extend(b"=" * (4 - r))
+    return base64.b64decode(bytes(clean))
+
+
+def _swap_pairs(b: bytes) -> bytes:
+    """Меняет местами соседние байты попарно (ABCD -> BADC); обратна сама себе."""
+    r = bytearray(b)
+    i = 0
+    while i + 1 < len(r):
+        r[i], r[i + 1] = r[i + 1], r[i]
+        i += 2
+    return bytes(r)
+
+
+def _block_pair_swap(b: bytes) -> bytes:
+    """Меняет местами половинки каждого 4-байтного блока (ABCD -> CDAB); обратна сама себе."""
+    r = bytearray(b)
+    full = len(r) - len(r) % 4
+    i = 0
+    while i < full:
+        r[i], r[i + 2] = r[i + 2], r[i]
+        r[i + 1], r[i + 3] = r[i + 3], r[i + 1]
+        i += 4
+    return bytes(r)
+
+
+def _decrypt_crypt5(payload: str) -> str:
+    """crypt5: block-swap -> маркер выбирает RSA-ключ -> ChaCha20-Poly1305 -> base64."""
+    shuffled = _block_pair_swap(payload.encode("utf-8", errors="strict"))
+    n = len(shuffled)
+    if n < 8:
+        raise ValueError("crypt5: payload слишком короткий")
+    marker = bytes(shuffled[0:4] + shuffled[n - 4:n]).decode("latin-1")
+    body = shuffled[4:n - 4]
+    if len(body) < 13:
+        raise ValueError("crypt5: тело слишком короткое")
+
+    n_rsa, d_rsa, ks = _get_crypt5_key(marker)
+
+    # body[12] — цифра → сначала legacy-раскладка, иначе сначала salted; вторую пробуем как fallback
+    prefer_salted = len(body) > 12 and not (0x30 <= body[12] <= 0x39)
+    layouts = (True, False) if prefer_salted else (False, True)
+
+    last_err = ValueError("crypt5: тело слишком короткое")
+    for salted in layouts:
+        try:
+            return _decrypt_crypt5_body(body, n_rsa, d_rsa, ks, salted)
+        except Exception as e:  # noqa: BLE001 — пробуем вторую раскладку
+            last_err = e
+    raise last_err
+
+
+def _decrypt_crypt5_body(body: bytes, n_rsa: int, d_rsa: int, ks: int, salted: bool) -> str:
+    """Расшифровка одного тела crypt5 в заданной раскладке (см. _decrypt_crypt5)."""
+    nonce = body[0:12]
+    if salted:
+        if len(body) < 22:
+            raise ValueError("crypt5: salted-заголовок слишком короткий")
+        salt = body[14:22]      # 2 символа tag (14 после nonce) + 8 символов salt
+        len_start = 22
+    else:
+        salt = None
+        len_start = 12
+
+    rest = body[len_start:]
+    digit_count = 0
+    while digit_count < len(rest) and 0x30 <= rest[digit_count] <= 0x39:
+        digit_count += 1
+    if digit_count == 0:
+        raise ValueError("crypt5: не найдена длина сегмента")
+    seg_len = int(rest[:digit_count])
+    packed = rest[digit_count:]
+    # packed = 1 байт-разделитель + seg_len байт + RSA-блоб
+    if len(packed) == 0 or seg_len > len(packed) - 1:
+        raise ValueError("crypt5: сегмент обрезан")
+    url_b64 = packed[1:1 + seg_len]
+    rsa_cipher = packed[1 + seg_len:]
+
+    # RSA (после un-swap + base64) восстанавливает 32-байтное значение за ChaCha-ключом
+    rsa_ct = _b64_dec_bytes(rsa_cipher)
+    rsa_plain = _rsa_decrypt_block(rsa_ct, n_rsa, d_rsa, ks)
+    rsa_value = _b64_dec_bytes(_swap_pairs(rsa_plain))
+    if len(rsa_value) != 32:
+        raise ValueError(f"crypt5: длина ChaCha-ключа {len(rsa_value)} != 32")
+
+    if salt is not None:
+        if len(salt) != 8:
+            raise ValueError(f"crypt5: длина salt {len(salt)} != 8")
+        chacha_key = bytes(rsa_value[i] ^ salt[i % 8] for i in range(32))
+    else:
+        chacha_key = rsa_value
+
+    ciphertext = _b64_dec_bytes(url_b64)
+    intermediate = _chacha.decrypt(chacha_key, nonce, ciphertext)  # проверяет Poly1305-тег
+    plain = _b64_dec_bytes(_swap_pairs(intermediate))
+    return plain.decode("utf-8", errors="replace")
+
+
 def decode_link(link: str) -> str:
-    """Декодирует ссылку happ://crypt..crypt4 в обычный URL."""
+    """Декодирует ссылку happ://crypt..crypt5 в обычный URL."""
     link = link.strip()
     ordinal = None
     payload = None
@@ -144,7 +316,7 @@ def decode_link(link: str) -> str:
     if ordinal is None:
         raise ValueError(f"Не распознанный формат ссылки: {link[:24]}...")
     if ordinal == 5:
-        raise NotImplementedError("crypt5 (ChaCha20) здесь не реализован")
+        return _decrypt_crypt5(payload)
 
     n, d, ks = _get_key(ordinal)  # ks = размер RSA-блока в байтах
 

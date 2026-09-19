@@ -136,15 +136,10 @@
     }
   },
   "report": {
-    "enabled": true,
-    "dir": "./results",
-    "format": "csv",
-    "filename": "",
     "console": true
   },
   "scoring": {
     "enabled": true,
-    "file": "./results/score.csv",
     "alpha": 0.3,
     "flap_lambda": 0.5,
     "avail_floor": 0.7,
@@ -183,7 +178,6 @@
     "freeze_groups": [
       "global-auto-out"
     ],
-    "state_file": "./results/switch_state.json",
     "rotation": {
       "enabled": true,
       "interval": 5400,
@@ -204,10 +198,13 @@
   "monitor": {
     "enabled": true,
     "interval": 20,
-    "probe_url": "http://cp.cloudflare.com",
-    "probe_timeout": 5000,
-    "fails": 2,
-    "reassert_drift": true
+    "reassert_drift": true,
+    "silence_window": 300,
+    "silence_floor_mb": 0,
+    "probe_bytes": 1000000,
+    "probe_min_mbps": 1,
+    "probe_timeout": 8,
+    "fails": 2
   },
   "storage": {
     "enabled": true,

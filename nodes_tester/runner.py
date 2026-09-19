@@ -13,17 +13,17 @@
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
-from typing import Optional
 
 from .clash_api import ClashApiClient, ClashApiError
 from .config import Config
 from .identity import NodeIdentity, coarse_region, parse_node
 from .monitor import ProductionMonitor
 from .proxy import make_session
-from .reporter import Reporter, run_timestamp
 from .scoreboard import Scoreboard
 from .storage import Storage
 from .switcher import Switcher
@@ -61,18 +61,26 @@ class Runner:
         self.board = None
         self.switcher = None
         self.monitor = None
+        # Сериализует доступ к tester-селектору (self._top) и socks между плановым
+        # прогоном (лёгкая/тяжёлая фазы) и внеплановым зондом монитора.
+        self._tester_lock = threading.Lock()
 
-        # Storage создаём РАНЬШЕ switcher: балансировке ротации нужен трафик из БД.
+        # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
+        # теперь живут в БД (замена score.csv/switch_state.json).
         self.storage = None
         self.collector = None
         if cfg.storage.enabled:
             self.storage = Storage(cfg.storage)
+            # Однократный импорт старых файлов из каталога БД (если ещё не в БД).
+            db_dir = os.path.dirname(os.path.abspath(cfg.storage.db_file))
+            self.storage.migrate_legacy(os.path.join(db_dir, "score.csv"),
+                                        os.path.join(db_dir, "switch_state.json"))
             if cfg.storage.traffic.enabled:
                 self.collector = TrafficCollector(
                     cfg.storage.traffic, self.clash, self.storage)
 
-        if cfg.scoring.enabled:
-            self.board = Scoreboard(cfg.scoring.file, cfg.scoring)
+        if cfg.scoring.enabled and self.storage is not None:
+            self.board = Scoreboard(self.storage, cfg.scoring)
             if cfg.switching.enabled:
                 traffic_provider = None
                 lb = cfg.switching.rotation.load_balance
@@ -86,7 +94,10 @@ class Runner:
                 self.switcher = Switcher(cfg.switching, self.clash, self.board,
                                          self._top, traffic_provider, self.storage)
                 if cfg.monitor.enabled:
-                    self.monitor = ProductionMonitor(cfg.monitor, self.clash, self.switcher)
+                    self.monitor = ProductionMonitor(
+                        cfg.monitor, self.clash, self.switcher,
+                        prober=self._probe_node, tester_group=self._top,
+                    )
 
     # --- Планирование --------------------------------------------------
 
@@ -193,8 +204,6 @@ class Runner:
         if self.board is not None:             # TTL heavy-veto (двухуровневое тестирование)
             self.board.set_heavy_veto_ttl(self._base.heavy_veto_hours * 3600)
 
-        reporter = Reporter(self.cfg.report, run_timestamp()) if self.cfg.report.enabled else None
-
         if not self._base.loop:
             mode = f"прогонов: {self._base.rounds}"
         elif self._rotation_bound_active():
@@ -206,9 +215,11 @@ class Runner:
         if self._base.loop and not self._rotation_bound_active() and self._base.pass_pause <= 0:
             print("  [!] loop без rotation_bound и pass_pause<=0 — прогоны идут вплотную "
                   "(пауза только host-gap внутри прохода). Задайте pass_pause при желании.")
-        print(f"Результаты: {reporter.path if reporter else 'только в SQLite'}")
         if self.monitor is not None:
-            print(f"Монитор активных нод: каждые {self.cfg.monitor.interval}s")
+            m = self.cfg.monitor
+            print(f"Монитор активных нод: тик {m.interval}s, тишина {m.silence_window / 60:.0f} мин "
+                  f"(<{m.silence_floor_bytes / 1_000_000:.0f} МБ) → зонд "
+                  f"{m.probe_bytes / 1_000_000:.0f} МБ @ {m.probe_min_mbps} Мбит/с")
         if self.storage is not None:
             self.storage.load_nodes(self.cfg.storage.nodes_file)
             print(f"Хранилище: {self.cfg.storage.db_file}"
@@ -239,7 +250,7 @@ class Runner:
                 pass_no += 1
                 empty = False
                 try:
-                    empty = self._run_pass(pass_no, reporter)
+                    empty = self._run_pass(pass_no)
                 except ClashApiError as exc:
                     print(f"[!] Прогон #{pass_no} прерван ошибкой Clash API: {exc}")
                     empty = True                       # API-сбой → тоже выдержим паузу
@@ -266,11 +277,9 @@ class Runner:
             if self.storage is not None:
                 self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, cron)
                 self.storage.close()
-            if reporter is not None:
-                reporter.close()
             self._restore()
 
-        return reporter.path if reporter else ""
+        return self.cfg.storage.db_file if self.storage is not None else ""
 
     def _should_continue(self, pass_no: int) -> bool:
         return True if self._base.loop else pass_no < self._base.rounds
@@ -313,7 +322,7 @@ class Runner:
                 announced = wait
             time.sleep(min(wait, poll))
 
-    def _run_pass(self, pass_no: int, reporter: Optional[Reporter]) -> bool:
+    def _run_pass(self, pass_no: int) -> bool:
         """Один полный прогон. Список нод перечитывается из Clash API.
         Возвращает True, если прогон пустой (нод нет) — вызывающий выдержит retry-паузу,
         чтобы не крутить цикл вплотную (см. review.md P1)."""
@@ -333,6 +342,8 @@ class Runner:
             self._endpoints = self.storage.endpoints_by_crc()   # crc -> (server, port)
             # присутствие в selector → не даём retention удалить живые ноды (P0)
             self.storage.touch_seen(ident.node_id for _, ident in nodes)
+            # журнал появления/выбытия нод (added/removed на каждом переходе)
+            self.storage.reconcile_presence(ident.node_id for _, ident in nodes)
         self._host_ep_last: dict = {}         # host -> {sig: monotonic} (зазор, лёгкая+тяжёлая)
         if self.board is not None:
             self.board.set_pass(pass_no)
@@ -348,18 +359,14 @@ class Runner:
             self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
             record = self._test_node(region, ident, pass_no,
                                      self._tests_for(params.tests_enabled), params)
-            if reporter is not None:
-                reporter.add(record)
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(record)
             gate = self._score_and_maybe_switch(region, ident, record)
             self._backoff_update(ident.node_id, gate)
 
         # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
-        self._run_heavy_pass(node_by_raw, pass_no, reporter)
+        self._run_heavy_pass(node_by_raw, pass_no)
 
-        if reporter is not None:
-            reporter.flush()
         if self.board is not None:
             self.board.end_pass(pass_no)
         if self.switcher is not None:
@@ -394,8 +401,7 @@ class Runner:
                     targets.append(ni)
         return targets
 
-    def _run_heavy_pass(self, node_by_raw: dict, pass_no: int,
-                        reporter: Optional[Reporter]) -> None:
+    def _run_heavy_pass(self, node_by_raw: dict, pass_no: int) -> None:
         if self.board is None:
             return
         heavy = self._heavy_test()
@@ -410,29 +416,29 @@ class Runner:
                 continue
             params = self._region_params(region)
             self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
-            self._remember(self._top)
-            try:
-                self.clash.select(self._top, ident.raw)   # плоско: nodes-tester → нода
-            except ClashApiError as exc:
-                print(f"  {ident.short()}: ОШИБКА переключения (heavy): {exc}")
-                continue
-            if params.switch_delay > 0:
-                time.sleep(params.switch_delay)
-            session = make_session(self.cfg.testing_group.connection)
-            ctx = TestContext(session=session, node=ident.raw,
-                              default_timeout=params.request_timeout, region=region)
-            try:
-                res = heavy.run(ctx).to_dict()
-            except Exception as exc:  # noqa: BLE001 — сбой heavy не рушит проход
-                res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            finally:
-                session.close()
+            # Лок общий с зондом монитора; host-gap-пауза и запись в БД — вне лока.
+            with self._tester_lock:
+                self._remember(self._top)
+                try:
+                    self.clash.select(self._top, ident.raw)   # плоско: nodes-tester → нода
+                except ClashApiError as exc:
+                    print(f"  {ident.short()}: ОШИБКА переключения (heavy): {exc}")
+                    continue
+                if params.switch_delay > 0:
+                    time.sleep(params.switch_delay)
+                session = make_session(self.cfg.testing_group.connection)
+                ctx = TestContext(session=session, node=ident.raw,
+                                  default_timeout=params.request_timeout, region=region)
+                try:
+                    res = heavy.run(ctx).to_dict()
+                except Exception as exc:  # noqa: BLE001 — сбой heavy не рушит проход
+                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                finally:
+                    session.close()
             ok = bool(res.get("ok"))
             self.board.set_heavy(ident.raw, ok)     # veto-фильтр (в скоринг НЕ идёт)
             rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
                    "tests": {heavy.name: res}}
-            if reporter is not None:
-                reporter.add(rec)
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(rec)
             if self.cfg.report.console:
@@ -459,13 +465,15 @@ class Runner:
         # Backoff персистентен → нужен storage. Без него ноды тестируются каждый проход.
         if not self.cfg.cooldown.enabled or not crc or self.storage is None:
             return
+        prev = self._backoff.get(crc)                # (until, streak, reason) до обновления
         if gate:
             if crc in self._backoff:
                 self.storage.clear_backoff(crc)      # нода жива — снять backoff/карантин
                 self._backoff.pop(crc, None)
+                self.storage.add_node_event(crc, "recovered")   # событие восстановления
             return
         cd = self.cfg.cooldown
-        streak = self._backoff.get(crc, (0, 0, ""))[1] + 1
+        streak = (prev[1] if prev else 0) + 1
         secs = cd.base_seconds * (2 ** (streak - 1))         # удвоение за подряд провал
         cap = cd.garbage_hours * 3600.0
         garbage = secs >= cap or streak > cd.max_skip        # потолок → карантин (мусорная)
@@ -474,9 +482,44 @@ class Runner:
         until = int(time.time() + secs)
         reason = "garbage" if garbage else "backoff"
         self.storage.set_backoff(crc, until, streak, reason)
+        # Событие ТОЛЬКО на переходе состояния: первый уход в backoff и вход в garbage —
+        # чтобы node_events не пух на каждый повторный провал.
+        if garbage and (prev is None or prev[2] != "garbage"):
+            self.storage.add_node_event(crc, "garbage", reason, streak)
+        elif prev is None:
+            self.storage.add_node_event(crc, "backoff", reason, streak)
         self._backoff[crc] = (until, streak, reason)
         tag = "карантин (мусорная)" if garbage else f"backoff #{streak}"
         print(f"  · gate-провал {crc} → {tag}, пропуск ~{secs / 60:.0f} мин")
+
+    def _probe_node(self, region: str, leaf: str) -> tuple[bool, float, bool]:
+        """Внеплановый зонд активной ноды для монитора: закачка ~probe_bytes через socks.
+
+        Возвращает (ok, mbps, inconclusive). inconclusive — туннель жив, но замер не
+        показателен (429/limited, http-ошибка): монитор трактует как «не throttle», без
+        страйка. ClashApiError (переключение/API) пробрасывает наверх — монитор пропустит.
+        """
+        mon = self.cfg.monitor
+        url = mon.probe_url or f"https://speed.cloudflare.com/__down?bytes={mon.probe_bytes}"
+        with self._tester_lock:
+            self._remember(self._top)
+            self.clash.select(self._top, leaf)     # ClashApiError → наверх (монитор пропустит)
+            if self.cfg.run.default.switch_delay > 0:
+                time.sleep(self.cfg.run.default.switch_delay)
+            session = make_session(self.cfg.testing_group.connection)
+            try:
+                cls = get_test_class("download")
+                test = cls({"url": url, "duration": mon.probe_timeout,
+                            "connect_timeout": mon.probe_timeout})
+                ctx = TestContext(session=session, node=leaf,
+                                  default_timeout=mon.probe_timeout, region=region)
+                res = test.run(ctx).to_dict()
+            finally:
+                session.close()
+        ok = bool(res.get("ok"))
+        mbps = float(res.get("speed_mbps", 0.0) or 0.0)
+        inconclusive = bool(res.get("limited") or res.get("http_error"))
+        return ok, mbps, inconclusive
 
     def _remember(self, tag: str) -> None:
         if not self._base.restore_selection or tag in self._originals:
@@ -511,35 +554,40 @@ class Runner:
             "node": leaf,
         }
 
-        # Плоский nodes-tester: PUT nodes-tester = leaf.
-        self._remember(self._top)
-        try:
-            self.clash.select(self._top, leaf)
-        except ClashApiError as exc:
-            print(f"  {ident.short()}: ОШИБКА переключения: {exc}")
-            base["tests"] = {"_select": {"ok": False, "error": str(exc)}}
-            return base
+        # Плоский nodes-tester: PUT nodes-tester = leaf. Лок общий с внеплановым зондом
+        # монитора — они не топчут селектор/socks друг друга.
+        with self._tester_lock:
+            self._remember(self._top)
+            try:
+                self.clash.select(self._top, leaf)
+            except ClashApiError as exc:
+                print(f"  {ident.short()}: ОШИБКА переключения: {exc}")
+                base["tests"] = {"_select": {"ok": False, "error": str(exc)}}
+                return base
 
-        if params.switch_delay > 0:
-            time.sleep(params.switch_delay)
+            if params.switch_delay > 0:
+                time.sleep(params.switch_delay)
 
-        session = make_session(self.cfg.testing_group.connection)
-        ctx = TestContext(session=session, node=leaf,
-                          default_timeout=params.request_timeout, region=region)
-        results = {}
-        try:
-            for test in tests:
-                if not test.due(pass_no):      # тяжёлые тесты — раз в N прогонов (every)
-                    continue
-                try:
-                    res = test.run(ctx).to_dict()
-                except Exception as exc:  # noqa: BLE001 — один тест не рушит проход/ноду
-                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-                results[test.name] = res
-                if test.name == "connectivity" and not res.get("ok"):
-                    break                      # нет связности → не гоняем остальное (трафик)
-        finally:
-            session.close()                    # session закрываем всегда
+            session = make_session(self.cfg.testing_group.connection)
+            ctx = TestContext(session=session, node=leaf,
+                              default_timeout=params.request_timeout, region=region)
+            # Переключение удалось — фиксируем _select=OK ВСЕГДА (симметрично ветке
+            # ошибки выше). Иначе строка _select пишется только при провале и «залипает»
+            # в дашборде навсегда, не перекрываясь успехом (см. историю бага).
+            results = {"_select": {"ok": True}}
+            try:
+                for test in tests:
+                    if not test.due(pass_no):      # тяжёлые тесты — раз в N прогонов (every)
+                        continue
+                    try:
+                        res = test.run(ctx).to_dict()
+                    except Exception as exc:  # noqa: BLE001 — один тест не рушит проход/ноду
+                        res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                    results[test.name] = res
+                    if test.name == "connectivity" and not res.get("ok"):
+                        break                      # нет связности → не гоняем остальное (трафик)
+            finally:
+                session.close()                    # session закрываем всегда
 
         base["tests"] = results
         if self.cfg.report.console:

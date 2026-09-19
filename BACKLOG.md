@@ -6,6 +6,31 @@
 
 ## Активные
 
+### 0. Актуализировать `score.md` (док-долг)
+
+`score.md` описывает `score.csv` и отдельный тест `stability`, которых уже нет: рейтинг
+живёт в таблице `scores` (SQLite), `stability` слит в единый `download`. Формулы, веса,
+EWMA/gate/avail — верны. Нужно: заменить упоминания `score.csv` → таблица `scores`,
+раздел про `stability` → показатели из `download` (`throttle_ratio`/`hold_ratio`),
+блок «файл рейтинга» → строка таблицы `scores`. Низкий риск, чисто документация.
+
+### 0b. Тесты падают на дефолтной Windows-консоли (cp1251) из-за Unicode в `print`
+
+`python -m unittest discover -s tests` на cp1251-консоли даёт `errors=4` —
+`UnicodeEncodeError` при печати `→`/`…` (SUT/тесты печатают в stdout, а
+`_force_utf8_output` есть только в CLI-точках входа, не в тестах). Функционально 67/67
+зелёные под `PYTHONUTF8=1`. Варианты: (а) задокументировать запуск с UTF-8 (сделано в README); (б) добавить в `tests/__init__` или общий `setUp` форс UTF-8 stdout; (в) убрать
+печать из горячих путей под тестом. Приоритет низкий (грабли среды, не баг логики).
+
+### Идеи из README «Дальше» (не начаты)
+
+- **Многогрупповость `testing_groups`** — сейчас используется только первая группа
+  (`Config.testing_group`). Гонять несколько тест-юнитов параллельно с раздельным стейтом.
+- **Новые тесты:** upload speed, streaming-unlock (Netflix/YouTube premium), DNS-leak.
+- **Слияние тестера и переименователя в один pipeline / один `nodes.json`.** Общий пакет
+  `naming` (идентичность/CRC/протокол/регионы) уже выделен и используется обоими — база
+  под слияние заложена; остаётся единый запуск/поток данных.
+
 ### 1. Дашборд «Результаты тестов»: фильтры по провайдеру / протоколу / стране
 
 Добавить фильтры к таблице результатов (`renderResults` в `server.py`): по провайдеру,
@@ -44,6 +69,58 @@ garbage-нодами (см. активные задачи по тестеру).
 
 ## Реализовано (архив — краткий журнал)
 
+- **subscribe — поддержка happ://crypt5 (RSA + ChaCha20-Poly1305):** дореализован формат
+  crypt5 в `subscribe/happ_decode.py` (порт hpwnr): `block_pair_swap` payload → 8-символьный
+  маркер выбирает RSA-ключ PKCS#8 (36 ключей в `subscribe/happ_keys_crypt5.py`, RSA-4096) →
+  RSA/PKCS#1 v1.5 даёт 32-байтный ChaCha-ключ → тело расшифровывается ChaCha20-Poly1305. Две
+  раскладки тела (legacy / salted+XOR), верную выбирает Poly1305-тег. Добавлен чистый-Python
+  ChaCha20-Poly1305 `subscribe/_chacha.py` (RFC 8439, без внешних зависимостей — работает на
+  роутере; проверен официальными тест-векторами RFC). `happ.py`/`main.py` уже маршрутизировали
+  любой `happ://crypt*` через `decode_link`, так что подписки crypt5 подхватываются
+  автоматически. Проверено RFC-векторами и round-trip'ом (encrypt↔decode, обе раскладки).
+- **Фикс распознавания страны AWG-нод (`subscribe/parsers/awg.py` + `tool.group_meta`):** у
+  .conf нет ни флага, ни названия страны — cc только в имени файла; старый хардкод-словарь
+  `_COUNTRY` на 6 стран давал остальным тег `"CH | AWG"` без флага → `group_meta` → `undef`.
+  Ввёл чёткий приоритет определения страны в `group_meta`: **флаг в подписке → `country_from_text`
+  → `_file_cc`** (подсказка из имени файла для folder-парсеров) → `undef`. `awg.py` ставит
+  `node['_file_cc']=stem` (без синтетических флагов), `main` чистит `_file_cc` перед выводом.
+  CRC не меняется (`_`-поля/tag не входят в payload) → история нод сохраняется.
+- **Дашборд — жизненный цикл и деградация нод (Phase 2):** новые секции поверх БД-слоя:
+  «Мусорные / деградирующие ноды» — фильтр-чипы provider/cc/protocol (как в трафике), поля
+  в-конфиге-с/статус(backoff|карантин)/провалов/×в-мусоре/посл.мусор/время-в-мусоре/until/
+  ● удалена (по `nodes.present`); «Динамика выбытия» — inline-SVG график появилось/выбыло по
+  дням (`node_events`); «Долгожители» (живые по возрасту ↓) и «Быстро выпадающие» (по сроку
+  жизни до 1-го garbage ↑); спарклайн истории рейтинга (`score_history`) колонкой в «Рейтинге».
+  `dashboard/data.py`: `_event_stats/_garbage_table/_degradation/_attrition/_score_spark`;
+  `server.py`: `filtered()`/`plain()`/`attritionChart()`/`spark()`. Всё stdlib + inline-SVG.
+- **Всё состояние — в SQLite (убран зоопарк csv/json):** `score.csv` → таблица `scores`;
+  `switch_state.json` → `switch_state`/`switch_recent`/`switch_activations` (нормализованно);
+  файловый Reporter (`results.*`) убран — сырьё уже в таблице `results`; `report` слит до
+  `{console}`. Новые таблицы `score_history` (score/s_run/gate — каждая нода каждый проход) и
+  `node_events` (пер-нодный журнал: `added`/`removed` — появление/выбытие из подписки на КАЖДОМ
+  переходе, флаг `nodes.present`; `backoff`/`garbage`/`recovered` — здоровье; `reconcile_presence`
+  каждый прогон) — фундамент под историю рейтинга и деградацию/выбытие нод в дашборде.
+  `Scoreboard`/`Switcher` работают через `Storage`; `scoring`/
+  `switching` теперь требуют `storage.enabled`; при старте — однократная миграция старых файлов
+  из каталога БД (`migrate_legacy`, идемпотентно). Дашборд (`data.py`) и тесты читают из БД.
+  Каскад `cleanup()` по crc и возрастной кап расширены на новые таблицы. Убраны поля
+  `scoring.file`/`switching.state_file`/секция `report`-файла из конфига и схемы.
+- **Монитор: трафик-гейт + внеплановый зонд (анти-throttle ТСПУ):** delay-проба заменена на
+  логику по САМОМУ надёжному сигналу — идёт ли через активную ноду боевой трафик. Идёт
+  (≥ `silence_floor` за окно, из /connections, свой трафик тестера исключён) → нода жива, не
+  трогаем. «Тихо» дольше `silence_window` (деф.5 мин) → внеплановый зонд: закачка ~`probe_bytes`
+  (деф.1 МБ) через socks реюзом `download`-теста. Провал — нет ответа ИЛИ `speed < probe_min_mbps`
+  (throttle, delay такое не ловит) — `fails` раз подряд → EMERGENCY; 429/limited/http-ошибка =
+  туннель жив, не throttle → без страйка. `silence_floor` авто = `min_mbps × window` (≈37.5 МБ):
+  пассивный трафик и зонд меряют одно. `runner._probe_node` (плоский `select(nodes-tester,leaf)`),
+  общий `_tester_lock` сериализует селектор/socks между лёгкой/тяжёлой фазами прогона и зондом.
+  `MonitorConfig` расширен (+схема, +config.json); загрузка monitor через `_filtered`.
+- **Фикс AWG-нод в дашборде (`storage.load_nodes` читает endpoints):** sing-box 1.11+ вынес
+  wireguard/amneziawg из `outbounds` в отдельный `endpoints` — `load_nodes` читал только
+  `outbounds`, поэтому AWG-ноды не попадали в таблицу `nodes`, и `LEFT JOIN nodes` в дашборде
+  (`data.py`) давал пустые provider/protocol при живом CRC (из traffic/results). Теперь читаются
+  оба массива → AWG-строки (provider=AWG, protocol=wg) появляются, имена в дашборде восстановлены
+  (ретроспективно — join идёт по CRC на существующие traffic/results).
 - **Фильтр `exclude_node_protocols` (исключение протоколов из генерации для клиентов):**
   новый ключ providers.json — список токенов дескриптора протокола (`naming.node_protocol`,
   пайп-токены), ноды с любым из них выкидываются целиком в `main.finalize_nodes` (там же, где

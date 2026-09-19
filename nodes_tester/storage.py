@@ -4,13 +4,19 @@
 fingerprint настроек ноды (его считает sing-box-subscribe), поэтому история
 переживает переименования тегов.
 
-Таблицы:
-  nodes(crc PK, tag, provider/protocol/country, type, server/port, payload JSON,
-        crc_ok, first_seen, last_seen)   — описание ноды (все поля, из которых CRC)
+Таблицы (полное описание — SCHEMA.md в корне репо):
+  nodes(crc PK, tag, provider/protocol/country/label, type, server/port, payload JSON,
+        crc_ok, first_seen, last_seen, present)   — описание ноды + флаг присутствия
   traffic(ts, crc, up, down, conns, is_tester)                 — временной ряд объёма
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
   results(ts, pass_no, crc, test, ok, url, metrics JSON, error)
   activations(ts, region, crc, tag, reason, score, prev)       — история переключений
+  scores(crc PK, …)                — снимок рейтинга (замена score.csv)
+  score_history(ts, crc, region, score, s_run, gate)           — динамика рейтинга
+  switch_state / switch_recent / switch_activations            — состояние switcher
+  node_events(ts, crc, event, reason, streak)  — журнал added/removed/backoff/garbage/recovered
+  garbage(crc PK, since, until, reason, streak) — текущий backoff/карантин
+  meta(key PK, value)              — сквозные значения между рестартами
 
 Одно соединение sqlite3 (check_same_thread=False) + Lock: пишут поток прогона и
 поток сбора трафика. Режим WAL для параллельного чтения.
@@ -22,6 +28,7 @@ retention_days и КАСКАДОМ все их строки во всех таб
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sqlite3
@@ -34,7 +41,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
   crc TEXT PRIMARY KEY, tag TEXT, provider TEXT, protocol TEXT, country TEXT, label TEXT,
   type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
-  first_seen INTEGER, last_seen INTEGER);
+  first_seen INTEGER, last_seen INTEGER, present INTEGER);
 CREATE TABLE IF NOT EXISTS traffic (
   ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
 CREATE INDEX IF NOT EXISTS idx_traffic_ts ON traffic(ts);
@@ -55,7 +62,36 @@ CREATE INDEX IF NOT EXISTS idx_activations_crc ON activations(crc);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS garbage (
   crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER);
+CREATE TABLE IF NOT EXISTS scores (
+  crc TEXT PRIMARY KEY, node TEXT, provider TEXT, protocol TEXT, region TEXT,
+  country TEXT, label TEXT, active INTEGER, score REAL,
+  reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
+  score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
+  heavy_ok TEXT, heavy_ts INTEGER);
+CREATE TABLE IF NOT EXISTS score_history (
+  ts INTEGER, crc TEXT, region TEXT, score REAL, s_run REAL, gate INTEGER);
+CREATE INDEX IF NOT EXISTS idx_score_history_ts ON score_history(ts);
+CREATE INDEX IF NOT EXISTS idx_score_history_crc ON score_history(crc);
+CREATE TABLE IF NOT EXISTS switch_state (
+  region TEXT PRIMARY KEY, active TEXT, last_switch REAL, rotate_deadline REAL,
+  quality_count INTEGER, emg_stuck INTEGER);
+CREATE TABLE IF NOT EXISTS switch_recent (
+  region TEXT, seq INTEGER, node TEXT, PRIMARY KEY (region, seq));
+CREATE TABLE IF NOT EXISTS switch_activations (
+  region TEXT, node TEXT, count INTEGER, PRIMARY KEY (region, node));
+CREATE TABLE IF NOT EXISTS node_events (
+  ts INTEGER, crc TEXT, event TEXT, reason TEXT, streak INTEGER);
+CREATE INDEX IF NOT EXISTS idx_node_events_ts ON node_events(ts);
+CREATE INDEX IF NOT EXISTS idx_node_events_crc ON node_events(crc);
 """
+
+# Колонки снимка рейтинга (таблица scores). Ключ БД — crc; в памяти Scoreboard
+# ключует по raw-тегу (node), поэтому node храним отдельной колонкой.
+_SCORE_COLS = (
+    "node", "provider", "protocol", "region", "country", "label", "active", "score",
+    "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
+    "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
+)
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
 _NON_NODE_TYPES = {"selector", "urltest", "direct", "block", "dns"}
@@ -70,6 +106,7 @@ class Storage:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(_SCHEMA)
         for tbl, col, decl in (("nodes", "label", "TEXT"),
+                                ("nodes", "present", "INTEGER"),
                                 ("garbage", "streak", "INTEGER")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
@@ -104,7 +141,13 @@ class Storage:
         except (OSError, ValueError) as exc:
             print(f"  [storage] не удалось прочитать {path}: {exc}")
             return 0
-        outbounds = data.get("outbounds", data) if isinstance(data, dict) else data
+        # sing-box 1.11+ вынес wireguard/amneziawg (AWG) из outbounds в отдельный
+        # массив endpoints — читаем оба, иначе AWG-ноды теряются (нет строки в nodes
+        # → в дашборде пустые provider/protocol при живом CRC из traffic/results).
+        if isinstance(data, dict):
+            outbounds = list(data.get("outbounds") or []) + list(data.get("endpoints") or [])
+        else:
+            outbounds = data or []
         now = int(time.time())
         rows = []
         for ob in outbounds or []:
@@ -336,6 +379,214 @@ class Storage:
                  float(score or 0), prev))
             self._db.commit()
 
+    # --- Рейтинг (таблица scores — замена score.csv) -------------------
+
+    def load_scores(self) -> dict:
+        """{node_tag: row} — снимок рейтинга. Ключи row совпадают с тем, что Scoreboard
+        раньше грузил из csv (in-memory ключ — raw-тег node; crc отдаётся как 'id')."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT crc,node,provider,protocol,region,country,label,active,score,"
+                "reliability,consistency,throttle,jitter,latency,throughput,"
+                "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts FROM scores"
+            ).fetchall()
+        out: dict[str, dict] = {}
+        for r in rows:
+            tag = r[1] or r[0]
+            out[tag] = {
+                "node": tag, "provider": r[2] or "", "protocol": r[3] or "",
+                "region": r[4] or "", "country": r[5] or "", "label": r[6] or "",
+                "id": r[0], "active": _int(r[7]), "score": _flt(r[8]),
+                "reliability": _flt(r[9]), "consistency": _flt(r[10]),
+                "throttle": _flt(r[11]), "jitter": _flt(r[12]),
+                "latency": _flt(r[13]), "throughput": _flt(r[14]),
+                "score_ewma": _flt(r[15]), "avail": _flt(r[16]), "flap": _flt(r[17]),
+                "samples": _int(r[18]), "last_seen": _int(r[19]),
+                "heavy_ok": "" if r[20] is None else str(r[20]), "heavy_ts": _int(r[21]),
+            }
+        return out
+
+    def save_scores(self, rows) -> None:
+        """Полная перезапись снимка рейтинга (исчезнувшие ноды уходят). Ключ БД — crc.
+
+        Разные теги с ОДИНАКОВЫМ crc (нода-дубль: идентичный конфиг, разное имя) в памяти
+        Scoreboard — отдельные строки, но в scores crc это PRIMARY KEY. Дедуплицируем по
+        crc, оставляя предпочтительную (активная > больший score), иначе INSERT упал бы с
+        UNIQUE constraint failed: scores.crc."""
+        by_crc: dict[str, tuple] = {}
+        for r in rows:
+            crc = r.get("id") or r.get("node")
+            if not crc:
+                continue
+            rank = ((_int(r.get("active")) or 0), _flt(r.get("score")))
+            row = (
+                crc, r.get("node", ""), r.get("provider", ""), r.get("protocol", ""),
+                r.get("region", ""), r.get("country", ""), r.get("label", ""),
+                _int(r.get("active")), _flt(r.get("score")),
+                _flt(r.get("reliability")), _flt(r.get("consistency")),
+                _flt(r.get("throttle")), _flt(r.get("jitter")),
+                _flt(r.get("latency")), _flt(r.get("throughput")),
+                _flt(r.get("score_ewma")), _flt(r.get("avail")), _flt(r.get("flap")),
+                _int(r.get("samples")), _int(r.get("last_seen")),
+                "" if r.get("heavy_ok") in (None,) else str(r.get("heavy_ok")),
+                _int(r.get("heavy_ts")),
+            )
+            prev = by_crc.get(crc)
+            if prev is None or rank > prev[0]:
+                by_crc[crc] = (rank, row)
+        packed = [v[1] for v in by_crc.values()]
+        with self._lock:
+            self._db.execute("DELETE FROM scores")
+            if packed:
+                self._db.executemany(
+                    "INSERT INTO scores (crc,node,provider,protocol,region,country,label,"
+                    "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
+                    "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+            self._db.commit()
+
+    def set_active_crc(self, region: str, crc: "str | None") -> None:
+        """Пометить активную ноду региона в таблице scores (active=1 у crc, 0 у прочих
+        того же региона). Вызывается из switcher при переключении: save_scores полностью
+        переписывает scores лишь раз в прогон (end_pass), а переключения (ротация/emergency
+        из фонового монитора) идут между прогонами — без этого scores.active в БД отстаёт
+        от activations, и дашборд показывает разные активные ноды в двух таблицах."""
+        with self._lock:
+            self._db.execute("UPDATE scores SET active = 0 WHERE region = ?", (region,))
+            if crc:
+                self._db.execute(
+                    "UPDATE scores SET active = 1 WHERE region = ? AND crc = ?",
+                    (region, crc))
+            self._db.commit()
+
+    def add_score_history(self, ts: int, rows) -> None:
+        """rows: [(crc, region, score, s_run, gate), ...] — точки истории рейтинга."""
+        if not rows:
+            return
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO score_history (ts,crc,region,score,s_run,gate) VALUES (?,?,?,?,?,?)",
+                [(ts, c, rg, float(sc or 0), float(sr or 0), 1 if g else 0)
+                 for (c, rg, sc, sr, g) in rows])
+            self._db.commit()
+
+    # --- Состояние переключений (таблицы switch_* — замена switch_state.json) ---
+
+    def load_switch_state(self) -> dict:
+        """{region: {active,last_switch,rotate_deadline,quality_count,recent[],activations{},emg_stuck?}}."""
+        state: dict[str, dict] = {}
+        with self._lock:
+            for region, active, ls, rd, qc, emg in self._db.execute(
+                "SELECT region,active,last_switch,rotate_deadline,quality_count,emg_stuck "
+                "FROM switch_state"):
+                st = {"active": active, "last_switch": _flt(ls), "rotate_deadline": _flt(rd),
+                      "quality_count": _int(qc), "recent": [], "activations": {}}
+                if emg:
+                    st["emg_stuck"] = True
+                state[region] = st
+            for region, _seq, node in self._db.execute(
+                "SELECT region,seq,node FROM switch_recent ORDER BY region, seq"):
+                if region in state:
+                    state[region]["recent"].append(node)
+            for region, node, cnt in self._db.execute(
+                "SELECT region,node,count FROM switch_activations"):
+                if region in state:
+                    state[region]["activations"][node] = _int(cnt)
+        return state
+
+    def save_switch_state(self, state: dict) -> None:
+        """Полная перезапись состояния переключений (регионов немного)."""
+        with self._lock:
+            self._db.execute("DELETE FROM switch_state")
+            self._db.execute("DELETE FROM switch_recent")
+            self._db.execute("DELETE FROM switch_activations")
+            for region, st in (state or {}).items():
+                self._db.execute(
+                    "INSERT INTO switch_state (region,active,last_switch,rotate_deadline,"
+                    "quality_count,emg_stuck) VALUES (?,?,?,?,?,?)",
+                    (region, st.get("active"), float(st.get("last_switch", 0) or 0),
+                     float(st.get("rotate_deadline", 0) or 0),
+                     int(st.get("quality_count", 0) or 0), 1 if st.get("emg_stuck") else 0))
+                for seq, node in enumerate(st.get("recent", []) or []):
+                    self._db.execute("INSERT INTO switch_recent (region,seq,node) VALUES (?,?,?)",
+                                     (region, seq, node))
+                for node, cnt in (st.get("activations", {}) or {}).items():
+                    self._db.execute(
+                        "INSERT INTO switch_activations (region,node,count) VALUES (?,?,?)",
+                        (region, node, int(cnt or 0)))
+            self._db.commit()
+
+    # --- Журнал событий ноды (added/removed/backoff/garbage/recovered) ---
+
+    def add_node_event(self, crc: str, event: str, reason: str = "", streak: int = 0) -> None:
+        """Записать событие жизненного цикла/здоровья ноды (пер-нодный таймлайн)."""
+        if not crc:
+            return
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,?,?)",
+                (int(time.time()), crc, event, reason or "", int(streak or 0)))
+            self._db.commit()
+
+    def reconcile_presence(self, crcs) -> tuple[list, list]:
+        """Сверить текущее присутствие нод в selector с сохранённым флагом present:
+        залогировать 'added' (появилась) и 'removed' (ушла из подписки) на КАЖДОМ
+        переходе и обновить флаг. Возвращает (added, removed) списки crc.
+
+        Присутствие ведём по нодам, у которых есть строка в nodes (реальные ноды из
+        подписки); одна нода может появляться/выбывать многократно — каждое пишем."""
+        now_set = {c for c in crcs if c}
+        ts = int(time.time())
+        with self._lock:
+            prev = {r[0] for r in self._db.execute(
+                "SELECT crc FROM nodes WHERE present = 1")}
+            known = {r[0] for r in self._db.execute("SELECT crc FROM nodes")}
+            added = [c for c in now_set if c not in prev and c in known]
+            removed = [c for c in prev if c not in now_set]
+            for c in added:
+                self._db.execute(
+                    "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,?,?)",
+                    (ts, c, "added", "", 0))
+            for c in removed:
+                self._db.execute(
+                    "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,?,?)",
+                    (ts, c, "removed", "", 0))
+            present_now = [c for c in now_set if c in known]
+            if present_now:
+                ph = ",".join("?" * len(present_now))
+                self._db.execute(f"UPDATE nodes SET present = 1 WHERE crc IN ({ph})",
+                                 present_now)
+            if removed:
+                ph2 = ",".join("?" * len(removed))
+                self._db.execute(f"UPDATE nodes SET present = 0 WHERE crc IN ({ph2})", removed)
+            self._db.commit()
+        return added, removed
+
+    # --- Однократная миграция старых файлов -----------------------------
+
+    def migrate_legacy(self, score_csv: str, switch_json: str) -> None:
+        """Импортировать старые score.csv / switch_state.json в БД, если таблицы пусты и
+        файлы существуют (переход с файлового хранения). После — файлы не используются."""
+        if score_csv and os.path.exists(score_csv) and self._table_empty("scores"):
+            rows = _read_score_csv(score_csv)
+            if rows:
+                self.save_scores(rows)
+                print(f"  [storage] миграция: рейтинг из {score_csv} ({len(rows)} нод)")
+        if switch_json and os.path.exists(switch_json) and self._table_empty("switch_state"):
+            try:
+                with open(switch_json, encoding="utf-8") as fh:
+                    state = json.load(fh)
+            except (OSError, ValueError):
+                state = {}
+            if isinstance(state, dict) and state:
+                self.save_switch_state(state)
+                print(f"  [storage] миграция: состояние переключений из {switch_json}")
+
+    def _table_empty(self, table: str) -> bool:
+        with self._lock:
+            n = self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        return int(n or 0) == 0
+
     # --- Обслуживание --------------------------------------------------
 
     def cleanup(self) -> None:
@@ -354,7 +605,8 @@ class Storage:
             if stale:
                 ph = ",".join("?" * len(stale))
                 # дочерние строки раньше родителя (порядок логический; FK нет)
-                for tbl in ("activations", "endpoints", "results", "traffic", "garbage", "nodes"):
+                for tbl in ("activations", "endpoints", "results", "traffic", "garbage",
+                            "score_history", "node_events", "scores", "nodes"):
                     self._db.execute(f"DELETE FROM {tbl} WHERE crc IN ({ph})", stale)
             # давно истёкший backoff (старше retention) — подчистить, чтобы не пух;
             # свежий истёкший оставляем: его streak нужен для продолжения серии при
@@ -366,6 +618,8 @@ class Storage:
             self._db.execute("DELETE FROM results WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM traffic WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM activations WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM score_history WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM node_events WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM endpoints WHERE last_seen < ?", (cutoff,))
             self._db.commit()
         if stale:
@@ -388,3 +642,19 @@ def _int(v):
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _flt(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _read_score_csv(path: str) -> list[dict]:
+    """Старый score.csv → список row-словарей (для однократной миграции)."""
+    try:
+        with open(path, encoding="utf-8", newline="") as fh:
+            return [dict(r) for r in csv.DictReader(fh) if r.get("node")]
+    except (OSError, ValueError):
+        return []
