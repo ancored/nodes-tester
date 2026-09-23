@@ -25,7 +25,12 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   живой прогон на роутере рядом со старым кодом — 2026-09-23
 - [ ] (Ф4) `dashboard/api_config.py` проверяет providers на обязательный `save_config_path` —
   в v2 его нет; редактор конфигов переедет в `nodes_admin` и должен понимать v2
-- [ ] Ф3 — роутерные скрипты
+- [x] Выкатка на роутер 2026-09-23: новый тестер + встроенная админка (192.168.1.1:8088,
+  токен), `nodes-dashboard` выключен; cron генерации — на `/root/sing-box-nodes_tester.old`;
+  теневой конвейер `scripts/router/shadow-pipeline.sh` в cron раз в 6 ч → `/root/nodes-data/`
+- [ ] Ф3 — роутерные скрипты (`update-rules` / `apply-nodes` / `build-clients`); проверить
+  apply-nodes без применения (merge+check во временный файл); затем переключить cron с `.old`
+  на новый конвейер — это и есть момент смены 34 тегов и рестарта sing-box
 - [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси
 - [ ] Ф5 — оркестратор: планировщик, pipeline.db, SPA Конвейер/Подписки/Потоки/Действия
 - [ ] Ф6 — уборка `subscribe/`, `dashboard/`, cron, доки
