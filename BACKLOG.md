@@ -14,7 +14,10 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
 Решения приняты 2026-09-23 (см. спеку §0). Инвариант — golden: теги/CRC не меняются.
 
 - [x] Спека v1: контракты, CLI, конфиги v2, pipeline.json, планировщик, фазы (2026-09-23)
-- [ ] Ф0 — baseline-коммит + golden-фикстуры нынешнего `subscribe` (оба набора)
+- [x] Ф0 — baseline-коммит `8ef3038`, бэкап роутера + `scripts/router/rollback-nodes-tester.sh`,
+  golden-эталоны (синтетика в git + реальные наборы локально) — 2026-09-23
+- [ ] **Учебный прогон отката на роутере** (перезапускает sing-box — только с согласия,
+  в тихое время): `/root/backups/rollback-nodes-tester.sh -y --no-regen`
 - [ ] Ф1 — `nodes_fetch` + `schemas/raw_nodes` + providers v2
 - [ ] Ф2 — `nodes_config` + groups_params v2 + `migrate`
 - [ ] Ф3 — роутерные скрипты

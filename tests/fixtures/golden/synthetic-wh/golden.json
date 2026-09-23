@@ -1,0 +1,405 @@
+{
+  "outbounds": [
+    {
+      "tag": "ALPHA-vless|reality-de-out [376a1bc0]",
+      "type": "vless",
+      "server": "10.0.0.1",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "packet_encoding": "xudp",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA",
+          "short_id": "ab12"
+        }
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-vless|grpc|reality-nl-out [AI] [2e16d8d4]",
+      "type": "vless",
+      "server": "10.0.0.2",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA",
+          "short_id": "cd34"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "grpc"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+      "type": "vmess",
+      "server": "10.0.0.5",
+      "server_port": 443,
+      "uuid": "22222222-2222-4222-8222-222222222222",
+      "security": "auto",
+      "alter_id": 0,
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "insecure": true,
+        "server_name": "vm.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "headers": {
+          "Host": "vm.example.com"
+        },
+        "path": "/vm"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-trojan|ws|tls-us-out [0e9cd45b]",
+      "type": "trojan",
+      "server": "10.0.0.6",
+      "server_port": 443,
+      "password": "pa@ss",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "tr.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/",
+        "headers": {}
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-trojan|tls-gb-out [a951356e]",
+      "type": "trojan",
+      "server": "10.0.0.7",
+      "server_port": 443,
+      "password": "plain",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "tr2.example.com"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-hy2-se-out [e30523e2]",
+      "type": "hysteria2",
+      "server": "10.0.0.8",
+      "server_port": 8443,
+      "password": "pw",
+      "tls": {
+        "enabled": true,
+        "server_name": "hy.example.com",
+        "insecure": true,
+        "alpn": [
+          "h3"
+        ]
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-hy2-jp-out [b71b9262]",
+      "type": "hysteria2",
+      "server": "10.0.0.9",
+      "server_port": 20000,
+      "password": "pw",
+      "tls": {
+        "enabled": true,
+        "server_name": "hy.example.com",
+        "insecure": false,
+        "alpn": [
+          "h3"
+        ]
+      },
+      "server_ports": [
+        "20000:30000"
+      ],
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-ss-ru-out [a2261d63]",
+      "type": "shadowsocks",
+      "server": "10.0.0.10",
+      "server_port": 8388,
+      "method": "aes-256-gcm",
+      "password": "sspass",
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-ss-pl-out [2337a2e4]",
+      "type": "shadowsocks",
+      "server": "10.0.0.11",
+      "server_port": 8388,
+      "method": "chacha20-ietf-poly1305",
+      "password": "sspass2",
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-tuic-ch-out [0b9068e1]",
+      "type": "tuic",
+      "server": "10.0.0.12",
+      "server_port": 443,
+      "uuid": "22222222-2222-4222-8222-222222222222",
+      "password": "pw",
+      "congestion_control": "bbr",
+      "udp_relay_mode": null,
+      "zero_rtt_handshake": false,
+      "heartbeat": "10s",
+      "tls": {
+        "enabled": true,
+        "alpn": [
+          "h3"
+        ],
+        "insecure": false,
+        "server_name": "tu.example.com"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-anytls|tls-at-out [ed5abd81]",
+      "type": "anytls",
+      "server": "10.0.0.13",
+      "server_port": 443,
+      "password": "pw",
+      "tls": {
+        "enabled": true,
+        "server_name": "at.example.com",
+        "insecure": false
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "ALPHA-vless|reality-undef-out [c40ef7a8]",
+      "type": "vless",
+      "server": "10.0.0.14",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA",
+          "short_id": "ef56"
+        }
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "BETA-trojan|tls-fr-out [a2bee939]",
+      "type": "trojan",
+      "server": "10.0.1.1",
+      "server_port": 443,
+      "password": "yamlpass",
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "fr.example.com"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "tag": "BETA-vmess|ws|tls-es-out [9580508b]",
+      "type": "vmess",
+      "server": "10.0.1.2",
+      "server_port": 443,
+      "uuid": "33333333-3333-4333-8333-333333333333",
+      "security": "auto",
+      "alter_id": 0,
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "insecure": true,
+        "server_name": "es.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "headers": {
+          "Host": "es.example.com"
+        },
+        "path": "/es"
+      },
+      "domain_resolver": "dns-whitelist"
+    },
+    {
+      "type": "vless",
+      "tag": "Custom-NL",
+      "server": "10.0.3.1",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA",
+          "short_id": "aa"
+        }
+      }
+    },
+    {
+      "tag": "global-auto-out",
+      "type": "selector",
+      "default": "global-auto-out-failsafe",
+      "outbounds": [
+        "global-auto-out-failsafe",
+        "eu-auto-out",
+        "us-auto-out",
+        "ru-auto-out",
+        "other-auto-out"
+      ],
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "eu-auto-out",
+      "type": "selector",
+      "default": "eu-auto-out-failsafe",
+      "outbounds": [
+        "eu-auto-out-failsafe",
+        "ALPHA-vless|reality-de-out [376a1bc0]",
+        "ALPHA-vless|grpc|reality-nl-out [AI] [2e16d8d4]",
+        "ALPHA-trojan|tls-gb-out [a951356e]",
+        "ALPHA-hy2-se-out [e30523e2]",
+        "ALPHA-ss-pl-out [2337a2e4]",
+        "ALPHA-tuic-ch-out [0b9068e1]",
+        "ALPHA-anytls|tls-at-out [ed5abd81]",
+        "BETA-trojan|tls-fr-out [a2bee939]",
+        "BETA-vmess|ws|tls-es-out [9580508b]"
+      ],
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "us-auto-out",
+      "type": "selector",
+      "default": "us-auto-out-failsafe",
+      "outbounds": [
+        "us-auto-out-failsafe",
+        "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+        "ALPHA-trojan|ws|tls-us-out [0e9cd45b]"
+      ],
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "ru-auto-out",
+      "type": "selector",
+      "default": "ru-auto-out-failsafe",
+      "outbounds": [
+        "ru-auto-out-failsafe",
+        "ALPHA-ss-ru-out [a2261d63]"
+      ],
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "other-auto-out",
+      "type": "selector",
+      "default": "other-auto-out-failsafe",
+      "outbounds": [
+        "other-auto-out-failsafe",
+        "ALPHA-hy2-jp-out [b71b9262]"
+      ],
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "eu-auto-out-failsafe",
+      "type": "urltest",
+      "outbounds": [
+        "ALPHA-vless|reality-de-out [376a1bc0]",
+        "ALPHA-vless|grpc|reality-nl-out [AI] [2e16d8d4]",
+        "ALPHA-trojan|tls-gb-out [a951356e]",
+        "ALPHA-hy2-se-out [e30523e2]",
+        "ALPHA-ss-pl-out [2337a2e4]",
+        "ALPHA-tuic-ch-out [0b9068e1]",
+        "ALPHA-anytls|tls-at-out [ed5abd81]",
+        "BETA-trojan|tls-fr-out [a2bee939]",
+        "BETA-vmess|ws|tls-es-out [9580508b]"
+      ],
+      "interval": "5m",
+      "tolerance": 100,
+      "idle_timeout": "5m",
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "us-auto-out-failsafe",
+      "type": "urltest",
+      "outbounds": [
+        "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+        "ALPHA-trojan|ws|tls-us-out [0e9cd45b]"
+      ],
+      "interval": "5m",
+      "tolerance": 100,
+      "idle_timeout": "5m",
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "ru-auto-out-failsafe",
+      "type": "urltest",
+      "outbounds": [
+        "ALPHA-ss-ru-out [a2261d63]"
+      ],
+      "interval": "5m",
+      "tolerance": 100,
+      "idle_timeout": "5m",
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "other-auto-out-failsafe",
+      "type": "urltest",
+      "outbounds": [
+        "ALPHA-hy2-jp-out [b71b9262]"
+      ],
+      "interval": "5m",
+      "tolerance": 100,
+      "idle_timeout": "5m",
+      "interrupt_exist_connections": true
+    },
+    {
+      "tag": "global-auto-out-failsafe",
+      "type": "urltest",
+      "outbounds": [
+        "eu-auto-out-failsafe",
+        "us-auto-out-failsafe",
+        "ru-auto-out-failsafe",
+        "other-auto-out-failsafe"
+      ],
+      "interval": "5m",
+      "tolerance": 100,
+      "idle_timeout": "5m",
+      "interrupt_exist_connections": true
+    }
+  ]
+}

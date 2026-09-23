@@ -1,0 +1,16 @@
+{
+  "selector": {
+    "interrupt_exist_connections": true
+  },
+  "urltest": {
+    "interval": "5m",
+    "tolerance": 100,
+    "idle_timeout": "5m",
+    "interrupt_exist_connections": true
+  },
+  "emit": {
+    "nodes_tester": false,
+    "global_failsafe": true
+  },
+  "raw_user_nodes": true
+}

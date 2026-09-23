@@ -1,0 +1,44 @@
+{
+  "subscribes": [
+    {
+      "url": "https://sub.example/alpha",
+      "tag": "ALPHA",
+      "User-Agent": "curl"
+    },
+    {
+      "url": "https://sub.example/beta.yaml",
+      "tag": "BETA"
+    },
+    {
+      "url": "https://sub.example/gamma-down",
+      "tag": "GAMMA"
+    },
+    {
+      "url": "https://sub.example/disabled",
+      "tag": "OFF",
+      "enabled": false
+    },
+    {
+      "type": "folder",
+      "path": "awg",
+      "format": "awg",
+      "ext": ".conf",
+      "tag": "AWG"
+    }
+  ],
+  "save_config_path": "nodes.json",
+  "exclude_protocol": "ssr",
+  "exclude_countries": [
+    "ru"
+  ],
+  "domain_resolver_tag": "bootstrap",
+  "labels": {
+    "AI": [
+      "ChatGPT",
+      "OpenAI"
+    ],
+    "Media": [
+      "Netflix"
+    ]
+  }
+}
