@@ -261,6 +261,24 @@ class CooldownConfig:
 
 
 @dataclass
+class DashboardConfig:
+    """Веб-админка/дашборд. `enabled` — встраивать ли сервер в процесс тестера
+    (тогда доступны write/control-эндпоинты поверх живого Runner). Отдельный
+    `python -m dashboard` работает независимо от этого флага (read-only режим).
+
+    Доступ: просмотр (`/api/*` read) открыт при `read_open`; write/control требуют
+    заголовок `X-Admin-Token`, совпадающий с `token`. Пустой `token` полностью
+    отключает write/control (безопасный дефолт). `host` привязывает сокет к
+    интерфейсу — держите LAN-адрес, не выставляйте наружу."""
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 8088
+    interval: int = 10               # период авто-обновления UI, сек
+    token: str = ""                  # shared-токен для write/control ("" = write выкл.)
+    read_open: bool = True           # просмотр без токена
+
+
+@dataclass
 class Config:
     clash_api: ClashApiConfig
     testing_groups: list[TestingGroupConfig]
@@ -272,6 +290,7 @@ class Config:
     monitor: MonitorConfig
     storage: StorageConfig
     cooldown: CooldownConfig = field(default_factory=CooldownConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     tests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -326,9 +345,12 @@ def load_config(path: str) -> Config:
         monitor=MonitorConfig(**_filtered(MonitorConfig, _section(data, "monitor"))),
         storage=_load_storage(_section(data, "storage")),
         cooldown=CooldownConfig(**_filtered(CooldownConfig, _section(data, "cooldown"))),
+        dashboard=DashboardConfig(**_filtered(DashboardConfig, _section(data, "dashboard"))),
         tests=_section(data, "tests"),
     )
     _validate(cfg)
+    # Абсолютный путь к config.json — нужен админке (редактор конфигов, схема рядом).
+    cfg.path = os.path.abspath(path)
     return cfg
 
 
@@ -385,16 +407,21 @@ def _load_switching(sw: dict) -> SwitchingConfig:
 def _maybe_validate_schema(data: dict, config_path: str) -> None:
     """Проверить конфиг по config.schema.json, если установлен jsonschema.
 
-    На роутере jsonschema может отсутствовать — тогда просто пропускаем (мягко).
+    Явная ссылка `$schema` обязана существовать: молчаливый пропуск превращал
+    редактор админки в обход валидации из-за одной опечатки в имени файла.
     """
+    schema_name = data.get("$schema", "config.schema.json")
+    schema_path = os.path.join(os.path.dirname(os.path.abspath(config_path)), schema_name)
+    if not os.path.exists(schema_path):
+        if "$schema" in data:
+            raise ValueError(f"Файл JSON Schema не найден: {schema_path}")
+        return
     try:
         import jsonschema
-    except ImportError:
-        return
-    schema_path = os.path.join(os.path.dirname(os.path.abspath(config_path)),
-                               data.get("$schema", "config.schema.json"))
-    if not os.path.exists(schema_path):
-        return
+    except ImportError as exc:
+        raise ValueError(
+            "Для проверки config.schema.json установите зависимость jsonschema"
+        ) from exc
     with open(schema_path, "r", encoding="utf-8") as fh:
         schema = json.load(fh)
     try:
@@ -426,6 +453,18 @@ def _validate(cfg: Config) -> None:
         raise ValueError(f"run.default.rounds должен быть >= 1: {cfg.run.default.rounds}")
     if cfg.monitor.enabled and cfg.monitor.interval <= 0:
         raise ValueError("monitor.interval должен быть > 0")
+    # Эти поля используются напрямую сетевым сервером/таймерами. Проверяем
+    # семантически даже когда необязательный пакет jsonschema на роутере отсутствует.
+    if type(cfg.dashboard.port) is not int or not 1 <= cfg.dashboard.port <= 65535:
+        raise ValueError(f"dashboard.port должен быть целым числом 1..65535: {cfg.dashboard.port!r}")
+    if type(cfg.dashboard.interval) is not int or cfg.dashboard.interval <= 0:
+        raise ValueError(f"dashboard.interval должен быть положительным целым: {cfg.dashboard.interval!r}")
+    if not isinstance(cfg.dashboard.host, str) or not cfg.dashboard.host.strip():
+        raise ValueError("dashboard.host должен быть непустой строкой")
+    if type(cfg.dashboard.enabled) is not bool or type(cfg.dashboard.read_open) is not bool:
+        raise ValueError("dashboard.enabled/read_open должны быть boolean")
+    if not isinstance(cfg.dashboard.token, str):
+        raise ValueError("dashboard.token должен быть строкой")
     # Предупреждение: набор тестов без scoring-компонента даёт всем нодам score 0
     # (напр. только connectivity — он лишь gate). Тогда candidates() пуст → нет выбора.
     excl = {r.lower() for r in cfg.region_groups.exclude}

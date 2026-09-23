@@ -25,6 +25,14 @@ class EnumerateGuardTest(unittest.TestCase):
         self.r = make_runner(temp_dir(), tags=tags)
         self.assertEqual(len(self.r._enumerate_nodes()), 2)
 
+    def test_skips_banned_nodes(self):
+        tags = ["LUNA-vless|reality-nl-out [aaaa1111]",
+                "VSPACE-vless|reality-us-out [bbbb2222]"]
+        self.r = make_runner(temp_dir(), tags=tags)
+        self.r._banned = {"aaaa1111"}
+        ids = [ident.node_id for _, ident in self.r._enumerate_nodes()]
+        self.assertEqual(ids, ["bbbb2222"])
+
 
 if __name__ == "__main__":
     unittest.main()

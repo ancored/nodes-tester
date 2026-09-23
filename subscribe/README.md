@@ -7,6 +7,12 @@ sing-box outbound, переименовывает по единой схеме (
 Форк-минимализация [Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe):
 без веб-сервера, Vercel/Docker и шаблонов.
 
+Синхронизирован с upstream по коммит `558731c` (2026-09-23), только `parsers/`.
+Намеренные отличия от upstream: поддержка `xhttp` (vless/trojan), `alpn`/`fp`/`encryption`
+в vless, `ast.literal_eval` вместо `eval` в ss, `packet_encoding: xudp` по умолчанию в
+vless/vmess (поле входит в CRC — upstream его убрал). Следующая сверка:
+`git diff 558731c HEAD -- parsers` в клоне upstream.
+
 Результат мёржится в базовый конфиг sing-box:
 ```
 sing-box merge <output.json> -c config.json -c nodes.json

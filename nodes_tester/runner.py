@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 from collections import deque
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from .clash_api import ClashApiClient, ClashApiError
 from .config import Config
 from .identity import NodeIdentity, coarse_region, parse_node
+from .logbuffer import LogRing, TeeStream
 from .monitor import ProductionMonitor
 from .proxy import make_session
 from .scoreboard import Scoreboard
@@ -64,6 +66,15 @@ class Runner:
         # Сериализует доступ к tester-селектору (self._top) и socks между плановым
         # прогоном (лёгкая/тяжёлая фазы) и внеплановым зондом монитора.
         self._tester_lock = threading.Lock()
+
+        # Админка (Фаза 2-3): живой лог, внеплановый прогон, статус.
+        self.log = LogRing()
+        self._pass_requested = threading.Event()
+        self._current_pass = 0
+        self._current_day = ""
+        self._running = False
+        self._httpd = None
+        self._banned: set = set()
 
         # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
         # теперь живут в БД (замена score.csv/switch_state.json).
@@ -109,12 +120,20 @@ class Runner:
         excl_regions = {r.lower() for r in rg.exclude}
         manual = rg.manual_map() if rg.recognition == "manually" else {}
         out, skipped = [], 0
+        banned_n = 0
+        self._present_crcs: set[str] = set()
         for leaf in self.clash.list_group_members(top):
             if leaf in exclude:
                 continue
             ident = parse_node(leaf)
             if not ident.node_id:              # нет CRC → не leaf-нода (под-селектор/группа):
                 skipped += 1                   # напр. старый двухуровневый nodes-tester
+                continue
+            # Присутствие в selector независимо от фильтров тест-плана. В частности,
+            # banned-нода должна сохранять present/last_seen и сам флаг бана.
+            self._present_crcs.add(ident.node_id)
+            if ident.node_id in self._banned:  # ручной бан из админки — не тестируем
+                banned_n += 1
                 continue
             region = (manual.get(leaf, "other") if rg.recognition == "manually"
                       else coarse_region(ident.country))
@@ -124,6 +143,8 @@ class Runner:
             print(f"  [!] в '{top}' пропущено {skipped} членов без CRC — это не leaf-ноды "
                   f"(под-селекторы/группы). Плоский конфиг перегенерирован? nodes-tester "
                   f"должен содержать сами ноды, а не {{region}}-nodes-tester")
+        if banned_n:
+            print(f"  · пропущено забаненных нод (бан из админки): {banned_n}")
         return out
 
     # --- Host-aware обход (анти-ТСПУ) ----------------------------------
@@ -190,64 +211,74 @@ class Runner:
     # --- Прогон --------------------------------------------------------
 
     def run(self) -> str:
-        self.clash.ping()
+        # Перехват stdout/stderr в кольцевой буфер (для /api/logs админки), дублируя
+        # в реальный терминал. Любая ошибка инициализации уже находится под finally.
+        self._stdout_orig, self._stderr_orig = sys.stdout, sys.stderr
+        sys.stdout = TeeStream(self.log, self._stdout_orig)
+        sys.stderr = TeeStream(self.log, self._stderr_orig)
 
+        self._running = True
         self._base = self.cfg.run.for_group(self.cfg.testing_group.tag)
         self._tests_cache: dict = {}
         self._region_cache: dict = {}
         self._originals: dict[str, str] = {}
         self._backoff: dict = {}               # crc -> (until, streak, reason), из storage
 
-        if not self._base.tests_enabled:
-            raise ValueError("run.default.tests_enabled пуст — нечего тестировать")
-
-        if self.board is not None:             # TTL heavy-veto (двухуровневое тестирование)
-            self.board.set_heavy_veto_ttl(self._base.heavy_veto_hours * 3600)
-
-        if not self._base.loop:
-            mode = f"прогонов: {self._base.rounds}"
-        elif self._rotation_bound_active():
-            mode = "rotation_bound (прогон к сроку ротации), Ctrl+C для остановки"
-        else:
-            mode = "непрерывно, Ctrl+C для остановки"
-        print(f"Группа '{self._top}' (recognition={self.cfg.region_groups.recognition}); "
-              f"тесты: {', '.join(self._base.tests_enabled)}; {mode}")
-        if self._base.loop and not self._rotation_bound_active() and self._base.pass_pause <= 0:
-            print("  [!] loop без rotation_bound и pass_pause<=0 — прогоны идут вплотную "
-                  "(пауза только host-gap внутри прохода). Задайте pass_pause при желании.")
-        if self.monitor is not None:
-            m = self.cfg.monitor
-            print(f"Монитор активных нод: тик {m.interval}s, тишина {m.silence_window / 60:.0f} мин "
-                  f"(<{m.silence_floor_bytes / 1_000_000:.0f} МБ) → зонд "
-                  f"{m.probe_bytes / 1_000_000:.0f} МБ @ {m.probe_min_mbps} Мбит/с")
-        if self.storage is not None:
-            self.storage.load_nodes(self.cfg.storage.nodes_file)
-            print(f"Хранилище: {self.cfg.storage.db_file}"
-                  + (" + сбор трафика" if self.collector is not None else ""))
-
-        # Номер прогона ПОСУТОЧНЫЙ: сбрасывается в полночь, внутри суток переживает
-        # рестарт (день+счётчик в meta). Дата прогона берётся из ts результата;
-        # в дашборде показывается как "DD/MM-NNN". current_day — локальная дата.
-        current_day, pass_no = time.strftime("%Y-%m-%d"), 0
-        if self.storage is not None:
-            if self.storage.get_meta("pass_day") == current_day:
-                try:
-                    pass_no = int(self.storage.get_meta("pass_no") or 0)
-                except (TypeError, ValueError):
-                    pass_no = 0
-            else:                                  # нет метки за сегодня (первый запуск
-                pass_no = self.storage.max_pass_today(current_day)   # после апдейта)
-        self._last_cleanup = time.monotonic()
         try:
+            self.clash.ping()
+            if not self._base.tests_enabled:
+                raise ValueError("run.default.tests_enabled пуст — нечего тестировать")
+
+            if self.board is not None:         # TTL heavy-veto (двухуровневое тестирование)
+                self.board.set_heavy_veto_ttl(self._base.heavy_veto_hours * 3600)
+
+            if not self._base.loop:
+                mode = f"прогонов: {self._base.rounds}"
+            elif self._rotation_bound_active():
+                mode = "rotation_bound (прогон к сроку ротации), Ctrl+C для остановки"
+            else:
+                mode = "непрерывно, Ctrl+C для остановки"
+            print(f"Группа '{self._top}' (recognition={self.cfg.region_groups.recognition}); "
+                  f"тесты: {', '.join(self._base.tests_enabled)}; {mode}")
+            if self._base.loop and not self._rotation_bound_active() and self._base.pass_pause <= 0:
+                print("  [!] loop без rotation_bound и pass_pause<=0 — прогоны идут вплотную "
+                      "(пауза только host-gap внутри прохода). Задайте pass_pause при желании.")
+            if self.monitor is not None:
+                m = self.cfg.monitor
+                print(f"Монитор активных нод: тик {m.interval}s, тишина {m.silence_window / 60:.0f} мин "
+                      f"(<{m.silence_floor_bytes / 1_000_000:.0f} МБ) → зонд "
+                      f"{m.probe_bytes / 1_000_000:.0f} МБ @ {m.probe_min_mbps} Мбит/с")
+            if self.storage is not None:
+                self.storage.load_nodes(self.cfg.storage.nodes_file)
+                print(f"Хранилище: {self.cfg.storage.db_file}"
+                      + (" + сбор трафика" if self.collector is not None else ""))
+
+            # Номер прогона ПОСУТОЧНЫЙ: сбрасывается в полночь, внутри суток переживает
+            # рестарт (день+счётчик в meta). Дата прогона берётся из ts результата;
+            # в дашборде показывается как "DD/MM-NNN". current_day — локальная дата.
+            current_day, pass_no = time.strftime("%Y-%m-%d"), 0
+            if self.storage is not None:
+                if self.storage.get_meta("pass_day") == current_day:
+                    try:
+                        pass_no = int(self.storage.get_meta("pass_no") or 0)
+                    except (TypeError, ValueError):
+                        pass_no = 0
+                else:                              # нет метки за сегодня (первый запуск
+                    pass_no = self.storage.max_pass_today(current_day)   # после апдейта)
+            self._last_cleanup = time.monotonic()
             if self.monitor is not None:
                 self.monitor.start()
             if self.collector is not None:
                 self.collector.start()
+            if self.cfg.dashboard.enabled:
+                self._start_dashboard()
             while True:
                 today = time.strftime("%Y-%m-%d")
                 if today != current_day:           # наступила полночь → новый день, сброс
                     current_day, pass_no = today, 0
                 pass_no += 1
+                self._current_pass = pass_no
+                self._current_day = current_day
                 empty = False
                 try:
                     empty = self._run_pass(pass_no)
@@ -264,25 +295,91 @@ class Runner:
                 if not self._should_continue(pass_no):
                     break
                 if empty:
-                    time.sleep(_EMPTY_PASS_RETRY)       # не крутим цикл на пустом проходе
+                    self._wait_interruptible(_EMPTY_PASS_RETRY)   # пауза пустого прохода
                 else:
                     self._wait_before_next_pass()
         except KeyboardInterrupt:
             print("\nОстановлено пользователем.")
         finally:
+            self._running = False
             if self.monitor is not None:
                 self.monitor.stop()
             if self.collector is not None:
                 self.collector.stop()
+            self._stop_dashboard()
             if self.storage is not None:
                 self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, cron)
                 self.storage.close()
             self._restore()
+            # Вернуть реальные stdout/stderr последними — чтобы хвостовые print
+            # (напр. «выбор восстановлен») тоже попали в лог.
+            sys.stdout, sys.stderr = self._stdout_orig, self._stderr_orig
 
         return self.cfg.storage.db_file if self.storage is not None else ""
 
     def _should_continue(self, pass_no: int) -> bool:
-        return True if self._base.loop else pass_no < self._base.rounds
+        # Запрос из админки, пришедший во время последнего планового прохода, обязан
+        # породить ещё один проход, а не потеряться при loop=false.
+        return self._base.loop or pass_no < self._base.rounds or self._pass_requested.is_set()
+
+    # --- Админка: внеплановый прогон, статус, встроенный сервер -----------
+
+    def request_pass(self) -> None:
+        """Запросить внеплановый прогон (из админки). Прерывает текущее ожидание."""
+        self._pass_requested.set()
+
+    def _wait_interruptible(self, seconds: float) -> bool:
+        """Ждать до `seconds`, но вернуться раньше (True), если запрошен прогон."""
+        if self._pass_requested.wait(seconds):
+            self._pass_requested.clear()
+            return True
+        return False
+
+    def status(self) -> dict:
+        """Живой статус тестера для /api/status админки."""
+        out = {
+            "running": self._running,
+            "pass": self._current_pass,
+            "day": self._current_day,
+            "switching": bool(self.switcher is not None and self.cfg.switching.enabled),
+            "monitor": bool(self.monitor is not None and self.monitor.is_alive()),
+            "traffic": bool(self.collector is not None and self.collector.is_alive()),
+            "rotation_bound": self._rotation_bound_active() if hasattr(self, "_base") else False,
+            "regions": [],
+            "next_rotation": None,
+        }
+        if self.switcher is not None:
+            for region in self.switcher.active_regions():
+                out["regions"].append({
+                    "region": region,
+                    "active": self.switcher.active_node(region),
+                })
+            out["next_rotation"] = self.switcher.next_rotate_deadline()
+        return out
+
+    def _start_dashboard(self) -> None:
+        """Поднять HTTP-сервер админки потоком-демоном внутри процесса тестера."""
+        d = self.cfg.dashboard
+        try:
+            from dashboard.server import build_app
+            from dashboard.webapp import make_server
+
+            app = build_app(self.cfg, runner=self)
+            self._httpd = make_server(app, d.host, d.port)
+        except OSError as exc:
+            self._httpd = None
+            print(f"[!] админка не запущена ({d.host}:{d.port} занят?): {exc}")
+            return
+        threading.Thread(target=self._httpd.serve_forever,
+                         name="dashboard", daemon=True).start()
+        print(f"Админка: http://{d.host}:{d.port}/  "
+              f"(write/control: {'включены' if d.token else 'выключены — задайте dashboard.token'})")
+
+    def _stop_dashboard(self) -> None:
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+            self._httpd = None
 
     # --- Ожидание между прогонами -------------------------------------
 
@@ -297,7 +394,7 @@ class Runner:
             self._wait_for_rotation()
         elif self._base.pass_pause > 0:
             print(f"\n===== пауза между прогонами {self._base.pass_pause}s =====")
-            time.sleep(self._base.pass_pause)
+            self._wait_interruptible(self._base.pass_pause)
 
     def _wait_for_rotation(self) -> None:
         """Спать до ближайшего срока ротации (switcher), потом вернуться → новый прогон.
@@ -320,30 +417,36 @@ class Runner:
                        else "регионы не активированы, повтор")
                 print(f"\n===== rotation_bound: ждём {mins:.1f} мин ({tgt}) =====")
                 announced = wait
-            time.sleep(min(wait, poll))
+            if self._wait_interruptible(min(wait, poll)):
+                print("\n===== внеплановый прогон (запрос из админки) =====")
+                return
 
     def _run_pass(self, pass_no: int) -> bool:
         """Один полный прогон. Список нод перечитывается из Clash API.
         Возвращает True, если прогон пустой (нод нет) — вызывающий выдержит retry-паузу,
         чтобы не крутить цикл вплотную (см. review.md P1)."""
-        nodes = self._enumerate_nodes()
-        if not nodes:
-            print(f"[!] Прогон #{pass_no}: в группе '{self._top}' нет нод — пропуск")
-            return True
-        print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
-
-        # Снимок backoff на начало прогона (crc -> (until, streak, reason)): нода с
-        # until в будущем не тестируется (backoff/карантин, персистентно, по времени).
+        # Снимок состояния хранилища ДО перечисления: бан влияет на список нод (skip),
+        # backoff — на пропуск в обходе, endpoints — на host-aware раскладку.
         self._backoff = {}
         self._endpoints: dict = {}
+        self._banned = set()
         if self.storage is not None:
             self.storage.maybe_load_nodes(self.cfg.storage.nodes_file)
             self._backoff = self.storage.load_backoff()
             self._endpoints = self.storage.endpoints_by_crc()   # crc -> (server, port)
-            # присутствие в selector → не даём retention удалить живые ноды (P0)
-            self.storage.touch_seen(ident.node_id for _, ident in nodes)
-            # журнал появления/выбытия нод (added/removed на каждом переходе)
-            self.storage.reconcile_presence(ident.node_id for _, ident in nodes)
+            self._banned = self.storage.banned_crcs()
+
+        nodes = self._enumerate_nodes()
+        if self.storage is not None:
+            # Физическое присутствие ведём по ВСЕМ leaf-членам selector, включая бан и
+            # исключённые регионы; test-фильтры не должны превращать ноду в «удалённую».
+            self.storage.touch_seen(self._present_crcs)
+            self.storage.reconcile_presence(self._present_crcs)
+        if not nodes:
+            print(f"[!] Прогон #{pass_no}: в группе '{self._top}' нет тестируемых нод — пропуск")
+            return True
+        print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
+
         self._host_ep_last: dict = {}         # host -> {sig: monotonic} (зазор, лёгкая+тяжёлая)
         if self.board is not None:
             self.board.set_pass(pass_no)

@@ -440,6 +440,39 @@
           "description": "Потолок backoff: дойдя до него, нода признаётся мусорной (карантин на столько часов). Модель временная, переживает рестарт."
         }
       }
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Веб-админка/дашборд. enabled — встраивать ли сервер в процесс тестера (тогда доступны write/control-эндпоинты). Отдельный `python -m dashboard` работает независимо (read-only).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Встраивать HTTP-сервер админки в процесс тестера (доступ к живым Runner/Switcher для управления)."
+        },
+        "host": {
+          "type": "string",
+          "description": "Адрес привязки сокета. Держите LAN-адрес; не выставляйте наружу."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Период авто-обновления UI, сек."
+        },
+        "token": {
+          "type": "string",
+          "description": "Shared-токен для write/control (заголовок X-Admin-Token). Пусто = write/control отключены."
+        },
+        "read_open": {
+          "type": "boolean",
+          "description": "Разрешить просмотр (read-эндпоинты) без токена."
+        }
+      }
     }
   }
 }

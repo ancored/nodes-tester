@@ -223,5 +223,13 @@
     "base_seconds": 600,
     "max_skip": 32,
     "garbage_hours": 72
+  },
+  "dashboard": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8088,
+    "interval": 10,
+    "token": "",
+    "read_open": true
   }
 }

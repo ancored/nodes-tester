@@ -57,7 +57,14 @@ class ProductionMonitor:
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=5)
+            # Runner сразу после этого закрывает Storage и восстанавливает selector;
+            # поэтому нельзя возвращаться с живым monitor worker.
+            self._thread.join()
+            self._thread = None
+
+    def is_alive(self) -> bool:
+        """Жив ли фоновый поток монитора (для /api/status админки)."""
+        return self._thread is not None and self._thread.is_alive()
 
     # --- Внутреннее -----------------------------------------------------
 

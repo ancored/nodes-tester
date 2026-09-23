@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import time
+from pathlib import Path
 
 from naming import parse_group, parse_node
 
@@ -28,7 +29,9 @@ def _query(db_path: str, sql: str) -> list[dict]:
     if not db_path or not os.path.exists(db_path):
         return []
     try:
-        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)   # только чтение
+        # as_uri() корректно экранирует допустимые в Windows именах символы вроде '#'.
+        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+        con = sqlite3.connect(uri, uri=True)   # только чтение
         con.row_factory = sqlite3.Row
         try:
             return [dict(r) for r in con.execute(sql).fetchall()]
@@ -66,6 +69,7 @@ def collect(cfg) -> dict:
         WHERE t.is_tester = 0
         GROUP BY t.crc""")
     rows = [_classify_traffic(r) for r in raw]
+    traffic_total = sum((r.get("up") or 0) + (r.get("down") or 0) for r in rows)
     traffic_providers = _sum_by(rows, "provider", {"leaf", "unspecified"})
     traffic_countries = _sum_by(rows, "cc", {"leaf", "unspecified"})
     traffic_protocols = _sum_by(rows, "protocol", {"leaf"})   # протокол известен у leaf-нод
@@ -87,6 +91,7 @@ def collect(cfg) -> dict:
     longevity, dropouts = _degradation(db, ev)
     attrition = _attrition(db)
     score_spark = _score_spark(db)
+    nodes = _nodes_list(db)
 
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -95,6 +100,7 @@ def collect(cfg) -> dict:
         "provider_quality": provider_quality,
         "results": results,
         "traffic_providers": traffic_providers,
+        "traffic_total": traffic_total,
         "traffic_countries": traffic_countries,
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
@@ -104,6 +110,7 @@ def collect(cfg) -> dict:
         "dropouts": dropouts,
         "attrition": attrition,
         "score_spark": score_spark,
+        "nodes": nodes,
     }
 
 
@@ -408,3 +415,32 @@ def _score_spark(db: str, points: int = 24) -> dict:
     for r in _query(db, "SELECT crc, score FROM score_history ORDER BY crc, ts"):
         out.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
     return {c: v[-points:] for c, v in out.items()}
+
+
+def _nodes_list(db: str) -> list[dict]:
+    """Полный список нод (таблица nodes) для раздела «Управление» админки.
+
+    Для каждой ноды — идентичность (crc/tag/provider/protocol/country/label/server),
+    флаги present/banned, счёт рейтинга (score/region/active из scores) и текущий
+    backoff/карантин (из garbage). Бан (nodes.banned) вносится админкой (api_control).
+    """
+    rows = _query(db, """
+        SELECT n.crc AS crc, n.tag AS node, n.provider AS provider, n.protocol AS protocol,
+               n.country AS country, n.label AS label, n.server AS server,
+               n.present AS present, COALESCE(n.banned, 0) AS banned,
+               s.score AS score, s.region AS region, s.active AS active,
+               g.reason AS gstate, g.until AS guntil, g.streak AS gstreak
+        FROM nodes n
+        LEFT JOIN scores s ON s.crc = n.crc
+        LEFT JOIN garbage g ON g.crc = n.crc
+        ORDER BY n.present DESC, s.score DESC""")
+    out = []
+    for r in rows:
+        out.append({
+            "crc": r["crc"], "node": r["node"], "provider": r["provider"],
+            "protocol": r["protocol"], "country": r["country"], "label": r["label"],
+            "server": r["server"], "present": r["present"], "banned": r["banned"],
+            "score": r["score"], "region": r["region"], "active": r["active"],
+            "gstate": r["gstate"], "guntil": r["guntil"], "gstreak": r["gstreak"],
+        })
+    return out

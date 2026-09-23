@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 
 
@@ -13,7 +14,8 @@ def temp_dir() -> str:
 
 def make_config(tmp: str, **overrides) -> str:
     """Собрать рабочий config.json во временной папке (пути — в tmp). Возвращает путь."""
-    cfg = json.load(open("config/config.json", encoding="utf-8"))
+    with open("config/config.json", encoding="utf-8") as fh:
+        cfg = json.load(fh)
     cfg["storage"]["db_file"] = os.path.join(tmp, "stats.db")
     cfg["storage"]["nodes_file"] = os.path.join(tmp, "nodes.json")
     cfg["switching"]["rotation"]["load_balance"]["enabled"] = False
@@ -23,7 +25,11 @@ def make_config(tmp: str, **overrides) -> str:
         else:
             cfg[k] = v
     path = os.path.join(tmp, "config.json")
-    json.dump(cfg, open(path, "w", encoding="utf-8"))
+    schema_src = os.path.join("config", "config.schema.json")
+    if os.path.exists(schema_src):
+        shutil.copyfile(schema_src, os.path.join(tmp, "config.schema.json"))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
     return path
 
 
@@ -65,5 +71,6 @@ class FakeClash:
 
 def fresh_nodes_json(tmp: str, outbounds) -> str:
     path = os.path.join(tmp, "nodes.json")
-    json.dump({"outbounds": outbounds}, open(path, "w", encoding="utf-8"))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"outbounds": outbounds}, fh)
     return path

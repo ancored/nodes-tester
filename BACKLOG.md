@@ -6,6 +6,67 @@
 
 ## Активные
 
+### ★★ Рефактор на 3 модуля + оркестратор (спека v1 — `REFACTOR-MODULES.md`)
+
+`nodes_fetch` (providers → `raw_nodes.json`) → `nodes_config` (raw + groups_params + user_nodes
+→ `nodes.json`, «потоки») → `nodes_tester`; `nodes_admin` — демон-оркестратор (планировщик,
+SPA, allowlist-действия) + роутерные скрипты `update-rules/apply-nodes/build-clients`.
+Решения приняты 2026-09-23 (см. спеку §0). Инвариант — golden: теги/CRC не меняются.
+
+- [x] Спека v1: контракты, CLI, конфиги v2, pipeline.json, планировщик, фазы (2026-09-23)
+- [ ] Ф0 — baseline-коммит + golden-фикстуры нынешнего `subscribe` (оба набора)
+- [ ] Ф1 — `nodes_fetch` + `schemas/raw_nodes` + providers v2
+- [ ] Ф2 — `nodes_config` + groups_params v2 + `migrate`
+- [ ] Ф3 — роутерные скрипты
+- [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси
+- [ ] Ф5 — оркестратор: планировщик, pipeline.db, SPA Конвейер/Подписки/Потоки/Действия
+- [ ] Ф6 — уборка `subscribe/`, `dashboard/`, cron, доки
+
+### ★ Веб-админка — ГОТОВА (Фазы 0–4), 🟢 ДОБРО на деплой (ревью 2026-09-23)
+
+Проверено независимо: 97 тестов, бандл `dashboard/static/` соответствует исходникам, live-смоук
+control/config/auth 21/21. **Предусловия деплоя:** (1) `pip install -r requirements.txt` —
+`jsonschema` теперь обязателен (иначе `load_config` падает при `$schema`); (2) перед включением:
+`dashboard.enabled=true`, непустой `dashboard.token`, `host`=LAN, помнить что `read_open=true`
+открывает и `/api/logs`. Репо-гигиена: убрать пустой `config.json` из индекса
+(`git rm --cached config.json`). Фазы:
+
+Превратить read-only дашборд в полноценную SPA-админку (Vue 3 + Vite, бэкенд stdlib,
+доступ по shared-токену + LAN). Фазы:
+
+- [x] **Фаза 0 — фундамент.** Блок `dashboard` в конфиге/схеме; каркас бэкенда
+  `dashboard/webapp.py` (роутер+статика+токен) и `api_read.py` (read поверх `data.collect`,
+  `/api/data` сохранён); `server.build_app()` для read-only и встраивания; каркас `web/`
+  (сборка в `dashboard/static/`), вью Обзор+Рейтинг, остальные — заглушки. (2026-09-19)
+- [x] **Фаза 1 — SPA-паритет (read-only).** Все разделы дашборда перенесены в Vue: рейтинг
+  (score-цвета/спарклайны/чипы регионов), результаты (пивот+пагинация, DL50-veto), трафик
+  (переключатель провайдеры/страны/протоколы/ноды + топ назначений), жизненный цикл
+  (качество/мусор с 3 фильтрами/долгожители/выпадающие/график выбытия), история переключений,
+  обзор (KPI + топ-бары по трафику + attrition). Общий стор (`store.js`, один поллинг
+  /api/data), компоненты `DataTable`/`Chips`/`Sparkline`/`AttritionChart`/`BarList`. Проверено
+  на засеянной БД (все разделы, паритет). (2026-09-19)
+  - _Бонус позже:_ time-series графики (uPlot) — трафик/рейтинг во времени; нужен новый
+    read-эндпоинт с рядом из таблиц `traffic`/`score_history` (бакеты по времени).
+- [x] **Фаза 2 — управление нодами.** Админ-сервер встроен в `Runner` (поток-демон);
+  write-эндпоинты `api_control.py`: карантин/снятие, бан/разбан (`nodes.banned`, миграция
+  ALTER + бан-фильтр в `_enumerate_nodes`), форс-переключение региона (`Switcher.force_activate`,
+  reason `manual`); UI-раздел «Управление» (`Control.vue`). (2026-09-20)
+- [x] **Фаза 3 — контроль прогонов.** `/api/status` (живость потоков `is_alive()`, активные
+  ноды, срок ротации), кольцевой лог-буфер `LogRing` + подмена stdout на `TeeStream`,
+  `/api/logs` (long-poll по `seq`, не SSE), кнопка внепланового прогона (`request_pass` +
+  `_wait_interruptible`), UI-раздел «Прогоны» (`Runs.vue`). (2026-09-20)
+- [x] **Фаза 4 — редактор конфигов/подписок.** `api_config.py`: `GET/PUT /api/config`
+  (валидация повторным `load_config`), `GET /api/config/schema`, `GET/PUT /api/config/providers`;
+  атомарная запись (temp+rename); UI-раздел «Конфиг» (`Config.vue`). Hot-reload НЕ реализован
+  (см. ниже). (2026-09-20)
+  - _Отложено:_ **hot-reload** конфига без рестарта (нужен re-init Runner/Switcher/Scoreboard/
+    Monitor на живом процессе; сейчас PUT возвращает `restart_required`).
+  - _Отложено:_ **SSE** для лога вместо long-poll (long-poll по `seq` уже работает, но
+    SSE экономнее по запросам).
+
+Итог по `Leadaxe/singbox-launcher`: как база НЕ годится (Go+Fyne desktop, GPLv3, другое
+назначение). База — существующий `dashboard/` + `stats.db`.
+
 ### 0. Актуализировать `score.md` (док-долг)
 
 `score.md` описывает `score.csv` и отдельный тест `stability`, которых уже нет: рейтинг
@@ -68,6 +129,13 @@ garbage-нодами (см. активные задачи по тестеру).
 ---
 
 ## Реализовано (архив — краткий журнал)
+
+- **subscribe — синхронизация парсеров с upstream (2026-09-23):** перенесены фиксы
+  Toperlock/sing-box-subscribe `ede9fc4..558731c` в trojan/vmess/vless/hysteria2/socks/
+  clash2base64 (vmess `#имя`, trojan %-пароль/`[]`/ws early-data, hy2 без дефолтных 10/100 Мбит/с
+  и с диапазонами портов, socks base64, vless flow из ссылки). Наши отличия сохранены (xhttp,
+  alpn/fp/encryption, `literal_eval`, `xudp` по умолчанию ради CRC). Тесты —
+  `tests/test_parsers_upstream.py`.
 
 - **subscribe — поддержка happ://crypt5 (RSA + ChaCha20-Poly1305):** дореализован формат
   crypt5 в `subscribe/happ_decode.py` (порт hpwnr): `block_pair_swap` payload → 8-символьный
@@ -306,3 +374,36 @@ garbage-нодами (см. активные задачи по тестеру).
   исключается из тестов на `cooldown.garbage_hours` (деф.72) — чтобы не теребить
   заблокированные ТСПУ ноды. После истечения — одна проба; провал → снова карантин, успех →
   снятие. Истёкшие строки чистятся в `cleanup()`.
+
+## Ревью 2026-09-21
+
+### Выполнено
+
+- [x] Исправить Windows traversal при раздаче SPA-статики; canonical path + regression test.
+- [x] Защитить полный lifecycle `Runner.run()` единым `try/finally`.
+- [x] Разделить «физически присутствует» и «допущена к тестам» для banned-нод.
+- [x] Не считать частичный selector-chain switch успешным; проверять регион/heavy-veto вручную.
+- [x] Редактировать фактический `cfg.path`, а не жёстко заданный `config.json`.
+- [x] Сделать JSON Schema обязательной; валидировать dashboard и `providers.json`.
+- [x] Валидировать CRC/существование ноды/JSON/query-параметры control API.
+- [x] Корректно завершать monitor/traffic до закрытия Storage.
+- [x] Исправить реактивность токена, overlap polling, сохранение snapshot и пагинацию SPA.
+- [x] Исправить deep URL/assets fallback, read-only Runs polling и мобильную компоновку.
+- [x] Добавить общий `traffic_total`, включающий direct/other.
+- [x] Подтвердить исправления: 97 unittest, compileall, Vite build, реальный HTTP-smoke.
+- [x] Добавить и фактически проверить локальный read-only предпросмотр перед роутером
+  (`127.0.0.1:8099`); задокументировать команду запуска.
+
+### Оставшиеся идеи / технический долг
+
+- [ ] Перевести `dashboard.data.collect()` на одно read-only соединение и одну транзакцию,
+  чтобы все разделы ответа относились к одному SQLite snapshot.
+- [ ] Добавить optimistic concurrency для config editor (`ETag`/revision, `If-Match`), чтобы
+  параллельные операторы не перезаписывали изменения друг друга.
+- [ ] Сделать line-buffering `LogRing/TeeStream` независимым для stdout/stderr и потоков,
+  исключив редкое склеивание фрагментов строк.
+- [ ] Добавлять HTTP-заголовок `Allow` в ответ 405.
+- [ ] Закрыть оставшиеся тестовые файлы в `test_retention.py` и `test_review_block813.py`,
+  чтобы убрать `ResourceWarning`.
+- [ ] Добавить frontend component/e2e tests для token flow, polling serialization,
+  пагинации и read-only capabilities; сейчас эти контракты проверены build/smoke и ревью.

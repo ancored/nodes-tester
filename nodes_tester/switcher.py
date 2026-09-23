@@ -80,6 +80,27 @@ class Switcher:
                   if st.get("active") and st.get("rotate_deadline")]
         return min(ds) if ds else None
 
+    def force_activate(self, region: str, node: str) -> bool:
+        """Ручное форс-переключение активной ноды региона (из админки).
+
+        Нода должна быть здоровым кандидатом региона (score > 0) в Scoreboard.
+        Возвращает True, если нода реально стала активной (PUT по цепочке прошёл);
+        False — если switching выключен, нода не кандидат, или переключение не удалось.
+        """
+        if not self.cfg.enabled:
+            return False
+        with self._lock:
+            st = self.state.setdefault(region, _new_region_state())
+            # Используем тот же список кандидатов, что автоматический switcher: это
+            # одновременно проверяет регион, score/gate и актуальный heavy-veto.
+            cand = next((c for c in self.board.candidates(region)
+                         if c.get("node") == node), None)
+            if cand is None:
+                return False
+            ok = self._activate(cand, region, st, time.time(), "manual")
+            self._persist()
+            return ok
+
     def reassert_chain(self, region: str, proxies: dict) -> int:
         """Если выбор в боевых селекторах слетел — вернуть активную ноду по цепочке.
 
@@ -226,21 +247,21 @@ class Switcher:
         diff = [c for c in others if c.get("provider") != bp] if bp else others
         return self._balanced_choice(diff or others, st)
 
-    def _activate(self, cand: dict, region: str, st: dict, now: float, reason: str) -> None:
+    def _activate(self, cand: dict, region: str, st: dict, now: float, reason: str) -> bool:
         node = cand["node"]
         prev = st.get("active")             # предыдущая активная (для истории переходов)
         if node == st.get("active") and reason not in ("init",):
-            return
+            return False
         try:
             proxies = self.clash.all_proxies()
         except ClashApiError as exc:
             print(f"  [switch] {region}: не удалось получить прокси: {exc}")
-            return
+            return False
         skip = self._test_groups(proxies) | set(self.cfg.freeze_groups)
         pairs = self._chain_pairs(node, proxies, skip, region)
         if not pairs:
             print(f"  [switch] {region}: у '{node}' нет цепочки selector-групп — пропуск")
-            return
+            return False
         done = 0
         for sel, child in pairs:
             try:
@@ -249,13 +270,14 @@ class Switcher:
             except ClashApiError as exc:
                 print(f"  [switch] {region}: ошибка в группе '{sel}': {exc}")
 
-        if done == 0:
-            # Ни один PUT не прошёл — НЕ помечаем ноду активной и не заводим таймеры,
-            # чтобы монитор/оператор не считали переключение состоявшимся.
-            print(f"  [switch] {region}: переключение на '{node}' НЕ удалось (0 PUT) — состояние не меняем")
-            return
+        if done != len(pairs):
+            # Частичный PUT не означает, что production-цепочка реально ведёт на node.
+            # Не публикуем ложное active-состояние: монитор/оператор должны видеть отказ.
+            print(f"  [switch] {region}: переключение на '{node}' НЕ завершено "
+                  f"(PUT {done}/{len(pairs)}) — состояние не меняем")
+            return False
 
-        # Обновляем состояние.
+        # Обновляем состояние только после успеха ВСЕЙ цепочки.
         st["active"] = node
         st["last_switch"] = now
         st["quality_count"] = 0
@@ -277,6 +299,7 @@ class Switcher:
         partial = f", ЧАСТИЧНО {done}/{len(pairs)}" if done < len(pairs) else ""
         print(f"  [switch] {region}: {reason.upper()} → {node} "
               f"(score {cand['score']}, PUT {done}{partial})")
+        return True
 
     def _chain_pairs(self, node: str, proxies: dict, skip: set,
                      region: str) -> list[tuple[str, str]]:

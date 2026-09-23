@@ -41,7 +41,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
   crc TEXT PRIMARY KEY, tag TEXT, provider TEXT, protocol TEXT, country TEXT, label TEXT,
   type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
-  first_seen INTEGER, last_seen INTEGER, present INTEGER);
+  first_seen INTEGER, last_seen INTEGER, present INTEGER, banned INTEGER);
 CREATE TABLE IF NOT EXISTS traffic (
   ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
 CREATE INDEX IF NOT EXISTS idx_traffic_ts ON traffic(ts);
@@ -107,6 +107,7 @@ class Storage:
         self._db.executescript(_SCHEMA)
         for tbl, col, decl in (("nodes", "label", "TEXT"),
                                 ("nodes", "present", "INTEGER"),
+                                ("nodes", "banned", "INTEGER"),
                                 ("garbage", "streak", "INTEGER")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
@@ -365,6 +366,33 @@ class Storage:
         with self._lock:
             self._db.execute("DELETE FROM garbage WHERE crc = ?", (crc,))
             self._db.commit()
+
+    # --- Ручной бан ноды (из админки) ----------------------------------
+    # Бан — независимый от backoff флаг nodes.banned: забаненная нода пропускается
+    # Runner._enumerate_nodes (не тестируется, не скорится), пока флаг не снят.
+
+    def node_exists(self, crc: str) -> bool:
+        """Есть ли нода с таким CRC в каталоге nodes."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT 1 FROM nodes WHERE crc = ? LIMIT 1", (crc,)).fetchone()
+        return row is not None
+
+    def set_banned(self, crc: str, banned: bool) -> None:
+        """Поставить/снять флаг бана ноды (персистентно, переживает рестарт)."""
+        if not crc:
+            return
+        with self._lock:
+            self._db.execute("UPDATE nodes SET banned = ? WHERE crc = ?",
+                             (1 if banned else 0, crc))
+            self._db.commit()
+
+    def banned_crcs(self) -> set:
+        """Множество CRC забаненных нод (снимок на прогон)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT crc FROM nodes WHERE banned = 1").fetchall()
+        return {r[0] for r in rows}
 
     # --- История активаций --------------------------------------------
 

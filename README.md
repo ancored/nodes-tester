@@ -20,7 +20,7 @@ inbound, меряет, пишет рейтинг и (опционально) с�
       │ 1. PUT /proxies/nodes-tester = <нода>   (Clash API)     │
       │ 2. HTTP через SOCKS5 inbound ─► route ─► nodes-tester ─► нода ─► интернет
       │ 3. замер (TTFB, jitter, download[скорость+троттлинг], reachability, exit-IP)
-      │ 4. рейтинг → score.csv;  сырые результаты → файл + SQLite
+      │ 4. рейтинг + сырые результаты + история → SQLite `stats.db`
       │ 5. (опц.) автопереключение боевых селекторов на лучшую ноду
       └─────────────────────────────────────────────────────────┘
 ```
@@ -143,6 +143,8 @@ cp config.example.json config.json
   "storage":   { "enabled": true, "nodes_file": "/etc/sing-box-subscribe/nodes.json",
                  "traffic": { "enabled": true } },
   "cooldown":  { "enabled": true, "max_skip": 32 }   // backoff по провалу gate
+  "dashboard": { "enabled": true, "host": "0.0.0.0", "port": 8088,
+                 "token": "", "read_open": true }    // веб-админка (см. §8)
 }
 ```
 
@@ -237,7 +239,7 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 ## 6. Рейтинг и автопереключение
 
 **Рейтинг** (`scoring.enabled`). После каждого прогона считается `score` [0..100] и
-пишется в `results/score.csv` (исчезнувшие ноды удаляются, активные помечаются
+пишется в таблицу SQLite `scores` (исчезнувшие ноды удаляются, активные помечаются
 `active`). Модель — stability-first под РФ: нормализация метрик, веса ~80% на
 стабильность, EWMA + штраф за флаппинг + множитель доступности; провал GATE обнуляет
 рейтинг сразу. Полное описание с формулами — в [score.md](score.md).
@@ -245,9 +247,10 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 **Автопереключение** (`switching.enabled` — **opt-in, меняет БОЕВЫЕ группы**).
 Лестница на регион: **EMERGENCY** (активная провалила gate → сразу на лучшую другую)
 → **QUALITY** (кандидат стабильно лучше на `quality_margin`) → **ROTATION** (раз ~3ч,
-размазать нагрузку) → stay. Действие — по цепочке вверх: нода → её leaf-группа →
-региональный селектор (`eu-auto-out`); `switching.freeze_groups` (по умолчанию
-`global-auto-out`) и тестовые группы не трогаются. Состояние — `results/switch_state.json`.
+размазать нагрузку) → stay. Действие — по selector-цепочке до production-группы;
+`switching.freeze_groups` (по умолчанию `global-auto-out`) и тестовые группы не трогаются.
+Состояние хранится в SQLite (`switch_state`, `switch_recent`, `switch_activations`).
+Активация считается успешной только при успехе всей цепочки; частичный PUT не меняет `active`.
 
 **Балансировка трафика** (`switching.rotation.load_balance`). При ротации кандидат
 выбирается взвешенно так, чтобы размазывать боевой трафик по **осям концентрации** за окно
@@ -261,7 +264,7 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 (заблокирована/мертва прямо сейчас), пропускает следующие прогоны с экспоненциальным
 backoff: **1, 2, 4, 8, …** (удвоение за каждый подряд провал), потолок `cooldown.max_skip`
 (32). Успешный gate сбрасывает счётчик. Смысл — не гонять трафик через дохлые ноды и не
-раздувать их в БД. Пропущенная нода сохраняет свой последний рейтинг (не выпадает из score.csv).
+раздувать их в БД. Пропущенная нода сохраняет свой последний рейтинг (не выпадает из `scores`).
 
 ## 7. Монитор активных нод (`monitor.enabled`)
 
@@ -270,6 +273,72 @@ backoff: **1, 2, 4, 8, …** (удвоение за каждый подряд п
 — возвращает по цепочке; (2) пробит ноду через Clash API `/proxies/{node}/delay`
 (sing-box сам дозванивается) и при `fails` провалах подряд запускает EMERGENCY.
 Если активной ноды больше нет (регенерация сменила теги) — ждёт первого прогона.
+
+---
+
+## 8. Веб-админка (управление / контроль / конфиг)
+
+Веб-интерфейс (Vue-SPA из `web/`, отдаёт Python) работает в двух режимах:
+
+- **Read-only** — отдельный `python -m dashboard` (открывает `stats.db` в `mode=ro`);
+  доступны только просмотр и `/api/*` read-эндпоинты.
+- **Full** — сервер встроен в процесс тестера (`dashboard.enabled: true`, поток-демон в
+  `Runner`), тогда к живым `Runner/Switcher/Scoreboard/Storage` добавляются
+  write/control-эндпоинты.
+
+**Локальный предпросмотр перед развёртыванием:**
+
+```bash
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python -m dashboard \
+  -c config/config.json --host 127.0.0.1 --port 8099 --interval 5
+```
+
+Открыть `http://127.0.0.1:8099/`. Это read-only режим: он показывает SPA и данные из
+локальной `stats.db`, но не запускает тестер и не переключает ноды. Раздел «Прогоны» в таком
+режиме сообщает `tester_not_running`; полноценные действия доступны только во встроенном
+Full-режиме.
+
+**Доступ.** Просмотр (`/api/data`, срезы, `/api/status`, `/api/logs`) открыт при
+`dashboard.read_open`. Write/control (карантин/бан/switch/прогон) и редактор конфигов
+(там секрет) требуют заголовок `X-Admin-Token`, равный `dashboard.token`. Пустой `token`
+полностью отключает write/control и редактор. Токен вводится один раз в шапке SPA и
+хранится в `localStorage`.
+
+**Разделы SPA.** Обзор / Рейтинг / Результаты / Трафик / Жизненный цикл / Переключения
+(Фаза 1, read-only) + **Управление** / **Прогоны** / **Конфиг** (Фазы 2-4).
+
+**Управление нодами** (`dashboard/api_control.py`):
+- `POST /api/nodes/{crc}/quarantine` | `/unquarantine` — ручной карантин/снятие
+  (`storage.set_backoff`/`clear_backoff`, карантин = «мусорная» на `garbage_hours`).
+- `POST /api/nodes/{crc}/ban` | `/unban` — флаг `nodes.banned` (персистентный); забаненная
+  нода пропускается `Runner._enumerate_nodes` (не тестируется/не скорится).
+- `POST /api/regions/{region}/switch` body `{node}` — форс-активация ноды региона
+  (`Switcher.force_activate`, reason `manual`).
+
+**Контроль прогонов** (`dashboard/api_control.py`):
+- `GET /api/status` — running / номер прогона / активные ноды по регионам / след. ротация /
+  живость потоков monitor/traffic.
+- `POST /api/run/pass` — внеплановый прогон (`Runner.request_pass`, прерывает ожидание).
+- `GET /api/logs?seq=&tail=` — живой лог: кольцевой буфер `LogRing`, в который `Runner.run()`
+  дублирует весь `print` (через подмену `sys.stdout/stderr` на `TeeStream`); long-poll по `seq`.
+
+**Редактор конфигов** (`dashboard/api_config.py`): `GET/PUT /api/config`,
+`GET /api/config/schema`, `GET/PUT /api/config/providers`. Редактируется именно файл,
+из которого загружен `Config.path` (включая нестандартное имя). `config.json` валидируется
+обязательным `jsonschema` + семантикой `load_config`; `providers.json` проверяется на обязательные
+`subscribes` и `save_config_path`. Запись: temp в том же каталоге → flush/fsync → `os.replace`.
+Применение изменений в работающем тестере требует перезапуска процесса.
+
+БД-схема дополнена колонкой `nodes.banned` (миграция `ALTER`). Бан исключает ноду только
+из тестов, но не из учёта физического присутствия: `present/last_seen` продолжают обновляться,
+поэтому retention не стирает ban. Полный список нод для «Управления» — `nodes` в `/api/data`.
+
+**Решения hardening после ревью.** Статика проверяется по canonical `realpath/commonpath`
+(включая обратные слэши Windows); отсутствующие JS/CSS дают 404, SPA fallback применяется только
+к URL без расширения. HTTP body ограничен 2 МиБ, ошибочные параметры дают 400, неверный метод —
+405. Фоновые monitor/traffic worker полностью завершаются до закрытия SQLite. Клиент сериализует
+polling `/api/data`, сохраняет последний валидный snapshot при временной ошибке и реактивно
+распространяет изменение admin token.
 
 ---
 
@@ -294,9 +363,25 @@ nodes_tester/     — ТЕСТЕР  (python -m nodes_tester --config config/conf
 subscribe/        — ПЕРЕИМЕНОВАТЕЛЬ  (python -m subscribe) — см. subscribe/README.md
   main.py, tool.py, groups.py, parsers/
 
-dashboard/        — ВЕБ-ДАШБОРД  (python -m dashboard) — история переключений, рейтинг,
-                    результаты, качество провайдеров, трафик (табы), топ назначений;
-                    region-переключатели, пагинация; read-only, stdlib, авто-обновление, LAN
+dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — просмотр (рейтинг/трафик/жизненный
+                    цикл/результаты/история) + управление нодами (карантин/бан/форс-switch) +
+                    контроль прогонов (статус/живой лог/внеплановый прогон) + редактор конфигов
+  webapp.py       каркас на stdlib: App (маршруты метод+regex, раздача статики SPA из
+                  static/, JSON, проверка X-Admin-Token) + ThreadingHTTPServer
+  api_read.py     read-эндпоинты поверх data.collect: /api/data (агрегат) + срезы
+                  /api/rating|history|results|traffic|lifecycle
+  api_control.py  write/control (только при встраивании в Runner, иначе 409): карантин/бан/
+                  switch, /api/status, /api/run/pass, /api/logs (long-poll)
+  api_config.py   редактор конфигов: GET/PUT config.json (валидация load_config) и
+                  providers.json, атомарная запись (temp+rename)
+  data.py         выборка/агрегация из stats.db (read-only, mode=ro)
+  server.py       build_app(cfg, runner=None) — общий для read-only и встраивания в Runner
+  static/         собранный SPA (Vue) — выход `web/ npm run build`; фолбэк — легаси-страница
+                  Режимы: отдельный процесс = read-only; блок config.dashboard.enabled +
+                  встраивание в Runner = write/control по токену. LAN, авто-обновление
+
+web/              — ИСХОДНИКИ SPA-АДМИНКИ (Vue 3 + Vite) — `npm run build` → dashboard/static/
+                    (в git только исходники; node_modules/dist игнорируются)
 
 config/           — пользовательские конфиги
   config.json, config.example.json, config.schema.json,
@@ -319,6 +404,10 @@ config/           — пользовательские конфиги
 
 ## Дальше
 
+- **Идёт рефактор** на `nodes_fetch` → `nodes_config` → `nodes_tester` + оркестратор
+  `nodes_admin` — спека и фазы в [REFACTOR-MODULES.md](REFACTOR-MODULES.md). Описанная выше
+  структура актуальна до завершения миграции.
 - Многогрупповость `testing_groups` (параллельно, раздельный стейт).
 - Слияние с проектом переименования (общий модуль идентичности/CRC, один `nodes.json`).
 - Upload speed, streaming-unlock, DNS-leak.
+- Админка: hot-reload конфига без рестарта, SSE-лог, time-series графики (uPlot) — см. BACKLOG.

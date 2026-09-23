@@ -37,11 +37,18 @@ class TrafficCollector:
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=5)
+            # Storage закрывается Runner сразу после stop(); дождаться worker нужно,
+            # чтобы не потерять последнюю дельту и не писать в закрытую БД.
+            self._thread.join()
+            self._thread = None
         try:
             self._flush()   # дописать остаток
         except Exception as exc:  # noqa: BLE001 — дельты вернулись в буфер, не роняем stop
             print(f"  [traffic] финальный flush не удался: {exc}")
+
+    def is_alive(self) -> bool:
+        """Жив ли фоновый поток сборщика (для /api/status админки)."""
+        return self._thread is not None and self._thread.is_alive()
 
     # --- Внутреннее -----------------------------------------------------
 

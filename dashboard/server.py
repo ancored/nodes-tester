@@ -1,11 +1,14 @@
-"""Веб-сервер дашборда (stdlib http.server). Только чтение, слушает в LAN."""
+"""Сборка веб-приложения админки и запуск сервера (stdlib http.server).
+
+Каркас маршрутизации/статики — в [dashboard/webapp.py](dashboard/webapp.py); здесь
+композиция: регистрируем read-маршруты (`api_read`), в full-режиме — control/config,
+и подключаем легаси-страницу `_PAGE` как фолбэк для '/' до появления собранного SPA.
+"""
 
 from __future__ import annotations
 
-import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-from .data import collect
+from . import api_read
+from .webapp import App, Response, serve_forever
 
 _PAGE = r"""<!doctype html><html lang=ru><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -264,36 +267,37 @@ load(); setInterval(load, INTERVAL*1000);
 </script></body></html>"""
 
 
-class _Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path.startswith("/api/data"):
-            self._send(200, "application/json",
-                       json.dumps(collect(self.server.cfg), ensure_ascii=False).encode("utf-8"))
-        elif self.path in ("/", "/index.html"):
-            page = _PAGE.replace("__INTERVAL__", str(self.server.interval))
-            self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
-        else:
-            self._send(404, "text/plain", b"not found")
+def _legacy_index(app: App):
+    """Фолбэк-страница '/' до появления собранного SPA (dashboard/static/)."""
+    page = _PAGE.replace("__INTERVAL__", str(app.interval))
+    return Response.text(page, ctype="text/html; charset=utf-8")
 
-    def _send(self, code, ctype, body):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
 
-    def log_message(self, *a):
-        pass   # без шумного access-лога
+def build_app(cfg, *, runner=None, interval: int | None = None) -> App:
+    """Собрать App для обоих режимов.
+
+    runner=None — read-only (отдельный `python -m dashboard`);
+    runner задан — full-режим (встроен в Runner): read + control/config.
+    Токен/доступ берём из cfg.dashboard.
+    """
+    dash = getattr(cfg, "dashboard", None)
+    app = App(
+        cfg,
+        runner=runner,
+        interval=interval if interval is not None else (dash.interval if dash else 10),
+        token=(dash.token if dash else ""),
+        read_open=(dash.read_open if dash else True),
+    )
+    app.legacy_index = _legacy_index
+    api_read.register(app)
+    # Управление (карантин/бан/switch/статус/прогон/логи) — требует runner (409 без
+    # него); редактор конфигов — файловый, работает и в read-only режиме (по токену).
+    from . import api_control, api_config
+    api_control.register(app)
+    api_config.register(app)
+    return app
 
 
 def serve(cfg, host: str, port: int, interval: int) -> None:
-    httpd = ThreadingHTTPServer((host, port), _Handler)
-    httpd.cfg = cfg
-    httpd.interval = interval
-    print(f"Дашборд: http://{host}:{port}/  (обновление {interval}s, Ctrl+C для остановки)")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nОстановлено.")
-    finally:
-        httpd.server_close()
+    app = build_app(cfg, interval=interval)
+    serve_forever(app, host, port)
