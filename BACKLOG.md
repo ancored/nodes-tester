@@ -28,9 +28,11 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
 - [x] Выкатка на роутер 2026-09-23: новый тестер + встроенная админка (192.168.1.1:8088,
   токен), `nodes-dashboard` выключен; cron генерации — на `/root/sing-box-nodes_tester.old`;
   теневой конвейер `scripts/router/shadow-pipeline.sh` в cron раз в 6 ч → `/root/nodes-data/`
-- [ ] Ф3 — роутерные скрипты (`update-rules` / `apply-nodes` / `build-clients`); проверить
-  apply-nodes без применения (merge+check во временный файл); затем переключить cron с `.old`
-  на новый конвейер — это и есть момент смены 34 тегов и рестарта sing-box
+- [x] Ф3 — `scripts/router/{update-rules,apply-nodes,build-clients,pipeline}.sh`; холостые
+  прогоны на роутере; перенос точный (побайтно на боевых входах) — 2026-09-23
+- [ ] **Переключение cron** с `.old` на `pipeline.sh router|clients` (после дня теневых
+  прогонов, по команде): migrate --force → снимок --stable → cron → первый прогон (34 тега,
+  рестарт sing-box) → убрать `.old`
 - [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси
 - [ ] Ф5 — оркестратор: планировщик, pipeline.db, SPA Конвейер/Подписки/Потоки/Действия
 - [ ] Ф6 — уборка `subscribe/`, `dashboard/`, cron, доки

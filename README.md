@@ -371,7 +371,9 @@ nodes_config/     — СТАДИЯ CONFIG: raw → nodes.json (python -m nodes_c
   rename.py, groups.py, params.py (groups_params v2), migrate.py (конфиги v1 → v2)
 subscribe/        — совместимая обёртка `python -m subscribe` над fetch+config (конфиги v1; до Ф6)
 scripts/router/   — backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат, sing-box не трогает,
-                    если его конфиг не менялся), shadow-pipeline.sh (теневой прогон fetch→config)
+                    если его конфиг не менялся), shadow-pipeline.sh (теневой прогон fetch→config),
+                    pipeline.sh router|clients [--dry-run] (fetch → config → update-rules →
+                    apply-nodes / build-clients; sing-box перезапускается только при изменениях)
 tests/golden/     — golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
 
 dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — просмотр (рейтинг/трафик/жизненный
