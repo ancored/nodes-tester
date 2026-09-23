@@ -1,0 +1,2 @@
+# Shell-скрипты исполняются на роутере (busybox sh) — только LF
+*.sh text eol=lf
