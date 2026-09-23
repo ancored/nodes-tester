@@ -1,4 +1,5 @@
-import tool,json,re
+import json, re
+from .. import util
 from urllib.parse import urlparse, parse_qs, unquote
 
 def _packet_encoding(node, value):
@@ -20,11 +21,11 @@ def parse(data):
                 for k, v in parse_qs(server_info.query).items()
             )
             try:
-                _path = tool.b64Decode(server_info.path).decode('utf-8').split("@")
+                _path = util.b64Decode(server_info.path).decode('utf-8').split("@")
             except:
                 _path = (server_info.path).split("@")
             node = {
-                'tag': netquery.get('remarks', tool.genName()+'_vmess'),
+                'tag': netquery.get('remarks', util.genName()+'_vmess'),
                 'type': 'vmess',
                 'server': _path[1].split(":")[0],
                 'server_port': int(_path[1].split(":")[1]),
@@ -66,7 +67,7 @@ def parse(data):
                     pass  # ignore the error when JSON decoding fails
             return node
         else:
-            proxy_str = tool.b64Decode(info).decode('utf-8')
+            proxy_str = util.b64Decode(info).decode('utf-8')
     except:
         print(info)
         return None
@@ -74,7 +75,7 @@ def parse(data):
         item = json.loads(proxy_str)
     except:
         return None
-    content = item.get('ps').strip() if item.get('ps') else tool.genName()+'_vmess'
+    content = item.get('ps').strip() if item.get('ps') else util.genName()+'_vmess'
     node = {
         'tag': unquote(data[8:].rsplit("#", 1)[1]) if '#' in data else content,
         'type': 'vmess',

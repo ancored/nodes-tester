@@ -360,8 +360,17 @@ nodes_tester/     — ТЕСТЕР  (python -m nodes_tester --config config/conf
   monitor.py, storage.py, traffic.py, runner.py, identity.py, __main__.py
   tests/          connectivity, latency, jitter, download (+heavy_download), reachability
 
+nodes_fetch/      — СТАДИЯ FETCH: подписки → raw_nodes.json (python -m nodes_fetch) — см. nodes_fetch/README.md
+  fetch.py        providers v1/v2, last-good (stale), guard min_ratio, --only
+  sources.py      url / file / folder / happ → узлы парсера
+  parsers/, util.py, happ*.py, _chacha.py   (перенесены из subscribe/)
+nodes_common/     — контракт raw_nodes.json (raw.py) + атомарная запись/lock (fileio.py)
+schemas/          — JSON-схемы артефактов/конфигов (raw_nodes, providers)
 subscribe/        — ПЕРЕИМЕНОВАТЕЛЬ  (python -m subscribe) — см. subscribe/README.md
-  main.py, tool.py, groups.py, parsers/
+  main.py         обёртка: nodes_fetch → rename/CRC/группы (до переезда в nodes_config, Ф2)
+  tool.py, groups.py
+scripts/router/   — backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат)
+tests/golden/     — golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
 
 dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — просмотр (рейтинг/трафик/жизненный
                     цикл/результаты/история) + управление нодами (карантин/бан/форс-switch) +

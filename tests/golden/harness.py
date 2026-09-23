@@ -1,8 +1,8 @@
 """Golden-харнесс генератора nodes.json: запись сетевых ответов подписок и офлайн-повтор.
 
 Инвариант рефактора (REFACTOR-MODULES.md, D8): на одних и тех же входах новый конвейер
-(nodes_fetch → nodes_config) обязан выдать ПОБАЙТНО тот же nodes.json, что нынешний
-`python -m subscribe`. Для этого сетевые ответы записываются один раз, а дальше генерация
+(nodes_fetch → nodes_config) обязан выдать тот же nodes.json (JSON-равенство), что
+`python -m subscribe` до рефактора. Для этого сетевые ответы записываются один раз, а дальше генерация
 гоняется офлайн.
 
 Набор (set) — каталог:
@@ -39,14 +39,24 @@ class _FakeResponse:
         self.text = content.decode("utf-8", errors="replace")
 
 
-def _import_legacy(project):
+def _net_points(project):
+    """Точки перехвата сети для кода в project → (subscribe_dir, http_obj, http_name, happ_mod).
+    Новый код (Ф1+): nodes_fetch.util.http_get + nodes_fetch.happ._fetch.
+    Старый (роутер до рефактора): subscribe/tool.getResponse + subscribe/happ._fetch."""
     sub = os.path.join(project, "subscribe")
     for p in (project, sub):
         if p not in sys.path:
             sys.path.insert(0, p)
-    import happ  # noqa: E402  (плоские импорты subscribe)
+    if os.path.isdir(os.path.join(project, "nodes_fetch")):
+        from nodes_fetch import happ, util  # noqa: E402
+        return sub, util, "http_get", happ
+    import happ  # noqa: E402  (плоские импорты старого subscribe)
     import tool  # noqa: E402
-    return sub, tool, happ
+    return sub, tool, "getResponse", happ
+
+
+def _no_network(*args, **kwargs):
+    raise AssertionError("replay: попытка реального сетевого запроса")
 
 
 @contextlib.contextmanager
@@ -84,19 +94,19 @@ def _run_main(sub_dir, cfg_dir):
 
 
 def record(project, config_dir, out_set):
-    sub, tool, happ = _import_legacy(project)
+    sub, http_obj, http_name, happ = _net_points(project)
     rec = {"http": {}, "happ": {}}
-    real_get, real_fetch = tool.getResponse, happ._fetch
+    real_get, real_fetch = getattr(http_obj, http_name), happ._fetch
 
-    def get(url, custom_user_agent=None):
-        r = real_get(url, custom_user_agent)
+    def get(url, *args, **kwargs):
+        r = real_get(url, *args, **kwargs)
         rec["http"][url] = None if r is None else {
             "status": r.status_code, "b64": base64.b64encode(r.content).decode()}
         return r
 
-    def fetch(url, headers):
+    def fetch(url, headers, *args, **kwargs):
         try:
-            text = real_fetch(url, headers)
+            text = real_fetch(url, headers, *args, **kwargs)
         except Exception:
             rec["happ"][url] = None
             raise
@@ -106,7 +116,7 @@ def record(project, config_dir, out_set):
     os.makedirs(out_set, exist_ok=True)
     tmp, cfg = _prepare_config(config_dir, os.path.join(out_set, "recorded_nodes.json"))
     try:
-        with _patched(tool, "getResponse", get), _patched(happ, "_fetch", fetch):
+        with _patched(http_obj, http_name, get), _patched(happ, "_fetch", fetch):
             _run_main(sub, cfg)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -123,17 +133,19 @@ def record(project, config_dir, out_set):
 def replay(project, set_dir, out_path):
     """Офлайн-генерация на записанных ответах. Незаписанный запрос — ошибка (KeyError):
     значит генератор стал ходить в сеть иначе, эталон невалиден."""
-    sub, tool, happ = _import_legacy(project)
+    sub, http_obj, http_name, happ = _net_points(project)
+    import requests
+    import urllib.request
     with open(os.path.join(set_dir, "responses.json"), encoding="utf-8") as f:
         rec = json.load(f)
 
-    def get(url, custom_user_agent=None):
+    def get(url, *args, **kwargs):
         if url not in rec["http"]:
             raise KeyError(f"незаписанный HTTP-запрос: {url}")
         r = rec["http"][url]
         return None if r is None else _FakeResponse(r["status"], base64.b64decode(r["b64"]))
 
-    def fetch(url, headers):
+    def fetch(url, headers, *args, **kwargs):
         if url not in rec["happ"]:
             raise KeyError(f"незаписанный happ-запрос: {url}")
         if rec["happ"][url] is None:
@@ -142,8 +154,13 @@ def replay(project, set_dir, out_path):
 
     tmp, cfg = _prepare_config(os.path.join(set_dir, "config"), out_path)
     try:
-        with _patched(tool, "getResponse", get), _patched(happ, "_fetch", fetch), \
-                _patched(time, "sleep", lambda s: None):
+        with contextlib.ExitStack() as stack:
+            for obj, name, value in ((http_obj, http_name, get), (happ, "_fetch", fetch),
+                                     (time, "sleep", lambda s: None),
+                                     (requests, "get", _no_network),
+                                     (requests, "request", _no_network),
+                                     (urllib.request, "urlopen", _no_network)):
+                stack.enter_context(_patched(obj, name, value))
             _run_main(sub, cfg)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

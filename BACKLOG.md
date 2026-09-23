@@ -18,7 +18,8 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   golden-эталоны (синтетика в git + реальные наборы локально) — 2026-09-23
 - [ ] **Учебный прогон отката на роутере** (перезапускает sing-box — только с согласия,
   в тихое время): `/root/backups/rollback-nodes-tester.sh -y --no-regen`
-- [ ] Ф1 — `nodes_fetch` + `schemas/raw_nodes` + providers v2
+- [x] Ф1 — `nodes_fetch` + `nodes_common` + `schemas/{raw_nodes,providers}`; `subscribe` = обёртка
+  над fetch; golden совпал на всех 4 наборах; живой прогон на роутере — 2026-09-23
 - [ ] Ф2 — `nodes_config` + groups_params v2 + `migrate`
 - [ ] Ф3 — роутерные скрипты
 - [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси

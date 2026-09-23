@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "raw_nodes.schema.json",
+  "title": "raw_nodes.json (v1) — выход nodes_fetch, вход nodes_config",
+  "type": "object",
+  "required": ["version", "generated_at", "providers", "nodes_hash", "sources", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "generated_at": { "type": "string", "description": "UTC ISO-8601, суффикс Z" },
+    "providers": { "type": "string", "description": "имя набора providers (имя файла без .json)" },
+    "nodes_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["provider", "kind", "ok", "count", "fetched_at", "last_ok_at", "stale", "error"],
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["url", "file", "folder", "happ"] },
+          "ok": { "type": "boolean" },
+          "count": { "type": "integer", "minimum": 0 },
+          "fetched_at": { "type": "string" },
+          "last_ok_at": { "type": ["string", "null"], "description": "время последней удачной загрузки" },
+          "stale": { "type": "boolean", "description": "ноды взяты из прошлого raw (last-good)" },
+          "error": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["provider", "title", "cc_hint", "outbound"],
+        "additionalProperties": false,
+        "properties": {
+          "provider": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "description": "исходное имя ноды из подписки" },
+          "cc_hint": { "type": ["string", "null"], "description": "подсказка страны (AWG — из имени файла)" },
+          "outbound": {
+            "type": "object",
+            "required": ["type"],
+            "not": { "required": ["tag"] },
+            "propertyNames": { "not": { "pattern": "^_" } },
+            "properties": { "type": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 # Спецификация: 3 модуля + админка-оркестратор + роутерные скрипты
 
-> Статус: **спека v1, решения приняты** (2026-09-23). Реализация — по фазам (§10), код ещё
-> не начат.
+> Статус: **спека v1, решения приняты** (2026-09-23). Реализация — по фазам (§10):
+> Ф0 и Ф1 выполнены.
 
 ## 0. Принятые решения
 
@@ -14,7 +14,7 @@
 | D5 | Применение | Новый `nodes.json` применяется **автоматически** (хук merge+check+restart), только если реально изменился, и не чаще `min_apply_interval` (отложенное применение, не потеря) |
 | D6 | CLI | Каждый модуль работает без админки из командной строки |
 | D7 | Порядок | Спека → fetch → nodes-config → тестер/админка (strangler, `subscribe` — обёртка до конца миграции) |
-| D8 | Инвариант | **Теги/CRC не меняются.** Новый конвейер на тех же входах даёт побайтно тот же `nodes.json`, что `python -m subscribe` (golden-тест) |
+| D8 | Инвариант | **Теги/CRC не меняются.** Новый конвейер на тех же входах даёт тот же `nodes.json`, что `python -m subscribe` — JSON-равенство: те же теги/CRC, узлы, группы и порядок списков; порядок ключей внутри объекта не важен (golden-тест) |
 
 ## 1. Общая схема
 
@@ -34,8 +34,8 @@
 Граф зависимостей кода:
 
 ```
-nodes_fetch  ──▶ (ничего из проекта)
-nodes_config ──▶ naming
+nodes_fetch  ──▶ nodes_common            (контракт raw + атомарная запись/lock)
+nodes_config ──▶ naming, nodes_common
 nodes_tester ──▶ naming
 nodes_admin  ──▶ запускает fetch/config как процессы; тестер — по HTTP; stats.db — read-only
 ```
@@ -49,7 +49,8 @@ nodes_fetch/     подписки → raw_nodes.json
   fetch.py       оркестрация источников, last-good, guard
   sources.py     url / file / folder / happ
   parsers/       (переезд из subscribe/parsers, пакетные импорты вместо sys.path-хака)
-  util.py        b64Decode, genName, getResponse, xhttp_transport (часть tool.py)
+  util.py        http_get, b64Decode, genName, get_protocol, xhttp_transport (часть tool.py)
+nodes_common/    контракт raw_nodes (raw.py) + atomic_write/file_lock (fileio.py)
   happ.py, happ_decode.py, happ_keys_crypt5.py, _chacha.py
 nodes_config/    raw_nodes.json (+groups_params, +user_nodes) → nodes.json
   __main__.py    CLI (+ подкоманда migrate)

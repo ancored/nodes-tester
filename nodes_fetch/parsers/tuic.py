@@ -1,4 +1,5 @@
-import tool,re
+import re
+from .. import util
 from urllib.parse import urlparse, parse_qs
 def parse(data):
     info = data[:]
@@ -6,13 +7,13 @@ def parse(data):
     if server_info.path:
         server_info = server_info._replace(netloc=server_info.netloc + server_info.path)
     _netloc = server_info.netloc.rsplit("@", 1)
-    #_netloc = (tool.b64Decode(server_info.netloc)).decode().split("@")
+    #_netloc = (util.b64Decode(server_info.netloc)).decode().split("@")
     netquery = dict(
         (k, v if len(v) > 1 else v[0])
         for k, v in parse_qs(server_info.query).items()
     )
     node = {
-        'tag': server_info.fragment or tool.genName()+'_tuic',
+        'tag': server_info.fragment or util.genName()+'_tuic',
         'type': 'tuic',
         'server': re.sub(r"\[|\]", "", _netloc[1].rsplit(":", 1)[0]),
         'server_port': int(re.search(r'\d+', _netloc[1].rsplit(":", 1)[1]).group()),

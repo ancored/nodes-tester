@@ -14,9 +14,8 @@ import unittest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
-sys.path.insert(0, os.path.join(_ROOT, "subscribe"))
 
-from parsers import vless, vmess, trojan, hysteria2, socks, clash2base64  # noqa: E402
+from nodes_fetch.parsers import vless, vmess, trojan, hysteria2, socks, clash2base64  # noqa: E402
 from naming.crc import content_crc32  # noqa: E402
 
 

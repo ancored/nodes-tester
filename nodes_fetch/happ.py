@@ -6,17 +6,17 @@
 отдать пустой ответ / упереться в лимит устройств). Ответ при необходимости
 распаковывается gzip и декодируется из Base64 — на выходе текст со share-links.
 
-Порт логики из medved-vpn/happ_sub.py, без внешних зависимостей (urllib).
+Порт логики из medved-vpn/happ_sub.py. Загрузка — requests (gzip распаковывается
+автоматически; поддерживается proxy, в т.ч. socks5 через PySocks).
 """
 
 from __future__ import annotations
 
 import base64
-import gzip
-import urllib.error
-import urllib.request
 
-import happ_decode
+import requests
+
+from . import happ_decode
 
 # Заголовки, имитирующие мобильное приложение Happ (без них подписка часто пустая).
 # X-Hwid / X-Real-Ip намеренно фиксированные — при упоре в лимит устройств их можно
@@ -41,21 +41,19 @@ def is_happ_link(url: str) -> bool:
     return isinstance(url, str) and url.strip().startswith("happ://crypt")
 
 
-def _fetch(url: str, headers: dict) -> str:
-    """GET подписки с happ-заголовками: gzip + попытка Base64-декода."""
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        raw = resp.read()
-        if resp.headers.get("Content-Encoding", "").lower() == "gzip":
-            raw = gzip.decompress(raw)
-    text = raw.decode("utf-8", errors="replace")
+def _fetch(url: str, headers: dict, timeout=_TIMEOUT, proxies=None) -> str:
+    """GET подписки с happ-заголовками (+ попытка Base64-декода). Ошибка HTTP → исключение."""
+    resp = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
+    resp.raise_for_status()
+    text = resp.content.decode("utf-8", errors="replace")   # gzip уже распакован requests
     try:                                    # подписка часто отдаётся в Base64
         return base64.b64decode(text, validate=True).decode("utf-8", errors="replace")
     except Exception:                       # noqa: BLE001 — не Base64: берём как есть
         return text
 
 
-def subscription_text(happ_link: str, headers: "dict | None" = None) -> str:
+def subscription_text(happ_link: str, headers: "dict | None" = None,
+                      timeout=_TIMEOUT, proxies=None) -> str:
     """happ://crypt…/… → расшифровать URL → скачать → текст подписки (share-links).
 
     headers — необязательный оверрайд/добавка к happ-заголовкам (напр. свой X-Hwid).
@@ -64,4 +62,4 @@ def subscription_text(happ_link: str, headers: "dict | None" = None) -> str:
     hdrs = dict(_HEADERS)
     if headers:
         hdrs.update(headers)
-    return _fetch(real_url, hdrs)
+    return _fetch(real_url, hdrs, timeout=timeout, proxies=proxies)

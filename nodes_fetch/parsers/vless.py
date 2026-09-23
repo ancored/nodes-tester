@@ -1,11 +1,12 @@
-import tool,re
+import re
+from .. import util
 from urllib.parse import urlparse, parse_qs, unquote
 def parse(data):
     info = data[:]
     server_info = urlparse(info)
     netloc = server_info.netloc
     try:
-        netloc = tool.b64Decode(server_info.netloc).decode('utf-8') # shadowrocket: base64(method:uuid@host:port)
+        netloc = util.b64Decode(server_info.netloc).decode('utf-8') # shadowrocket: base64(method:uuid@host:port)
         decoded = True
     except:
         decoded = False
@@ -29,7 +30,7 @@ def parse(data):
     else:
         remarks = server_info.fragment
     node = {
-        'tag': unquote(remarks) or tool.genName()+'_vless',
+        'tag': unquote(remarks) or util.genName()+'_vless',
         'type': 'vless',
         'server': server,
         'server_port': server_port,
@@ -105,7 +106,7 @@ def parse(data):
                 'service_name':netquery.get('serviceName', '')
             }
         elif netquery['type'] == 'xhttp':
-            node['transport'] = tool.xhttp_transport(netquery)
+            node['transport'] = util.xhttp_transport(netquery)
     elif netquery.get('obfs'):  #shadowrocket
         if netquery['obfs'] == 'websocket':
             matches = re.search(r'\?ed=(\d+)$', netquery.get('path', '/'))

@@ -104,7 +104,7 @@ def parse_file(path):
         raise ValueError('no [Peer] public_key')     # битый файл -> пропуск с логом
     # У .conf нет ни флага, ни названия страны — cc известен ТОЛЬКО из имени файла.
     # Отдаём его как подсказку в '_file_cc'; group_meta берёт страну по приоритету
-    # флаг → название страны в тексте → _file_cc (см. tool.group_meta). Тег — только для
+    # флаг → название страны в тексте → _file_cc (см. nodes_config: group_meta). Тег — только для
     # отображения, custom_rename всё равно соберёт {provider}-wg-{cc}-out.
     stem = os.path.splitext(os.path.basename(path))[0].lower()
     node['_file_cc'] = stem if (len(stem) == 2 and stem.isalpha()) else ''

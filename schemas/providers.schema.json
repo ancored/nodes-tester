@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "providers.schema.json",
+  "title": "providers-*.json (v2) — подписки для nodes_fetch",
+  "description": "Только про загрузку. Фильтры/переименование — в groups_params (nodes_config). Ключи v1 (save_config_path, exclude_*, labels, domain_resolver_tag) допускаются на переходный период и игнорируются fetch.",
+  "type": "object",
+  "required": ["subscribes"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "subscribes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tag"],
+        "properties": {
+          "tag": { "type": "string", "minLength": 1, "description": "имя провайдера — уникально" },
+          "enabled": { "type": "boolean", "default": true },
+          "url": { "type": "string", "description": "https://…, sub://base64, happ://cryptN/…, либо сама share-ссылка" },
+          "file": { "type": "string", "description": "локальный файл (.txt share-links или clash .yaml), относительно providers.json" },
+          "type": { "const": "folder" },
+          "path": { "type": "string", "description": "для type=folder: каталог, относительно providers.json" },
+          "format": { "type": "string", "default": "awg" },
+          "ext": { "type": "string", "default": ".conf" },
+          "user_agent": { "type": "string" },
+          "User-Agent": { "type": "string", "description": "устаревшее имя user_agent (v1)" },
+          "happ_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "ex-node-name": { "type": "string", "description": "v1: переносится в groups_params.filters.exclude_names" }
+        },
+        "anyOf": [
+          { "required": ["url"] },
+          { "required": ["file"] },
+          { "required": ["type", "path"] }
+        ]
+      }
+    },
+    "fetch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": { "type": "number", "exclusiveMinimum": 0, "default": 120, "description": "таймаут чтения, сек (connect — 30)" },
+        "retries": { "type": "integer", "minimum": 0, "default": 3 },
+        "proxy": { "type": ["string", "null"], "default": null, "description": "напр. socks5://127.0.0.1:2080" },
+        "stale_max_hours": { "type": "number", "minimum": 0, "default": 48 },
+        "min_ratio": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 }
+      }
+    }
+  }
+}

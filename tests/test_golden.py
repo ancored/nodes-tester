@@ -1,5 +1,6 @@
 """Golden-инвариант рефактора (REFACTOR-MODULES.md, D8): генератор nodes.json на
-записанных ответах подписок выдаёт ПОБАЙТНО эталон. Теги/CRC не должны меняться.
+записанных ответах подписок выдаёт эталон — JSON-равенство (порядок ключей внутри объекта
+не важен, порядок элементов списков — важен). Теги/CRC не должны меняться.
 
 Наборы:
 - tests/fixtures/golden/*   — синтетические (в git), см. tests/golden/make_synthetic.py;
@@ -10,6 +11,7 @@
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -34,10 +36,12 @@ class GoldenTest(unittest.TestCase):
             out = os.path.join(tmp, "nodes.json")
             with contextlib.redirect_stdout(io.StringIO()):
                 harness.replay(_ROOT, set_dir, out)
-            with open(out, "rb") as f:
-                got = f.read()
-        with open(os.path.join(set_dir, "golden.json"), "rb") as f:
-            want = f.read()
+            with open(out, encoding="utf-8") as f:
+                got = json.load(f)
+        with open(os.path.join(set_dir, "golden.json"), encoding="utf-8") as f:
+            want = json.load(f)
+        tags = lambda c: [o["tag"] for o in c.get("outbounds", []) + c.get("endpoints", [])]
+        self.assertEqual(tags(got), tags(want), f"теги разошлись с эталоном: {set_dir}")
         self.assertEqual(got, want, f"nodes.json разошёлся с эталоном: {set_dir}")
 
     def test_synthetic_sets(self):

@@ -1,4 +1,5 @@
-import tool,re
+import re
+from .. import util
 from urllib.parse import urlparse,unquote
 def parse(data):
     info = data[:]
@@ -6,12 +7,12 @@ def parse(data):
     if server_info.path:
         server_info = server_info._replace(netloc=server_info.netloc + server_info.path, path="")
     node = {
-        'tag': unquote(server_info.fragment)  or tool.genName()+'_socks',
+        'tag': unquote(server_info.fragment)  or util.genName()+'_socks',
         'type': 'socks',
         "version": "5"
     }
     try:
-        netloc = (tool.b64Decode(server_info.netloc)).decode()
+        netloc = (util.b64Decode(server_info.netloc)).decode()
     except:
         netloc = server_info.netloc
     if '@' in netloc:
@@ -19,7 +20,7 @@ def parse(data):
         node['server'] = re.sub(r"\[|\]", "", address.rsplit(":", 1)[0])
         node['server_port'] = int(address.rsplit(":", 1)[1])
         try:
-            userinfo = tool.b64Decode(userinfo).decode('utf-8')   # socks://base64(user:pass)@host:port
+            userinfo = util.b64Decode(userinfo).decode('utf-8')   # socks://base64(user:pass)@host:port
         except:
             pass
         node['username'] = userinfo.split(":")[0]

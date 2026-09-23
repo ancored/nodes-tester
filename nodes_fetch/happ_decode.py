@@ -24,10 +24,10 @@
 import base64
 import sys
 
-try:  # пакетный запуск: python -m subscribe
+try:  # пакетный импорт: nodes_fetch.happ_decode
     from . import _chacha
     from .happ_keys_crypt5 import CRYPT5_PKCS8
-except ImportError:  # запуск файла напрямую / плоские импорты (subscribe/__main__)
+except ImportError:  # запуск файла напрямую как скрипта
     import _chacha
     from happ_keys_crypt5 import CRYPT5_PKCS8
 

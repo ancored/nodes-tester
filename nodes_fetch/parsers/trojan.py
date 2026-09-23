@@ -1,4 +1,5 @@
-import tool,re
+import re
+from .. import util
 from urllib.parse import urlparse, parse_qs, unquote
 
 def protect_userinfo_brackets(uri):
@@ -33,7 +34,7 @@ def parse(data):
         for k, v in parse_qs(server_info.query).items()
     )
     node = {
-        'tag': unquote(server_info.fragment) or tool.genName()+'_trojan',
+        'tag': unquote(server_info.fragment) or util.genName()+'_trojan',
         'type': 'trojan',
         'server': re.sub(r"\[|\]", "", _netloc[1].rsplit(":", 1)[0]),
         'server_port': int(_netloc[1].rsplit(":", 1)[1].split("/")[0]),
@@ -82,7 +83,7 @@ def parse(data):
                 'service_name':netquery.get('serviceName', '')
             }
         elif netquery['type'] == 'xhttp':
-            node['transport'] = tool.xhttp_transport(netquery)
+            node['transport'] = util.xhttp_transport(netquery)
     if netquery.get('protocol') in ['smux', 'yamux', 'h2mux']:
         node['multiplex'] = {
             'enabled': True,

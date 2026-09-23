@@ -1,10 +1,10 @@
-import tool
+from .. import util
 def parse(data):
     info = data[6:]
     if not info or info.isspace():
         return None
     try:
-        proxy_str = tool.b64Decode(info).decode('utf-8')
+        proxy_str = util.b64Decode(info).decode('utf-8')
     except:
         proxy_str = info
     i = 0
@@ -28,10 +28,10 @@ def parse(data):
     }
     password_params = parts[5].split('/?')
     if i == 0:
-        node['password'] = tool.b64Decode(password_params[0]).decode('utf-8')
+        node['password'] = util.b64Decode(password_params[0]).decode('utf-8')
         params = password_params[1].split('&')
     else: #fuck
-        node['password'] = tool.b64Decode(password_params[0].split('remarks')[0]).decode('utf-8')
+        node['password'] = util.b64Decode(password_params[0].split('remarks')[0]).decode('utf-8')
         params = password_params[-1].split(password_params[0].split('remarks')[0])[-1].split('&')
     pdict = {'obfsparam':'obfs_param','protoparam':'protocol_param','remarks':'tag'}
     for p in params:
@@ -39,6 +39,6 @@ def parse(data):
         keyname = key_value[0]
         if keyname in pdict.keys():
             keyname = pdict[keyname]
-            node[keyname] = tool.b64Decode(key_value[1]).decode('utf-8')
-    node['tag'] = node['tag'] if node.get('tag') else tool.genName()+'_shadowsocksr'
+            node[keyname] = util.b64Decode(key_value[1]).decode('utf-8')
+    node['tag'] = node['tag'] if node.get('tag') else util.genName()+'_shadowsocksr'
     return node

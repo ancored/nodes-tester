@@ -1,4 +1,5 @@
-import tool,re
+import re
+from .. import util
 from urllib.parse import urlparse, parse_qs, unquote
 
 def parse(data):
@@ -9,7 +10,7 @@ def parse(data):
         for k, v in parse_qs(server_info.query).items()
     )
     node = {
-        'tag': unquote(server_info.fragment) or tool.genName()+'_anytls',
+        'tag': unquote(server_info.fragment) or util.genName()+'_anytls',
         'type': 'anytls',
         'server': re.sub(r"\[|\]", "", server_info.netloc.split("@")[-1].rsplit(":", 1)[0]),
         'server_port': int((server_info.netloc.rsplit(":", 1)[1]).split(",", 1)[0]), #fuck all

@@ -8,10 +8,13 @@ sing-box outbound, переименовывает по единой схеме (
 без веб-сервера, Vercel/Docker и шаблонов.
 
 Синхронизирован с upstream по коммит `558731c` (2026-09-23), только `parsers/`.
+**С Ф1 рефактора парсеры и загрузка подписок живут в `nodes_fetch/`** (`nodes_fetch/parsers/`,
+`util.py`, `happ*.py`, `sources.py`); `subscribe` — обёртка fetch → переименование/группы.
 Намеренные отличия от upstream: поддержка `xhttp` (vless/trojan), `alpn`/`fp`/`encryption`
 в vless, `ast.literal_eval` вместо `eval` в ss, `packet_encoding: xudp` по умолчанию в
 vless/vmess (поле входит в CRC — upstream его убрал). Следующая сверка:
-`git diff 558731c HEAD -- parsers` в клоне upstream.
+`git diff 558731c HEAD -- parsers` в клоне upstream (у нас — `nodes_fetch/parsers/`;
+`import tool` upstream = наш `from .. import util`).
 
 Результат мёржится в базовый конфиг sing-box:
 ```
@@ -137,8 +140,8 @@ python -m subscribe
 ## Поддерживаемые протоколы
 
 `http`, `socks5`, `shadowsocks`, `shadowsocksR`, `vmess`, `trojan`, `vless`, `tuic`,
-`hysteria`, `hysteria2`, `wireguard`, `anytls`. Парсеры — в `subscribe/parsers/`
-(файл `<protocol>.py` с функцией `parse`).
+`hysteria`, `hysteria2`, `wireguard`, `anytls`. Парсеры — в `nodes_fetch/parsers/`
+(файл `<protocol>.py` с функцией `parse`; folder-форматы — `parse_file`).
 
 ## Credits
 
