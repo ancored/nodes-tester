@@ -30,9 +30,10 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   теневой конвейер `scripts/router/shadow-pipeline.sh` в cron раз в 6 ч → `/root/nodes-data/`
 - [x] Ф3 — `scripts/router/{update-rules,apply-nodes,build-clients,pipeline}.sh`; холостые
   прогоны на роутере; перенос точный (побайтно на боевых входах) — 2026-09-23
-- [ ] **Переключение cron** с `.old` на `pipeline.sh router|clients` (после дня теневых
-  прогонов, по команде): migrate --force → снимок --stable → cron → первый прогон (34 тега,
-  рестарт sing-box) → убрать `.old`
+- [ ] **Переключение** (после дня теневых прогонов, по команде; сеть на ~секунды пропадёт):
+  `scripts/router/switch-to-pipeline.sh` — сам уходит в фон, снимок preswitch, migrate,
+  pipeline router (проверка связности + автовозврат конфига), clients, cron только при успехе.
+  Потом — убрать `.old`
 - [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси
 - [ ] Ф5 — оркестратор: планировщик, pipeline.db, SPA Конвейер/Подписки/Потоки/Действия
 - [ ] Ф6 — уборка `subscribe/`, `dashboard/`, cron, доки

@@ -373,7 +373,9 @@ subscribe/        — совместимая обёртка `python -m subscribe
 scripts/router/   — backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат, sing-box не трогает,
                     если его конфиг не менялся), shadow-pipeline.sh (теневой прогон fetch→config),
                     pipeline.sh router|clients [--dry-run] (fetch → config → update-rules →
-                    apply-nodes / build-clients; sing-box перезапускается только при изменениях)
+                    apply-nodes / build-clients; sing-box перезапускается только при изменениях,
+                    после рестарта — проверка связности и автовозврат прежнего конфига),
+                    switch-to-pipeline.sh (однократное переключение cron, в фоне через setsid)
 tests/golden/     — golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
 
 dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — просмотр (рейтинг/трафик/жизненный
