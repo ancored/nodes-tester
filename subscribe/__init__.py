@@ -1,6 +1,3 @@
-"""Переименователь нод из подписок (бывший sing-box-subscribe).
-
-Читает подписки, парсит ноды в формат sing-box, переименовывает по единой схеме
-(общий пакет `naming`), строит группы и пишет `nodes.json`. Запуск:
-    python -m subscribe
-"""
+"""Совместимая обёртка бывшего переименователя (sing-box-subscribe) над nodes_fetch +
+nodes_config. Конфиги v1, прежний интерфейс `python -m subscribe [--config-dir DIR]`.
+Удаляется на Ф6 рефактора (REFACTOR-MODULES.md)."""

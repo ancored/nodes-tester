@@ -20,7 +20,11 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   в тихое время): `/root/backups/rollback-nodes-tester.sh -y --no-regen`
 - [x] Ф1 — `nodes_fetch` + `nodes_common` + `schemas/{raw_nodes,providers}`; `subscribe` = обёртка
   над fetch; golden совпал на всех 4 наборах; живой прогон на роутере — 2026-09-23
-- [ ] Ф2 — `nodes_config` + groups_params v2 + `migrate`
+- [x] Ф2 — `nodes_config` + groups_params v2 + `migrate`; `subscribe` = тонкая обёртка над
+  split_v1→fetch→config; golden по двум путям (обёртка и чистый CLI-конвейер) на 4 наборах;
+  живой прогон на роутере рядом со старым кодом — 2026-09-23
+- [ ] (Ф4) `dashboard/api_config.py` проверяет providers на обязательный `save_config_path` —
+  в v2 его нет; редактор конфигов переедет в `nodes_admin` и должен понимать v2
 - [ ] Ф3 — роутерные скрипты
 - [ ] Ф4 — тестер: control API; `nodes_admin` read + прокси
 - [ ] Ф5 — оркестратор: планировщик, pipeline.db, SPA Конвейер/Подписки/Потоки/Действия

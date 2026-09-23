@@ -13,12 +13,11 @@ import sys
 import unittest
 from urllib.parse import quote
 
-# subscribe использует плоские импорты — добавляем в путь, как __main__.py
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
-sys.path.insert(0, os.path.join(_ROOT, "subscribe"))
 
-import groups  # noqa: E402
+from nodes_config import groups  # noqa: E402
 from nodes_fetch import util as tool  # noqa: E402  (xhttp_range/xhttp_transport)
 from nodes_fetch.parsers import vless, trojan  # noqa: E402
 from naming import node_protocol  # noqa: E402

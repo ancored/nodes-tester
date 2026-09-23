@@ -1,16 +1,11 @@
-"""python -m subscribe — регенерация nodes.json.
-
-Исходный sing-box-subscribe использует плоские импорты (import tool, groups,
-parsers). Настраиваем sys.path так, чтобы работали и они, и общий пакет `naming`
-из корня репозитория, затем запускаем main.py как скрипт.
-"""
+"""python -m subscribe — регенерация nodes.json (совместимая обёртка, см. main.py)."""
 
 import os
-import runpy
 import sys
 
-_here = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_here))   # корень репо — для `import naming`
-sys.path.insert(0, _here)                    # subscribe/ — для `import tool/groups/parsers`
+# корень репо — для пакетов naming / nodes_common / nodes_fetch / nodes_config
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-runpy.run_path(os.path.join(_here, "main.py"), run_name="__main__")
+from subscribe.main import main  # noqa: E402
+
+sys.exit(main())

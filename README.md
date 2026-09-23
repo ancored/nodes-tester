@@ -71,12 +71,12 @@ inbound, меряет, пишет рейтинг и (опционально) с�
   "outbounds": ["LUNA-vless|reality-lt-out [1111]", "hynet-XYZ89-vmess|http|tls-us-out [a734b55d]", "..."],
   "interrupt_exist_connections": true }
 ```
-Генерируется subscribe при `emit.nodes_tester: true`. Тестер выбирает ноду прямо в нём,
+Генерируется `nodes_config` при `emit.nodes_tester: true` (groups_params). Тестер выбирает ноду прямо в нём,
 регион берёт из имени ноды (`recognition: parse`).
 
 Имя leaf-ноды: `<Провайдер>-<Протокол>-<Страна>-out [метка] [CRC]` (метка опц.), где
 протокол — `база|транспорт|маскировка` (`vless|grpc|reality`). Генерируется
-переименователем — см. [subscribe/README.md](subscribe/README.md). Тестер разбирает его на
+стадией `nodes_config` — см. [nodes_config/README.md](nodes_config/README.md). Тестер разбирает его на
 Провайдер / Протокол / Страна / CRC. `interrupt_exist_connections: true` важно —
 при переключении старые соединения рвутся, трафик идёт через новую ноду.
 
@@ -365,10 +365,11 @@ nodes_fetch/      — СТАДИЯ FETCH: подписки → raw_nodes.json (p
   sources.py      url / file / folder / happ → узлы парсера
   parsers/, util.py, happ*.py, _chacha.py   (перенесены из subscribe/)
 nodes_common/     — контракт raw_nodes.json (raw.py) + атомарная запись/lock (fileio.py)
-schemas/          — JSON-схемы артефактов/конфигов (raw_nodes, providers)
-subscribe/        — ПЕРЕИМЕНОВАТЕЛЬ  (python -m subscribe) — см. subscribe/README.md
-  main.py         обёртка: nodes_fetch → rename/CRC/группы (до переезда в nodes_config, Ф2)
-  tool.py, groups.py
+schemas/          — JSON-схемы артефактов/конфигов (raw_nodes, providers, groups_params)
+nodes_config/     — СТАДИЯ CONFIG: raw → nodes.json (python -m nodes_config [migrate]) — см. nodes_config/README.md
+  build.py        фильтры → rename → CRC → dedupe → группы (+ отчёт); пишет только при изменении
+  rename.py, groups.py, params.py (groups_params v2), migrate.py (конфиги v1 → v2)
+subscribe/        — совместимая обёртка `python -m subscribe` над fetch+config (конфиги v1; до Ф6)
 scripts/router/   — backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат)
 tests/golden/     — golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
 

@@ -85,10 +85,19 @@ def _prepare_config(config_dir, out_path):
 
 
 def _run_main(sub_dir, cfg_dir):
+    """Запустить генератор subscribe на наборе cfg_dir. Новая обёртка (Ф2+) — функция
+    main(argv); старый код (роутер) — скрипт с разбором sys.argv в `if __name__`."""
+    path = os.path.join(sub_dir, "main.py")
+    module = runpy.run_path(path, run_name="subscribe_main")
+    if callable(module.get("main")):
+        code = module["main"](["--config-dir", cfg_dir])
+        if code:
+            raise RuntimeError(f"subscribe.main вернул {code}")
+        return
     argv = sys.argv
     sys.argv = ["main.py", "--config-dir", cfg_dir]
     try:
-        runpy.run_path(os.path.join(sub_dir, "main.py"), run_name="__main__")
+        runpy.run_path(path, run_name="__main__")
     finally:
         sys.argv = argv
 
@@ -130,9 +139,10 @@ def record(project, config_dir, out_set):
     print(f"[golden] записано: http={len(rec['http'])} happ={len(rec['happ'])} → {out_set}")
 
 
-def replay(project, set_dir, out_path):
-    """Офлайн-генерация на записанных ответах. Незаписанный запрос — ошибка (KeyError):
-    значит генератор стал ходить в сеть иначе, эталон невалиден."""
+@contextlib.contextmanager
+def _offline(project, set_dir):
+    """Сеть → записанные ответы набора; любые реальные запросы запрещены.
+    → каталог subscribe (для _run_main)."""
     sub, http_obj, http_name, happ = _net_points(project)
     import requests
     import urllib.request
@@ -152,16 +162,49 @@ def replay(project, set_dir, out_path):
             raise OSError("записанный сбой happ-подписки")
         return rec["happ"][url]
 
+    with contextlib.ExitStack() as stack:
+        for obj, name, value in ((http_obj, http_name, get), (happ, "_fetch", fetch),
+                                 (time, "sleep", lambda s: None),
+                                 (requests, "get", _no_network),
+                                 (requests, "request", _no_network),
+                                 (urllib.request, "urlopen", _no_network)):
+            stack.enter_context(_patched(obj, name, value))
+        yield sub
+
+
+def replay(project, set_dir, out_path):
+    """Офлайн-генерация прежним интерфейсом `python -m subscribe` (конфиги v1).
+    Незаписанный запрос — ошибка (KeyError): генератор стал ходить в сеть иначе."""
     tmp, cfg = _prepare_config(os.path.join(set_dir, "config"), out_path)
     try:
-        with contextlib.ExitStack() as stack:
-            for obj, name, value in ((http_obj, http_name, get), (happ, "_fetch", fetch),
-                                     (time, "sleep", lambda s: None),
-                                     (requests, "get", _no_network),
-                                     (requests, "request", _no_network),
-                                     (urllib.request, "urlopen", _no_network)):
-                stack.enter_context(_patched(obj, name, value))
+        with _offline(project, set_dir) as sub:
             _run_main(sub, cfg)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out_path
+
+
+def replay_pipeline(project, set_dir, out_path):
+    """Офлайн-генерация НОВЫМ конвейером (Ф2+): migrate v1→v2 → CLI nodes_fetch → CLI
+    nodes_config — ровно так, как их будут звать оркестратор и роутерные скрипты."""
+    from nodes_config import __main__ as config_cli
+    from nodes_config import migrate
+    from nodes_fetch import __main__ as fetch_cli
+    tmp = tempfile.mkdtemp(prefix="golden-v2-")
+    try:
+        v2 = os.path.join(tmp, "v2")
+        migrate.migrate_dir(os.path.join(set_dir, "config"), v2, log=lambda m: None)
+        raw = os.path.join(tmp, "raw.json")
+        with _offline(project, set_dir):
+            code = fetch_cli.main(["-p", os.path.join(v2, "providers.json"), "-o", raw])
+        if code:
+            raise RuntimeError(f"nodes_fetch вернул {code}")
+        args = ["--raw", raw, "--groups", os.path.join(v2, "groups_params.json"), "-o", out_path]
+        if os.path.exists(os.path.join(v2, "user_nodes.json")):
+            args += ["--user-nodes", os.path.join(v2, "user_nodes.json")]
+        code = config_cli.main(args)
+        if code:
+            raise RuntimeError(f"nodes_config вернул {code}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out_path

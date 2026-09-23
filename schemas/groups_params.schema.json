@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "groups_params.schema.json",
+  "title": "groups_params.json (v2) — «рецепт» потока nodes_config",
+  "description": "Фильтры, переименование и группы. v1 (только selector/urltest/emit/raw_user_nodes) тоже валиден. Файл опционален — без него все дефолты.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "exclude_types": { "type": "array", "items": { "type": "string" }, "description": "типы outbound: shadowsocksr, hysteria2, …" },
+        "exclude_protocols": { "type": "array", "items": { "type": "string" }, "description": "токены naming.node_protocol: xhttp, wg, reality, …" },
+        "exclude_countries": { "type": "array", "items": { "type": "string" }, "description": "ISO-коды стран (ru, cn, …)" },
+        "exclude_names": {
+          "type": "object",
+          "description": "провайдер (или * — все) → подстроки исходного имени ноды",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "rename": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "type": "object",
+          "description": "метка → ключевые слова в исходном имени (регистр не важен); первая совпавшая",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "domain_resolver_tag": { "type": "string", "default": "bootstrap" }
+      }
+    },
+    "selector": { "type": "object", "description": "доп. поля всех selector-групп" },
+    "urltest": { "type": "object", "description": "доп. поля всех urltest-групп (interval, tolerance, …)" },
+    "emit": {
+      "type": "object",
+      "properties": {
+        "nodes_tester": { "type": "boolean", "default": true },
+        "global_failsafe": { "type": "boolean", "default": false },
+        "ensure_regions": { "type": "array", "items": { "enum": ["eu", "us", "ru", "other"] } }
+      }
+    },
+    "raw_user_nodes": { "type": "boolean", "default": false }
+  }
+}

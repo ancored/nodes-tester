@@ -6,11 +6,9 @@ import os
 import sys
 import unittest
 
-# subscribe использует плоские импорты — добавляем его в путь, как __main__.py
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
-sys.path.insert(0, os.path.join(_ROOT, "subscribe"))
-import groups  # noqa: E402
+from nodes_config import groups, params  # noqa: E402
 
 
 def _node(prov, proto, cc, crc):
@@ -20,10 +18,14 @@ def _node(prov, proto, cc, crc):
 
 class GroupsFlatTest(unittest.TestCase):
     def setUp(self):
-        groups.load_params()          # config/ этого проекта
+        self.params = params.load_path(os.path.join(_ROOT, "config", "groups_params.json"))
+
+    def _groups(self, nodes):
+        return groups.build(nodes, selector=self.params["selector"], urltest=self.params["urltest"],
+                            emit=self.params["emit"], log=lambda m: None)
 
     def _build(self, nodes):
-        return {o["tag"]: o for o in groups.build(nodes)}
+        return {o["tag"]: o for o in self._groups(nodes)}
 
     def test_flat_region_members_are_nodes(self):
         out = self._build([_node("LUNA", "vless(reality)", "nl", "a1"),
@@ -49,7 +51,7 @@ class GroupsFlatTest(unittest.TestCase):
         self.assertIn("LUNA-nl-vless(reality) [a1]", out["us-auto-out"]["outbounds"])
 
     def test_no_empty_groups_or_dupes(self):
-        tags = [o["tag"] for o in groups.build(
+        tags = [o["tag"] for o in self._groups(
             [_node("LUNA", "vless(reality)", "nl", "a1"),
              _node("VSPACE", "vless(reality)", "us", "a2")])]
         self.assertEqual(len(tags), len(set(tags)))   # нет дублей

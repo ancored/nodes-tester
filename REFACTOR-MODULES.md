@@ -1,7 +1,7 @@
 # Спецификация: 3 модуля + админка-оркестратор + роутерные скрипты
 
 > Статус: **спека v1, решения приняты** (2026-09-23). Реализация — по фазам (§10):
-> Ф0 и Ф1 выполнены.
+> Ф0, Ф1, Ф2 выполнены.
 
 ## 0. Принятые решения
 
@@ -58,10 +58,11 @@ nodes_config/    raw_nodes.json (+groups_params, +user_nodes) → nodes.json
   rename.py      group_meta / custom_rename / rename_user_node (часть tool.py)
   groups.py      (переезд, параметры передаются явно — без глобалов модуля)
   params.py      загрузка/валидация groups_params v2
+  migrate.py     конфиги v1 → v2 (split_v1 — и для обёртки subscribe)
 nodes_tester/    тестер (dashboard-встраивание → control API, §7)
 nodes_admin/     оркестратор (из dashboard/ + новое, §8)
 web/             исходники SPA → nodes_admin/static/
-schemas/         raw_nodes / groups_params / providers / pipeline / tester-config (.schema.json)
+schemas/         raw_nodes / groups_params / providers (готово); pipeline / tester-config — Ф4–5
 scripts/router/  apply-nodes.sh, build-clients.sh, update-rules.sh, init.d/*  (эталоны)
 config/                      ← пользовательские конфиги (вне git, кроме *.example)
   pipeline.json

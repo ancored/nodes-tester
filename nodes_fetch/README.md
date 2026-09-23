@@ -32,6 +32,17 @@ python -m nodes_fetch -p … -o … --only MEDVED   # обновить одну 
 (+ `format`, `ext`; AWG). `user_agent` (или старое `User-Agent`), `happ_headers`.
 Упавшая или пустая подписка не валит остальные. Схема — `schemas/providers.schema.json`.
 
+## Парсеры и upstream
+
+Парсеры (`parsers/<схема>.py` с `parse`; folder-форматы — `parse_file`) — форк
+[Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe), синхронизирован
+по коммит `558731c` (2026-09-23). Протоколы: `http`, `socks5`, `shadowsocks`, `shadowsocksR`,
+`vmess`, `trojan`, `vless`, `tuic`, `hysteria`, `hysteria2`, `wireguard`, `anytls`, AWG (folder).
+Намеренные отличия от upstream: `xhttp` (vless/trojan), `alpn`/`fp`/`encryption` в vless,
+`ast.literal_eval` вместо `eval` в ss, `packet_encoding: xudp` по умолчанию в vless/vmess (поле
+входит в CRC — upstream его убрал). Следующая сверка: `git diff 558731c HEAD -- parsers` в клоне
+upstream; у нас `import tool` → `from .. import util`.
+
 ## Контракт выхода
 
 `nodes_common/raw.py` и `schemas/raw_nodes.schema.json`: конверт `{version, generated_at,
