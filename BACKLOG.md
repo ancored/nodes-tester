@@ -30,7 +30,16 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   теневой конвейер `scripts/router/shadow-pipeline.sh` в cron раз в 6 ч → `/root/nodes-data/`
 - [x] Ф3 — `scripts/router/{update-rules,apply-nodes,build-clients,pipeline}.sh`; холостые
   прогоны на роутере; перенос точный (побайтно на боевых входах) — 2026-09-23
-- [ ] **Переключение** (после дня теневых прогонов, по команде; сеть на ~секунды пропадёт):
+- [x] **Переключение** — выполнено 2026-09-24 23:13, успешно.
+- [ ] **⏰ 2026-09-25: уборка на роутере после переключения.** Сначала проверить, что ночной
+  03:00 прошёл чисто (`/var/log/nodes-pipeline.log`), потом удалить:
+  - `/root/sing-box-nodes_tester.old`;
+  - `/root/update-singbox-config.sh`, `/root/update-clients-configs.sh` + их `.pre-deploy`;
+  - `/etc/init.d/nodes-dashboard` (сервис отключён; порт 8088 у встроенной админки);
+  - `/etc/sing-box-subscribe/medved.txt` — предварительно убедиться, что MEDVED берётся по URL;
+  - снимок `nodes-tester-stable` (→ `backups/nodes-tester-20260923-232511`) — решить, держать ли.
+  НЕ трогать: `update-singbox-lx.sh` (обновление ядра), `config.json.prev`, снимок `preswitch`.
+  (после дня теневых прогонов, по команде; сеть на ~секунды пропадёт):
   `scripts/router/switch-to-pipeline.sh` — сам уходит в фон, снимок preswitch, migrate,
   pipeline router (проверка связности + автовозврат конфига), clients, cron только при успехе.
   Потом — убрать `.old`
