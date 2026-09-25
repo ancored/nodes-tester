@@ -60,6 +60,8 @@ fetch_rule "$RULES_DIR/google-gemini.srs" https://raw.githubusercontent.com/Meta
 # Весь Google (кроме YouTube) идёт вместе с AI: Google сверяет страну по всем своим доменам.
 fetch_rule "$RULES_DIR/google.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs
 fetch_rule "$RULES_DIR/youtube.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/youtube.srs
+# IP Google: QUIC к ним отклоняем — у Chrome QUIC не снифится (нет домена → final мимо NL).
+fetch_rule "$RULES_DIR/geoip-google.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs
 fetch_rule "$RULES_DIR/zoom.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/zoom.srs
 fetch_rule "$RULES_DIR/anthropic.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs
 fetch_rule "$RULES_DIR/hagezi-bypass.srs" https://cdn.jsdelivr.net/gh/razaxq/dns-blocklists-sing-box@rule-set/hagezi-bypass.srs
