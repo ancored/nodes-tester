@@ -18,6 +18,7 @@ _SLICES = {
     "traffic": ("traffic_providers", "traffic_countries", "traffic_protocols",
                 "traffic_nodes", "endpoints"),
     "lifecycle": ("provider_quality", "garbage", "longevity", "dropouts", "attrition"),
+    "graveyard": ("graveyard",),
 }
 
 

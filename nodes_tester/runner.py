@@ -71,6 +71,9 @@ class Runner:
         self.log = LogRing()
         self._pass_requested = threading.Event()
         self._current_pass = 0
+        # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
+        # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
+        self._pass_seq = 0
         self._current_day = ""
         self._running = False
         self._httpd = None
@@ -222,7 +225,7 @@ class Runner:
         self._tests_cache: dict = {}
         self._region_cache: dict = {}
         self._originals: dict[str, str] = {}
-        self._backoff: dict = {}               # crc -> (until, streak, reason), из storage
+        self._backoff: dict = {}   # crc -> (until, until_pass, streak, reason), из storage
 
         try:
             self.clash.ping()
@@ -433,6 +436,14 @@ class Runner:
         if self.storage is not None:
             self.storage.maybe_load_nodes(self.cfg.storage.nodes_file)
             self._backoff = self.storage.load_backoff()
+            try:
+                seq = int(self.storage.get_meta("pass_seq") or 0)
+            except (TypeError, ValueError):
+                seq = 0
+            self._pass_seq = max(self._pass_seq, seq) + 1
+            self.storage.set_meta("pass_seq", self._pass_seq)
+        else:
+            self._pass_seq += 1
             self._endpoints = self.storage.endpoints_by_crc()   # crc -> (server, port)
             self._banned = self.storage.banned_crcs()
 
@@ -556,19 +567,24 @@ class Runner:
             self.switcher.notify_score(region, ident.raw, blocked=not gate)
         return gate
 
-    # --- Backoff по провалу gate (единая ВРЕМЕННАЯ модель, персистентно) --------
+    # --- Пауза (в прогонах) / карантин (во времени) по провалу gate, персистентно ---
 
     def _backed_off(self, crc: str) -> bool:
         if not self.cfg.cooldown.enabled or not crc:
             return False
-        ent = self._backoff.get(crc)
-        return bool(ent and time.time() < ent[0])   # ent = (until, streak, reason)
+        ent = self._backoff.get(crc)                # (until, until_pass, streak, reason)
+        if not ent:
+            return False
+        until, until_pass, _streak, reason = ent
+        if reason == "garbage":
+            return time.time() < until              # карантин — по времени
+        return self._pass_seq <= until_pass         # пауза — по сквозному номеру прогона
 
     def _backoff_update(self, crc: str, gate: bool) -> None:
         # Backoff персистентен → нужен storage. Без него ноды тестируются каждый проход.
         if not self.cfg.cooldown.enabled or not crc or self.storage is None:
             return
-        prev = self._backoff.get(crc)                # (until, streak, reason) до обновления
+        prev = self._backoff.get(crc)       # (until, until_pass, streak, reason) до обновления
         if gate:
             if crc in self._backoff:
                 self.storage.clear_backoff(crc)      # нода жива — снять backoff/карантин
@@ -576,24 +592,29 @@ class Runner:
                 self.storage.add_node_event(crc, "recovered")   # событие восстановления
             return
         cd = self.cfg.cooldown
-        streak = (prev[1] if prev else 0) + 1
-        secs = cd.base_seconds * (2 ** (streak - 1))         # удвоение за подряд провал
-        cap = cd.garbage_hours * 3600.0
-        garbage = secs >= cap or streak > cd.max_skip        # потолок → карантин (мусорная)
+        streak = (prev[2] if prev else 0) + 1
+        max_skip = max(1, int(cd.max_skip))
+        skip = min(2 ** (streak - 1), max_skip)             # 1, 2, 4, 8, … прогонов
+        # Потолок паузы достигнут (или провалена проба после карантина) → карантин.
+        garbage = skip >= max_skip or (prev is not None and prev[3] == "garbage")
         if garbage:
-            secs = cap
-        until = int(time.time() + secs)
-        reason = "garbage" if garbage else "backoff"
-        self.storage.set_backoff(crc, until, streak, reason)
-        # Событие ТОЛЬКО на переходе состояния: первый уход в backoff и вход в garbage —
+            until, until_pass = int(time.time() + cd.garbage_hours * 3600.0), None
+            reason = "garbage"
+        else:
+            until, until_pass = None, self._pass_seq + skip   # пропустить skip прогонов
+            reason = "backoff"
+        self.storage.set_backoff(crc, until, streak, reason, until_pass=until_pass)
+        # Событие ТОЛЬКО на переходе состояния: первый уход в паузу и вход в карантин —
         # чтобы node_events не пух на каждый повторный провал.
-        if garbage and (prev is None or prev[2] != "garbage"):
+        if garbage and (prev is None or prev[3] != "garbage"):
             self.storage.add_node_event(crc, "garbage", reason, streak)
         elif prev is None:
             self.storage.add_node_event(crc, "backoff", reason, streak)
-        self._backoff[crc] = (until, streak, reason)
-        tag = "карантин (мусорная)" if garbage else f"backoff #{streak}"
-        print(f"  · gate-провал {crc} → {tag}, пропуск ~{secs / 60:.0f} мин")
+        self._backoff[crc] = (until or 0, until_pass or 0, streak, reason)
+        if garbage:
+            print(f"  · gate-провал {crc} → карантин на {cd.garbage_hours:g} ч")
+        else:
+            print(f"  · gate-провал {crc} → пауза #{streak}: пропуск {skip} прогон(ов)")
 
     def _probe_node(self, region: str, leaf: str) -> tuple[bool, float, bool]:
         """Внеплановый зонд активной ноды для монитора: закачка ~probe_bytes через socks.

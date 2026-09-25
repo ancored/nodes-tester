@@ -229,17 +229,22 @@ CREATE INDEX idx_node_events_crc ON node_events(crc);
 Пишут: `Runner.reconcile_presence` (added/removed) и `Runner._backoff_update`
 (backoff/garbage/recovered).
 
-## garbage — текущий backoff/карантин (не история)
+## garbage — текущая пауза/карантин (не история)
 
 ```sql
 CREATE TABLE garbage (
-  crc     TEXT PRIMARY KEY,  -- нода в backoff/карантине
-  since   INTEGER,           -- ts начала ТЕКУЩЕГО эпизода (не перезаписывается)
-  until   INTEGER,           -- ts, до которого ноду не тестируем
-  reason  TEXT,              -- backoff | garbage
-  streak  INTEGER            -- число подряд провалов gate (для удвоения интервала)
+  crc        TEXT PRIMARY KEY,  -- нода на паузе/в карантине
+  since      INTEGER,           -- ts начала ТЕКУЩЕГО эпизода (не перезаписывается)
+  until      INTEGER,           -- карантин: ts, до которого ноду не тестируем; пауза: NULL
+  reason     TEXT,              -- backoff (пауза) | garbage (карантин)
+  streak     INTEGER,           -- число подряд провалов gate (для удвоения пропуска)
+  until_pass INTEGER            -- пауза: не тестируем, пока meta.pass_seq <= until_pass
 );
 ```
+
+Пауза считается в прогонах (сквозной `meta.pass_seq`), карантин — во времени
+(`garbage_hours`). Старые строки паузы без `until_pass` (временная модель) пробуются в
+ближайшем прогоне, `streak` сохраняется.
 
 Одна строка на ноду — **текущее** состояние (не история; при восстановлении строка
 удаляется `clear_backoff`). Историю эпизодов см. в `node_events`. `time_in_garbage` для
@@ -249,12 +254,13 @@ CREATE TABLE garbage (
 
 ```sql
 CREATE TABLE meta (
-  key    TEXT PRIMARY KEY,  -- pass_day | pass_no | …
+  key    TEXT PRIMARY KEY,  -- pass_day | pass_no | pass_seq | …
   value  TEXT
 );
 ```
 
-Хранит посуточный номер прогона (`pass_day`/`pass_no`), чтобы нумерация переживала рестарт.
+Хранит посуточный номер прогона (`pass_day`/`pass_no`, для отображения) и сквозной
+`pass_seq` (монотонный, не сбрасывается в полночь; по нему считается пауза нод).
 
 ---
 

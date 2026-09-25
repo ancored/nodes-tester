@@ -15,7 +15,7 @@ fingerprint настроек ноды (его считает sing-box-subscribe)
   score_history(ts, crc, region, score, s_run, gate)           — динамика рейтинга
   switch_state / switch_recent / switch_activations            — состояние switcher
   node_events(ts, crc, event, reason, streak)  — журнал added/removed/backoff/garbage/recovered
-  garbage(crc PK, since, until, reason, streak) — текущий backoff/карантин
+  garbage(crc PK, since, until, reason, streak, until_pass) — текущая пауза/карантин
   meta(key PK, value)              — сквозные значения между рестартами
 
 Одно соединение sqlite3 (check_same_thread=False) + Lock: пишут поток прогона и
@@ -108,7 +108,8 @@ class Storage:
         for tbl, col, decl in (("nodes", "label", "TEXT"),
                                 ("nodes", "present", "INTEGER"),
                                 ("nodes", "banned", "INTEGER"),
-                                ("garbage", "streak", "INTEGER")):
+                                ("garbage", "streak", "INTEGER"),
+                                ("garbage", "until_pass", "INTEGER")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:
@@ -335,28 +336,36 @@ class Storage:
                 (start, end)).fetchone()
         return int(r[0]) if r and r[0] is not None else 0
 
-    # --- Backoff / карантин нод (единая ВРЕМЕННАЯ модель, персистентная) --------
-    # Нода, провалившая gate, не тестируется до `until`; `streak` — число подряд
-    # провалов (для удвоения). Переживает рестарт и измеряется временем, а не
-    # номерами прогонов (совместимо с rotation_bound). reason: backoff | garbage.
+    # --- Пауза (backoff) / карантин (garbage) нод, персистентно --------------
+    # reason='backoff' — ПАУЗА в прогонах: не тестируем, пока сквозной номер прогона
+    #   (meta.pass_seq) <= until_pass; until = NULL.
+    # reason='garbage' — КАРАНТИН во времени: не тестируем до `until` (unix ts);
+    #   until_pass = NULL. `streak` — число подряд провалов gate (для удвоения).
 
     def load_backoff(self) -> dict:
-        """{crc: (until, streak, reason)} по всем строкам backoff (снимок на прогон)."""
+        """{crc: (until, until_pass, streak, reason)} по всем строкам (снимок на прогон).
+        Старые строки временной модели (backoff без until_pass) → until_pass=0: нода
+        пробуется в ближайшем прогоне, streak сохраняется."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT crc, until, streak, reason FROM garbage").fetchall()
-        return {r[0]: (int(r[1] or 0), int(r[2] or 0), r[3] or "") for r in rows}
+                "SELECT crc, until, until_pass, streak, reason FROM garbage").fetchall()
+        return {r[0]: (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0), r[4] or "")
+                for r in rows}
 
-    def set_backoff(self, crc: str, until: int, streak: int, reason: str) -> None:
-        """Записать/обновить backoff ноды до момента until (unix ts)."""
+    def set_backoff(self, crc: str, until, streak: int, reason: str,
+                    until_pass=None) -> None:
+        """Записать/обновить паузу (until_pass) или карантин (until, unix ts)."""
         if not crc:
             return
         with self._lock:
             self._db.execute(
-                "INSERT INTO garbage (crc, since, until, reason, streak) VALUES (?,?,?,?,?) "
+                "INSERT INTO garbage (crc, since, until, reason, streak, until_pass) "
+                "VALUES (?,?,?,?,?,?) "
                 "ON CONFLICT(crc) DO UPDATE SET until=excluded.until, "
-                "reason=excluded.reason, streak=excluded.streak",
-                (crc, int(time.time()), int(until), reason, int(streak)))
+                "reason=excluded.reason, streak=excluded.streak, "
+                "until_pass=excluded.until_pass",
+                (crc, int(time.time()), None if until is None else int(until), reason,
+                 int(streak), None if until_pass is None else int(until_pass)))
             self._db.commit()
 
     def clear_backoff(self, crc: str) -> None:
@@ -639,7 +648,8 @@ class Storage:
             # давно истёкший backoff (старше retention) — подчистить, чтобы не пух;
             # свежий истёкший оставляем: его streak нужен для продолжения серии при
             # следующей пробе, если нода снова провалит gate.
-            self._db.execute("DELETE FROM garbage WHERE until < ?", (cutoff,))
+            self._db.execute("DELETE FROM garbage WHERE COALESCE(until, since) < ?",
+                             (cutoff,))
             # 2) ВОЗРАСТНОЙ КАП сырых фактов — и у ЖИВЫХ нод тоже. Иначе results/traffic/
             #    activations/endpoints растут без предела (дашборд агрегирует всё, БД пухнет
             #    на роутере). Храним только последние retention_days сырья (см. review.md P2).

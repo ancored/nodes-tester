@@ -220,7 +220,6 @@
   },
   "cooldown": {
     "enabled": true,
-    "base_seconds": 600,
     "max_skip": 32,
     "garbage_hours": 72
   },

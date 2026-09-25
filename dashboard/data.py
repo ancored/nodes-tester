@@ -89,6 +89,7 @@ def collect(cfg) -> dict:
     ev = _event_stats(db)                 # crc -> {garbage_count, last_garbage, fails, first_garbage}
     garbage = _garbage_table(db, ev)
     longevity, dropouts = _degradation(db, ev)
+    graveyard = _graveyard(db, ev, int(getattr(cfg.storage, "retention_days", 30) or 30))
     attrition = _attrition(db)
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
@@ -108,6 +109,7 @@ def collect(cfg) -> dict:
         "garbage": garbage,
         "longevity": longevity,
         "dropouts": dropouts,
+        "graveyard": graveyard,
         "attrition": attrition,
         "score_spark": score_spark,
         "nodes": nodes,
@@ -347,16 +349,24 @@ def _event_stats(db: str) -> dict:
 
 
 def _garbage_table(db: str, ev: dict) -> list[dict]:
-    """Ноды в текущем backoff/карантине + метаданные и флаг удаления из подписки."""
+    """Ноды, которые СЕЙЧАС в подписке и в паузе (backoff) / карантине (garbage).
+    Удалённые из подписки сюда не попадают — они на «Кладбище» (_graveyard)."""
     now = int(time.time())
+    meta = _query(db, "SELECT value FROM meta WHERE key = 'pass_seq'")
+    try:
+        seq = int(meta[0]["value"]) if meta else 0
+    except (TypeError, ValueError):
+        seq = 0
     rows = _query(db, """
         SELECT g.crc AS crc, g.since AS since, g.until AS until, g.reason AS state,
-               g.streak AS streak,
+               g.streak AS streak, g.until_pass AS until_pass,
                n.provider AS provider, n.protocol AS protocol, n.country AS cc,
                n.first_seen AS first_seen, n.present AS present
         FROM garbage g LEFT JOIN nodes n ON n.crc = g.crc""")
     out = []
     for r in rows:
+        if r.get("present") != 1:                    # удалённые — на «Кладбище»
+            continue
         e = ev.get(r["crc"], {})
         out.append({
             "provider": r.get("provider"), "protocol": r.get("protocol"),
@@ -364,21 +374,30 @@ def _garbage_table(db: str, ev: dict) -> list[dict]:
             "state": r.get("state"), "streak": r.get("streak"),
             "last_garbage": e.get("last_garbage"), "garbage_count": e.get("gcount") or 0,
             "in_garbage": max(0, now - int(r["since"] or now)), "until": r.get("until"),
-            "deleted": 1 if r.get("present") in (0, None) else 0,
+            # пауза: сколько прогонов ещё пропустит (0 = пробуется в ближайшем)
+            "passes_left": (max(0, int(r["until_pass"] or 0) - seq)
+                            if r.get("state") == "backoff" else None),
         })
     out.sort(key=lambda x: (x["state"] != "garbage", -(x["in_garbage"] or 0)))
     return out
 
 
 def _degradation(db: str, ev: dict) -> tuple[list, list]:
-    """Долгожители (живые, по возрасту ↓) и быстро выпадающие (по короткому сроку
-    жизни до первого garbage ↑)."""
+    """Долгожители и быстро выпадающие — только ноды, которые СЕЙЧАС в подписке
+    (удалённые — на «Кладбище»).
+
+    Долгожители: в строю (score > 0), не в паузе/карантине, не забанены; по возрасту ↓.
+    Быстро выпадающие: хоть раз были в карантине; по сроку жизни до 1-го карантина ↑."""
     now = int(time.time())
     nodes = _query(db, """
         SELECT n.crc AS crc, n.provider AS provider, n.protocol AS protocol,
-               n.country AS cc, n.first_seen AS first_seen, n.present AS present,
-               s.score AS score, s.active AS active
-        FROM nodes n LEFT JOIN scores s ON s.crc = n.crc""")
+               n.country AS cc, n.first_seen AS first_seen,
+               COALESCE(n.banned, 0) AS banned,
+               s.score AS score, s.active AS active, g.reason AS gstate
+        FROM nodes n
+        LEFT JOIN scores s ON s.crc = n.crc
+        LEFT JOIN garbage g ON g.crc = n.crc
+        WHERE n.present = 1""")
     longevity, dropouts = [], []
     for r in nodes:
         e = ev.get(r["crc"], {})
@@ -386,16 +405,86 @@ def _degradation(db: str, ev: dict) -> tuple[list, list]:
         base = {"provider": r.get("provider"), "protocol": r.get("protocol"),
                 "cc": r.get("cc"), "crc": r["crc"], "first_seen": fs,
                 "garbage_count": e.get("gcount") or 0, "fails": e.get("fails") or 0}
-        if r.get("present") == 1:                     # живые → долгожители
+        try:
+            score = float(r.get("score") or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score > 0 and not r.get("gstate") and not r.get("banned"):
             longevity.append({**base, "age": max(0, now - fs),
                               "score": r.get("score"), "active": r.get("active") or 0})
-        if e.get("first_garbage"):                    # была в мусоре → выпадающая
+        if e.get("first_garbage"):                    # была в карантине → выпадающая
             dropouts.append({**base, "first_garbage": e["first_garbage"],
-                             "lifespan": max(0, int(e["first_garbage"]) - fs),
-                             "deleted": 1 if r.get("present") in (0, None) else 0})
+                             "lifespan": max(0, int(e["first_garbage"]) - fs)})
     longevity.sort(key=lambda x: x["age"], reverse=True)     # старейшие сверху
     dropouts.sort(key=lambda x: x["lifespan"])               # короткоживущие сверху
     return longevity[:40], dropouts[:40]
+
+
+def _downsample(vals: list, n: int) -> list:
+    """Проредить ряд до n точек (равномерно, последняя точка сохраняется)."""
+    if len(vals) <= n:
+        return vals
+    step = (len(vals) - 1) / (n - 1)
+    return [vals[round(i * step)] for i in range(n)]
+
+
+def _graveyard(db: str, ev: dict, retention_days: int) -> list[dict]:
+    """«Кладбище»: ноды, ушедшие из подписки (present = 0). Хранятся в БД ещё
+    retention_days после last_seen, затем cleanup() стирает их целиком.
+
+    Для каждой: сколько прожила (first_seen → удаление), траектория рейтинга из
+    score_history (пик/среднее/последний + прореженный ряд для спарклайна),
+    сколько раз была в карантине и в каком состоянии ушла."""
+    now = int(time.time())
+    nodes = _query(db, """
+        SELECT n.crc AS crc, n.tag AS tag, n.provider AS provider, n.protocol AS protocol,
+               n.country AS cc, n.first_seen AS first_seen, n.last_seen AS last_seen,
+               COALESCE(n.banned, 0) AS banned, g.reason AS gstate,
+               (SELECT MAX(ts) FROM node_events e
+                 WHERE e.crc = n.crc AND e.event = 'removed') AS removed_at
+        FROM nodes n LEFT JOIN garbage g ON g.crc = n.crc
+        WHERE n.present = 0""")
+    if not nodes:
+        return []
+    hist: dict[str, list] = {}
+    for r in _query(db, """
+            SELECT h.crc AS crc, h.score AS score FROM score_history h
+            JOIN nodes n ON n.crc = h.crc WHERE n.present = 0
+            ORDER BY h.crc, h.ts"""):
+        hist.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
+    out = []
+    for r in nodes:
+        e = ev.get(r["crc"], {})
+        fs = int(r["first_seen"] or now)
+        ls = int(r["last_seen"] or fs)
+        removed = int(r["removed_at"] or ls)
+        h = hist.get(r["crc"], [])
+        last = h[-1] if h else None
+        if r.get("banned"):
+            cause = "banned"
+        elif r.get("gstate") == "garbage":
+            cause = "quarantine"                      # ушла из карантина
+        elif r.get("gstate") == "backoff" or (last is not None and last <= 0):
+            cause = "zero"                            # ушла с нулевым рейтингом / на паузе
+        elif last is None:
+            cause = "untested"
+        else:
+            cause = "alive"                           # провайдер убрал рабочую ноду
+        out.append({
+            "provider": r.get("provider"), "protocol": r.get("protocol"), "cc": r.get("cc"),
+            "crc": r["crc"], "tag": r.get("tag"),
+            "first_seen": fs, "removed_at": removed,
+            "lifespan": max(0, removed - fs),
+            "purge_in": max(0, ls + retention_days * 86400 - now),
+            "peak": max(h) if h else None,
+            "avg": round(sum(h) / len(h), 1) if h else None,
+            "last": last, "samples": len(h),
+            "spark": _downsample(h, 30),
+            "garbage_count": e.get("gcount") or 0, "fails": e.get("fails") or 0,
+            "cause": cause,
+        })
+    out.sort(key=lambda x: x["removed_at"], reverse=True)   # свежие потери сверху
+    return out
 
 
 def _attrition(db: str) -> list[dict]:

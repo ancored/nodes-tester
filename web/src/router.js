@@ -4,6 +4,7 @@ import Rating from './views/Rating.vue'
 import Results from './views/Results.vue'
 import Traffic from './views/Traffic.vue'
 import Lifecycle from './views/Lifecycle.vue'
+import Graveyard from './views/Graveyard.vue'
 import History from './views/History.vue'
 import Control from './views/Control.vue'
 import Runs from './views/Runs.vue'
@@ -16,6 +17,7 @@ export const sections = [
   { path: '/results', name: 'Результаты', component: Results },
   { path: '/traffic', name: 'Трафик', component: Traffic },
   { path: '/lifecycle', name: 'Жизненный цикл', component: Lifecycle },
+  { path: '/graveyard', name: 'Кладбище', component: Graveyard },
   { path: '/history', name: 'Переключения', component: History },
   { path: '/control', name: 'Управление', component: Control },
   { path: '/runs', name: 'Прогоны', component: Runs },

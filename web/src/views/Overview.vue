@@ -13,12 +13,13 @@ const kpis = computed(() => {
   const live = rating.filter((r) => (+r.score || 0) > 0)
   const active = rating.filter((r) => +r.active === 1)
   const garbage = d.garbage || []
+  const quarantine = garbage.filter((r) => r.state === 'garbage').length
   const total = +d.traffic_total || 0
   return [
-    { label: 'Всего нод', value: rating.length },
-    { label: 'Живых', value: live.length },
+    { label: 'Нод в подписке', value: rating.length },
+    { label: 'Рейтинг > 0', value: live.length },
     { label: 'Активных', value: active.length },
-    { label: 'В карантине/backoff', value: garbage.length },
+    { label: 'Пауза / карантин', value: `${garbage.length - quarantine} / ${quarantine}` },
     { label: 'Трафик (всего)', value: bytes(total) },
   ]
 })
@@ -28,6 +29,9 @@ const topProviders = computed(() =>
 )
 const topCountries = computed(() =>
   (s.data.traffic_countries || []).map((r) => ({ name: r.cc, value: r.total }))
+)
+const topProtocols = computed(() =>
+  (s.data.traffic_protocols || []).map((r) => ({ name: r.protocol, value: r.total }))
 )
 const attrition = computed(() => s.data.attrition || [])
 </script>
@@ -43,7 +47,7 @@ const attrition = computed(() => s.data.attrition || [])
       </div>
     </div>
 
-    <div class="grid2">
+    <div class="grid3">
       <section>
         <h2>Топ провайдеров по трафику</h2>
         <BarList :items="topProviders" :fmt="bytes" :limit="8" />
@@ -51,6 +55,10 @@ const attrition = computed(() => s.data.attrition || [])
       <section>
         <h2>Топ стран по трафику</h2>
         <BarList :items="topCountries" :fmt="bytes" :limit="8" />
+      </section>
+      <section>
+        <h2>Топ протоколов по трафику</h2>
+        <BarList :items="topProtocols" :fmt="bytes" :limit="8" />
       </section>
     </div>
 

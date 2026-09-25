@@ -1,6 +1,6 @@
 <script setup>
 // График динамики выбытия (порт attritionChart из server.py): по дням две колонки —
-// появилось (added, зелёный) и выбыло (removed, красный), последние 30 дней.
+// появилось (added, зелёный) и удалено из подписки (removed, красный), последние 30 дней.
 import { computed } from 'vue'
 
 const props = defineProps({ rows: { type: Array, default: () => [] } })
@@ -20,7 +20,7 @@ const chart = computed(() => {
     const x = pad + i * gw
     const a = +r.added || 0, rm = +r.removed || 0, g = +r.garbage || 0
     bars.push({ x, y: y(a), w: bw, h: H - pad - y(a), fill: 'var(--good)', title: `${r.day}: появилось ${a}` })
-    bars.push({ x: x + bw + 1, y: y(rm), w: bw, h: H - pad - y(rm), fill: 'var(--bad)', title: `${r.day}: выбыло ${rm}, в мусор ${g}` })
+    bars.push({ x: x + bw + 1, y: y(rm), w: bw, h: H - pad - y(rm), fill: 'var(--bad)', title: `${r.day}: удалено ${rm}, в карантин ${g}` })
   })
   const step = Math.ceil(rows.length / 8) || 1
   const labels = rows
@@ -33,7 +33,7 @@ const chart = computed(() => {
 <template>
   <div class="wrap" style="padding: 12px 14px">
     <div class="legend">
-      <b class="good">■</b> появилось &nbsp; <b class="bad">■</b> выбыло <small>(по дням)</small>
+      <b class="good">■</b> появилось &nbsp; <b class="bad">■</b> удалено <small>(по дням)</small>
     </div>
     <div v-if="!chart" class="empty">нет данных</div>
     <div v-else style="overflow-x: auto">

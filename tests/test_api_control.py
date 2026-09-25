@@ -81,7 +81,7 @@ class ApiControlTest(unittest.TestCase):
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234/quarantine").status, 200)
         backoff = self.storage.load_backoff()
         self.assertIn("abcd1234", backoff)
-        self.assertEqual(backoff["abcd1234"][2], "garbage")
+        self.assertEqual(backoff["abcd1234"][3], "garbage")
         # снятие карантина
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234/unquarantine").status, 200)
         self.assertNotIn("abcd1234", self.storage.load_backoff())
