@@ -64,6 +64,8 @@ fetch_rule "$RULES_DIR/youtube.srs" https://raw.githubusercontent.com/MetaCubeX/
 fetch_rule "$RULES_DIR/geoip-google.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs
 fetch_rule "$RULES_DIR/zoom.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/zoom.srs
 fetch_rule "$RULES_DIR/anthropic.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs
+# Все зарубежные AI-сервисы (OpenAI, xAI/Grok, Perplexity, Copilot, Cursor, Mistral, Meta AI…).
+fetch_rule "$RULES_DIR/category-ai.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ai-%21cn.srs
 fetch_rule "$RULES_DIR/hagezi-bypass.srs" https://cdn.jsdelivr.net/gh/razaxq/dns-blocklists-sing-box@rule-set/hagezi-bypass.srs
 # ru-app-list — только для клиентских конфигов (роутерный base.json его не подключает),
 # но лежит в общем каталоге правил, откуда caddy раздаёт клиентам.
