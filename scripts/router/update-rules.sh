@@ -63,6 +63,10 @@ fetch_rule "$RULES_DIR/hagezi-bypass.srs" https://cdn.jsdelivr.net/gh/razaxq/dns
 # ru-app-list — только для клиентских конфигов (роутерный base.json его не подключает),
 # но лежит в общем каталоге правил, откуда caddy раздаёт клиентам.
 fetch_rule "$RULES_DIR/ru-app-list.srs" https://raw.githubusercontent.com/legiz-ru/sb-rule-sets/main/ru-app-list.srs
+# Белые списки мобильного интернета РФ (hxehex/russia-mobile-internet-whitelist, сборка .srs
+# Master-Yoba) — тоже только для клиентов (режим «БЕЛЫЕ СПИСКИ»).
+fetch_rule "$RULES_DIR/russia-mobile-whitelist-domains.srs" https://github.com/Master-Yoba/Russia-mobile-whitelist-geo-builder/releases/latest/download/russia-mobile-whitelist-domains.srs
+fetch_rule "$RULES_DIR/russia-mobile-whitelist-cidr.srs" https://github.com/Master-Yoba/Russia-mobile-whitelist-geo-builder/releases/latest/download/russia-mobile-whitelist-cidr.srs
 
 # Source-наборы (format: source): читают и роутерный base.json, и клиенты через caddy.
 replace_if_changed "$REPO_DIR/us-domains.json" "$RULES_DIR/us-domains.json"
