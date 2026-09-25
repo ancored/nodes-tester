@@ -57,6 +57,9 @@ fetch_rule "$RULES_DIR/ruleset-domain-torrent_trackres.srs" https://github.com/b
 fetch_rule "$RULES_DIR/ruleset-domain-oisd_big.srs" https://github.com/burjuyz/RuRulesets/raw/main/ruleset-domain-oisd_big.srs
 fetch_rule "$RULES_DIR/google-deepmind.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-deepmind.srs
 fetch_rule "$RULES_DIR/google-gemini.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-gemini.srs
+# Весь Google (кроме YouTube) идёт вместе с AI: Google сверяет страну по всем своим доменам.
+fetch_rule "$RULES_DIR/google.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs
+fetch_rule "$RULES_DIR/youtube.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/youtube.srs
 fetch_rule "$RULES_DIR/zoom.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/zoom.srs
 fetch_rule "$RULES_DIR/anthropic.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs
 fetch_rule "$RULES_DIR/hagezi-bypass.srs" https://cdn.jsdelivr.net/gh/razaxq/dns-blocklists-sing-box@rule-set/hagezi-bypass.srs
