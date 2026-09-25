@@ -52,6 +52,8 @@ replace_if_changed "$REPO_DIR/base.json" "$TARGET_DIR/base.json"
 
 fetch_rule "$RULES_DIR/category-ru.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ru.srs
 fetch_rule "$RULES_DIR/ru.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/ru.srs
+# IP Беларуси — напрямую, как geoip-ru (BY-сайты закрыты для иностранных IP нод).
+fetch_rule "$RULES_DIR/geoip-by.srs" https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/by.srs
 fetch_rule "$RULES_DIR/ruleset-domain-oisd_nsfw.srs" https://raw.githubusercontent.com/burjuyz/RuRulesets/main/ruleset-domain-oisd_nsfw.srs
 fetch_rule "$RULES_DIR/ruleset-domain-torrent_trackres.srs" https://github.com/burjuyz/RuRulesets/raw/main/ruleset-domain-torrent_trackres.srs
 fetch_rule "$RULES_DIR/ruleset-domain-oisd_big.srs" https://github.com/burjuyz/RuRulesets/raw/main/ruleset-domain-oisd_big.srs
