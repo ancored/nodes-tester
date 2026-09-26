@@ -14,9 +14,9 @@ openwrt/build.sh                    # SDK x86-64-25.12.2 → dist/nodes-tester-<
 openwrt/build.sh mediatek-filogic-24.10.4   # другой SDK (формат пакета — по версии OpenWrt)
 ```
 
-SDK кешируется в docker-томе `nodes-tester-sdk-<тег>`: первая сборка долгая (SDK собирает
-host-Python и зависимости из фидов), повторные — быстрые. Сбросить кеш:
-`docker volume rm nodes-tester-sdk-<тег>`.
+Зависимости из фидов OpenWrt при сборке не компилируются — они записаны в метаданные пакета
+(`EXTRA_DEPENDS`), и `apk` ставит готовые на роутере. Поэтому сборка занимает секунды; SDK
+кешируется в docker-томе `nodes-tester-sdk-<тег>` (сбросить: `docker volume rm …`).
 
 ## Установка
 
