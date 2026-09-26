@@ -1,0 +1,4 @@
+# Имена клиентов для build-clients.sh (по одному на строку или через пробел).
+# Для каждого нужен android_clients/base_<name>.json в репозитории sing-box-config.
+alice
+bob

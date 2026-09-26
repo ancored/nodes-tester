@@ -11,6 +11,19 @@ inbound, меряет, пишет рейтинг и (опционально) с�
 > **Документация проекта.** Архитектура и решения — в этом README; полная схема БД —
 > в [SCHEMA.md](SCHEMA.md); модель скоринга — в [score.md](score.md); отложенные идеи и
 > архив реализованного — в [BACKLOG.md](BACKLOG.md).
+>
+> **Секреты и личные данные в git не хранятся.** Рабочие конфиги (`config/config.json`,
+> `config/providers.json`, `config/user_nodes.json`, `config/awg/*.conf`,
+> `scripts/router/clients.list`) — в `.gitignore`; в
+> репозитории лежат их шаблоны `*.example*`. Первичная настройка:
+>
+> ```bash
+> cp config/config.example.json config/config.json          # + clash_api.secret, dashboard.token
+> cp config/providers.example.json config/providers.json    # URL подписок
+> cp config/user_nodes.example.json config/user_nodes.json  # опционально, свои ноды
+> cp config/awg/de.conf.example config/awg/de.conf          # опционально, AmneziaWG
+> cp scripts/router/clients.list.example scripts/router/clients.list  # для build-clients.sh
+> ```
 
 ## Как это работает
 

@@ -21,8 +21,13 @@ REPO_DIR="${REPO_DIR:-/root/singbox-repo}"
 CLIENTS_OUT="${CLIENTS_OUT:-/etc/sing-box-clients}"
 DRY_OUT="${DRY_OUT:-/root/nodes-data/clients-dry}"
 MERGE="$REPO_DIR/merge-configs.py"
-# Клиенты: для каждого нужен android_clients/base_<name>.json в репозитории.
-CLIENTS="alice bob"
+# Клиенты: для каждого нужен android_clients/base_<name>.json в репозитории. Список — из
+# $CLIENTS или файла $CLIENTS_FILE (не в git; шаблон — clients.list.example рядом).
+CLIENTS_FILE="${CLIENTS_FILE:-$(dirname "$0")/clients.list}"
+if [ -z "${CLIENTS:-}" ] && [ -f "$CLIENTS_FILE" ]; then
+    CLIENTS="$(grep -v '^[[:space:]]*#' "$CLIENTS_FILE" | tr '\n' ' ')"
+fi
+CLIENTS="${CLIENTS:-}"
 DRY=0; WHNODES=""
 
 while [ $# -gt 0 ]; do
@@ -38,6 +43,7 @@ done
 log() { echo "[clients] $*"; logger -t singbox-clients "$*" 2>/dev/null || true; }
 
 [ -n "$WHNODES" ] && [ -f "$WHNODES" ] || { log "ОШИБКА: нет whnodes.json: $WHNODES"; exit 1; }
+[ -n "$CLIENTS" ] || { log "ОШИБКА: список клиентов пуст (задай CLIENTS или $CLIENTS_FILE)"; exit 1; }
 
 OUT="$CLIENTS_OUT"
 if [ "$DRY" = 1 ]; then

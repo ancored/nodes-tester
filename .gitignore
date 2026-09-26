@@ -13,3 +13,10 @@ venv/
 
 # Golden-наборы с реальными подписками (секреты) — только локально
 tests/fixtures/local/
+
+# Секреты и личные данные — в репо только *.example (см. README «Первичная настройка»)
+config/config.json
+config/providers.json
+config/user_nodes.json
+config/awg/*.conf
+scripts/router/clients.list

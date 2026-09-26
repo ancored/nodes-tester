@@ -1,0 +1,23 @@
+[
+    {
+        "tag": "Custom-NL",
+        "type": "vless",
+        "server": "203.0.113.10",
+        "server_port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000000",
+        "flow": "xtls-rprx-vision",
+        "tls": {
+            "enabled": true,
+            "server_name": "www.example.com",
+            "reality": {
+                "enabled": true,
+                "public_key": "YOUR-REALITY-PUBLIC-KEY",
+                "short_id": "0123abcd"
+            },
+            "utls": {
+                "enabled": true,
+                "fingerprint": "chrome"
+            }
+        }
+    }
+]
