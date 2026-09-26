@@ -110,8 +110,13 @@ Makefile для SDK (`PKGARCH:=all`), procd-сервис `nodes-tester` (адм�
 случайный токен), PySocks вложен (в фидах нет). Сборка — `openwrt/build.sh` (docker SDK). Дальше:
 - свой apk-репозиторий с подписью (без `--allow-untrusted`), сборка в GitHub Actions
   (`openwrt/gh-action-sdk`), версия пакета из git-тега;
-- миграция текущей ручной установки (`/root/sing-box-nodes_tester`, `/root/nodes-data`) на
-  раскладку пакета: перенос `stats.db`, `config-main/`, `config-wh/`, замена init.d и cron;
+- [x] основной роутер переведён на пакет 2026-09-27 (stats.db, config-main/wh, clients.list,
+  raw → `/etc/nodes-tester`, `/opt/nodes-tester`; init.d и cron — из пакета). Python-библиотеки,
+  стоявшие через pip (jsonschema, referencing, rpds-py, ruamel.yaml, attrs), заменены пакетами
+  фидов — pip и apk писали в один site-packages;
+- [ ] **⏰ уборка после пары суток на пакете:** удалить `/root/sing-box-nodes_tester` и
+  `/root/nodes-data`; `backup-/rollback-nodes-tester.sh` переписать под раскладку пакета
+  (или заменить бэкапом `stats.db` + `/etc/nodes-tester` + `/etc/config/nodes-tester`);
 - после Ф5 (оркестратор) — cron для конвейера не нужен, отдельный сервис `nodes_admin`;
 - `backup-/rollback-nodes-tester.sh` рассчитаны на ручную раскладку — для пакета откат кода
   делает `apk`, бэкапить остаётся `stats.db` и `/etc/nodes-tester`.
