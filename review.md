@@ -1,11 +1,15 @@
 # Повторное ревью кода `nodes-tester`
 
-Дата: 2026-08-31
+> Исторический документ от 2026-08-31. Большая часть замечаний уже исправлена. Текущее состояние смотрите в [README.md](README.md), закрытые пункты - в [BACKLOG.md](BACKLOG.md), повторную проверку - в [review-2.md](review-2.md).
 
-Область: `nodes_tester`, `subscribe`, `naming`, `dashboard`, конфигурация, документация и тестовая механика.
+Ревью охватывало `nodes_tester`, `subscribe`, `naming`, `dashboard`, конфигурацию, документацию и тестовую механику. Код во время проверки не менялся. Вопросы информационной безопасности не входили в область этого ревью.
 
-Формат: только анализ и рекомендации; исходный код не изменялся.
-Все замечания, относящиеся к безопасности, намеренно исключены.
+## Как читать отчёт
+
+- P0 - риск потери данных.
+- P1 - дефект, который меняет работу системы.
+- P2 - качество реализации, измерений или сопровождения.
+- Номера строк и результаты команд относятся к снимку от 2026-08-31.
 
 ## Итог
 
@@ -39,7 +43,7 @@
 `0 tests`: каталог `nodes_tester/tests` содержит runtime-измерения нод, а не тесты
 самого проекта.
 
-## P0 — возможна потеря данных активно тестируемых нод
+## P0 - возможна потеря данных активно тестируемых нод
 
 Файлы: `nodes_tester/storage.py:86-138`, `nodes_tester/storage.py:310-342`,
 `nodes_tester/runner.py:201-204`, `nodes_tester/runner.py:313-319`.
@@ -65,7 +69,7 @@
 - добавить регрессионный тест с неизменным каталогом и несколькими проходами во
   времени.
 
-## P1 — логика переключения неоднозначна для графа selector-групп
+## P1 - логика переключения неоднозначна для графа selector-групп
 
 Файлы: `subscribe/groups.py:115-133`, `nodes_tester/switcher.py:205-275`.
 
@@ -74,7 +78,7 @@
 selector-групп. `_chain_pairs()` ищет все selector-группы, содержащие ноду, и
 `_activate()` применяет все найденные пары без привязки к переданному `region`.
 
-Сценарий воспроизведён на одной EU-ноде: построенный граф дал три пары —
+Сценарий воспроизведён на одной EU-ноде: построенный граф дал три пары -
 `eu-auto-out`, `us-auto-out` и `other-auto-out`. Активация EU-кандидата тем самым
 может менять выбор в других региональных selector-группах.
 
@@ -94,7 +98,7 @@ selector-групп. `_chain_pairs()` ищет все selector-группы, с�
 - покрыть тестами один регион, пустые регионы, несколько родителей и незамороженный
   верхний selector.
 
-## P1 — частичная цепочка считается успешной активацией
+## P1 - частичная цепочка считается успешной активацией
 
 Файл: `nodes_tester/switcher.py:205-252`.
 
@@ -112,7 +116,7 @@ selector-групп. `_chain_pairs()` ищет все selector-группы, с�
 - вернуть из `_activate()` структурированный `ActivationResult`, а не кодировать
   результат только печатью.
 
-## P1 — cooldown несовместим с суточным `pass_no`
+## P1 - cooldown несовместим с суточным `pass_no`
 
 Файлы: `nodes_tester/runner.py:206-235`, `nodes_tester/runner.py:436-467`.
 
@@ -123,13 +127,13 @@ selector-групп. `_chain_pairs()` ищет все selector-группы, с�
 
 Рекомендации:
 
-- лучший вариант — хранить `resume_at` как timestamp или использовать глобальный
+- лучший вариант - хранить `resume_at` как timestamp или использовать глобальный
   монотонный номер прохода, а суточный номер оставить только для отображения;
-- минимальный вариант — сбрасывать `_cooldown` при смене `current_day`;
+- минимальный вариант - сбрасывать `_cooldown` при смене `current_day`;
 - объединить cooldown и persistent quarantine в одну модель времени: сейчас одна часть
   измеряется проходами, другая часами.
 
-## P1 — часть ошибок Clash API обходит доменную обработку
+## P1 - часть ошибок Clash API обходит доменную обработку
 
 Файлы: `nodes_tester/clash_api.py:29-69`, `nodes_tester/clash_api.py:96-106`,
 `nodes_tester/runner.py:229-232`.
@@ -150,7 +154,7 @@ selector-групп. `_chain_pairs()` ищет все selector-группы, с�
 - различать временную недоступность API, отсутствие группы и некорректный ответ;
 - добавить fake-client тесты для 404, 500, timeout и битого JSON.
 
-## P1 — «нет измерения» смешано с «успешным измерением»
+## P1 - «нет измерения» смешано с «успешным измерением»
 
 Файлы: `nodes_tester/tests/base.py:43-63`, `nodes_tester/runner.py:150-162`,
 `nodes_tester/runner.py:514-524`, `nodes_tester/scoring.py:40-57`,
@@ -178,7 +182,7 @@ cooldown сбрасывается. Регион с `tests_enabled=["connectivity
 - хранить `coverage`, свежесть компонентов и TTL последнего тяжёлого измерения;
 - не сравнивать на одной шкале значения с существенно разным покрытием.
 
-## P1 — emergency-состояние сохраняется не в момент изменения
+## P1 - emergency-состояние сохраняется не в момент изменения
 
 Файлы: `nodes_tester/switcher.py:49-66`, `nodes_tester/switcher.py:110-178`,
 `nodes_tester/switcher.py:205-252`, `nodes_tester/monitor.py:60-78`.
@@ -196,7 +200,7 @@ cooldown сбрасывается. Регион с `tests_enabled=["connectivity
 - синхронно фиксировать switch state, active-флаг scoreboard и запись activation либо
   явно определять, какой источник является главным после рестарта.
 
-## P1 — сборщик трафика может потерять дельты
+## P1 - сборщик трафика может потерять дельты
 
 Файлы: `nodes_tester/traffic.py:36-40`, `nodes_tester/traffic.py:95-107`,
 `nodes_tester/storage.py:168-190`.
@@ -215,7 +219,7 @@ cooldown сбрасывается. Регион с `tests_enabled=["connectivity
 - гарантировать завершение worker перед финальным flush либо явно синхронизировать
   stop/flush/poll.
 
-## P1 — возможен цикл без паузы при просроченном rotation deadline
+## P1 - возможен цикл без паузы при просроченном rotation deadline
 
 Файлы: `nodes_tester/runner.py:259-298`, `nodes_tester/runner.py:300-305`.
 
@@ -234,10 +238,10 @@ cooldown сбрасывается. Регион с `tests_enabled=["connectivity
 - при `switching.enabled=false` проверять сочетание `loop=true`,
   `rotation_bound=true`, `pass_pause=0`, иначе проходы также идут без паузы.
 
-## P2 — тестовая механика и качество измерений
+## P2 - тестовая механика и качество измерений
 
 Подробный предметный разбор находится в `nodes_tester/TESTING_IMPROVEMENTS.md`.
-Ниже — дефекты, непосредственно влияющие на текущую реализацию.
+Ниже - дефекты, непосредственно влияющие на текущую реализацию.
 
 ### Ошибка одного теста может оборвать весь runner
 
@@ -264,7 +268,7 @@ download и reachability. Нужен staged pipeline: быстрый gate, за�
 
 Файлы: `nodes_tester/tests/latency.py`, `nodes_tester/tests/jitter.py:21-53`.
 
-`latency` измеряет HTTP TTFB, а `jitter` — стандартное отклонение нескольких HTTP
+`latency` измеряет HTTP TTFB, а `jitter` - стандартное отклонение нескольких HTTP
 TTFB. `loss_pct` является долей неудачных HTTP-запросов, а не потерей сетевых пакетов.
 Точнее назвать их `http_ttfb_ms`, `ttfb_spread_ms` и `request_failure_pct`.
 
@@ -309,7 +313,7 @@ HTTP-успех остаётся `ok=true`, даже если парсер те�
 `window_bytes` и интервалы приводят к исключениям или бессмысленным результатам.
 Валидацию лучше выполнять один раз при загрузке конфигурации каждого теста.
 
-## P2 — scoring и scoreboard
+## P2 - scoring и scoreboard
 
 ### Отсутствующие компоненты меняют смысл общей шкалы
 
@@ -365,7 +369,7 @@ HTTP-успех остаётся `ok=true`, даже если парсер те�
 Стоит сделать политику явной (`hard`, `fallback_if_empty`, `expired_only`), хранить TTL
 на строке/регионе и использовать общий построитель record.
 
-## P2 — конфигурация
+## P2 - конфигурация
 
 Файлы: `nodes_tester/config.py:269-402`, `config/config.schema.json`.
 
@@ -387,7 +391,7 @@ Runtime-валидация проверяет только часть огран
 - `_section()` превращает любое falsy-значение в `{}`, поэтому, например, `false`
   не диагностируется как значение неверного типа;
 - неизвестные поля run молча отбрасываются ради совместимости и скрывают опечатки;
-- `testing_groups` — список, но весь runner использует только первый элемент;
+- `testing_groups` - список, но весь runner использует только первый элемент;
 - `region_groups.enabled` нигде не влияет на поведение;
 - комментарии продолжают говорить о «двухуровневом тестировании», хотя структура
   selector-групп теперь плоская.
@@ -396,7 +400,7 @@ Runtime-валидация проверяет только часть огран
 собранного effective config. Устаревшие ключи лучше обрабатывать явной миграцией с
 предупреждением, а не общим молчаливым фильтром.
 
-## P2 — host-aware планирование
+## P2 - host-aware планирование
 
 Файлы: `nodes_tester/runner.py:90-148`, `nodes_tester/storage.py:140-145`.
 
@@ -405,7 +409,7 @@ Runtime-валидация проверяет только часть огран
 серверами. При пустом provider fallback по CRC, наоборот, не распознаёт общий хост.
 Поведение min-host-gap поэтому сильно зависит от полноты `nodes` и корректности CRC.
 
-Также timestamp записывается перед выполнением теста, то есть gap — start-to-start,
+Также timestamp записывается перед выполнением теста, то есть gap - start-to-start,
 а не пауза после завершения предыдущей нагрузки. Это допустимо, но должно быть
 сформулировано явно.
 
@@ -418,7 +422,7 @@ Runtime-валидация проверяет только часть огран
 - заменить цикл `while any(dqs)` на deque активных корзин без повторного просмотра
   уже пустых очередей.
 
-## P2 — хранилище и отчёты
+## P2 - хранилище и отчёты
 
 ### История живых нод растёт без ограничения
 
@@ -455,7 +459,7 @@ CRC также может превысить лимит параметров SQL
 newest-first только при чтении. Повреждённый старый JSON сейчас молча заменяется новым
 списком; это лучше диагностировать отдельно.
 
-## P2 — dashboard
+## P2 - dashboard
 
 Файлы: `dashboard/data.py`, `dashboard/server.py`, `dashboard/__init__.py`.
 
@@ -479,7 +483,7 @@ newest-first только при чтении. Повреждённый стар
 7. HTML, CSS и JavaScript находятся одной строковой константой в Python. Разделение
    на template/static-файлы заметно упростит чтение и проверку интерфейса.
 
-## P2 — генератор подписок и парсеры
+## P2 - генератор подписок и парсеры
 
 ### Один и тот же pipeline продублирован в нескольких местах
 
@@ -507,10 +511,10 @@ source -> fetch/decode -> detect format -> parse -> flatten -> normalize
 
 Файлы: `subscribe/main.py:208-238`, `subscribe/main.py:311-375`.
 
-Неудачная загрузка обычно возвращает `''`, а whitespace-only ответ — `None`, после
+Неудачная загрузка обычно возвращает `''`, а whitespace-only ответ - `None`, после
 чего `parse_content(None)` вызывает исключение. Повтор с User-Agent `clashmeta` также
 не проверяет `response is None`. Источник должен возвращать один тип результата,
-например `FetchResult`, а пустое содержимое — всегда нормальную пустую строку/список.
+например `FetchResult`, а пустое содержимое - всегда нормальную пустую строку/список.
 
 Повторные запросы теряют исходный custom User-Agent, а `pass` после сообщения об
 окончательной ошибке ничего не делает и затрудняет чтение потока управления.
@@ -571,7 +575,7 @@ source -> fetch/decode -> detect format -> parse -> flatten -> normalize
 
 `sys.path` настраивается вручную, parsers и providers лежат в globals, group params
 перезагружают набор module-level переменных. Лучше перевести импорты на package-relative,
-а настройки — в `GroupConfig`/`SubscriptionContext`, передаваемые явно.
+а настройки - в `GroupConfig`/`SubscriptionContext`, передаваемые явно.
 
 ### Есть неиспользуемый legacy-код
 
@@ -587,7 +591,7 @@ source -> fetch/decode -> detect format -> parse -> flatten -> normalize
 ветки, объединённые импорты в одной строке, bare `except` и комментарии-заглушки вроде
 `#fuck`: они заметно ухудшают читаемость парсеров.
 
-## P2 — идентичность и имена
+## P2 - идентичность и имена
 
 Файл: `naming/identity.py`.
 
@@ -613,12 +617,12 @@ reporting и восстановление selector. Многие поля (`_bas
 
 Практичное разделение без чрезмерной абстракции:
 
-- `RunState` — текущий день/проход, caches, cooldown, endpoints;
-- `NodePlanner` — enumerating и host-aware order;
-- `TestExecutor` — выбор selector, session, staged tests, record;
-- `CooldownPolicy` — backoff/quarantine по времени;
-- `PassScheduler` — loop/pass pause/rotation deadline;
-- `Runner` — только связывает эти части.
+- `RunState` - текущий день/проход, caches, cooldown, endpoints;
+- `NodePlanner` - enumerating и host-aware order;
+- `TestExecutor` - выбор selector, session, staged tests, record;
+- `CooldownPolicy` - backoff/quarantine по времени;
+- `PassScheduler` - loop/pass pause/rotation deadline;
+- `Runner` - только связывает эти части.
 
 ### Ввести типы вместо неформальных tuple/dict
 
@@ -632,7 +636,7 @@ reporting и восстановление selector. Многие поля (`_bas
 Логика смешивает `time.time()`, `time.monotonic()`, локальную дату и суточный номер
 прохода. Интерфейсы `Clock`, `RandomSource`, `ClashGateway`, `ResultStore` упростят
 детерминированные тесты cooldown, rotation и retention. Полноценный DI-фреймворк не
-нужен — достаточно аргументов конструктора с разумными default.
+нужен - достаточно аргументов конструктора с разумными default.
 
 ### Один источник истины для результата и active state
 
@@ -651,7 +655,7 @@ presentation-модуль. Это исключит ручное изменени
 
 ### P0/P1 regression suite
 
-1. Неизменный `nodes.json` + активные проходы дольше retention не удаляют ноду.
+1. Неизменный `nodes.json` и активные проходы дольше retention не удаляют ноду.
 2. Исчезнувшая из selector и каталога нода удаляется только после заданного срока.
 3. Полночь не переносит старый cooldown на новый суточный номер.
 4. Кросс-региональный fallback не меняет чужие selector-группы.
@@ -663,7 +667,7 @@ presentation-модуль. Это исключит ручное изменени
 
 ### Scoring и scheduler
 
-1. Пустой, неизвестный и полностью `every`-пропущенный набор тестов — not measured.
+1. Пустой, неизвестный и полностью `every`-пропущенный набор тестов - not measured.
 2. Connectivity-only конфигурация либо отклоняется, либо получает явно определённый
    health score, но не маскируется под обычный sample.
 3. Границы каждого threshold, неверный порядок границ и отрицательные weights.
@@ -719,11 +723,11 @@ presentation-модуль. Это исключит ручное изменени
 
 ## Выполненные проверки и ограничения
 
-- `python -m compileall -q naming nodes_tester subscribe dashboard` — успешно на
+- `python -m compileall -q naming nodes_tester subscribe dashboard` - успешно на
   Python 3.8.3.
-- `python -m nodes_tester --list-tests` — зарегистрированы `connectivity`, `download`,
+- `python -m nodes_tester --list-tests` - зарегистрированы `connectivity`, `download`,
   `heavy_download`, `jitter`, `latency`, `reachability`.
-- `python -m unittest discover -v` — `Ran 0 tests`.
+- `python -m unittest discover -v` - `Ran 0 tests`.
 - В окружении отсутствуют `pytest`, `ruff`, `jsonschema`, `PyYAML` и `ruamel.yaml`,
   поэтому lint, schema-validation и end-to-end subscribe здесь не запускались.
 - Точечными изолированными сценариями воспроизведены retention-loss, midnight

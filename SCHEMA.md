@@ -1,23 +1,29 @@
-# Схема БД `stats.db` (nodes-tester)
+# Схема базы `stats.db`
 
-Единое SQLite-хранилище всего состояния тестера (после переноса с `score.csv` /
-`switch_state.json` / файлового репортера). Одно соединение `sqlite3`
-(`check_same_thread=False`) под общим `Lock`; режим **WAL** для параллельного чтения
-(дашборд открывает БД в `mode=ro`). Источник схемы — `nodes_tester/storage.py` (`_SCHEMA`).
+`stats.db` хранит текущее состояние тестера и историю измерений. Источник истины для DDL - константа `_SCHEMA` в `nodes_tester/storage.py`.
 
-**Связующий ключ — CRC ноды** (`crc`, 8-hex из тега `…-out [CRC]`): стабильный
-fingerprint настроек ноды (считает `sing-box-subscribe`), поэтому история переживает
-переименование тегов. Почти все таблицы ссылаются на ноду по `crc`.
+## Основные правила
 
-**Ретеншн.** `cleanup()` (раз в сутки в непрерывном режиме + при остановке): удаляет
-ноды с `last_seen` старше `storage.retention_days` и КАСКАДОМ (по `crc`) все их строки во
-всех таблицах; плюс возрастной кап сырья (`results/traffic/activations/score_history/
-node_events` старше `retention_days` и `endpoints` по `last_seen`) — у живых нод тоже.
-`VACUUM` — отдельно (`vacuum()`, по cron).
+- SQLite работает в режиме WAL. Тестер использует одно соединение с `check_same_thread=False` и общим `Lock`; дашборд открывает базу только для чтения через `mode=ro`.
+- Таблицы связывает `crc`: восьмизначный hex-идентификатор из тега `...-out [CRC]`. Его вычисляет `naming.crc` по настройкам ноды, поэтому переименование тега не разрывает историю.
+- `cleanup()` раз в сутки и при остановке удаляет ноды, отсутствующие дольше `storage.retention_days`, вместе со связанными строками. Для `results`, `traffic`, `activations`, `score_history` и `node_events` действует такой же предел возраста даже у живых нод. `endpoints` очищается по `last_seen`.
+- `VACUUM` запускается отдельно, обычно по cron.
 
----
+## Таблицы
 
-## nodes — описание ноды + присутствие
+| Таблица | Назначение |
+|---|---|
+| `nodes` | каталог нод, присутствие и ручной бан |
+| `results` | результаты отдельных тестов |
+| `scores`, `score_history` | текущий рейтинг и его динамика |
+| `traffic`, `endpoints` | объём трафика и назначения |
+| `activations` | история боевых переключений |
+| `switch_state`, `switch_recent`, `switch_activations` | состояние переключателя |
+| `node_events`, `garbage` | события жизненного цикла, паузы и карантин |
+| `meta` | счётчики между рестартами |
+
+
+### `nodes`: описание и присутствие ноды
 
 ```sql
 CREATE TABLE nodes (
@@ -40,22 +46,22 @@ CREATE TABLE nodes (
 ```
 
 - Заполняется из `nodes.json` (выход `sing-box-subscribe`, путь `storage.nodes_file`):
-  читаются **и `outbounds`, и `endpoints`** (в sing-box 1.11+ wireguard/AmneziaWG — в
+  читаются `outbounds` и `endpoints` (в sing-box 1.11 и новее wireguard/AmneziaWG находится в
   `endpoints`), CRC пересчитывается и сверяется (`crc_ok`).
 - `last_seen` обновляется `touch_seen()` каждый прогон для нод, реально присутствующих в
-  selector, — защищает живые ноды от ретеншна.
-- `present` ведёт `reconcile_presence()`: переход 0→1 пишет `node_events.added`, 1→0 —
+  selector, - защищает живые ноды от ретеншна.
+- `present` ведёт `reconcile_presence()`: переход с 0 на 1 пишет `node_events.added`, с 1 на 0 -
   `node_events.removed`.
-- `banned` ставит/снимает админка (`Storage.set_banned` → `nodes.banned`); забаненную ноду
+- `banned` ставит и снимает админка через `Storage.set_banned`, изменяя `nodes.banned`; забаненную ноду
   `Runner._enumerate_nodes` пропускает (не тестируется/не скорится). `load_nodes` флаг не
   трогает, поэтому бан переживает перезагрузку `nodes.json`.
 
-## traffic — временной ряд объёма по нодам
+### `traffic`: объём по нодам
 
 ```sql
 CREATE TABLE traffic (
   ts         INTEGER,   -- unix ts flush-агрегата
-  crc        TEXT,      -- нода (CRC из chains[0]); для не-нодовых цепочек — тег группы
+  crc        TEXT,      -- нода (CRC из chains[0]); для не-нодовых цепочек - тег группы
   up         INTEGER,   -- отдано за интервал, байт (дельта)
   down       INTEGER,   -- принято за интервал, байт (дельта)
   conns      INTEGER,   -- новых соединений за интервал
@@ -66,9 +72,9 @@ CREATE INDEX idx_traffic_crc ON traffic(crc);
 ```
 
 Пишет `TrafficCollector` (поллит Clash API `/connections`, дельта-учёт по id соединения),
-агрегат раз в `storage.traffic.flush_interval`. `is_tester=0` — боевой трафик.
+агрегат раз в `storage.traffic.flush_interval`. `is_tester=0` - боевой трафик.
 
-## endpoints — трафик по назначениям (куда ходит нода)
+### `endpoints`: трафик по назначениям
 
 ```sql
 CREATE TABLE endpoints (
@@ -84,9 +90,9 @@ CREATE TABLE endpoints (
 );
 ```
 
-Upsert (суммирование) из `TrafficCollector`. Ретеншн — по `last_seen`.
+Upsert (суммирование) из `TrafficCollector`. Ретеншн - по `last_seen`.
 
-## results — сырые результаты тестов
+### `results`: результаты тестов
 
 ```sql
 CREATE TABLE results (
@@ -94,7 +100,7 @@ CREATE TABLE results (
   pass_no   INTEGER,   -- посуточный номер прогона
   crc       TEXT,      -- нода
   test      TEXT,      -- имя теста (connectivity/latency/jitter/download/reachability/heavy_download)
-  ok        INTEGER,   -- 1/0 — успех теста
+  ok        INTEGER,   -- 1/0 - успех теста
   url       TEXT,      -- фактический url теста
   metrics   TEXT,      -- JSON метрик (ttfb_ms, speed_mbps, throttle_ratio, …)
   error     TEXT       -- текст ошибки (если ok=0)
@@ -105,7 +111,7 @@ CREATE INDEX idx_results_crc ON results(crc);
 
 Строка на (нода, тест, прогон). `ts` даёт таймстемп каждого теста каждой ноды (динамика).
 
-## activations — история переключений активной ноды
+### `activations`: история переключений
 
 ```sql
 CREATE TABLE activations (
@@ -123,7 +129,7 @@ CREATE INDEX idx_activations_crc ON activations(crc);
 
 Пишет `Switcher._activate` / `_note_emergency_stuck`.
 
-## scores — снимок рейтинга (замена score.csv)
+### `scores`: текущий рейтинг
 
 ```sql
 CREATE TABLE scores (
@@ -152,10 +158,10 @@ CREATE TABLE scores (
 );
 ```
 
-Полностью перезаписывается каждый прогон (`Scoreboard.end_pass` → `save_scores`): исчезнувшие
+Полностью перезаписывается каждый прогон: `Scoreboard.end_pass` вызывает `save_scores`. Исчезнувшие
 ноды уходят. Дашборд читает рейтинг отсюда.
 
-## score_history — динамика рейтинга
+### `score_history`: динамика рейтинга
 
 ```sql
 CREATE TABLE score_history (
@@ -164,7 +170,7 @@ CREATE TABLE score_history (
   region  TEXT,      -- коарс-регион
   score   REAL,      -- S_final на этот прогон
   s_run   REAL,      -- мгновенный скор прогона (без EWMA)
-  gate    INTEGER    -- 1/0 — прошла ли gate в этом прогоне
+  gate    INTEGER    -- 1/0 - прошла ли gate в этом прогоне
 );
 CREATE INDEX idx_score_history_ts  ON score_history(ts);
 CREATE INDEX idx_score_history_crc ON score_history(crc);
@@ -173,7 +179,7 @@ CREATE INDEX idx_score_history_crc ON score_history(crc);
 Append по каждой протестированной ноде каждый прогон (`Scoreboard.end_pass`). Для графиков
 динамики рейтинга/выживаемости.
 
-## switch_state / switch_recent / switch_activations — состояние switcher (замена switch_state.json)
+### `switch_state`, `switch_recent`, `switch_activations`: состояние переключателя
 
 ```sql
 CREATE TABLE switch_state (
@@ -198,10 +204,10 @@ CREATE TABLE switch_activations (
 );
 ```
 
-Полностью перезаписываются на каждом сохранении (`Switcher._persist` → `save_switch_state`);
+Полностью перезаписываются на каждом сохранении: `Switcher._persist` вызывает `save_switch_state`;
 регионов немного. Нормализованная замена вложенных структур JSON.
 
-## node_events — пер-нодный журнал жизненного цикла и здоровья
+### `node_events`: журнал жизненного цикла
 
 ```sql
 CREATE TABLE node_events (
@@ -215,21 +221,21 @@ CREATE INDEX idx_node_events_ts  ON node_events(ts);
 CREATE INDEX idx_node_events_crc ON node_events(crc);
 ```
 
-Событийный лог — каждое событие отдельной строкой, у ноды их может быть много:
+Событийный лог - каждое событие отдельной строкой, у ноды их может быть много:
 
-- `added` — нода появилась в selector (подписке). Пишется `reconcile_presence` на каждом
-  переходе `present` 0→1 (первое появление и любое повторное).
-- `removed` — нода ушла из selector (`present` 1→0). Первичный сигнал «удалена из подписки».
-- `backoff` — первый уход в экспоненциальный backoff после провала gate.
-- `garbage` — переход в карантин (мусорная): дошла до потолка backoff. Логируется на входе
-  в garbage (не на каждый повторный провал) → счётчик `garbage`-событий = «сколько раз
-  падала в мусор».
-- `recovered` — нода снова прошла gate, backoff/карантин снят.
+- `added` - нода появилась в selector (подписке). Пишется `reconcile_presence` на каждом
+  переходе `present` с 0 на 1 (первое появление и любое повторное).
+- `removed` - нода ушла из selector (`present` сменился с 1 на 0). Первичный сигнал «удалена из подписки».
+- `backoff` - первый уход в экспоненциальный backoff после провала gate.
+- `garbage` - переход в карантин (мусорная): дошла до потолка backoff. Логируется на входе
+  в garbage, а не на каждый повторный провал. Число событий `garbage` показывает, сколько раз
+  нода попадала в карантин.
+- `recovered` - нода снова прошла gate, backoff/карантин снят.
 
 Пишут: `Runner.reconcile_presence` (added/removed) и `Runner._backoff_update`
 (backoff/garbage/recovered).
 
-## garbage — текущая пауза/карантин (не история)
+### `garbage`: текущая пауза или карантин
 
 ```sql
 CREATE TABLE garbage (
@@ -242,15 +248,15 @@ CREATE TABLE garbage (
 );
 ```
 
-Пауза считается в прогонах (сквозной `meta.pass_seq`), карантин — во времени
+Пауза считается в прогонах (сквозной `meta.pass_seq`), карантин - во времени
 (`garbage_hours`). Старые строки паузы без `until_pass` (временная модель) пробуются в
 ближайшем прогоне, `streak` сохраняется.
 
-Одна строка на ноду — **текущее** состояние (не история; при восстановлении строка
+Одна строка на ноду - **текущее** состояние (не история; при восстановлении строка
 удаляется `clear_backoff`). Историю эпизодов см. в `node_events`. `time_in_garbage` для
-дашборда = `now − since`.
+дашборда рассчитывается как разность `now` и `since`.
 
-## meta — сквозные значения между рестартами
+### `meta`: значения между рестартами
 
 ```sql
 CREATE TABLE meta (
@@ -262,16 +268,15 @@ CREATE TABLE meta (
 Хранит посуточный номер прогона (`pass_day`/`pass_no`, для отображения) и сквозной
 `pass_seq` (монотонный, не сбрасывается в полночь; по нему считается пауза нод).
 
----
 
 ## Кто пишет / читает
 
 | Компонент | Пишет | Читает |
 |---|---|---|
-| `Runner` | results, node_events (added/removed/backoff/garbage/recovered), meta, вызывает cleanup | — |
+| `Runner` | results, node_events (added/removed/backoff/garbage/recovered), meta, вызывает cleanup | - |
 | `Scoreboard` | scores, score_history | scores (старт) |
 | `Switcher` | switch_state/recent/activations, activations | switch_state/recent/activations (старт) |
-| `TrafficCollector` | traffic, endpoints | — |
-| `Storage.load_nodes` | nodes | — |
-| Админка `api_control` | nodes.banned (бан), garbage (ручной карантин/снятие) | — |
-| Дашборд `data.py` | — (ro) | всё |
+| `TrafficCollector` | traffic, endpoints | - |
+| `Storage.load_nodes` | nodes | - |
+| Админка `api_control` | nodes.banned (бан), garbage (ручной карантин/снятие) | - |
+| Дашборд `data.py` | - (ro) | всё |

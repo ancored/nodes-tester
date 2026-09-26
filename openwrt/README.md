@@ -1,20 +1,21 @@
-# OpenWrt-пакет nodes-tester
+# Пакет nodes-tester для OpenWrt
 
-Пакет `nodes-tester` ставит на роутер все компоненты проекта: `nodes_fetch`,
-`nodes_config`, `nodes_tester`, веб-админку `dashboard` и скрипты конвейера. Код — чистый
-Python, поэтому пакет один на все архитектуры (`PKGARCH:=all`). Для OpenWrt 25.x он
-собирается в `.apk`, для 24.10 и старше — в `.ipk`.
+Пакет устанавливает `nodes_fetch`, `nodes_config`, `nodes_tester`, веб-админку `dashboard` и роутерные скрипты. Python-код не зависит от архитектуры, поэтому Makefile задаёт `PKGARCH:=all`. OpenWrt 25.x использует `.apk`, OpenWrt 24.10 и более ранние версии - `.ipk`.
+
+## Перед началом
+
+Для сборки нужен Docker. Для установки потребуется SSH-доступ к роутеру. Пакет пока не подписан, поэтому локальную сборку устанавливают с `--allow-untrusted`.
 
 ## Сборка
 
-Нужен Docker. Сборка идёт в официальном OpenWrt SDK:
+Скрипт использует официальный OpenWrt SDK:
 
 ```bash
 openwrt/build.sh                    # SDK x86-64-25.12.2 → dist/nodes-tester-<версия>.apk
-openwrt/build.sh mediatek-filogic-24.10.4   # другой SDK (формат пакета — по версии OpenWrt)
+openwrt/build.sh mediatek-filogic-24.10.4   # другой SDK (формат пакета - по версии OpenWrt)
 ```
 
-Зависимости из фидов OpenWrt при сборке не компилируются — они записаны в метаданные пакета
+Зависимости из фидов OpenWrt при сборке не компилируются - они записаны в метаданные пакета
 (`EXTRA_DEPENDS`), и `apk` ставит готовые на роутере. Поэтому сборка занимает секунды; SDK
 кешируется в docker-томе `nodes-tester-sdk-<тег>` (сбросить: `docker volume rm …`).
 
@@ -27,7 +28,7 @@ ssh root@<роутер> apk add --allow-untrusted /tmp/nodes-tester-*.apk
 
 `--allow-untrusted` нужен, пока пакет не подписан ключом своего репозитория. Зависимости
 (`python3-light`, `python3-requests`, `python3-jsonschema`, `python3-ruamel-yaml` и др.)
-`apk` подтянет из фидов OpenWrt сам. PySocks в фидах нет — он вложен в пакет.
+`apk` подтянет из фидов OpenWrt сам. PySocks в фидах нет - он вложен в пакет.
 
 Если раньше зависимости ставились через `pip`, `apk` запишет свои версии поверх них в тот же
 site-packages, и получится смесь двух версий. Перед установкой (или сразу после) уберите
@@ -43,10 +44,11 @@ apk fix --reinstall python3-attrs python3-jsonschema python3-jsonschema-specific
 
 1. Остановить и убрать старый init-скрипт (`/etc/init.d/nodes-tester stop; … disable`), иначе
    `apk` положит пакетный рядом как `.apk-new`.
-2. Поставить пакет, затем перенести: `config.json` → `/etc/nodes-tester/` (относительный
-   `dashboard.providers_file` теперь отсчитывается от этого каталога), каталоги `config-main/`,
-   `config-wh/` → `/etc/nodes-tester/`, `stats.db` → `/opt/nodes-tester/results/` (при
-   остановленном тестере или через sqlite backup), raw подписок → `/opt/nodes-tester/raw/`.
+2. Поставить пакет, затем перенести `config.json` в `/etc/nodes-tester/` (относительный
+   `dashboard.providers_file` теперь отсчитывается от этого каталога). Каталоги `config-main/`
+   и `config-wh/` перенести в `/etc/nodes-tester/`, `stats.db` - в
+   `/opt/nodes-tester/results/` при остановленном тестере или через sqlite backup, а raw
+   подписок - в `/opt/nodes-tester/raw/`.
 3. Заменить в cron вызовы `pipeline.sh` и `--vacuum` на `nodes-tester pipeline …` и
    `nodes-tester vacuum`, включить сервис (`uci set nodes-tester.tester.enabled=1`).
 
@@ -70,10 +72,10 @@ apk fix --reinstall python3-attrs python3-jsonschema python3-jsonschema-specific
 При первой установке создаются `config.json` (со случайным `dashboard.token`),
 `config-main/` и `config-wh/` из шаблонов. Дальше:
 
-1. Настроить sing-box (SOCKS5 inbound, селектор `nodes-tester`, route-правило) — см.
+1. Настроить sing-box (SOCKS5 inbound, селектор `nodes-tester`, route-правило) - см.
    [README](../README.md#1-настройка-sing-box-один-раз).
 2. В `/etc/nodes-tester/config.json` вписать `clash_api.secret`, при необходимости
-   включить `dashboard.enabled`; в `config-main/providers.json` — подписки.
+   включить `dashboard.enabled`; в `config-main/providers.json` - подписки.
 3. Включить и запустить тестер:
    ```sh
    uci set nodes-tester.tester.enabled=1 && uci commit nodes-tester
@@ -85,7 +87,7 @@ apk fix --reinstall python3-attrs python3-jsonschema python3-jsonschema-specific
 
 ## Команда `nodes-tester`
 
-Запускает компоненты с путями из UCI (рабочий каталог — `data_dir`):
+Запускает компоненты с путями из UCI (рабочий каталог - `data_dir`):
 
 ```sh
 nodes-tester fetch -p /etc/nodes-tester/config-main/providers.json --dry-run --json

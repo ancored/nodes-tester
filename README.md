@@ -1,9 +1,23 @@
-# nodes-tester — управление прокси-нодами sing-box на роутере
+# nodes-tester: управление прокси-нодами sing-box
 
-Набор инструментов для роутера (OpenWrt) с **sing-box**. Он полностью ведёт прокси-ноды:
-скачивает подписки провайдеров, собирает из них outbounds и группы для sing-box, постоянно
-тестирует каждую ноду через работающий sing-box, ведёт рейтинг, сам переключает рабочие
-селекторы на лучшие ноды и показывает всё это в веб-админке.
+`nodes-tester` автоматизирует работу с прокси-нодами на роутере OpenWrt. Проект загружает подписки, собирает конфигурацию sing-box, тестирует ноды, рассчитывает рейтинг, переключает рабочие селекторы и показывает состояние системы в веб-админке.
+
+Проект рассчитан на уже работающий sing-box. Собственного прокси-ядра у тестера нет.
+
+## Быстрый старт
+
+| Задача | Куда перейти |
+|---|---|
+| Установить пакет на OpenWrt | [Сборка и установка пакета](openwrt/README.md) |
+| Запустить проект из исходников | [Установка](#2-установка), затем [запуск](#4-запуск) |
+| Подключить тестер к sing-box | [Настройка sing-box](#1-настройка-sing-box-один-раз) |
+| Настроить подписки | [`nodes_fetch`](nodes_fetch/README.md) |
+| Настроить фильтры, имена и группы | [`nodes_config`](nodes_config/README.md) |
+| Разобраться с рейтингом | [Модель рейтинга](score.md) |
+| Посмотреть структуру SQLite | [Схема `stats.db`](SCHEMA.md) |
+| Найти планы и технический долг | [Бэклог](BACKLOG.md) |
+
+Для запуска из исходников нужен Python 3.8 или новее. Для сборки веб-интерфейса нужны Node.js и npm; готовая статика уже лежит в `dashboard/static/`.
 
 ## Состав проекта
 
@@ -16,11 +30,11 @@ shell-скриптов для роутера:
 | [`nodes_config`](nodes_config/README.md) | Python-пакет, CLI | **Сборка конфигурации.** Из `raw_nodes.json` фильтрует ноды, даёт им единые имена со стабильным CRC, строит selector/urltest-группы по регионам и пишет фрагмент конфига sing-box `nodes.json` (только если что-то изменилось). |
 | [`nodes_tester`](#как-работает-тестер) | Python-пакет, демон | **Тестирование и переключение.** Через Clash API по очереди выбирает каждую ноду, гоняет через неё тесты (связность, задержка, jitter, скорость и замедление, доступность сайтов), считает рейтинг, переключает рабочие селекторы, собирает статистику трафика. Всё состояние хранится в SQLite (`stats.db`). |
 | [`dashboard`](#8-веб-админка-управление--контроль--конфиг) | веб-админка (Vue 3 SPA и HTTP-бэкенд на stdlib) | **Просмотр и управление.** Рейтинг, история, трафик, жизненный цикл нод; карантин, бан и ручное переключение; запуск прогонов и живой лог; редактор конфигов. |
-| [`scripts/router`](#структура-репозитория) | shell-скрипты (POSIX sh) | **Интеграция с роутером.** Конвейер `pipeline.sh` (fetch → config → применение в sing-box с проверкой связности и автооткатом) для cron, сборка клиентских конфигов, снимок и откат установки. |
+| [`scripts/router`](#структура-репозитория) | shell-скрипты (POSIX sh) | **Интеграция с роутером.** Конвейер `pipeline.sh` сначала загружает подписки, затем собирает и применяет конфигурацию sing-box. Скрипты также собирают клиентские конфиги, создают снимок установки и выполняют откат. |
 
-Общие библиотеки: `naming` — единая схема имён нод, регионы и CRC (её используют и
-`nodes_config`, и `nodes_tester`); `nodes_common` — формат `raw_nodes.json` и атомарная
-запись файлов. `subscribe` — временная обёртка совместимости со старыми конфигами.
+Общие библиотеки: `naming` - единая схема имён нод, регионы и CRC (её используют и
+`nodes_config`, и `nodes_tester`); `nodes_common` - формат `raw_nodes.json` и атомарная
+запись файлов. `subscribe` - временная обёртка совместимости со старыми конфигами.
 
 ```
  подписки ─► nodes_fetch ─► raw_nodes.json ─► nodes_config ─► nodes.json ─► sing-box
@@ -30,25 +44,21 @@ shell-скриптов для роутера:
                                             dashboard ◄──── stats.db ◄─── nodes_tester
 ```
 
-Каждый пакет запускается и тестируется отдельно (`python3 -m nodes_fetch`, `-m nodes_config`,
-`-m nodes_tester`, `-m dashboard`). Нужен Python 3.8+.
+Каждый пакет можно запускать и тестировать отдельно: `python3 -m nodes_fetch`, `python3 -m nodes_config`, `python3 -m nodes_tester` и `python3 -m dashboard`.
 
-> **Документация проекта.** Архитектура и решения — в этом README; полная схема БД —
-> в [SCHEMA.md](SCHEMA.md); модель скоринга — в [score.md](score.md); отложенные идеи и
-> архив реализованного — в [BACKLOG.md](BACKLOG.md).
->
-> **Секреты и личные данные в git не хранятся.** Рабочие конфиги (`config/config.json`,
-> `config/providers.json`, `config/user_nodes.json`, `config/awg/*.conf`,
-> `scripts/router/clients.list`) — в `.gitignore`; в
-> репозитории лежат их шаблоны `*.example*`. Первичная настройка:
->
-> ```bash
-> cp config/config.example.json config/config.json          # + clash_api.secret, dashboard.token
-> cp config/providers.example.json config/providers.json    # URL подписок
-> cp config/user_nodes.example.json config/user_nodes.json  # опционально, свои ноды
-> cp config/awg/de.conf.example config/awg/de.conf          # опционально, AmneziaWG
-> cp scripts/router/clients.list.example scripts/router/clients.list  # для build-clients.sh
-> ```
+### Рабочие конфиги и секреты
+
+Рабочие конфиги не хранятся в git. Файлы `config/config.json`, `config/providers.json`, `config/user_nodes.json`, `config/awg/*.conf` и `scripts/router/clients.list` добавлены в `.gitignore`. Создайте их из шаблонов:
+
+```bash
+cp config/config.example.json config/config.json
+cp config/providers.example.json config/providers.json
+cp config/user_nodes.example.json config/user_nodes.json
+cp config/awg/de.conf.example config/awg/de.conf
+cp scripts/router/clients.list.example scripts/router/clients.list
+```
+
+После копирования задайте `clash_api.secret`, `dashboard.token` и URL подписок. Файлы `user_nodes.json`, `awg/*.conf` и `clients.list` нужны только для соответствующих сценариев.
 
 ## Как работает тестер
 
@@ -69,14 +79,14 @@ inbound, меряет, пишет рейтинг и (опционально) с�
 ```
 
 **Определение региона ноды** задаётся в `region_groups.recognition` (структура
-`nodes-tester` всегда плоская — все ноды прямыми членами, один PUT на ноду):
+`nodes-tester` всегда плоская - все ноды прямыми членами, один PUT на ноду):
 
 | Режим | Как берётся регион |
 |---|---|
 | `parse` | из страны в имени ноды (eu/us/ru/other) |
 | `manually` | по спискам `region_groups.list` |
 
-**Порядок обхода** — host-aware (анти-ТСПУ): очередь раскладывается так, чтобы ноды
+**Порядок обхода** - host-aware (анти-ТСПУ): очередь раскладывается так, чтобы ноды
 одного хоста стояли максимально далеко, плюс зазор `run.min_host_gap` (сек) между
 обращениями к одному хосту с РАЗНЫМ портом/протоколом. Групповых/межпрогонных пауз нет.
 
@@ -88,27 +98,26 @@ inbound, меряет, пишет рейтинг и (опционально) с�
 | `latency`      | TTFB (time-to-first-byte), мс                              |
 | `jitter`       | avg/min/max латентности, jitter (stdev), packet loss       |
 | `download`     | за ОДНУ закачку файла: скорость (Мбит/с), throttle_ratio (замедление ТСПУ по байтовым окнам), hold_ratio (устойчивость); `limited` при 429 |
-| `reachability` | доступность 10–15 целей параллельно (селективная блокировка)|
+| `reachability` | доступность 10-15 целей параллельно (селективная блокировка)|
 
-Какие тесты активны — список `run.default.tests_enabled` (переопределяем по группе/
-региону). Опции каждого теста — в секции `tests`. `download` — единый транспорт-тест
+Какие тесты активны - список `run.default.tests_enabled` (переопределяем по группе/
+региону). Опции каждого теста - в секции `tests`. `download` - единый транспорт-тест
 (раньше был отдельный `stability`, качавший те же 10 МБ; слиты). URL теста переопределяется
-`url_by_region` (напр. RU → `speedtest.selectel.ru/10MB`), сервис connectivity —
-`service_by_region`. Реестр расширяемый — см. [Добавить тест](#добавить-свой-тест).
+`url_by_region` (например, для RU используется `speedtest.selectel.ru/10MB`), сервис connectivity -
+`service_by_region`. Реестр расширяемый - см. [Добавить тест](#добавить-свой-тест).
 
----
 
 ## 1. Настройка sing-box (один раз)
 
 Нужны три вещи. **Clash API у вас уже включён** (`experimental.clash_api`,
 `external_controller: 192.168.1.1:9090`).
 
-### а) SOCKS5 inbound — точка входа тестера
+### а) SOCKS5 inbound - точка входа тестера
 ```json
 { "type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080 }
 ```
 
-### б) selector-группа `nodes-tester` — один плоский селектор со всеми нодами
+### б) selector-группа `nodes-tester` - один плоский селектор со всеми нодами
 ```json
 { "type": "selector", "tag": "nodes-tester",
   "outbounds": ["LUNA-vless|reality-lt-out [1111]", "hynet-XYZ89-vmess|http|tls-us-out [a734b55d]", "..."],
@@ -118,42 +127,41 @@ inbound, меряет, пишет рейтинг и (опционально) с�
 регион берёт из имени ноды (`recognition: parse`).
 
 Имя leaf-ноды: `<Провайдер>-<Протокол>-<Страна>-out [метка] [CRC]` (метка опц.), где
-протокол — `база|транспорт|маскировка` (`vless|grpc|reality`). Генерируется
-стадией `nodes_config` — см. [nodes_config/README.md](nodes_config/README.md). Тестер разбирает его на
-Провайдер / Протокол / Страна / CRC. `interrupt_exist_connections: true` важно —
+протокол - `база|транспорт|маскировка` (`vless|grpc|reality`). Генерируется
+стадией `nodes_config` - см. [nodes_config/README.md](nodes_config/README.md). Тестер разбирает его на
+Провайдер / Протокол / Страна / CRC. `interrupt_exist_connections: true` важно -
 при переключении старые соединения рвутся, трафик идёт через новую ноду.
 
-### в) route-правило — трафик из inbound в группу
+### в) route-правило - трафик из inbound в группу
 В `route.rules` (первым правилом):
 ```json
 { "inbound": ["nodes-tester-in"], "outbound": "nodes-tester" }
 ```
-После правки — перезапустить sing-box.
+После правки - перезапустить sing-box.
 
----
 
 ## 2. Установка
 
-**На OpenWrt — пакетом** (`.apk` для 25.x, `.ipk` для 24.10): сборка в OpenWrt SDK,
-установка через `apk add`, сервисы procd, настройки в UCI — см. [openwrt/README.md](openwrt/README.md).
+**На OpenWrt - пакетом** (`.apk` для 25.x, `.ipk` для 24.10): сборка в OpenWrt SDK,
+установка через `apk add`, сервисы procd, настройки в UCI - см. [openwrt/README.md](openwrt/README.md).
 
 **Из исходников** (любой Linux, разработка):
 ```bash
 pip install -r requirements.txt
 ```
-Зависимости: `nodes_tester` — `requests`, `PySocks`, `jsonschema`; `nodes_fetch` — `requests`,
-`PyYAML`, `ruamel.yaml`; `nodes_config` — только стандартная библиотека; `dashboard` читает
+Зависимости: `nodes_tester` - `requests`, `PySocks`, `jsonschema`; `nodes_fetch` - `requests`,
+`PyYAML`, `ruamel.yaml`; `nodes_config` - только стандартная библиотека; `dashboard` читает
 config.json через `nodes_tester.config`, поэтому ему нужен `jsonschema`.
-Python 3.8+.
+Нужен Python 3.8 или новее.
 
 ## 3. Конфигурация (`config.json`)
 
 ```bash
-cp config.example.json config.json
+cp config/config.example.json config/config.json
 ```
 
-Конфиг — JSON. Полный набор полей с дефолтами — в `config.example.json`, а
-машиночитаемая схема (автодополнение/валидация в IDE) — в `config.schema.json`
+Конфиг - JSON. Полный набор полей с дефолтами находится в `config/config.example.json`, а
+машиночитаемая схема для автодополнения и проверки в IDE - в `config/config.schema.json`
 (файлы ссылаются на неё через `"$schema"`).
 
 Структура (сокращённо):
@@ -185,36 +193,35 @@ cp config.example.json config.json
   },
 
   "tests":     { "download": { "url_by_region": {"ru":"https://speedtest.selectel.ru/10MB"}, "window_bytes": 2000000, "duration": 20 }, "…": {} },
-  "report":    { "console": true },       // только консольная сводка; сырьё — в SQLite
+  "report":    { "console": true },       // только консольная сводка; сырьё - в SQLite
   "scoring":   { "enabled": true },
   "switching": { "enabled": true },        // ВНИМАНИЕ: меняет БОЕВЫЕ группы
   "monitor":   { "enabled": true },
   "storage":   { "enabled": true, "nodes_file": "/etc/sing-box-subscribe/nodes.json",
                  "traffic": { "enabled": true } },
-  "cooldown":  { "enabled": true, "max_skip": 32, "garbage_hours": 72 }  // пауза/карантин
+  "cooldown":  { "enabled": true, "max_skip": 32, "garbage_hours": 72 }, // пауза/карантин
   "dashboard": { "enabled": true, "host": "0.0.0.0", "port": 8088,
                  "token": "", "read_open": true }    // веб-админка (см. §8)
 }
 ```
 
-**Послойные параметры прогона.** Эффективные `run`-параметры = `default` →
-переопределения по `testing_group` → по `region` (мелкий мердж перечисленных полей).
+**Послойные параметры прогона.** Сначала применяются значения `default`, затем переопределения `testing_group` и `region`. Перечисленные поля объединяются неглубоко.
 Так можно, напр., гонять в RU только `connectivity`, а `min_host_gap` увеличить для
 группы `main`.
 
-> `base_url` = адрес `external_controller` (обычно `192.168.1.1:9090`, не `127.0.0.1`).
-> `config.json` содержит секрет — держите его вне git (уже в `.gitignore`).
+> `base_url` содержит адрес `external_controller` (обычно `192.168.1.1:9090`, а не `127.0.0.1`).
+> `config.json` содержит секрет - держите его вне git (уже в `.gitignore`).
 
 ## 4. Запуск
 
 ```bash
-python -m nodes_tester --config config.json
+python -m nodes_tester --config config/config.json
 ```
 
 По умолчанию (`run.default.loop: true`) работает **непрерывно**: прогоняет все ноды,
 пауза `pass_pause`, затем **перечитывает список нод из Clash API** (подхватывая
-изменения конфига sing-box) и повторяет — до **Ctrl+C** (тогда исходный выбор
-селекторов восстанавливается). Конечное число прогонов — `loop: false` + `rounds: N`.
+изменения конфига sing-box) и повторяет - до **Ctrl+C** (тогда исходный выбор
+селекторов восстанавливается). Для конечного числа прогонов задайте `loop: false` и `rounds: N`.
 
 ```bash
 python -m nodes_tester --list-tests
@@ -226,22 +233,22 @@ python -m nodes_tester --list-tests
 ===== Прогон #1: нод 24 =====
   lt 1111: conn=OK[LT 5.6.7.8]  ttfb=71.4ms  jitter=4.2ms loss=0.0%  dl=48.6Mbps thr=0.9  reach=15/15
   … анти-ТСПУ пауза 120s (хост 5.6.7.8)
-── Фаза 2 · тяжёлый download-veto — нод: 3 ──
+── Фаза 2 · тяжёлый download-veto - нод: 3 ──
   lt 2222: heavy=OK 47.9Mbps
 ```
 
 ## 5. Результаты
 
-**Всё состояние — в одной SQLite `stats.db`.** Отдельного файлового репортера
+**Всё состояние - в одной SQLite `stats.db`.** Отдельного файлового репортера
 (`results/results.<format>`), а также старых `score.csv` / `switch_state.json`
-больше нет — они слиты в БД (при первом старте однократно мигрируются, если лежат
+больше нет - они слиты в БД (при первом старте однократно мигрируются, если лежат
 рядом с БД). Секция `report` теперь управляет только консольной пер-нодной сводкой
 (`report.console`).
 
-**SQLite** (секция `storage`, `results/stats.db`) — описания нод + трафик + сырые
-результаты + рейтинг + история переключений + журнал жизненного цикла нод; всё
+**SQLite** (секция `storage`, `results/stats.db`) хранит описания нод, трафик, сырые
+результаты, рейтинг, историю переключений и журнал жизненного цикла. Всё
 связано по **CRC ноды** (стабильный fingerprint настроек, переживает переименования
-тегов). **Полная схема со всеми таблицами и «кто пишет/читает» — в [SCHEMA.md](SCHEMA.md).**
+тегов). **Полная схема со всеми таблицами и «кто пишет/читает» - в [SCHEMA.md](SCHEMA.md).**
 Ключевые таблицы:
 
 | Таблица | Смысл |
@@ -252,27 +259,27 @@ python -m nodes_tester --list-tests
 | `endpoints` | топ источников↔назначений по ноде |
 | `activations` | история активаций боевых нод (когда / куда / почему переключились) |
 | `scores` | снимок рейтинга (замена `score.csv`), перезаписывается каждый прогон |
-| `score_history` | точка рейтинга (score/s_run/gate) на каждую ноду каждый прогон — для графиков |
+| `score_history` | точка рейтинга (score/s_run/gate) на каждую ноду каждый прогон - для графиков |
 | `switch_state` / `switch_recent` / `switch_activations` | состояние switcher (замена `switch_state.json`) |
 | `node_events` | журнал `added`/`removed`/`backoff`/`garbage`/`recovered` по ноде |
 | `garbage` | текущий backoff/карантин ноды (не история): `since`/`until`/`streak`/`reason` |
 | `meta` | сквозные значения между рестартами (посуточный `pass_day`/`pass_no`) |
 
-Полный DDL всех таблиц, индексы и матрица «кто пишет / читает» — в [SCHEMA.md](SCHEMA.md).
+Полный DDL всех таблиц, индексы и матрица «кто пишет / читает» - в [SCHEMA.md](SCHEMA.md).
 
-- `results.metrics` — JSON; ключи по тестам: connectivity `exit_ip/country/colo` или
+- `results.metrics` - JSON; ключи по тестам: connectivity `exit_ip/country/colo` или
   `asn/as_org`; latency `ttfb_ms`; jitter `jitter_ms/avg_ms/loss_pct`; download
   `speed_mbps/throttle_ratio/hold_ratio/limited`; reachability `total/reached/loss_pct/endpoints`.
-- `activations.reason` ∈ `init | emergency | emergency-stuck | quality | rotation`; `prev` — CRC предыдущей активной.
-- `traffic/endpoints.crc` может быть не-нодовым (`direct-out`, urltest-группа) — тогда строки
+- `activations.reason` входит в `init | emergency | emergency-stuck | quality | rotation`; `prev` - CRC предыдущей активной.
+- `traffic/endpoints.crc` может быть не-нодовым (`direct-out`, urltest-группа) - тогда строки
   без соответствия в `nodes` (в витрине помечаются `unspecified`/`direct`).
 
 ### Очистка БД
 
-Единый процесс `cleanup()` (раз в сутки в непрерывном режиме + при остановке): удаляет
+Единый процесс `cleanup()` запускается раз в сутки в непрерывном режиме и при остановке. Он удаляет
 ноды с `last_seen` старше `retention_days` (30) и **каскадом** все их строки во всех таблицах
-(по CRC — без сирот). Историю живых нод не трогает. Строки не-нодовых аутбаундов
-(`direct-out`, нераспознанные группы) режутся по тому же возрасту. **VACUUM** — отдельно
+(по CRC - без сирот). Историю живых нод не трогает. Строки не-нодовых аутбаундов
+(`direct-out`, нераспознанные группы) режутся по тому же возрасту. **VACUUM** - отдельно
 (тяжёлый), под cron раз в месяц:
 ```bash
 python3 -m nodes_tester --vacuum -c config/config.json
@@ -289,14 +296,12 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 
 **Рейтинг** (`scoring.enabled`). После каждого прогона считается `score` [0..100] и
 пишется в таблицу SQLite `scores` (исчезнувшие ноды удаляются, активные помечаются
-`active`). Модель — stability-first под РФ: нормализация метрик, веса ~80% на
-стабильность, EWMA + штраф за флаппинг + множитель доступности; провал GATE обнуляет
-рейтинг сразу. Полное описание с формулами — в [score.md](score.md).
+`active`). Модель ориентирована на стабильность в условиях РФ: нормализация метрик, около 80 процентов веса на
+стабильность, EWMA, штраф за флаппинг и множитель доступности. Провал GATE обнуляет
+рейтинг сразу. Полное описание с формулами - в [score.md](score.md).
 
-**Автопереключение** (`switching.enabled` — **opt-in, меняет БОЕВЫЕ группы**).
-Лестница на регион: **EMERGENCY** (активная провалила gate → сразу на лучшую другую)
-→ **QUALITY** (кандидат стабильно лучше на `quality_margin`) → **ROTATION** (раз ~3ч,
-размазать нагрузку) → stay. Действие — по selector-цепочке до production-группы;
+**Автопереключение** (`switching.enabled` - **opt-in, меняет БОЕВЫЕ группы**).
+Порядок решений для региона: **EMERGENCY** немедленно заменяет активную ноду после провала GATE. Затем **QUALITY** проверяет, что кандидат стабильно лучше на `quality_margin`. **ROTATION** примерно раз в три часа распределяет нагрузку. Если условий для переключения нет, активная нода остаётся прежней. Действие проходит по selector-цепочке до production-группы;
 `switching.freeze_groups` (по умолчанию `global-auto-out`) и тестовые группы не трогаются.
 Состояние хранится в SQLite (`switch_state`, `switch_recent`, `switch_activations`).
 Активация считается успешной только при успехе всей цепочки; частичный PUT не меняет `active`.
@@ -304,39 +309,38 @@ WHERE t.is_tester = 0 GROUP BY t.crc ORDER BY 4 DESC;
 **Балансировка трафика** (`switching.rotation.load_balance`). При ротации кандидат
 выбирается взвешенно так, чтобы размазывать боевой трафик по **осям концентрации** за окно
 (`window_hours`): недогруженные **провайдер** (`provider_strength`) и **страна**
-(`country_strength`) выпадают чаще — это реальные оси риска (общая инфра/ASN и гео).
-Протокол (`protocol_strength`, мягко ~0.3) — лёгкая диверсификация сигнатуры, не нагрузка.
-Множители по осям перемножаются (`∝ scale/(scale+bytes)`), 0 = ось выключена; score и гейт
+(`country_strength`) выпадают чаще - это реальные оси риска (общая инфра/ASN и гео).
+Протокол (`protocol_strength`, мягко ~0.3) - лёгкая диверсификация сигнатуры, не нагрузка.
+Множители по осям перемножаются (`∝ scale/(scale+bytes)`). Нулевое значение отключает ось; score и GATE
 первичны. Только для ROTATION.
 
 **Пауза и карантин** (`cooldown.enabled`, по умолчанию включён). Нода, провалившая GATE
-(заблокирована/мертва прямо сейчас), уходит на **паузу** — пропускает следующие прогоны:
+(заблокирована/мертва прямо сейчас), уходит на **паузу** - пропускает следующие прогоны:
 **1, 2, 4, 8, 16** (удвоение за каждый подряд провал). Когда пропуск дорастает до
 `cooldown.max_skip` (32, т.е. на 6-м провале подряд), нода уходит в **карантин** на
-`cooldown.garbage_hours` (72 ч, по времени), затем одна проба: провал → снова карантин.
+`cooldown.garbage_hours` (72 часа), затем получает одну пробу. Повторный провал возвращает её в карантин.
 Успешный gate снимает и паузу, и карантин. Пауза считается по **сквозному** номеру прогона
-`meta.pass_seq` (не сбрасывается в полночь, в отличие от посуточного `pass_no`, — иначе
-залипание из review.md P1). Смысл — не гонять трафик через дохлые ноды и не раздувать их в
+`meta.pass_seq` (не сбрасывается в полночь, в отличие от посуточного `pass_no`, - иначе
+залипание из review.md P1). Смысл - не гонять трафик через дохлые ноды и не раздувать их в
 БД. Пропущенная нода сохраняет свой последний рейтинг (не выпадает из `scores`).
-`cooldown.base_seconds` — устаревший ключ прежней временной модели паузы, игнорируется.
+`cooldown.base_seconds` - устаревший ключ прежней временной модели паузы, игнорируется.
 
 ## 7. Монитор активных нод (`monitor.enabled`)
 
 Фоновый поток (интервал `monitor.interval`), независимо от прогона следит за
 активными боевыми нодами: (1) если выбор в селекторах слетел (напр. reload sing-box)
-— возвращает по цепочке; (2) пробит ноду через Clash API `/proxies/{node}/delay`
+- возвращает по цепочке; (2) пробит ноду через Clash API `/proxies/{node}/delay`
 (sing-box сам дозванивается) и при `fails` провалах подряд запускает EMERGENCY.
-Если активной ноды больше нет (регенерация сменила теги) — ждёт первого прогона.
+Если активной ноды больше нет (регенерация сменила теги) - ждёт первого прогона.
 
----
 
 ## 8. Веб-админка (управление / контроль / конфиг)
 
 Веб-интерфейс (Vue-SPA из `web/`, отдаёт Python) работает в двух режимах:
 
-- **Read-only** — отдельный `python -m dashboard` (открывает `stats.db` в `mode=ro`);
+- **Read-only** - отдельный `python -m dashboard` (открывает `stats.db` в `mode=ro`);
   доступны только просмотр и `/api/*` read-эндпоинты.
-- **Full** — сервер встроен в процесс тестера (`dashboard.enabled: true`, поток-демон в
+- **Full** - сервер встроен в процесс тестера (`dashboard.enabled: true`, поток-демон в
   `Runner`), тогда к живым `Runner/Switcher/Scoreboard/Storage` добавляются
   write/control-эндпоинты.
 
@@ -359,12 +363,12 @@ Full-режиме.
 хранится в `localStorage`.
 
 **Разделы SPA.** Обзор / Рейтинг / Результаты / Трафик / Жизненный цикл / Кладбище /
-Переключения (read-only) + **Управление** / **Прогоны** / **Конфиг** (Фазы 2-4).
-«Жизненный цикл» показывает только ноды из подписки (`present=1`); удалённые — только на
+Переключения (только чтение), а также **Управление** / **Прогоны** / **Конфиг** (Фазы 2-4).
+«Жизненный цикл» показывает только ноды из подписки (`present=1`); удалённые - только на
 «Кладбище» (срез `graveyard`: срок жизни, траектория рейтинга из `score_history`, пик/среднее/
 последний, «как ушла», через сколько сотрётся retention'ом).
 
-**Статусы нод — единый словарь UI** (`web/src/status.js`, легенда `StatusLegend` в «Жизненном
+**Статусы нод - единый словарь UI** (`web/src/status.js`, легенда `StatusLegend` в «Жизненном
 цикле» и «Управлении»). Один термин на понятие; значения в БД прежние. Статусы
 взаимоисключающие, при нескольких признаках побеждает верхний:
 
@@ -373,90 +377,86 @@ Full-режиме.
 | **удалена** | `nodes.present=0` | ушла из подписки; не тестируется; стирается через `retention_days` | подписка |
 | **бан** | `nodes.banned=1` | ручное исключение из тестов/рейтинга, бессрочно | админ |
 | **карантин** | `garbage.reason='garbage'` | потолок паузы: пропуск `garbage_hours`, затем одна проба | тестер / админ |
-| **пауза** | `garbage.reason='backoff'` | провал gate → пропуск 2^(n−1) прогонов; дорос до `max_skip` → карантин | тестер |
+| **пауза** | `garbage.reason='backoff'` | после провала GATE пропускает 2^(n-1) прогонов; при `max_skip` переходит в карантин | тестер |
 | **активная** | `scores.active=1` | боевая нода региона | switcher |
-| **в строю** | `score>0` | тестируется, кандидат | — |
-| **рейтинг 0** | `score=0` | тестируется, последний прогон не прошёл / нет замеров | — |
+| **в строю** | `score>0` | тестируется, кандидат | - |
+| **рейтинг 0** | `score=0` | тестируется, последний прогон не прошёл / нет замеров | - |
 
 Прежние синонимы, которые больше не используются в UI: «мусор/мусорная» (= карантин),
 «backoff» (= пауза), «ушла» (= удалена), «мёртвая/живая» (= рейтинг 0 / в строю).
 
 **Управление нодами** (`dashboard/api_control.py`):
-- `POST /api/nodes/{crc}/quarantine` | `/unquarantine` — ручной карантин/снятие
-  (`storage.set_backoff`/`clear_backoff`, карантин = «мусорная» на `garbage_hours`).
-- `POST /api/nodes/{crc}/ban` | `/unban` — флаг `nodes.banned` (персистентный); забаненная
+- `POST /api/nodes/{crc}/quarantine` | `/unquarantine` - ручной карантин/снятие
+  (`storage.set_backoff`/`clear_backoff`, внутренний статус «мусорная» на `garbage_hours`).
+- `POST /api/nodes/{crc}/ban` | `/unban` - флаг `nodes.banned` (персистентный); забаненная
   нода пропускается `Runner._enumerate_nodes` (не тестируется/не скорится).
-- `POST /api/regions/{region}/switch` body `{node}` — форс-активация ноды региона
+- `POST /api/regions/{region}/switch` body `{node}` - форс-активация ноды региона
   (`Switcher.force_activate`, reason `manual`).
 
 **Контроль прогонов** (`dashboard/api_control.py`):
-- `GET /api/status` — running / номер прогона / активные ноды по регионам / след. ротация /
+- `GET /api/status` - running / номер прогона / активные ноды по регионам / след. ротация /
   живость потоков monitor/traffic.
-- `POST /api/run/pass` — внеплановый прогон (`Runner.request_pass`, прерывает ожидание).
-- `GET /api/logs?seq=&tail=` — живой лог: кольцевой буфер `LogRing`, в который `Runner.run()`
+- `POST /api/run/pass` - внеплановый прогон (`Runner.request_pass`, прерывает ожидание).
+- `GET /api/logs?seq=&tail=` - живой лог: кольцевой буфер `LogRing`, в который `Runner.run()`
   дублирует весь `print` (через подмену `sys.stdout/stderr` на `TeeStream`); long-poll по `seq`.
 
 **Редактор конфигов** (`dashboard/api_config.py`): `GET/PUT /api/config`,
 `GET /api/config/schema`, `GET/PUT /api/config/providers`. Редактируется именно файл,
-из которого загружен `Config.path` (включая нестандартное имя). Подписки — файл
+из которого загружен `Config.path` (включая нестандартное имя). Подписки - файл
 `dashboard.providers_file` (тот же, что читает `nodes_fetch`, напр.
-`/root/nodes-data/config-main/providers.json`; относительный путь — от папки config.json;
-пусто = `providers.json` рядом с config.json). `config.json` валидируется обязательным
-`jsonschema` + семантикой `load_config`; providers — той же `load_providers`, что у `nodes_fetch`
-(v2 и совместимый v1). Запись: temp в том же каталоге → flush/fsync → `os.replace`; симлинк
+`/root/nodes-data/config-main/providers.json`; относительный путь - от папки config.json;
+пустое значение означает `providers.json` рядом с config.json). `config.json` проверяется обязательным
+`jsonschema` и семантикой `load_config`; providers - той же `load_providers`, что у `nodes_fetch`
+(v2 и совместимый v1). При записи создаётся временный файл в том же каталоге, выполняются flush и fsync, затем `os.replace`. Симлинк
 сохраняется (пишется его цель).
 Применение изменений в работающем тестере требует перезапуска процесса.
 
 БД-схема дополнена колонкой `nodes.banned` (миграция `ALTER`). Бан исключает ноду только
 из тестов, но не из учёта физического присутствия: `present/last_seen` продолжают обновляться,
-поэтому retention не стирает ban. Полный список нод для «Управления» — `nodes` в `/api/data`.
+поэтому retention не стирает ban. Полный список нод для «Управления» - `nodes` в `/api/data`.
 
-**Решения hardening после ревью.** Статика проверяется по canonical `realpath/commonpath`
-(включая обратные слэши Windows); отсутствующие JS/CSS дают 404, SPA fallback применяется только
-к URL без расширения. HTTP body ограничен 2 МиБ, ошибочные параметры дают 400, неверный метод —
-405. Фоновые monitor/traffic worker полностью завершаются до закрытия SQLite. Клиент сериализует
-polling `/api/data`, сохраняет последний валидный snapshot при временной ошибке и реактивно
-распространяет изменение admin token.
+**Защита после ревью.** Сервер проверяет путь к статике через `realpath/commonpath`, включая обратные слэши Windows. Отсутствующий JS или CSS возвращает 404; резервная страница SPA открывается только для URL без расширения. Размер HTTP-запроса ограничен 2 МиБ, ошибочный параметр даёт 400, неверный метод - 405.
 
----
+Фоновые потоки монитора и учёта трафика завершаются до закрытия SQLite. Клиент отправляет запросы к `/api/data` последовательно, сохраняет последний корректный снимок при временной ошибке и сразу применяет новый токен администратора.
+
 
 ## Структура репозитория
 
-Раскладка по каталогам (назначение компонентов — в [Состав проекта](#состав-проекта)):
+Раскладка по каталогам (назначение компонентов - в [Состав проекта](#состав-проекта)):
 
 ```
-naming/           — ЕДИНЫЙ источник имён/идентичности (общий для обоих)
+naming/           - ЕДИНЫЙ источник имён/идентичности (общий для обоих)
   identity.py     parse_node, NodeIdentity, region_label
   protocol.py     node_protocol (база|транспорт|маскировка)
   regions.py      coarse_region, страны, флаги
   crc.py          content_crc32, node_payload
 
-nodes_tester/     — ТЕСТЕР  (python -m nodes_tester --config config/config.json)
+nodes_tester/     - ТЕСТЕР  (python -m nodes_tester --config config/config.json)
   config.py       загрузка config.json (testing_groups, region_groups, run-слои)
   clash_api.py    клиент Clash API (proxies, select, delay, connections)
   proxy.py, scoring.py, scoreboard.py, switcher.py,
   monitor.py, storage.py, traffic.py, runner.py, identity.py, __main__.py
   tests/          connectivity, latency, jitter, download (+heavy_download), reachability
 
-nodes_fetch/      — СТАДИЯ FETCH: подписки → raw_nodes.json (python -m nodes_fetch) — см. nodes_fetch/README.md
+nodes_fetch/      - СТАДИЯ FETCH: подписки → raw_nodes.json (python -m nodes_fetch) - см. nodes_fetch/README.md
   fetch.py        providers v1/v2, last-good (stale), guard min_ratio, --only
   sources.py      url / file / folder / happ → узлы парсера
   parsers/, util.py, happ*.py, _chacha.py   (перенесены из subscribe/)
-nodes_common/     — контракт raw_nodes.json (raw.py) + атомарная запись/lock (fileio.py)
-schemas/          — JSON-схемы артефактов/конфигов (raw_nodes, providers, groups_params)
-nodes_config/     — СТАДИЯ CONFIG: raw → nodes.json (python -m nodes_config [migrate]) — см. nodes_config/README.md
+nodes_common/     - контракт raw_nodes.json (raw.py) + атомарная запись/lock (fileio.py)
+schemas/          - JSON-схемы артефактов/конфигов (raw_nodes, providers, groups_params)
+nodes_config/     - СТАДИЯ CONFIG: raw → nodes.json (python -m nodes_config [migrate]) - см. nodes_config/README.md
   build.py        фильтры → rename → CRC → dedupe → группы (+ отчёт); пишет только при изменении
   rename.py, groups.py, params.py (groups_params v2), migrate.py (конфиги v1 → v2)
-subscribe/        — совместимая обёртка `python -m subscribe` над fetch+config (конфиги v1; до Ф6)
-scripts/router/   — backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат, sing-box не трогает,
+subscribe/        - совместимая обёртка `python -m subscribe` над fetch+config (конфиги v1; до Ф6)
+scripts/router/   - backup-/rollback-nodes-tester.sh (снимок роутера и быстрый откат, sing-box не трогает,
                     если его конфиг не менялся), shadow-pipeline.sh (теневой прогон fetch→config),
                     pipeline.sh router|clients [--dry-run] (fetch → config → update-rules →
                     apply-nodes / build-clients; sing-box перезапускается только при изменениях,
-                    после рестарта — проверка связности и автовозврат прежнего конфига),
+                    после рестарта - проверка связности и автовозврат прежнего конфига),
                     switch-to-pipeline.sh (однократное переключение cron, в фоне через setsid)
-tests/golden/     — golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
+tests/golden/     - golden-харнесс (запись ответов подписок на роутере, офлайн-повтор)
 
-dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — просмотр (рейтинг/трафик/жизненный
+dashboard/        - ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) - просмотр (рейтинг/трафик/жизненный
                     цикл/результаты/история) + управление нодами (карантин/бан/форс-switch) +
                     контроль прогонов (статус/живой лог/внеплановый прогон) + редактор конфигов
   webapp.py       каркас на stdlib: App (маршруты метод+regex, раздача статики SPA из
@@ -468,15 +468,15 @@ dashboard/        — ВЕБ-АДМИНКА (Vue-SPA + stdlib-бэкенд) — 
   api_config.py   редактор конфигов: GET/PUT config.json (валидация load_config) и
                   providers.json, атомарная запись (temp+rename)
   data.py         выборка/агрегация из stats.db (read-only, mode=ro)
-  server.py       build_app(cfg, runner=None) — общий для read-only и встраивания в Runner
-  static/         собранный SPA (Vue) — выход `web/ npm run build`; фолбэк — легаси-страница
+  server.py       build_app(cfg, runner=None) - общий для read-only и встраивания в Runner
+  static/         собранный SPA (Vue) - выход `web/ npm run build`; фолбэк - легаси-страница
                   Режимы: отдельный процесс = read-only; блок config.dashboard.enabled +
                   встраивание в Runner = write/control по токену. LAN, авто-обновление
 
-web/              — ИСХОДНИКИ SPA-АДМИНКИ (Vue 3 + Vite) — `npm run build` → dashboard/static/
+web/              - ИСХОДНИКИ SPA-АДМИНКИ (Vue 3 + Vite) - `npm run build` → dashboard/static/
                     (в git только исходники; node_modules/dist игнорируются)
 
-config/           — пользовательские конфиги
+config/           - пользовательские конфиги
   config.json, config.example.json, config.schema.json,
   providers.json, user_nodes.json, groups_params.json
 ```
@@ -493,14 +493,10 @@ config/           — пользовательские конфиги
            return TestResult(self.name, ok=True, metrics={"foo": 1}, url="…")
    ```
 2. `from . import mytest` в `nodes_tester/tests/__init__.py`.
-3. Опции — в `tests.mytest`, активация — добавить `"mytest"` в `run.default.tests_enabled`.
+3. Опции - в `tests.mytest`, активация - добавить `"mytest"` в `run.default.tests_enabled`.
 
-## Дальше
+## Планы
 
-- **Идёт рефактор** на `nodes_fetch` → `nodes_config` → `nodes_tester` + оркестратор
-  `nodes_admin` — спека и фазы в [REFACTOR-MODULES.md](REFACTOR-MODULES.md). Описанная выше
-  структура актуальна до завершения миграции.
-- Многогрупповость `testing_groups` (параллельно, раздельный стейт).
-- Слияние с проектом переименования (общий модуль идентичности/CRC, один `nodes.json`).
-- Upload speed, streaming-unlock, DNS-leak.
-- Админка: hot-reload конфига без рестарта, SSE-лог, time-series графики (uPlot) — см. BACKLOG.
+Стадии `nodes_fetch`, `nodes_config` и роутерный конвейер уже работают. Следующие фазы описаны в [спецификации рефакторинга](REFACTOR-MODULES.md): отдельный `nodes_admin`, планировщик и отказ от временной обёртки `subscribe`.
+
+Остальные задачи ведутся в [BACKLOG.md](BACKLOG.md). Среди них многогрупповые прогоны, новые сетевые тесты, горячая перезагрузка конфигурации и графики временных рядов.
