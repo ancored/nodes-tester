@@ -12,13 +12,16 @@
 #
 # --dry-run: ничего боевого не трогает — nodes.json/whnodes.json пишутся в $DATA/*.dry.json,
 # правила не обновляются, apply-nodes/build-clients работают в --dry-run.
-# Конфиги v2 — $DATA/config-main, $DATA/config-wh (из `nodes_config migrate`).
+# Конфиги v2 — $CFG_ROOT/config-main, $CFG_ROOT/config-wh (из `nodes_config migrate`);
+# CFG_ROOT по умолчанию = $DATA. PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
 
 set -u
 
-PROJECT_DIR="${PROJECT_DIR:-/root/sing-box-nodes_tester}"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 DATA="${DATA:-/root/nodes-data}"
+CFG_ROOT="${CFG_ROOT:-$DATA}"   # где лежат config-main/ и config-wh/
+export DATA
 HERE="$PROJECT_DIR/scripts/router"
 MODE="${1:-}"; DRY=0
 [ "${2:-}" = "--dry-run" ] && DRY=1
@@ -30,7 +33,7 @@ case "$MODE" in
     clients) SET=wh;   OUT=/etc/sing-box-subscribe/whnodes.json ;;
     *) echo "использование: pipeline.sh router|clients [--dry-run]" >&2; exit 2 ;;
 esac
-CFG="$DATA/config-$SET"
+CFG="$CFG_ROOT/config-$SET"
 [ "$DRY" = 1 ] && OUT="$DATA/$(basename "$OUT" .json).dry.json"
 [ -f "$CFG/providers.json" ] || { log "нет $CFG/providers.json (сделай nodes_config migrate)"; exit 1; }
 

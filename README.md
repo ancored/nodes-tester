@@ -134,6 +134,10 @@ inbound, меряет, пишет рейтинг и (опционально) с�
 
 ## 2. Установка
 
+**На OpenWrt — пакетом** (`.apk` для 25.x, `.ipk` для 24.10): сборка в OpenWrt SDK,
+установка через `apk add`, сервисы procd, настройки в UCI — см. [openwrt/README.md](openwrt/README.md).
+
+**Из исходников** (любой Linux, разработка):
 ```bash
 pip install -r requirements.txt
 ```

@@ -22,7 +22,6 @@ DEST="$BACKUP_ROOT/nodes-tester-$TS"
 PATHS="
 $PROJECT_DIR
 /etc/init.d/nodes-tester
-/etc/init.d/nodes-dashboard
 /root/update-singbox-config.sh
 /root/update-clients-configs.sh
 /root/update-singbox-lx.sh

@@ -19,7 +19,7 @@ set -u
 
 REPO_DIR="${REPO_DIR:-/root/singbox-repo}"
 CLIENTS_OUT="${CLIENTS_OUT:-/etc/sing-box-clients}"
-DRY_OUT="${DRY_OUT:-/root/nodes-data/clients-dry}"
+DRY_OUT="${DRY_OUT:-${DATA:-/root/nodes-data}/clients-dry}"
 MERGE="$REPO_DIR/merge-configs.py"
 # Клиенты: для каждого нужен android_clients/base_<name>.json в репозитории. Список — из
 # $CLIENTS или файла $CLIENTS_FILE (не в git; шаблон — clients.list.example рядом).

@@ -1,2 +1,5 @@
 # Shell-скрипты исполняются на роутере (busybox sh) — только LF
 *.sh text eol=lf
+
+# OpenWrt-пакет: Makefile, init-скрипты, UCI — тоже только LF
+openwrt/** text eol=lf

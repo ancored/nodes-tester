@@ -37,7 +37,7 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
   03:00 прошёл чисто (`/var/log/nodes-pipeline.log`), потом удалить:
   - `/root/sing-box-nodes_tester.old`;
   - `/root/update-singbox-config.sh`, `/root/update-clients-configs.sh` + их `.pre-deploy`;
-  - `/etc/init.d/nodes-dashboard` (сервис отключён; порт 8088 у встроенной админки);
+  - ~~`/etc/init.d/nodes-dashboard`~~ — убран 2026-09-27 (копия в `/root/backups/removed-*`);
   - `/etc/sing-box-subscribe/medved.txt` — предварительно убедиться, что MEDVED берётся по URL;
   - снимок `nodes-tester-stable` (→ `backups/nodes-tester-20260923-232511`) — решить, держать ли.
   НЕ трогать: `update-singbox-lx.sh` (обновление ядра), `config.json.prev`, снимок `preswitch`.
@@ -102,6 +102,19 @@ control/config/auth 21/21. **Предусловия деплоя:** (1) `pip ins
 
 Итог по `Leadaxe/singbox-launcher`: как база НЕ годится (Go+Fyne desktop, GPLv3, другое
 назначение). База — существующий `dashboard/` + `stats.db`.
+
+### ★ OpenWrt-пакет (`openwrt/`) — минимальная версия собрана
+
+Makefile для SDK (`PKGARCH:=all`), procd-сервис `nodes-tester` (админка встроена), UCI
+`/etc/config/nodes-tester`, обёртка `/usr/bin/nodes-tester`, uci-defaults (конфиги из шаблонов,
+случайный токен), PySocks вложен (в фидах нет). Сборка — `openwrt/build.sh` (docker SDK). Дальше:
+- свой apk-репозиторий с подписью (без `--allow-untrusted`), сборка в GitHub Actions
+  (`openwrt/gh-action-sdk`), версия пакета из git-тега;
+- миграция текущей ручной установки (`/root/sing-box-nodes_tester`, `/root/nodes-data`) на
+  раскладку пакета: перенос `stats.db`, `config-main/`, `config-wh/`, замена init.d и cron;
+- после Ф5 (оркестратор) — cron для конвейера не нужен, отдельный сервис `nodes_admin`;
+- `backup-/rollback-nodes-tester.sh` рассчитаны на ручную раскладку — для пакета откат кода
+  делает `apk`, бэкапить остаётся `stats.db` и `/etc/nodes-tester`.
 
 ### 0. Актуализировать `score.md` (док-долг)
 

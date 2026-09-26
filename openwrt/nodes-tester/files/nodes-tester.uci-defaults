@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# Первая установка: рабочие конфиги из шаблонов (существующие не трогаются) и случайный
+# токен админки. Выполняется один раз; после — удаляется из /etc/uci-defaults.
+
+EX=/usr/share/nodes-tester/examples
+
+. /lib/functions.sh
+config_load nodes-tester
+config_get CONFIG_DIR main config_dir /etc/nodes-tester
+config_get DATA_DIR main data_dir /opt/nodes-tester
+
+mkdir -p "$CONFIG_DIR/config-main" "$CONFIG_DIR/config-wh" "$CONFIG_DIR/awg" "$DATA_DIR"
+
+if [ ! -f "$CONFIG_DIR/config.json" ]; then
+	token="$(tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 48)"
+	sed -e "s|\"token\": \"\"|\"token\": \"$token\"|" \
+	    -e "s|\"providers_file\": \"[^\"]*\"|\"providers_file\": \"config-main/providers.json\"|" \
+		"$EX/config.example.json" > "$CONFIG_DIR/config.json"
+	chmod 600 "$CONFIG_DIR/config.json"
+fi
+for set in main wh; do
+	d="$CONFIG_DIR/config-$set"
+	[ -f "$d/providers.json" ] || cp "$EX/providers.example.json" "$d/providers.json"
+	[ -f "$d/groups_params.json" ] || cp "$EX/groups_params.json" "$d/groups_params.json"
+done
+[ -f "$CONFIG_DIR/clients.list" ] || cp "$EX/clients.list.example" "$CONFIG_DIR/clients.list"
+
+exit 0
