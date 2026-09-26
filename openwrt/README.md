@@ -29,6 +29,27 @@ ssh root@<роутер> apk add --allow-untrusted /tmp/nodes-tester-*.apk
 (`python3-light`, `python3-requests`, `python3-jsonschema`, `python3-ruamel-yaml` и др.)
 `apk` подтянет из фидов OpenWrt сам. PySocks в фидах нет — он вложен в пакет.
 
+Если раньше зависимости ставились через `pip`, `apk` запишет свои версии поверх них в тот же
+site-packages, и получится смесь двух версий. Перед установкой (или сразу после) уберите
+pip-копии и переустановите пакеты фидов:
+
+```sh
+pip3 uninstall -y --break-system-packages jsonschema jsonschema-specifications referencing rpds-py ruamel.yaml attrs
+apk fix --reinstall python3-attrs python3-jsonschema python3-jsonschema-specifications \
+    python3-referencing python3-rpds-py python3-ruamel-yaml
+```
+
+## Переход с ручной установки
+
+1. Остановить и убрать старый init-скрипт (`/etc/init.d/nodes-tester stop; … disable`), иначе
+   `apk` положит пакетный рядом как `.apk-new`.
+2. Поставить пакет, затем перенести: `config.json` → `/etc/nodes-tester/` (относительный
+   `dashboard.providers_file` теперь отсчитывается от этого каталога), каталоги `config-main/`,
+   `config-wh/` → `/etc/nodes-tester/`, `stats.db` → `/opt/nodes-tester/results/` (при
+   остановленном тестере или через sqlite backup), raw подписок → `/opt/nodes-tester/raw/`.
+3. Заменить в cron вызовы `pipeline.sh` и `--vacuum` на `nodes-tester pipeline …` и
+   `nodes-tester vacuum`, включить сервис (`uci set nodes-tester.tester.enabled=1`).
+
 ## Что где лежит
 
 | Путь | Что | При обновлении пакета |
