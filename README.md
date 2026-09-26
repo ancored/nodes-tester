@@ -362,9 +362,13 @@ Full-режиме.
 
 **Редактор конфигов** (`dashboard/api_config.py`): `GET/PUT /api/config`,
 `GET /api/config/schema`, `GET/PUT /api/config/providers`. Редактируется именно файл,
-из которого загружен `Config.path` (включая нестандартное имя). `config.json` валидируется
-обязательным `jsonschema` + семантикой `load_config`; `providers.json` проверяется на обязательные
-`subscribes` и `save_config_path`. Запись: temp в том же каталоге → flush/fsync → `os.replace`.
+из которого загружен `Config.path` (включая нестандартное имя). Подписки — файл
+`dashboard.providers_file` (тот же, что читает `nodes_fetch`, напр.
+`/root/nodes-data/config-main/providers.json`; относительный путь — от папки config.json;
+пусто = `providers.json` рядом с config.json). `config.json` валидируется обязательным
+`jsonschema` + семантикой `load_config`; providers — той же `load_providers`, что у `nodes_fetch`
+(v2 и совместимый v1). Запись: temp в том же каталоге → flush/fsync → `os.replace`; симлинк
+сохраняется (пишется его цель).
 Применение изменений в работающем тестере требует перезапуска процесса.
 
 БД-схема дополнена колонкой `nodes.banned` (миграция `ALTER`). Бан исключает ноду только

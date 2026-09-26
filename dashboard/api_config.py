@@ -29,8 +29,21 @@ def _cfg_dir(app: App) -> str:
     return os.path.dirname(_config_path(app))
 
 
+def _providers_path(app: App) -> str:
+    """Файл подписок редактора: dashboard.providers_file (относительный — от папки
+    config.json) либо providers.json рядом с config.json."""
+    dash = getattr(app.cfg, "dashboard", None)
+    configured = (getattr(dash, "providers_file", "") or "").strip()
+    if not configured:
+        return os.path.join(_cfg_dir(app), "providers.json")
+    return os.path.abspath(os.path.join(_cfg_dir(app), configured))
+
+
 def _atomic_write(path: str, text: str) -> None:
-    d = os.path.dirname(os.path.abspath(path))
+    # Симлинк сохраняется: пишем в файл, на который он указывает (os.replace по самому
+    # симлинку заменил бы его обычным файлом, и nodes_fetch читал бы старую цель).
+    path = os.path.realpath(path)
+    d = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".nt-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -75,14 +88,14 @@ def _validate_config_body(app: App, text: str) -> None:
 
 
 def _validate_providers(data: dict) -> None:
-    subscribes = data.get("subscribes")
-    output = data.get("save_config_path")
-    if not isinstance(subscribes, list):
-        raise HttpError(400, "providers.subscribes должен быть массивом")
-    if not isinstance(output, str) or not output.strip():
-        raise HttpError(400, "providers.save_config_path должен быть непустой строкой")
-    if not all(isinstance(item, dict) for item in subscribes):
-        raise HttpError(400, "каждый элемент providers.subscribes должен быть объектом")
+    """Та же проверка, что у nodes_fetch (v2 и совместимый v1): subscribes, уникальные
+    tag, у каждой подписки url/file/type=folder, корректный fetch.min_ratio."""
+    from nodes_fetch.fetch import load_providers
+
+    try:
+        load_providers(data, log=lambda *_: None)
+    except (ValueError, TypeError) as exc:
+        raise HttpError(400, f"providers невалиден: {exc}")
 
 
 def register(app: App) -> None:
@@ -118,7 +131,7 @@ def register(app: App) -> None:
 
     @app.route("GET", "/api/config/providers", needs_token=True)
     def get_providers(app, req):
-        path = os.path.join(_cfg_dir(app), "providers.json")
+        path = _providers_path(app)
         return {"path": path, "data": _read_json(path)}
 
     @app.route("PUT", "/api/config/providers", needs_token=True)
@@ -127,7 +140,7 @@ def register(app: App) -> None:
         if not isinstance(data, dict):
             raise HttpError(400, "providers.json должен быть объектом")
         _validate_providers(data)
-        path = os.path.join(_cfg_dir(app), "providers.json")
+        path = _providers_path(app)
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         _atomic_write(path, text)
         return {"ok": True, "path": path}

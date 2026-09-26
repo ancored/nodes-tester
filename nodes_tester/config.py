@@ -272,13 +272,18 @@ class DashboardConfig:
     Доступ: просмотр (`/api/*` read) открыт при `read_open`; write/control требуют
     заголовок `X-Admin-Token`, совпадающий с `token`. Пустой `token` полностью
     отключает write/control (безопасный дефолт). `host` привязывает сокет к
-    интерфейсу — держите LAN-адрес, не выставляйте наружу."""
+    интерфейсу — держите LAN-адрес, не выставляйте наружу.
+
+    `providers_file` — подписки, которые правит редактор (тот же файл, что читает
+    nodes_fetch, напр. `/root/nodes-data/config-main/providers.json`); относительный
+    путь — от папки config.json, пусто = `providers.json` рядом с config.json."""
     enabled: bool = False
     host: str = "0.0.0.0"
     port: int = 8088
     interval: int = 10               # период авто-обновления UI, сек
     token: str = ""                  # shared-токен для write/control ("" = write выкл.)
     read_open: bool = True           # просмотр без токена
+    providers_file: str = ""         # подписки для редактора ("" = рядом с config.json)
 
 
 @dataclass

@@ -473,6 +473,10 @@
         "read_open": {
           "type": "boolean",
           "description": "Разрешить просмотр (read-эндпоинты) без токена."
+        },
+        "providers_file": {
+          "type": "string",
+          "description": "Подписки для редактора админки — тот же файл, что читает nodes_fetch (напр. /root/nodes-data/config-main/providers.json). Относительный путь — от папки config.json; пусто = providers.json рядом с config.json."
         }
       }
     }

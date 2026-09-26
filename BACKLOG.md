@@ -23,8 +23,10 @@ SPA, allowlist-действия) + роутерные скрипты `update-rul
 - [x] Ф2 — `nodes_config` + groups_params v2 + `migrate`; `subscribe` = тонкая обёртка над
   split_v1→fetch→config; golden по двум путям (обёртка и чистый CLI-конвейер) на 4 наборах;
   живой прогон на роутере рядом со старым кодом — 2026-09-23
-- [ ] (Ф4) `dashboard/api_config.py` проверяет providers на обязательный `save_config_path` —
-  в v2 его нет; редактор конфигов переедет в `nodes_admin` и должен понимать v2
+- [x] (Ф4) редактор providers понимает v2: путь — `dashboard.providers_file` (раньше жёстко
+  `providers.json` рядом с config.json, а конвейер читает `$DATA/config-main/providers.json`),
+  проверка — `nodes_fetch.load_providers` вместо обязательного `save_config_path`; запись не
+  рвёт симлинк — 2026-09-26
 - [x] Выкатка на роутер 2026-09-23: новый тестер + встроенная админка (192.168.1.1:8088,
   токен), `nodes-dashboard` выключен; cron генерации — на `/root/sing-box-nodes_tester.old`;
   теневой конвейер `scripts/router/shadow-pipeline.sh` в cron раз в 6 ч → `/root/nodes-data/`

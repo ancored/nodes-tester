@@ -229,6 +229,7 @@
     "port": 8088,
     "interval": 10,
     "token": "",
-    "read_open": true
+    "read_open": true,
+    "providers_file": "/root/nodes-data/config-main/providers.json"
   }
 }
