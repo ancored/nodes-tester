@@ -50,8 +50,42 @@ nodes_fetch
 Невалидный кандидат не заменяет рабочий файл. Перезапуск может кратко оборвать сеть и SSH,
 если доступ идёт через этот же прокси.
 
-`rollback-nodes-tester.sh` восстанавливает подготовленный снимок. Перед ручным откатом
-проверьте путь и содержимое снимка.
+## Резервная копия и откат
+
+```sh
+nodes-tester backup [--stable] [--pkg FILE]
+nodes-tester rollback [-y] [--keep-db] [--check] [SNAPSHOT_DIR]
+```
+
+`backup-nodes-tester.sh` читает `config_dir` и `data_dir` из `/etc/config/nodes-tester` и
+создаёт `/root/backups/nodes-tester-<дата>/`. Сервис не останавливается.
+
+| Файл снимка | Содержимое |
+|---|---|
+| `files.tar.gz` | `config_dir`, `/etc/config/nodes-tester`, `data_dir` без БД, `/etc/sing-box` |
+| `code.tar.gz` | файлы установленного пакета без конфигов |
+| `stats.db.gz` | копия через SQLite backup API с `integrity_check` |
+| `nodes-tester-<версия>.apk` | пакет из `--pkg` или `/root/packages/` |
+| `crontab.txt`, `enabled.txt` | задачи nodes-tester и автозапуск |
+| `MANIFEST`, `SHA256SUMS`, `rollback.sh` | описание, контрольные суммы и скрипт отката |
+
+`--stable` переводит ссылку `/root/backups/nodes-tester-stable` на новый снимок. Её по
+умолчанию использует откат.
+
+`rollback-nodes-tester.sh` проверяет контрольные суммы и архивы. `--check` на этом
+останавливается. Полный откат:
+
+1. Останавливает сервис и сохраняет текущие файлы, crontab и версию в
+   `/root/backups/failed-<дата>/`.
+2. Переустанавливает пакет из снимка. Без файла пакета возвращает код из `code.tar.gz`,
+   но пакетный менеджер продолжит показывать новую версию.
+3. Возвращает конфиги, данные и, без `--keep-db`, БД снимка.
+4. Заменяет в crontab только строки nodes-tester и восстанавливает автозапуск.
+5. Возвращает конфиг sing-box, если он изменился и проходит `sing-box check`; иначе sing-box
+   не трогает.
+6. Запускает сервис.
+
+Старые снимки не удаляются автоматически.
 
 ## Клиентская ветка
 
@@ -72,8 +106,8 @@ nodes-tester pipeline clients
 | `apply-nodes.sh` | merge, check, diff, перезапуск, health-check и откат |
 | `update-rules.sh` | обновление rule-set перед сборкой рабочего конфига |
 | `build-clients.sh` | сборка клиентских конфигураций |
-| `backup-nodes-tester.sh` | снимок установки и рабочих файлов |
-| `rollback-nodes-tester.sh` | восстановление снимка |
+| `backup-nodes-tester.sh` | снимок пакета, конфигов, данных и БД перед обновлением |
+| `rollback-nodes-tester.sh` | откат пакета и данных на снимок |
 | `shadow-pipeline.sh` | теневой прогон без применения |
 | `switch-to-pipeline.sh` | однократный переход старого cron на новый pipeline |
 

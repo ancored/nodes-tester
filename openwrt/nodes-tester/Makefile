@@ -10,7 +10,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
 PKG_VERSION:=0.1.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=MIT
@@ -23,7 +23,8 @@ include $(INCLUDE_DIR)/package.mk
 REPO_ROOT:=$(CURDIR)/../..
 APP_DIR:=/usr/lib/nodes-tester
 PY_PACKAGES:=naming nodes_common nodes_fetch nodes_config nodes_tester dashboard
-ROUTER_SCRIPTS:=pipeline.sh apply-nodes.sh update-rules.sh build-clients.sh
+ROUTER_SCRIPTS:=pipeline.sh apply-nodes.sh update-rules.sh build-clients.sh \
+	backup-nodes-tester.sh rollback-nodes-tester.sh
 
 define Package/nodes-tester
   SECTION:=net

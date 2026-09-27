@@ -7,6 +7,8 @@
 #   nodes-tester tester   [args]   python3 -m nodes_tester -c <config_dir>/config.json
 #   nodes-tester vacuum            VACUUM stats.db (для cron раз в месяц)
 #   nodes-tester pipeline router|clients [--dry-run]
+#   nodes-tester backup   [--stable] [--pkg FILE]   снимок перед обновлением
+#   nodes-tester rollback [-y] [--keep-db] [--check] [SNAPSHOT]
 #
 # Команды выполняются из data_dir, поэтому относительные пути (stats.db) те же, что у сервиса.
 
@@ -33,7 +35,9 @@ case "$cmd" in
 		PROJECT_DIR="$APP_DIR" DATA="$DATA_DIR" CFG_ROOT="$CONFIG_DIR" \
 		CLIENTS_FILE="${CLIENTS_FILE:-$CONFIG_DIR/clients.list}" \
 			exec "$APP_DIR/scripts/router/pipeline.sh" "$@" ;;
+	backup)   exec "$APP_DIR/scripts/router/backup-nodes-tester.sh" "$@" ;;
+	rollback) exec "$APP_DIR/scripts/router/rollback-nodes-tester.sh" "$@" ;;
 	*)
-		sed -n '3,11s/^# \{0,1\}//p' "$0" >&2
+		sed -n '3,13s/^# \{0,1\}//p' "$0" >&2
 		exit 2 ;;
 esac
