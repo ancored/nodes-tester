@@ -25,7 +25,10 @@ docker run --rm -v "nodes-tester-sdk-$SDK_TAG:/builder" \
     ./scripts/feeds update nodestester >/dev/null
     ./scripts/feeds install -p nodestester nodes-tester >/dev/null
     make defconfig >/dev/null
+    # код берётся из /src, а OpenWrt отслеживает изменения только в openwrt/nodes-tester:
+    # без clean подготовленный каталог в томе остаётся от прошлой сборки той же версии
+    make package/nodes-tester/clean >/dev/null
     make package/nodes-tester/compile -j"$(nproc)" V=s
-    rm -f /dist/nodes-tester*
+    # прежние версии в dist/ не удаляем: они нужны для отката
     find bin/packages -name "nodes-tester*" \( -name "*.apk" -o -name "*.ipk" \) -exec cp -v {} /dist/ \;
 '
