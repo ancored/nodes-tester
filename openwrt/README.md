@@ -64,6 +64,24 @@ apk add --allow-untrusted /tmp/nodes-tester-0.1.0-r1.apk
 
 В `groups_params.json` проверьте `rename.domain_resolver_tag`: по умолчанию это `bootstrap`, такой DNS-тег должен существовать в вашей конфигурации sing-box. Если у вас другой тег, укажите его. Фильтры задаются здесь, в `filters`, а не в старых `exclude_*` полях providers. Список параметров есть в [схеме](../schemas/groups_params.schema.json).
 
+### Выбрать совместимое ядро
+
+Парсер сохраняет XHTTP и AmneziaWG. Эти ноды требуют `sing-box-lx`; обычный sing-box их не
+принимает. Если используется обычное ядро, добавьте в `groups_params.json`:
+
+```json
+{
+  "filters": {
+    "exclude_protocols": ["xhttp", "wg"]
+  }
+}
+```
+
+`wg` исключает и AWG, и обычный WireGuard. Варианты настройки и порядок проверки описаны
+в [руководстве по совместимости](../docs/SING_BOX_COMPATIBILITY.md). До применения всегда
+запускайте `nodes-tester pipeline router --dry-run`: он выполняет `sing-box check` тем
+ядром, которое установлено на роутере.
+
 Скачайте подписки и соберите фрагмент, пока не меняя рабочий sing-box:
 
 ```sh
