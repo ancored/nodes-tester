@@ -51,6 +51,8 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Данные | `/api/data`, `/api/rating`, `/api/results` и другие срезы | чтение SQLite и состояния |
 | Конфиг | `/api/config`, `/api/config/schema` | чтение и атомарная запись `config.json` |
 | Источники | `/api/config/providers` | чтение и запись файла `dashboard.providers_file` |
+| Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent и стандартные заголовки Happ |
+| Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды и точный payload CRC (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
 | Переключение | `/api/regions/{region}/switch` | ручной выбор кандидата |
 | Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
@@ -67,8 +69,27 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 Сервер использует маркер версии прочитанного файла. Если файл изменился в другом окне или
 по SSH, запись устаревшего черновика отклоняется.
 
-Сохранение providers не запускает fetch, config или применение sing-box. Фильтры
-`groups_params.json` также не редактируются этим API.
+На странице «Подписки и сборка» доступны два редактора: источники и `groups_params.json`.
+Файл рецепта по умолчанию расположен рядом с `dashboard.providers_file`. Для другого
+пути задайте `dashboard.groups_file` (относительный путь считается от `config.json`).
+Если файл отсутствует, редактор показывает пустой рецепт с дефолтами и создаёт файл
+при сохранении. Неизвестные поля сохраняются; неверные параметры отклоняются.
+
+Для обычных URL можно выбрать стандартный браузерный User-Agent, `curl`, `clashmeta`
+или свою строку. Он используется только при HTTP-загрузке. Для Happ crypt–crypt5
+редактируется набор `happ_headers`, включая его собственный User-Agent; значения
+по умолчанию берутся непосредственно из загрузчика, отдельный `user_agent` игнорируется.
+
+Сохранение providers или groups не запускает fetch, config или применение sing-box.
+Путь raw и выход `nodes.json` задаёт внешний конвейер через `-o`, а не рецепт сборки.
+В пакете OpenWrt raw хранится в `/opt/nodes-tester/raw/main.json` и `wh.json`, выход
+router — `/etc/sing-box-subscribe/nodes.json`, clients — `whnodes.json` в том же каталоге.
+`storage.nodes_file` задаёт файл описаний для тестера, а не выход конвейера.
+
+JSON в карточке берётся из `storage.nodes_file`; если фрагмента там нет, доступная
+часть восстанавливается из tag и payload SQLite с пояснением об отсутствующих полях.
+Цветом выделяются поля, которые входят в `naming.node_payload`. История рейтинга
+показывает все сохранённые замеры ноды с датой и временем, график — последние 24.
 
 ## Статика и маршрутизация
 
@@ -92,6 +113,6 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | `data.py` | запросы и агрегаты из SQLite |
 | `api_read.py` | читающие маршруты |
 | `api_control.py` | действия над нодами, регионами и Runner |
-| `api_config.py` | редактор `config.json` и providers |
+| `api_config.py` | редакторы `config.json`, providers и `groups_params.json` |
 | `api_session.py` | возможности режима и проверка сессии |
 | `static/` | собранный Vue SPA |

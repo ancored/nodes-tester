@@ -16,14 +16,18 @@ const kpis=computed(()=>[
   <section class="panel">
     <h2>Состояние системы</h2>
     <dl class="facts">
-      <dt>Данные</dt><dd>{{ s.error ? 'Ошибка чтения; свежесть не подтверждена' : s.data.source?.message || 'Получаем снимок…' }}</dd>
-      <dt>Тестер</dt><dd>{{ runner ? PHASES[runner.progress?.phase] || (runner.running ? 'Процесс запущен' : 'Остановлен') : 'Живое состояние недоступно в отдельной админке' }}</dd>
+      <dt>Этап тестера</dt><dd>{{ runner ? (runner.running ? PHASES[runner.progress?.phase] || 'Процесс запущен' : 'Остановлен') : 'Живое состояние недоступно в отдельной админке' }}<template v-if="runner?.running && runner.progress?.total"> · обработано {{ runner.progress.processed }} из {{ runner.progress.total }} нод (включая пропуски)</template></dd>
+      <template v-if="runner?.running && runner.progress?.node"><dt>Текущая нода</dt><dd>{{ runner.progress.node }}</dd></template>
+      <template v-if="runner"><dt>Проход</dt><dd>{{ runner.day || '—' }} / {{ runner.pass || '—' }} · <RouterLink to="/runs">Подробности и журнал</RouterLink></dd></template>
       <dt>Последний замер в базе</dt><dd>{{ dateTime(s.data.source?.last_measurement) }}</dd>
       <dt>Настройки и управление</dt><dd>{{ auth.verified ? 'Токен проверен' : 'Доступен просмотр; войдите для действий' }}</dd>
     </dl>
+    <p v-if="s.error || s.data.source?.state !== 'ok'" class="notice bad">{{ s.error || s.data.source?.message || 'Получаем данные…' }}</p>
+    <p class="mut">Этап показывает, чем тестер занят сейчас. Один проход может длиться долго: прогресс обновляется после обработки каждой ноды.</p>
     <p class="mut">Доступность этой страницы не подтверждает работу sing-box. Проверки соединения выполняет тестер; их результаты доступны у каждой ноды.</p>
     <p v-if="runner?.request_queued" class="notice">Внеплановая проверка ожидает начала. Повторный запрос не создаст отдельную очередь.</p>
   </section>
+  <h2>Ноды: количество и состояние</h2>
   <div class="kpis"><div v-for="[label,value] in kpis" :key="label" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? value : '—' }}</div></div></div>
   <section class="panel">
     <h2>Что настраивать и где смотреть</h2>
@@ -37,7 +41,7 @@ const kpis=computed(()=>[
     <a href="https://github.com/andreydyadyk/nodes-tester/blob/master/openwrt/README.md" target="_blank" rel="noopener noreferrer">Первый запуск на OpenWrt по SSH</a>
   </section>
   <section class="panel">
-    <h2>Выбор переключателя по регионам</h2>
+    <h2>Активные ноды по регионам</h2>
     <p v-if="!runner">Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.</p>
     <p v-else-if="!runner.regions?.length">{{ runner.switching ? 'Переключатель пока не выбрал ноды регионов.' : 'Автоматическое переключение отключено.' }}</p>
     <p v-for="r in runner?.regions || []" :key="r.region" class="break"><b>{{ r.region }}</b> · {{ r.active || 'Нода не выбрана' }}</p>

@@ -284,6 +284,7 @@ class DashboardConfig:
     token: str = ""                  # shared-токен для write/control ("" = write выкл.)
     read_open: bool = True           # просмотр без токена
     providers_file: str = ""         # подписки для редактора ("" = рядом с config.json)
+    groups_file: str = ""            # "" = groups_params.json рядом с providers_file
 
 
 @dataclass
@@ -473,6 +474,9 @@ def _validate(cfg: Config) -> None:
         raise ValueError("dashboard.enabled/read_open должны быть boolean")
     if not isinstance(cfg.dashboard.token, str):
         raise ValueError("dashboard.token должен быть строкой")
+    for key in ("providers_file", "groups_file"):
+        if not isinstance(getattr(cfg.dashboard, key), str):
+            raise ValueError(f"dashboard.{key} должен быть строкой")
     # Предупреждение: набор тестов без scoring-компонента даёт всем нодам score 0
     # (напр. только connectivity — он лишь gate). Тогда candidates() пуст → нет выбора.
     excl = {r.lower() for r in cfg.region_groups.exclude}

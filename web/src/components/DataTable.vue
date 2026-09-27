@@ -34,7 +34,7 @@ const page = computed({
 })
 const slice = computed(()=>filtered.value.slice(page.value*props.pageSize,(page.value+1)*props.pageSize))
 function cellText(c,r) { return c.fmt ? c.fmt(r[c.key],r) : r[c.key] ?? '—' }
-function rowKey(r) { return JSON.stringify([crcOf(r),r.ts,r.region,r.provider,r.protocol,r.country,r.cc,r.source_ip,r.dest_host,r.network,r.node,r.removed_at]) }
+function rowKey(r) { return JSON.stringify([crcOf(r),r.sample_id,r.ts,r.region,r.provider,r.protocol,r.country,r.cc,r.source_ip,r.dest_host,r.network,r.node,r.removed_at]) }
 function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value === '-'+c.key ? '' : c.key) }
 </script>
 <template>

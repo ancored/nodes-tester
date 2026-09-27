@@ -60,6 +60,44 @@ def _providers_path(app: App) -> str:
     return os.path.abspath(os.path.join(_cfg_dir(app), configured))
 
 
+def _groups_path(app: App) -> str:
+    configured = (getattr(app.cfg.dashboard, "groups_file", "") or "").strip()
+    if configured:
+        return os.path.abspath(os.path.join(_cfg_dir(app), configured))
+    return os.path.join(os.path.dirname(_providers_path(app)), "groups_params.json")
+
+
+def _validate_groups(data):
+    from nodes_config.params import load
+    try:
+        load(data)
+        for key in ("raw_user_nodes",):
+            if key in data and not isinstance(data[key], bool):
+                raise ValueError(f"{key}: ожидается boolean")
+        emit = data.get("emit", {})
+        for key in ("nodes_tester", "global_failsafe"):
+            if key in emit and not isinstance(emit[key], bool):
+                raise ValueError(f"emit.{key}: ожидается boolean")
+        if any(r not in ("eu", "us", "ru", "other") for r in emit.get("ensure_regions", [])):
+            raise ValueError("emit.ensure_regions: допустимы eu, us, ru, other")
+        schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schemas", "groups_params.schema.json")
+        try:
+            import jsonschema
+        except ImportError:
+            pass
+        else:
+            with open(schema_path, encoding="utf-8") as fh:
+                schema = json.load(fh)
+            jsonschema.validate(data, schema)
+    except (ValueError, TypeError) as exc:
+        raise HttpError(400, f"groups_params невалиден: {exc}") from exc
+    except Exception as exc:
+        # jsonschema.ValidationError does not inherit ValueError.
+        if exc.__class__.__name__ == "ValidationError":
+            raise HttpError(400, f"groups_params невалиден: {exc.message}") from exc
+        raise
+
+
 def _atomic_write(path: str, text: str) -> None:
     # Симлинк сохраняется: пишем в файл, на который он указывает (os.replace по самому
     # симлинку заменил бы его обычным файлом, и nodes_fetch читал бы старую цель).
@@ -182,5 +220,38 @@ def register(app: App) -> None:
         path = _providers_path(app)
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         revision = _save(req, path, text)
+        return {"ok": True, "path": path, "revision": revision,
+                "application_state": "not_applied_by_dashboard"}
+
+    @app.route("GET", "/api/config/subscription-options", needs_token=True)
+    def subscription_options(app, req):
+        from nodes_fetch.util import DEFAULT_UA
+        from nodes_fetch.happ import _HEADERS
+        from nodes_config.params import load
+        from nodes_config.groups import DEFAULT_ENSURE_REGIONS
+        group_defaults = load()
+        group_defaults["emit"] = {"nodes_tester": True, "global_failsafe": False,
+                                  "ensure_regions": list(DEFAULT_ENSURE_REGIONS)}
+        return {"user_agents": [
+            {"value": "", "label": "По умолчанию (Safari)", "effective": DEFAULT_UA},
+            {"value": "curl", "label": "curl"},
+            {"value": "clashmeta", "label": "Clash Meta (clashmeta)"},
+        ], "happ_headers": dict(_HEADERS), "group_defaults": group_defaults}
+
+    @app.route("GET", "/api/config/groups", needs_token=True)
+    def get_groups(app, req):
+        path = _groups_path(app)
+        with _edit_lock:
+            result = _document(path) if os.path.exists(path) else {"path": path, "data": {}, "revision": "missing"}
+        return {**result, "application_state": "unknown"}
+
+    @app.route("PUT", "/api/config/groups", needs_token=True)
+    def put_groups(app, req):
+        data = req.json()
+        if not isinstance(data, dict):
+            raise HttpError(400, "groups_params.json должен быть объектом")
+        _validate_groups(data)
+        path = _groups_path(app)
+        revision = _save(req, path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         return {"ok": True, "path": path, "revision": revision,
                 "application_state": "not_applied_by_dashboard"}

@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import closing
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -26,6 +27,51 @@ _SCORE_SELECT = (
 def _scores(db_path: str) -> list[dict]:
     """Снимок рейтинга из таблицы scores (замена чтения score.csv)."""
     return _query(db_path, _SCORE_SELECT)
+
+
+def node_detail(cfg, crc: str, include_config=False) -> dict:
+    """Read one node's retained history; secrets only for the authenticated route."""
+    from naming import node_payload, content_crc32
+    db = cfg.storage.db_file
+    if not cfg.storage.enabled or not db or not os.path.exists(db):
+        return {}
+    # closing(): the sqlite3 context manager only commits, it does not close.
+    with closing(sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True)) as con:
+        con.row_factory = sqlite3.Row
+        con.execute("BEGIN")
+        node = con.execute("SELECT tag, payload FROM nodes WHERE crc=?", (crc,)).fetchone()
+        if node is None:
+            return {}
+        history = [dict(r) for r in con.execute(
+            "SELECT rowid AS sample_id, ts, score FROM score_history WHERE crc=? ORDER BY ts DESC, rowid DESC", (crc,))]
+        result = {"score_history": history}
+        if not include_config:
+            return result
+        fragment = None
+        source = "sqlite"
+        try:
+            with open(cfg.storage.nodes_file, encoding="utf-8") as fh:
+                config = json.load(fh)
+            items = (config.get("outbounds", []) + config.get("endpoints", [])) if isinstance(config, dict) else config
+            fragment = next((ob for ob in items if isinstance(ob, dict)
+                             and parse_node(ob.get("tag", "")).node_id == crc), None)
+        except (OSError, ValueError, TypeError):
+            pass
+        if fragment is not None:
+            source = "nodes_file"
+        else:
+            try:
+                payload = json.loads(node["payload"] or "null")
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                fragment = {"tag": node["tag"], **payload}
+        if fragment is not None:
+            canonical = node_payload(fragment)
+            result.update(fragment=fragment, payload=canonical, crc_fields=list(json.loads(canonical)),
+                          calculated_crc=content_crc32(fragment), fragment_source=source,
+                          nodes_file=cfg.storage.nodes_file)
+        return result
 
 
 def _query(db_path: str, sql: str) -> list[dict]:

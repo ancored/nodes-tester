@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from .data import collect
+from .data import collect, node_detail
 from .webapp import App, HttpError, Response
 
 # Узкий эндпоинт → какие ключи снимка collect() он отдаёт.
@@ -24,6 +24,26 @@ _SLICES = {
 
 def register(app: App) -> None:
     open_read = app.read_open
+
+    def read_node(app, crc, include_config=False):
+        import re
+        if not re.fullmatch(r"[0-9a-fA-F]{8}", crc):
+            raise HttpError(400, "crc должен состоять из 8 hex-символов")
+        try:
+            result = node_detail(app.cfg, crc.lower(), include_config)
+        except Exception as exc:
+            raise HttpError(500, f"Не удалось прочитать сведения ноды: {exc}") from exc
+        if not result:
+            raise HttpError(404, "Нода не найдена в базе")
+        return result
+
+    @app.route("GET", "/api/nodes/{crc}/score-history", needs_token=not open_read)
+    def score_history(app, req, crc):
+        return read_node(app, crc)
+
+    @app.route("GET", "/api/nodes/{crc}/details", needs_token=True)
+    def details(app, req, crc):
+        return read_node(app, crc, include_config=True)
 
     def _snapshot(app: App) -> dict:
         try:

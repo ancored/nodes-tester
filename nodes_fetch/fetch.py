@@ -63,6 +63,14 @@ def load_providers(data, log=print):
         norm = dict(sub)
         norm["kind"] = kind
         norm["enabled"] = sub.get("enabled", True) is not False
+        for key in ("user_agent", "User-Agent"):
+            if key in sub and not isinstance(sub[key], str):
+                raise ProvidersError(f"подписка {tag!r}: {key} должен быть строкой")
+        headers = sub.get("happ_headers", {})
+        if not isinstance(headers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
+            raise ProvidersError(f"подписка {tag!r}: happ_headers должен быть объектом со строковыми значениями")
+        if any(not k.strip() or any(c in k + v for c in '\r\n') for k, v in headers.items()):
+            raise ProvidersError(f"подписка {tag!r}: некорректное имя или значение HTTP-заголовка")
         if "User-Agent" in norm and "user_agent" not in norm:
             norm["user_agent"] = norm.pop("User-Agent")
         subs.append(norm)

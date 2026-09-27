@@ -13,7 +13,7 @@ onMounted(initSession)
 <template>
   <div class="layout">
     <aside class="sidebar">
-      <div class="brand">nodes-tester <button class="btn mobile-menu" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen">Меню</button></div>
+      <div class="brand"><span class="brand-identity"><img class="project-icon" src="/nodes-tester-icon.svg" width="32" height="32" alt="" />nodes-tester</span><button class="btn mobile-menu" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen">Меню</button></div>
       <nav class="nav" :class="{ expanded: menuOpen }" aria-label="Основные разделы">
         <RouterLink v-for="item in sections" :key="item.path" :to="item.path" @click="menuOpen = false" :class="{ selected: item.path === '/nodes' && isNodes }">{{ item.name }}</RouterLink>
       </nav>

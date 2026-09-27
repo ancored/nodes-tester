@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="nodes-tester">
+  <defs>
+    <linearGradient id="active" x1="24" y1="7" x2="24" y2="19" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#62bbff"/>
+      <stop offset="1" stop-color="#2f8be0"/>
+    </linearGradient>
+    <style>
+      .link  { stroke: #4dabf7; }
+      .node  { fill:   #4dabf7; }
+      .pulse { stroke: #4dabf7; }
+      @media (prefers-color-scheme: light) {
+        .link  { stroke: #2f6fc0; }
+        .node  { fill:   #2f6fc0; }
+        .pulse { stroke: #2f6fc0; }
+      }
+    </style>
+  </defs>
+  <g fill="none" stroke-linecap="round">
+    <path class="link" stroke-opacity=".42" stroke-width="2.4" d="M24 17.5 L12.5 35"/>
+    <path class="link" stroke-opacity=".42" stroke-width="2.4" d="M24 17.5 L35.5 35"/>
+    <path class="link" stroke-opacity=".20" stroke-width="2.2" d="M14 35 H34"/>
+  </g>
+  <circle class="pulse" cx="24" cy="13" r="9.6" fill="none" stroke-opacity=".10" stroke-width="1.5"/>
+  <circle class="pulse" cx="24" cy="13" r="7.3" fill="none" stroke-opacity=".22" stroke-width="1.5"/>
+  <circle class="node" cx="12.5" cy="35" r="3.6" opacity=".5"/>
+  <circle class="node" cx="35.5" cy="35" r="3.6" opacity=".5"/>
+  <circle cx="24" cy="13" r="4.7" fill="url(#active)"/>
+</svg>
