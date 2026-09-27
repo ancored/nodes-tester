@@ -23,3 +23,6 @@ scripts/router/clients.list
 
 # собранные пакеты (openwrt/build.sh)
 /dist/
+
+# Техническая документация, планы и ревью остаются только в локальном checkout
+/docs-local/

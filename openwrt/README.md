@@ -1,111 +1,135 @@
-# Пакет nodes-tester для OpenWrt
+# Установка и первый запуск на OpenWrt
 
-Пакет устанавливает `nodes_fetch`, `nodes_config`, `nodes_tester`, веб-админку `dashboard` и роутерные скрипты. Python-код не зависит от архитектуры, поэтому Makefile задаёт `PKGARCH:=all`. OpenWrt 25.x использует `.apk`, OpenWrt 24.10 и более ранние версии - `.ipk`.
+[О проекте](../README.md) · [Админка и повседневная работа](../docs/USAGE.md)
 
-## Перед началом
+Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
 
-Для сборки нужен Docker. Для установки потребуется SSH-доступ к роутеру. Пакет пока не подписан, поэтому локальную сборку устанавливают с `--allow-untrusted`.
+## 1. Установить пакет
 
-## Сборка
+Скачайте подходящий файл из [релизов](https://github.com/andreydyadyk/nodes-tester/releases). В `v0.1.0` опубликован `nodes-tester-0.1.0-r1.apk` для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk`.
 
-Скрипт использует официальный OpenWrt SDK:
+Для `v0.1.0` SHA-256 файла `.apk`:
 
-```bash
-openwrt/build.sh                    # SDK x86-64-25.12.2 → dist/nodes-tester-<версия>.apk
-openwrt/build.sh mediatek-filogic-24.10.4   # другой SDK (формат пакета - по версии OpenWrt)
+```text
+94888837e7f2c3f0976004e869a463130e0c6f10adb36fdcf74e8539dca8bddb
 ```
 
-Зависимости из фидов OpenWrt при сборке не компилируются - они записаны в метаданные пакета
-(`EXTRA_DEPENDS`), и `apk` ставит готовые на роутере. Поэтому сборка занимает секунды; SDK
-кешируется в docker-томе `nodes-tester-sdk-<тег>` (сбросить: `docker volume rm …`).
+Пакет не подписан. `--allow-untrusted` разрешает установку без проверки подписи: используйте его только для доверенного файла этого проекта. Контрольная сумма проверяет совпадение файла, но не заменяет подпись.
 
-## Установка
-
-```bash
-scp -O dist/nodes-tester-*.apk root@<роутер>:/tmp/
-ssh root@<роутер> apk add --allow-untrusted /tmp/nodes-tester-*.apk
-```
-
-`--allow-untrusted` нужен, пока пакет не подписан ключом своего репозитория. Зависимости
-(`python3-light`, `python3-requests`, `python3-jsonschema`, `python3-ruamel-yaml` и др.)
-`apk` подтянет из фидов OpenWrt сам. PySocks в фидах нет - он вложен в пакет.
-
-Если раньше зависимости ставились через `pip`, `apk` запишет свои версии поверх них в тот же
-site-packages, и получится смесь двух версий. Перед установкой (или сразу после) уберите
-pip-копии и переустановите пакеты фидов:
+С компьютера передайте файл на роутер; замените `192.168.1.1` своим адресом:
 
 ```sh
-pip3 uninstall -y --break-system-packages jsonschema jsonschema-specifications referencing rpds-py ruamel.yaml attrs
-apk fix --reinstall python3-attrs python3-jsonschema python3-jsonschema-specifications \
-    python3-referencing python3-rpds-py python3-ruamel-yaml
+scp -O nodes-tester-0.1.0-r1.apk root@192.168.1.1:/tmp/
+ssh root@192.168.1.1
 ```
 
-## Переход с ручной установки
-
-1. Остановить и убрать старый init-скрипт (`/etc/init.d/nodes-tester stop; … disable`), иначе
-   `apk` положит пакетный рядом как `.apk-new`.
-2. Поставить пакет, затем перенести `config.json` в `/etc/nodes-tester/` (относительный
-   `dashboard.providers_file` теперь отсчитывается от этого каталога). Каталоги `config-main/`
-   и `config-wh/` перенести в `/etc/nodes-tester/`, `stats.db` - в
-   `/opt/nodes-tester/results/` при остановленном тестере или через sqlite backup, а raw
-   подписок - в `/opt/nodes-tester/raw/`.
-3. Заменить в cron вызовы `pipeline.sh` и `--vacuum` на `nodes-tester pipeline …` и
-   `nodes-tester vacuum`, включить сервис (`uci set nodes-tester.tester.enabled=1`).
-
-## Что где лежит
-
-| Путь | Что | При обновлении пакета |
-|---|---|---|
-| `/usr/lib/nodes-tester/` | код (Python-пакеты, `scripts/router/`) | заменяется |
-| `/etc/config/nodes-tester` | UCI: пути, включение сервиса | сохраняется |
-| `/etc/nodes-tester/config.json` | конфиг тестера и админки | сохраняется |
-| `/etc/nodes-tester/config.schema.json` | JSON Schema конфига | заменяется |
-| `/etc/nodes-tester/config-main/`, `config-wh/` | `providers.json`, `groups_params.json`, `user_nodes.json` для конвейера | сохраняются |
-| `/opt/nodes-tester/` (`data_dir`) | `results/stats.db`, raw подписок, кандидаты конфига sing-box | не трогается |
-| `/usr/share/nodes-tester/examples/` | шаблоны конфигов | заменяются |
-
-`data_dir` должен быть на постоянном носителе: `/tmp` и `/var` на OpenWrt находятся в RAM.
-На роутерах с маленьким флешем его лучше вынести на USB (`uci set nodes-tester.main.data_dir=…`).
-
-## Первый запуск
-
-При первой установке создаются `config.json` (со случайным `dashboard.token`),
-`config-main/` и `config-wh/` из шаблонов. Дальше:
-
-1. Настроить sing-box (SOCKS5 inbound, селектор `nodes-tester`, route-правило) - см.
-   [README](../README.md#1-настройка-sing-box-один-раз).
-2. В `/etc/nodes-tester/config.json` вписать `clash_api.secret`, при необходимости
-   включить `dashboard.enabled`; в `config-main/providers.json` - подписки.
-3. Включить и запустить тестер:
-   ```sh
-   uci set nodes-tester.tester.enabled=1 && uci commit nodes-tester
-   /etc/init.d/nodes-tester start
-   ```
-
-Веб-админка встроена в тестер: включается блоком `dashboard` в `config.json`
-(`enabled`, `host`, `port`, `token`), отдельного сервиса нет.
-
-## Команда `nodes-tester`
-
-Запускает компоненты с путями из UCI (рабочий каталог - `data_dir`):
+Далее команды выполняются на роутере:
 
 ```sh
-nodes-tester fetch -p /etc/nodes-tester/config-main/providers.json --dry-run --json
-nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups … -o … --check
-nodes-tester tester --list-tests
-nodes-tester vacuum
-nodes-tester pipeline router --dry-run
+apk update
+apk add --allow-untrusted /tmp/nodes-tester-0.1.0-r1.apk
 ```
 
-## cron
+Зависимости Python устанавливаются из фидов OpenWrt; PySocks входит в пакет. Не смешивайте эти зависимости с копиями, установленными через `pip`. Если раньше использовали `pip`, сначала разберите старую установку и восстановите пакетные зависимости.
 
-Пакет не добавляет задания в cron: конвейер `pipeline.sh` применяет конфиг к sing-box и
-перезапускает его, это решение пользователя. Пример для `/etc/crontabs/root`:
+Для самостоятельной сборки нужен Docker: из корня исходников выполните `openwrt/build.sh` для SDK по умолчанию либо `openwrt/build.sh mediatek-filogic-24.10.4` для `.ipk`. Результат появится в `dist/`. SDK должен соответствовать версии целевого OpenWrt.
 
+## 2. Найти файлы и выбрать хранилище
+
+| Где | Что настроить |
+|---|---|
+| `/etc/config/nodes-tester` | UCI: `main.config_dir`, `main.data_dir`, `tester.enabled` |
+| `/etc/nodes-tester/config.json` | Подключение тестера к sing-box, тесты, переключение, админка |
+| `/etc/nodes-tester/config-main/providers.json` | Подписки для роутера |
+| `/etc/nodes-tester/config-main/groups_params.json` | Фильтры, имена и группы создаваемых нод |
+| `/opt/nodes-tester/results/stats.db` | Результаты и статистика; создаются при работе |
+
+Это пути по умолчанию. Если меняете их в UCI, скорректируйте дальнейшие команды и связанные пути в JSON. `data_dir` должен быть на постоянном носителе; `/tmp` и `/var` на OpenWrt находятся в RAM. На роутере с небольшим флешем используйте подходящий USB-носитель.
+
+Установщик создаёт шаблонные конфиги и случайный `dashboard.token`. Сервис пока выключен. Каталог `config-wh/` нужен для отдельной клиентской ветки и для первого запуска на роутере не требуется.
+
+## 3. Настроить подписку и собрать ноды
+
+В `config-main/providers.json` оставьте свои источники; удалите демонстрационные URL и записи, которыми не пользуетесь. Минимальный пример:
+
+```json
+{
+  "subscribes": [
+    { "tag": "MY-PROVIDER", "url": "https://provider.example/sub/YOUR-TOKEN" }
+  ]
+}
 ```
-0 4 1 * * nodes-tester vacuum
-0 3 * * * nodes-tester pipeline router >> /var/log/nodes-pipeline.log 2>&1
+
+`tag` — уникальное имя провайдера в интерфейсе. Файл может содержать несколько подписок; также поддерживаются `happ://`, локальные файлы и папки AWG. Все URL и ключи остаются только на роутере.
+
+В `groups_params.json` проверьте `rename.domain_resolver_tag`: по умолчанию это `bootstrap`, такой DNS-тег должен существовать в вашей конфигурации sing-box. Если у вас другой тег, укажите его. Фильтры задаются здесь, в `filters`, а не в старых `exclude_*` полях providers. Список параметров есть в [схеме](../schemas/groups_params.schema.json).
+
+Скачайте подписки и соберите фрагмент, пока не меняя рабочий sing-box:
+
+```sh
+mkdir -p /opt/nodes-tester/raw /etc/sing-box-subscribe
+nodes-tester fetch -p /etc/nodes-tester/config-main/providers.json -o /opt/nodes-tester/raw/main.json --json
+nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-tester/config-main/groups_params.json -o /etc/sing-box-subscribe/nodes.json --json
 ```
 
-`pipeline router` использует `update-rules.sh` и `apply-nodes.sh`: базовый конфиг
-`/etc/sing-box/base.json` и репозиторий правил (`REPO_DIR`, по умолчанию `/root/singbox-repo`).
+Проверьте отчёт обеих команд: источники, ошибки и число собранных нод. При отказе защитной проверки fetch возвращает код `2` и сохраняет предыдущий raw; это не новое успешное обновление. Не продолжайте первый запуск с пустой или неудачно загруженной подпиской.
+
+`nodes.json` содержит `outbounds` и, для соответствующих протоколов, `endpoints`. Он не является полной конфигурацией sing-box. Ноды с определённой страной получают региональные группы и плоский тестовый селектор `nodes-tester`; если нужного селектора нет, сначала разберите отчёт сборки и распознавание стран.
+
+## 4. Подключить фрагмент к sing-box
+
+Сделайте резервную копию рабочей конфигурации. Добавьте содержимое `outbounds`/`endpoints` из фрагмента в неё без повторяющихся тегов или объедините фрагмент со своей базой через `sing-box merge`. Не заменяйте весь рабочий конфиг одним `nodes.json`.
+
+Для тестера нужны три элемента:
+
+- Clash API с адресом и секретом, доступными тестеру.
+- SOCKS inbound для проверок, например:
+
+  ```json
+  { "type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080 }
+  ```
+
+- Правило в начале `route.rules`, отправляющее этот inbound в созданный селектор:
+
+  ```json
+  { "inbound": ["nodes-tester-in"], "outbound": "nodes-tester" }
+  ```
+
+Сам `nodes-tester` уже создан сборщиком: все проверяемые ноды должны быть его прямыми членами, без вложенных тестовых селекторов. Пользовательский трафик оставьте на рабочих группах; не направляйте его в тестовый selector, который будет постоянно переключаться.
+
+Проверьте итоговый файл своей версией sing-box перед перезапуском, например `sing-box check -c /etc/sing-box/config.json`. Примените его обычным для своей установки способом и убедитесь, что пользовательский трафик продолжает работать. Поддержка протоколов зависит от установленной сборки sing-box; список парсеров подписок не гарантирует поддержку ядром.
+
+Готовый `nodes-tester pipeline router` не является универсальной командой настройки: он также обновляет базу и правила через `REPO_DIR` (по умолчанию `/root/singbox-repo`). Используйте его только с подготовленными `/etc/sing-box/base.json`, источниками правил и согласованной структурой рабочих групп. Он может заменить конфиг и перезапустить sing-box.
+
+## 5. Настроить тестер и включить админку
+
+В `/etc/nodes-tester/config.json` измените обязательные поля:
+
+| Поле | Что указать |
+|---|---|
+| `clash_api.base_url`, `clash_api.secret` | Адрес и секрет действующего Clash API |
+| `testing_groups[0].connection` | SOCKS из предыдущего шага: по примеру `127.0.0.1:2080` |
+| `testing_groups[0].selector.group` | `nodes-tester` |
+| `storage.nodes_file` | Путь к собранному фрагменту, по примеру `/etc/sing-box-subscribe/nodes.json` |
+| `dashboard.enabled` | `true` для веб-интерфейса |
+| `dashboard.host`, `dashboard.port` | Адрес интерфейса LAN роутера и порт, по примеру `8088` |
+| `dashboard.providers_file` | `config-main/providers.json`; установщик уже задаёт это значение |
+
+Сохраните созданный установщиком `dashboard.token`. Ограничьте доступ к порту админки локальной сетью; при `read_open: true` просмотр статистики доступен без токена. Для закрытого просмотра задайте `false`. Не открывайте порт в WAN.
+
+В шаблоне включены `switching.enabled` и `monitor.enabled`: тестер может управлять рабочими селекторами, а монитор возвращать выбранную ноду. Для первого знакомства без такого управления задайте оба поля `false`. Позже включайте их осознанно после проверки групп. `run.default.rotation_bound` связывает проходы с ротацией только при доступном переключателе; без него настройте `run.default.pass_pause`, например `3600`, чтобы проверки не повторялись непрерывно.
+
+В `run.default.tests_enabled` выбран набор тестов, включая загрузку файлов. Проверьте расходы трафика и `region_groups.exclude` (в шаблоне исключён `ru`). Полный перечень настроек есть в [шаблоне](../config/config.example.json) и [схеме](../config/config.schema.json).
+
+Запустите сервис:
+
+```sh
+uci set nodes-tester.tester.enabled=1
+uci commit nodes-tester
+/etc/init.d/nodes-tester start
+logread -e nodes-tester
+```
+
+Откройте `http://192.168.1.1:8088/` с учётом выбранных адреса и порта. Для управления введите в шапке `dashboard.token` из своего конфига. Результаты появятся по мере проверок; большой набор нод и межхостовые паузы требуют времени.
+
+Дальше: [где смотреть результаты, как менять настройки и обновлять ноды](../docs/USAGE.md).
