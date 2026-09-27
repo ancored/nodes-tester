@@ -70,6 +70,10 @@ class Runner:
         # Админка (Фаза 2-3): живой лог, внеплановый прогон, статус.
         self.log = LogRing()
         self._pass_requested = threading.Event()
+        self._request_lock = threading.Lock()
+        self._progress = {"phase": "stopped", "processed": 0, "total": 0, "node": None}
+        self._last_pass_result = None
+        self._wait_until = None
         self._current_pass = 0
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
@@ -221,6 +225,7 @@ class Runner:
         sys.stderr = TeeStream(self.log, self._stderr_orig)
 
         self._running = True
+        self._progress = {"phase": "initializing", "processed": 0, "total": 0, "node": None}
         self._base = self.cfg.run.for_group(self.cfg.testing_group.tag)
         self._tests_cache: dict = {}
         self._region_cache: dict = {}
@@ -283,11 +288,20 @@ class Runner:
                 self._current_pass = pass_no
                 self._current_day = current_day
                 empty = False
+                with self._request_lock:
+                    self._pass_requested.clear()
+                started = time.time()
+                error = None
                 try:
                     empty = self._run_pass(pass_no)
                 except ClashApiError as exc:
                     print(f"[!] Прогон #{pass_no} прерван ошибкой Clash API: {exc}")
                     empty = True                       # API-сбой → тоже выдержим паузу
+                    error = str(exc)
+                self._last_pass_result = {"pass": pass_no, "started": started,
+                                          "finished": time.time(),
+                                          "outcome": "error" if error else "empty" if empty else "completed",
+                                          "error": error}
                 if self.storage is not None:
                     self.storage.set_meta("pass_day", current_day)
                     self.storage.set_meta("pass_no", pass_no)     # посуточный номер
@@ -305,6 +319,8 @@ class Runner:
             print("\nОстановлено пользователем.")
         finally:
             self._running = False
+            self._progress = {**self._progress, "phase": "stopped", "node": None}
+            self._wait_until = None
             if self.monitor is not None:
                 self.monitor.stop()
             if self.collector is not None:
@@ -327,15 +343,23 @@ class Runner:
 
     # --- Админка: внеплановый прогон, статус, встроенный сервер -----------
 
-    def request_pass(self) -> None:
+    def request_pass(self) -> bool:
         """Запросить внеплановый прогон (из админки). Прерывает текущее ожидание."""
-        self._pass_requested.set()
+        with self._request_lock:
+            fresh = not self._pass_requested.is_set()
+            self._pass_requested.set()
+            return fresh
 
     def _wait_interruptible(self, seconds: float) -> bool:
         """Ждать до `seconds`, но вернуться раньше (True), если запрошен прогон."""
+        self._progress = {**self._progress, "phase": "waiting", "node": None}
+        self._wait_until = time.time() + max(seconds, 0)
         if self._pass_requested.wait(seconds):
-            self._pass_requested.clear()
+            with self._request_lock:
+                self._pass_requested.clear()
+            self._wait_until = None
             return True
+        self._wait_until = None
         return False
 
     def status(self) -> dict:
@@ -350,6 +374,10 @@ class Runner:
             "rotation_bound": self._rotation_bound_active() if hasattr(self, "_base") else False,
             "regions": [],
             "next_rotation": None,
+            "progress": dict(self._progress),
+            "request_queued": self._pass_requested.is_set(),
+            "last_pass_result": self._last_pass_result,
+            "wait_until": self._wait_until,
         }
         if self.switcher is not None:
             for region in self.switcher.active_regions():
@@ -431,6 +459,7 @@ class Runner:
         # Снимок состояния хранилища ДО перечисления: бан влияет на список нод (skip),
         # backoff — на пропуск в обходе, endpoints — на host-aware раскладку.
         self._backoff = {}
+        self._progress = {"phase": "enumerating", "processed": 0, "total": 0, "node": None}
         self._endpoints: dict = {}
         self._banned = set()
         if self.storage is not None:
@@ -442,10 +471,10 @@ class Runner:
                 seq = 0
             self._pass_seq = max(self._pass_seq, seq) + 1
             self.storage.set_meta("pass_seq", self._pass_seq)
+            self._endpoints = self.storage.endpoints_by_crc()
+            self._banned = self.storage.banned_crcs()
         else:
             self._pass_seq += 1
-            self._endpoints = self.storage.endpoints_by_crc()   # crc -> (server, port)
-            self._banned = self.storage.banned_crcs()
 
         nodes = self._enumerate_nodes()
         if self.storage is not None:
@@ -464,7 +493,9 @@ class Runner:
             self.board.begin_pass()
 
         node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
-        for region, ident in self._order_by_host(nodes):   # host-aware обход
+        for index, (region, ident) in enumerate(self._order_by_host(nodes)):
+            self._progress = {"phase": "testing", "processed": index,
+                              "total": len(nodes), "node": ident.raw}
             params = self._region_params(region)
             if self._backed_off(ident.node_id):     # backoff/карантин — не тестируем
                 if self.board is not None:
@@ -484,7 +515,9 @@ class Runner:
         if self.board is not None:
             self.board.end_pass(pass_no)
         if self.switcher is not None:
+            self._progress = {**self._progress, "phase": "switching", "node": None}
             self.switcher.evaluate_all()
+        self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
 
     def _heavy_test(self):
@@ -525,7 +558,9 @@ class Runner:
         if not targets:
             return
         print(f"\n── Фаза 2 · тяжёлый download-veto — нод: {len(targets)} ──")
-        for region, ident in targets:
+        for index, (region, ident) in enumerate(targets):
+            self._progress = {"phase": "heavy_testing", "processed": index,
+                              "total": len(targets), "node": ident.raw}
             if self._backed_off(ident.node_id):     # backoff/карантин — не качаем
                 continue
             params = self._region_params(region)
@@ -579,6 +614,15 @@ class Runner:
         if reason == "garbage":
             return time.time() < until              # карантин — по времени
         return self._pass_seq <= until_pass         # пауза — по сквозному номеру прогона
+
+    def restricted_crcs(self) -> set:
+        """CRC с действующей паузой/карантином по свежему состоянию БД (для админки).
+        Истёкшая, но ещё не снятая запись garbage ограничением не считается."""
+        if not self.cfg.cooldown.enabled or self.storage is None:
+            return set()
+        now = time.time()
+        return {crc for crc, (until, until_pass, _s, reason) in self.storage.load_backoff().items()
+                if (now < until if reason == "garbage" else self._pass_seq <= until_pass)}
 
     def _backoff_update(self, crc: str, gate: bool) -> None:
         # Backoff персистентен → нужен storage. Без него ноды тестируются каждый проход.

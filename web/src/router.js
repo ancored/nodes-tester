@@ -9,22 +9,24 @@ import History from './views/History.vue'
 import Control from './views/Control.vue'
 import Runs from './views/Runs.vue'
 import Config from './views/Config.vue'
-
-// Hash-history: работает при раздаче статики без серверного роутинга.
+import NodeDetail from './views/NodeDetail.vue'
 export const sections = [
   { path: '/', name: 'Обзор', component: Overview },
+  { path: '/nodes', name: 'Ноды', component: Control },
+  { path: '/subscriptions', name: 'Подписки и сборка', component: Config },
+  { path: '/runs', name: 'Проверки', component: Runs },
+  { path: '/history', name: 'Переключения', component: History },
+  { path: '/traffic', name: 'Трафик', component: Traffic },
+  { path: '/config', name: 'Настройки', component: Config },
+]
+export const nodeSections = [
+  { path: '/nodes', name: 'Все ноды' },
   { path: '/rating', name: 'Рейтинг', component: Rating },
   { path: '/results', name: 'Результаты', component: Results },
-  { path: '/traffic', name: 'Трафик', component: Traffic },
-  { path: '/lifecycle', name: 'Жизненный цикл', component: Lifecycle },
-  { path: '/graveyard', name: 'Кладбище', component: Graveyard },
-  { path: '/history', name: 'Переключения', component: History },
-  { path: '/control', name: 'Управление', component: Control },
-  { path: '/runs', name: 'Прогоны', component: Runs },
-  { path: '/config', name: 'Конфиг', component: Config },
+  { path: '/lifecycle', name: 'Ограничения и качество', component: Lifecycle },
+  { path: '/graveyard', name: 'Архив', component: Graveyard },
 ]
-
-export const router = createRouter({
-  history: createWebHashHistory(),
-  routes: [...sections, { path: '/:pathMatch(.*)*', redirect: '/' }],
-})
+export const router = createRouter({ history: createWebHashHistory(), routes: [
+  ...sections, ...nodeSections.slice(1), { path: '/nodes/:crc', name: 'Карточка ноды', component: NodeDetail },
+  { path: '/control', redirect: '/nodes' }, { path: '/:pathMatch(.*)*', redirect: '/' },
+] })

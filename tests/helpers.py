@@ -14,10 +14,11 @@ def temp_dir() -> str:
 
 def make_config(tmp: str, **overrides) -> str:
     """Собрать рабочий config.json во временной папке (пути — в tmp). Возвращает путь."""
-    with open("config/config.json", encoding="utf-8") as fh:
+    with open("config/config.example.json", encoding="utf-8") as fh:
         cfg = json.load(fh)
     cfg["storage"]["db_file"] = os.path.join(tmp, "stats.db")
     cfg["storage"]["nodes_file"] = os.path.join(tmp, "nodes.json")
+    cfg["dashboard"]["providers_file"] = os.path.join(tmp, "providers.json")
     cfg["switching"]["rotation"]["load_balance"]["enabled"] = False
     for k, v in overrides.items():           # мелкий мердж верхнего уровня секций
         if isinstance(v, dict) and isinstance(cfg.get(k), dict):

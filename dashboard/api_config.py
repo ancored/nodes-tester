@@ -12,10 +12,31 @@ GET/PUT с валидацией и атомарной записью (temp + ren
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
+import threading
 
 from .webapp import App, HttpError
+
+_edit_lock = threading.Lock()
+
+
+def _revision(path):
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except FileNotFoundError:
+        return "missing"
+
+
+def _save(req, path, text):
+    with _edit_lock:
+        expected = req.headers.get("If-Match")
+        if expected and expected != _revision(path):
+            raise HttpError(409, "Файл изменился после открытия. Перечитайте его перед сохранением.")
+        _atomic_write(path, text)
+        return _revision(path)
 
 
 def _config_path(app: App) -> str:
@@ -67,6 +88,18 @@ def _read_json(path: str):
         raise HttpError(500, f"не удалось прочитать {path}: {exc}")
 
 
+def _document(path: str):
+    # Data and revision must describe the same bytes, even if an SSH editor writes
+    # the file while this request is running.
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        return {"path": path, "data": json.loads(raw.decode("utf-8")),
+                "revision": hashlib.sha256(raw).hexdigest()}
+    except (OSError, ValueError) as exc:
+        raise HttpError(500, f"Не удалось прочитать файл {path}: {exc}")
+
+
 def _validate_config_body(app: App, text: str) -> None:
     """Прогнать тело конфига через load_config (schema + семантическая валидация)."""
     from nodes_tester.config import load_config
@@ -99,10 +132,15 @@ def _validate_providers(data: dict) -> None:
 
 
 def register(app: App) -> None:
+    initial_revision = _revision(_config_path(app))
+
     @app.route("GET", "/api/config", needs_token=True)
     def get_config(app, req):
         path = _config_path(app)
-        return {"path": path, "data": _read_json(path)}
+        with _edit_lock:
+            result = _document(path)
+            result["restart_required"] = result["revision"] != initial_revision
+            return result
 
     @app.route("GET", "/api/config/schema", needs_token=True)
     def get_schema(app, req):
@@ -123,16 +161,17 @@ def register(app: App) -> None:
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         _validate_config_body(app, text)
         path = _config_path(app)
-        _atomic_write(path, text)
+        revision = _save(req, path, text)
         # Применение в работающем тестере требует перезапуска процесса (рефактор
         # re-init Runner) — сообщаем честно, а не делаем «тихий» hot-reload.
         return {"ok": True, "path": path,
-                "restart_required": getattr(app, "runner", None) is not None}
+                "revision": revision, "restart_required": True}
 
     @app.route("GET", "/api/config/providers", needs_token=True)
     def get_providers(app, req):
         path = _providers_path(app)
-        return {"path": path, "data": _read_json(path)}
+        with _edit_lock:
+            return {**_document(path), "application_state": "unknown"}
 
     @app.route("PUT", "/api/config/providers", needs_token=True)
     def put_providers(app, req):
@@ -142,5 +181,6 @@ def register(app: App) -> None:
         _validate_providers(data)
         path = _providers_path(app)
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-        _atomic_write(path, text)
-        return {"ok": True, "path": path}
+        revision = _save(req, path, text)
+        return {"ok": True, "path": path, "revision": revision,
+                "application_state": "not_applied_by_dashboard"}

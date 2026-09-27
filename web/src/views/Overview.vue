@@ -1,70 +1,47 @@
 <script setup>
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { bytes } from '../format.js'
-import BarList from '../components/BarList.vue'
-import AttritionChart from '../components/AttritionChart.vue'
-
-const s = useSnapshot()
-
-const kpis = computed(() => {
-  const d = s.data
-  const rating = d.rating || []
-  const live = rating.filter((r) => (+r.score || 0) > 0)
-  const active = rating.filter((r) => +r.active === 1)
-  const garbage = d.garbage || []
-  const quarantine = garbage.filter((r) => r.state === 'garbage').length
-  const total = +d.traffic_total || 0
-  return [
-    { label: 'Нод в подписке', value: rating.length },
-    { label: 'Рейтинг > 0', value: live.length },
-    { label: 'Активных', value: active.length },
-    { label: 'Пауза / карантин', value: `${garbage.length - quarantine} / ${quarantine}` },
-    { label: 'Трафик (всего)', value: bytes(total) },
-  ]
-})
-
-const topProviders = computed(() =>
-  (s.data.traffic_providers || []).map((r) => ({ name: r.provider, value: r.total }))
-)
-const topCountries = computed(() =>
-  (s.data.traffic_countries || []).map((r) => ({ name: r.cc, value: r.total }))
-)
-const topProtocols = computed(() =>
-  (s.data.traffic_protocols || []).map((r) => ({ name: r.protocol, value: r.total }))
-)
-const attrition = computed(() => s.data.attrition || [])
+import { auth } from '../api.js'
+import { PHASES } from '../ux.js'
+import { bytes, dateTime } from '../format.js'
+const s=useSnapshot(), nodes=computed(()=>s.data.nodes || []), runner=computed(()=>s.data.runner)
+const kpis=computed(()=>[
+  ['В списке тестера',nodes.value.filter(n=>+n.present === 1).length],
+  ['Есть замеры рейтинга',nodes.value.filter(n=>n.score != null && +n.present === 1).length],
+  ['Доступны для выбора',nodes.value.filter(n=>n.can_activate).length],
+  ['С ограничениями',nodes.value.filter(n=>n.banned || n.gstate).length],
+])
 </script>
-
 <template>
-  <div v-if="s.loading" class="empty">Загрузка…</div>
-  <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
-  <template v-else>
-    <div class="kpis">
-      <div v-for="k in kpis" :key="k.label" class="kpi">
-        <div class="label">{{ k.label }}</div>
-        <div class="value">{{ k.value }}</div>
-      </div>
-    </div>
-
-    <div class="grid3">
-      <section>
-        <h2>Топ провайдеров по трафику</h2>
-        <BarList :items="topProviders" :fmt="bytes" :limit="8" />
-      </section>
-      <section>
-        <h2>Топ стран по трафику</h2>
-        <BarList :items="topCountries" :fmt="bytes" :limit="8" />
-      </section>
-      <section>
-        <h2>Топ протоколов по трафику</h2>
-        <BarList :items="topProtocols" :fmt="bytes" :limit="8" />
-      </section>
-    </div>
-
-    <section>
-      <h2>Динамика выбытия нод</h2>
-      <AttritionChart :rows="attrition" />
-    </section>
-  </template>
+  <section class="panel">
+    <h2>Состояние системы</h2>
+    <dl class="facts">
+      <dt>Данные</dt><dd>{{ s.error ? 'Ошибка чтения; свежесть не подтверждена' : s.data.source?.message || 'Получаем снимок…' }}</dd>
+      <dt>Тестер</dt><dd>{{ runner ? PHASES[runner.progress?.phase] || (runner.running ? 'Процесс запущен' : 'Остановлен') : 'Живое состояние недоступно в отдельной админке' }}</dd>
+      <dt>Последний замер в базе</dt><dd>{{ dateTime(s.data.source?.last_measurement) }}</dd>
+      <dt>Настройки и управление</dt><dd>{{ auth.verified ? 'Токен проверен' : 'Доступен просмотр; войдите для действий' }}</dd>
+    </dl>
+    <p class="mut">Доступность этой страницы не подтверждает работу sing-box. Проверки соединения выполняет тестер; их результаты доступны у каждой ноды.</p>
+    <p v-if="runner?.request_queued" class="notice">Внеплановая проверка ожидает начала. Повторный запрос не создаст отдельную очередь.</p>
+  </section>
+  <div class="kpis"><div v-for="[label,value] in kpis" :key="label" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? value : '—' }}</div></div></div>
+  <section class="panel">
+    <h2>Что настраивать и где смотреть</h2>
+    <ol class="guide">
+      <li><RouterLink to="/config">Настройки</RouterLink>: адрес Clash API, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
+      <li><RouterLink to="/subscriptions">Подписки и сборка</RouterLink>: источники нод. После сохранения отдельно загрузите и примените конфигурацию через SSH.</li>
+      <li><RouterLink to="/runs">Проверки</RouterLink>: этап прохода, очередь и журнал. Кнопка проверки не обновляет подписки.</li>
+      <li><RouterLink to="/nodes">Ноды</RouterLink>: найдите ноду и откройте карточку с результатами, ограничениями и действиями.</li>
+      <li><RouterLink to="/history">Переключения</RouterLink> и <RouterLink to="/traffic">трафик</RouterLink>: как выбирались регионы и что использовалось.</li>
+    </ol>
+    <a href="https://github.com/andreydyadyk/nodes-tester/blob/master/openwrt/README.md" target="_blank" rel="noopener noreferrer">Первый запуск на OpenWrt по SSH</a>
+  </section>
+  <section class="panel">
+    <h2>Выбор переключателя по регионам</h2>
+    <p v-if="!runner">Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.</p>
+    <p v-else-if="!runner.regions?.length">{{ runner.switching ? 'Переключатель пока не выбрал ноды регионов.' : 'Автоматическое переключение отключено.' }}</p>
+    <p v-for="r in runner?.regions || []" :key="r.region" class="break"><b>{{ r.region }}</b> · {{ r.active || 'Нода не выбрана' }}</p>
+    <p class="mut">Это состояние переключателя, не самостоятельная проверка боевых селекторов sing-box.</p>
+  </section>
+  <details class="panel"><summary>Сводка пользовательского трафика</summary><p>{{ bytes(s.data.traffic_total) }} за сохранённый период {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Трафик тестера исключён.</p><RouterLink to="/traffic">Открыть подробности</RouterLink></details>
 </template>

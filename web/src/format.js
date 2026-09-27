@@ -13,6 +13,10 @@ export function timeHMS(e) {
   return new Date(e * 1000).toLocaleTimeString('ru-RU', { hour12: false })
 }
 
+export function dateTime(e) {
+  return e ? new Date(e * 1000).toLocaleString('ru-RU') : 'Нет данных'
+}
+
 // Длительность в человекочитаемом виде (д/ч/м) — порт DUR.
 export function dur(s) {
   s = +s || 0
@@ -30,6 +34,7 @@ export function dateDM(e) {
 }
 
 export function scoreClass(v) {
+  if (v == null || v === '') return 'mut'
   const n = +v
   return n >= 70 ? 'good' : n <= 20 ? 'bad' : 'num'
 }

@@ -1,45 +1,49 @@
 <script setup>
-import { computed } from 'vue'
-import { sections } from './router.js'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { sections, nodeSections } from './router.js'
 import { useSnapshot, refresh } from './store.js'
-import { setToken, useAdminToken } from './api.js'
-
-const s = useSnapshot()
-const token = useAdminToken()
-const status = computed(() =>
-  s.error ? 'ошибка загрузки' : s.generated ? 'обновлено ' + s.generated : 'загрузка…'
-)
-
-function saveToken() {
-  setToken(token.value.trim())
-}
+import { auth, login, requestLogout, initSession } from './api.js'
+const s = useSnapshot(), route = useRoute()
+const token = ref(''), remember = ref(false), showLogin = ref(false), menuOpen = ref(false)
+const isNodes = computed(() => nodeSections.some(x => x.path === route.path) || route.path.startsWith('/nodes/'))
+async function enter() { await login(token.value,remember.value); token.value = ''; if(auth.verified) showLogin.value = false }
+onMounted(initSession)
 </script>
-
 <template>
   <div class="layout">
     <aside class="sidebar">
-      <div class="brand">nodes-tester</div>
-      <nav class="nav">
-        <RouterLink v-for="s in sections" :key="s.path" :to="s.path">{{ s.name }}</RouterLink>
+      <div class="brand">nodes-tester <button class="btn mobile-menu" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen">Меню</button></div>
+      <nav class="nav" :class="{ expanded: menuOpen }" aria-label="Основные разделы">
+        <RouterLink v-for="item in sections" :key="item.path" :to="item.path" @click="menuOpen = false" :class="{ selected: item.path === '/nodes' && isNodes }">{{ item.name }}</RouterLink>
       </nav>
     </aside>
     <div class="content">
       <header class="topbar">
-        <h1>{{ $route.name || 'nodes-tester' }}</h1>
-        <div class="spacer"></div>
-        <small :class="{ bad: s.error }">{{ status }}</small>
-        <button class="btn" style="margin-left: 12px" @click="refresh">↻</button>
-        <input
-          v-model="token"
-          type="password"
-          class="token"
-          placeholder="X-Admin-Token"
-          title="Токен для write/control-действий (X-Admin-Token). Сохраняется в localStorage."
-          @change="saveToken"
-        />
+        <h1>{{ $route.name }}</h1><div class="spacer"></div>
+        <small>{{ s.error ? 'Нет свежих данных' : s.generated ? 'Снимок ' + s.generated : 'Загрузка…' }}</small>
+        <button class="btn" @click="refresh" aria-label="Обновить данные">Обновить</button>
+        <button v-if="auth.verified" class="btn" @click="requestLogout">Выйти</button>
+        <button v-else class="btn" @click="showLogin = !showLogin">Войти для управления</button>
       </header>
       <main class="main">
-        <RouterView />
+        <form v-if="showLogin && !auth.verified" class="panel login" @submit.prevent="enter">
+          <h2>Доступ администратора</h2>
+          <p>Токен находится в <code>dashboard.token</code> вашего config.json на роутере. Это не секрет Clash API. Передавайте его только через доверенную сеть или HTTPS.</p>
+          <p v-if="auth.capabilities.auth_configured === false" class="notice">На сервере токен не настроен. Задайте dashboard.token через SSH и перезапустите админку.</p>
+          <label>Токен <input v-model="token" type="password" autocomplete="off" required /></label>
+          <label class="check"><input v-model="remember" type="checkbox" /> Запомнить на этом устройстве (localStorage)</label>
+          <button class="btn" :disabled="auth.checking">Проверить и войти</button>
+        </form>
+        <p v-if="auth.error" class="notice bad" role="alert">{{ auth.error }}</p>
+        <p v-if="!auth.verified && !showLogin" class="hint">Режим просмотра. Для настроек и действий войдите с токеном администратора.</p>
+        <p v-if="auth.capabilities.mode === 'standalone'" class="hint">Админка запущена отдельно. Настройки доступны после входа; управление тестером, журнал и живые селекторы недоступны.</p>
+        <p v-if="s.error" class="notice bad" role="alert">{{ s.error }}<template v-if="s.ready">. Показан устаревший снимок, полученный {{ new Date(s.received).toLocaleString('ru-RU') }}.</template></p>
+        <p v-if="s.data.source && s.data.source.state !== 'ok'" class="notice">{{ s.data.source.message }}. Проверьте storage.enabled и путь к базе в настройках. Пустые списки не подтверждают отсутствие нод.</p>
+        <nav v-if="isNodes" class="chips subnav" aria-label="Сведения о нодах">
+          <RouterLink v-for="item in nodeSections" :key="item.path" class="chip" :to="item.path">{{ item.name }}</RouterLink>
+        </nav>
+        <RouterView :key="$route.path" />
       </main>
     </div>
   </div>

@@ -1,140 +1,78 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { api } from '../api.js'
-import { timeHMS } from '../format.js'
-
-const status = ref(null)
-const statusErr = ref('')
-const lines = ref([])
-const seq = ref(0)
-const logErr = ref('')
-const busy = ref(false)
-const msg = ref('')
-const logBox = ref(null)
-const readOnly = ref(false)
-
-let stTimer = null
-let logTimer = null
-
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { api, auth, can } from '../api.js'
+import { PHASES } from '../ux.js'
+import { dateTime } from '../format.js'
+const status=ref(null), statusErr=ref(''), lines=ref([]), seq=ref(0), logErr=ref(''), busy=ref(false), msg=ref('')
+const paused=ref(false), follow=ref(true), query=ref(''), level=ref('все'), logBox=ref(null)
+let stTimer, logTimer, statusBusy=false, logsBusy=false, disposed=false
 async function pollStatus() {
-  try {
-    status.value = await api.get('/status')
-    statusErr.value = ''
-    return true
-  } catch (e) {
-    statusErr.value = e.message
-    if (e.status === 409) readOnly.value = true
-    return false
-  }
+  if(statusBusy || auth.capabilities.mode === 'standalone') return
+  statusBusy=true; const epoch=auth.epoch
+  try { const data=await api.get('/status'); if(epoch===auth.epoch && !disposed){status.value=data;statusErr.value=''} }
+  catch(e){if(epoch===auth.epoch && !disposed)statusErr.value=e.message}
+  finally{statusBusy=false}
 }
-
 async function pollLogs() {
+  if(logsBusy || paused.value || auth.capabilities.mode === 'standalone') return
+  logsBusy=true; const epoch=auth.epoch
   try {
-    const d = await api.get('/logs?seq=' + seq.value + '&tail=300')
-    if (d.lines && d.lines.length) {
-      for (const l of d.lines) {
-        if (l.seq > seq.value) lines.value.push(l)
-      }
-      seq.value = d.seq || seq.value
-      if (lines.value.length > 1500) lines.value = lines.value.slice(-1500)
-      nextTick(() => {
-        if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
-      })
-    }
-    logErr.value = ''
-  } catch (e) {
-    logErr.value = e.message
-  }
+    const data=await api.get('/logs?seq='+seq.value+'&tail=300')
+    if(epoch !== auth.epoch || disposed)return
+    if(data.seq < seq.value){lines.value=[];seq.value=0}
+    for(const line of data.lines || []){if(line.seq>seq.value)lines.value.push(line)}
+    seq.value=data.seq || seq.value
+    if(lines.value.length>1500)lines.value=lines.value.slice(-1500)
+    if(follow.value)nextTick(()=>{if(logBox.value)logBox.value.scrollTop=logBox.value.scrollHeight})
+    logErr.value=''
+  }catch(e){if(epoch===auth.epoch && !disposed)logErr.value=e.message}
+  finally{logsBusy=false}
 }
-
 async function runPass() {
-  busy.value = true
-  msg.value = ''
-  try {
-    await api.post('/run/pass')
-    msg.value = 'запрос отправлен — прогон начнётся'
-  } catch (e) {
-    msg.value = e.message
-  } finally {
-    busy.value = false
-  }
+  busy.value=true; msg.value=''
+  try {const r=await api.post('/run/pass');msg.value=r.already_queued ? 'Запрос уже находится в очереди.' : 'Проверка запрошена. Текущий проход не прерывается; следующий начнётся после него.';await pollStatus()}
+  catch(e){msg.value=e.message}
+  finally{busy.value=false}
 }
-
-const nextRotation = computed(() => {
-  const t = status.value && status.value.next_rotation
-  return t ? timeHMS(t) : '–'
-})
-const threads = computed(() => {
-  const st = status.value || {}
-  const m = st.monitor ? '✓' : '✗'
-  const tr = st.traffic ? '✓' : '✗'
-  return `монитор ${m} · трафик ${tr}`
-})
-
-onMounted(async () => {
-  if (!await pollStatus()) return
-  await pollLogs()
-  stTimer = setInterval(pollStatus, 5000)
-  logTimer = setInterval(pollLogs, 1500)
-})
-onUnmounted(() => {
-  clearInterval(stTimer)
-  clearInterval(logTimer)
-})
+watch(()=>auth.epoch,()=>{status.value=null;lines.value=[];seq.value=0;statusErr.value='';logErr.value=''})
+watch(()=>auth.verified,()=>{pollStatus();pollLogs()})
+const visible=computed(()=>lines.value.filter(l=>(!query.value || l.line.toLowerCase().includes(query.value.toLowerCase())) &&
+  (level.value === 'все' || (level.value === 'ошибки' ? /ошиб|error|fail|veto|\[!\]/i : /switch|переключ|rotation|ротац/i).test(l.line))))
+const outcome={completed:'Завершён',empty:'Нет тестируемых нод',error:'Прерван ошибкой'}
+onMounted(()=>{pollStatus();pollLogs();stTimer=setInterval(pollStatus,5000);logTimer=setInterval(pollLogs,2000)})
+onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
 </script>
-
 <template>
-  <div>
-    <div class="kpis">
-      <div class="kpi">
-        <div class="label">тестер</div>
-        <div class="value" :class="status && status.running ? 'good' : 'bad'">
-          {{ status ? (status.running ? 'работает' : 'остановлен') : '…' }}
-        </div>
-      </div>
-      <div class="kpi"><div class="label">прогон</div><div class="value">{{ (status && status.pass) || '–' }}</div></div>
-      <div class="kpi"><div class="label">след. ротация</div><div class="value" style="font-size: 16px">{{ nextRotation }}</div></div>
-      <div class="kpi"><div class="label">потоки</div><div class="value" style="font-size: 14px">{{ threads }}</div></div>
+  <section class="panel">
+    <h2>Проверки текущих нод sing-box</h2>
+    <p>Внеплановый проход проверяет уже доступные ноды. Он не загружает подписки и не применяет настройки.</p>
+    <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. Опрос продолжится автоматически.</p>
+    <template v-if="status">
+      <p><b>{{ PHASES[status.progress?.phase] || (status.running ? 'Процесс запущен' : 'Остановлен') }}</b> · проход {{ status.day }} / {{ status.pass }}</p>
+      <p v-if="status.progress?.total">Обработано {{ status.progress.processed }} из {{ status.progress.total }} в текущем этапе (включая пропуски).</p>
+      <p class="break" v-if="status.progress?.node">Текущая нода: {{ status.progress.node }}</p>
+      <p v-if="status.request_queued" class="notice">Внеплановая проверка ожидает начала.</p>
+      <p v-if="status.last_pass_result">Последний проход: {{ outcome[status.last_pass_result.outcome] }} · {{ dateTime(status.last_pass_result.finished) }}<span v-if="status.last_pass_result.error"> · {{ status.last_pass_result.error }}</span></p>
+      <p v-if="status.wait_until">Текущее ожидание до {{ dateTime(status.wait_until) }}. Срок может измениться.</p>
+      <p>Следующая ротация: {{ dateTime(status.next_rotation) }}. Это не время завершения проверки.</p>
+      <p>Монитор активных нод: {{ status.monitor ? 'работает' : 'не работает' }} · сбор трафика: {{ status.traffic ? 'работает' : 'не работает' }}</p>
+    </template>
+    <button class="btn primary" :disabled="busy || !can('run_pass') || !status?.running || !!statusErr || status.request_queued" @click="runPass">Запросить внеплановую проверку</button>
+    <p role="status">{{ msg }}</p>
+  </section>
+  <section>
+    <h2>Журнал тестера</h2>
+    <p class="hint">Показаны последние доступные строки (на странице до 1500). После длительной паузы часть записей может исчезнуть из буфера сервера. Фильтры определяют тип строки по тексту, это не структурированный уровень журнала.</p>
+    <div class="toolbar">
+      <label>Поиск<input type="search" v-model="query" /></label>
+      <label>Строки<select v-model="level"><option>все</option><option>ошибки</option><option>переключения</option></select></label>
+      <button class="btn" @click="paused = !paused">{{ paused ? 'Продолжить чтение' : 'Приостановить чтение' }}</button>
+      <label class="check"><input type="checkbox" v-model="follow" /> Следовать за новыми строками</label>
     </div>
-
-    <div v-if="statusErr" class="empty bad">{{ statusErr }}</div>
-
-    <section>
-      <h2>Активные ноды по регионам</h2>
-      <div class="wrap">
-        <table>
-          <thead><tr><th class="l">регион</th><th class="l">активная нода</th></tr></thead>
-          <tbody>
-            <tr v-if="!status || !status.regions || !status.regions.length">
-              <td class="l empty" colspan="2">нет активных регионов (первый прогон ещё не прошёл?)</td>
-            </tr>
-            <tr v-for="r in (status && status.regions) || []" :key="r.region">
-              <td class="l"><b>{{ r.region }}</b></td>
-              <td class="l mut">{{ r.active }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section>
-      <h2>Управление</h2>
-      <button class="btn" :disabled="busy || !(status && status.running)" @click="runPass">
-        Запустить прогон сейчас
-      </button>
-      <span class="mut" style="margin-left: 12px">{{ msg }}</span>
-    </section>
-
-    <section>
-      <h2>Живой лог</h2>
-      <div v-if="logErr" class="empty bad">{{ logErr }}</div>
-      <div ref="logBox" class="log">
-        <div v-if="!lines.length" class="mut">журнал пуст…</div>
-        <div v-for="(l, i) in lines" :key="l.seq" class="log-line">
-          <span class="mut">{{ timeHMS(l.ts) }}</span>
-          <span>{{ l.line }}</span>
-        </div>
-      </div>
-    </section>
-  </div>
+    <p v-if="logErr" class="notice bad">{{ logErr }}</p>
+    <div ref="logBox" class="log" @wheel="follow=false">
+      <p v-if="!visible.length" class="mut">Доступных строк с такими условиями нет.</p>
+      <div v-for="l in visible" :key="l.seq" class="log-line"><span class="mut">{{ dateTime(l.ts) }}</span><span>{{ l.line }}</span></div>
+    </div>
+  </section>
 </template>

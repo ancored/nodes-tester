@@ -396,6 +396,12 @@ class Storage:
                              (1 if banned else 0, crc))
             self._db.commit()
 
+    def node_is_present(self, crc: str) -> bool:
+        """Present in the last reconciled tester list; not a live Clash probe."""
+        with self._lock:
+            row = self._db.execute("SELECT present FROM nodes WHERE crc=?", (crc,)).fetchone()
+        return bool(row and row[0])
+
     def banned_crcs(self) -> set:
         """Множество CRC забаненных нод (снимок на прогон)."""
         with self._lock:

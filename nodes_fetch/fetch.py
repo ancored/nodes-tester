@@ -68,6 +68,11 @@ def load_providers(data, log=print):
         subs.append(norm)
     fetch_cfg = dict(FETCH_DEFAULTS)
     fetch_cfg.update({k: v for k, v in (data.get("fetch") or {}).items() if k in FETCH_DEFAULTS})
+    for key in ("timeout", "retries", "stale_max_hours", "min_ratio"):   # как в providers.schema.json
+        v = fetch_cfg[key]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 \
+                or (key == "timeout" and v == 0) or (key == "retries" and not isinstance(v, int)):
+            raise ProvidersError(f"fetch.{key}: недопустимое значение {v!r}")
     if not (0 <= float(fetch_cfg["min_ratio"]) <= 1):
         raise ProvidersError("fetch.min_ratio должен быть в [0, 1]")
     return {"subscribes": subs, "fetch": fetch_cfg}

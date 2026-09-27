@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '../query.js'
 import { useSnapshot } from '../store.js'
 import { dateDM, dur, timeHMS, scoreClass, fixed, pct } from '../format.js'
 import DataTable from '../components/DataTable.vue'
@@ -10,7 +11,7 @@ import { STATUS } from '../status.js'
 const s = useSnapshot()
 
 // --- Качество провайдеров (region tabs) ---
-const qualRegion = ref('все')
+const qualRegion = useQuery('region', 'все')
 const qualityRows = computed(() => s.data.provider_quality || [])
 const qualRegions = computed(() => ['все', ...[...new Set(qualityRows.value.map((r) => r.region).filter(Boolean))].sort()])
 const qualityFiltered = computed(() =>
@@ -31,7 +32,7 @@ const qualCols = [
 
 // --- На паузе / в карантине (фильтры provider/cc/protocol); удалённые — на «Кладбище» ---
 const garbageRows = computed(() => s.data.garbage || [])
-const fProv = ref('все'), fCc = ref('все'), fProto = ref('все')
+const fProv = useQuery('provider', 'все'), fCc = useQuery('country', 'все'), fProto = useQuery('protocol', 'все')
 const uniq = (rows, k) => ['все', ...[...new Set(rows.map((r) => r[k]).filter((v) => v != null && v !== ''))].map(String).sort()]
 const garbProv = computed(() => uniq(garbageRows.value, 'provider'))
 const garbCc = computed(() => uniq(garbageRows.value, 'cc'))
@@ -90,12 +91,12 @@ const dropCols = [
   <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
   <template v-else>
     <StatusLegend />
-    <p class="mut" style="margin-top: 0">Только ноды, которые сейчас в подписке. Удалённые — на «Кладбище».</p>
+    <p class="mut" style="margin-top: 0">Только ноды, присутствующие в списке тестера. Отсутствующие — в <RouterLink to="/graveyard">архиве</RouterLink>. Присутствие в подписке не проверяется здесь напрямую.</p>
 
     <section>
       <h2>Качество провайдеров</h2>
       <Chips v-model="qualRegion" :options="qualRegions" label="регион" />
-      <DataTable :rows="qualityFiltered" :columns="qualCols" :page-size="15" />
+      <DataTable :rows="qualityFiltered" :columns="qualCols" :page-size="15" query-key="quality_" />
     </section>
 
     <section>
@@ -103,7 +104,7 @@ const dropCols = [
       <Chips v-model="fProv" :options="garbProv" label="провайдер" />
       <Chips v-model="fCc" :options="garbCc" label="cc" />
       <Chips v-model="fProto" :options="garbProto" label="протокол" />
-      <DataTable :rows="garbageFiltered" :columns="garbCols" :page-size="15">
+      <DataTable :rows="garbageFiltered" :columns="garbCols" :page-size="15" query-key="limits_">
         <template #cell-state="{ row }">
           <b v-if="row.state === 'garbage'" :class="STATUS.quarantine.cls">{{ STATUS.quarantine.label }}</b>
           <b v-else :class="STATUS.pause.cls">{{ STATUS.pause.label }}</b>
@@ -114,16 +115,16 @@ const dropCols = [
     <div class="grid2">
       <section>
         <h2>Долгожители <small>(в строю, по возрасту ↓)</small></h2>
-        <DataTable :rows="longevity" :columns="longCols" :page-size="12">
+        <DataTable :rows="longevity" :columns="longCols" :page-size="12" query-key="long_">
           <template #cell-active="{ row }">
-            <b v-if="+row.active === 1" class="good">●</b>
-            <span v-else class="mut">·</span>
+            <b v-if="+row.active === 1" class="good">Да</b>
+            <span v-else class="mut">Нет</span>
           </template>
         </DataTable>
       </section>
       <section>
         <h2>Быстро выпадающие <small>(по сроку до 1-го карантина ↑)</small></h2>
-        <DataTable :rows="dropouts" :columns="dropCols" :page-size="12" />
+        <DataTable :rows="dropouts" :columns="dropCols" :page-size="12" query-key="drops_" />
       </section>
     </div>
   </template>

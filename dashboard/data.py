@@ -6,9 +6,12 @@ import json
 import os
 import sqlite3
 import time
+from contextvars import ContextVar
 from pathlib import Path
 
 from naming import parse_group, parse_node
+
+_connection = ContextVar("dashboard_connection", default=None)
 
 # Колонки рейтинга (таблица scores) в порядке для дашборда; crc отдаём как 'id',
 # last_pass — как 'last_seen' (совместимо с прежним score.csv).
@@ -26,6 +29,9 @@ def _scores(db_path: str) -> list[dict]:
 
 
 def _query(db_path: str, sql: str) -> list[dict]:
+    con = _connection.get()
+    if con is not None:
+        return [dict(r) for r in con.execute(sql).fetchall()]
     if not db_path or not os.path.exists(db_path):
         return []
     try:
@@ -42,6 +48,30 @@ def _query(db_path: str, sql: str) -> list[dict]:
 
 
 def collect(cfg) -> dict:
+    """One consistent read-only snapshot. Missing storage is not an empty database."""
+    db = cfg.storage.db_file
+    enabled = cfg.storage.enabled
+    if not enabled or not db or not os.path.exists(db):
+        from types import SimpleNamespace
+        data = _collect(SimpleNamespace(storage=SimpleNamespace(db_file="", retention_days=cfg.storage.retention_days)))
+        data["source"] = {"state": "missing" if enabled else "disabled",
+                          "message": "База ещё не создана" if enabled else "Хранилище отключено"}
+        return data
+    con = sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    con.row_factory = sqlite3.Row
+    token = _connection.set(con)
+    try:
+        con.execute("BEGIN")
+        data = _collect(cfg)
+        data["source"] = {"state": "ok", "message": "Снимок SQLite",
+                          "last_measurement": _query(db, "SELECT MAX(ts) AS ts FROM results WHERE test <> '_select'")[0]["ts"]}
+        return data
+    finally:
+        _connection.reset(token)
+        con.close()
+
+
+def _collect(cfg) -> dict:
     db = cfg.storage.db_file
 
     # --- Рейтинг (таблица scores), активные сверху, далее по убыванию score ---
@@ -93,6 +123,7 @@ def collect(cfg) -> dict:
     attrition = _attrition(db)
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
+    traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
 
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -105,6 +136,7 @@ def collect(cfg) -> dict:
         "traffic_countries": traffic_countries,
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
+        "node_traffic": [r for r in rows if r["kind"] == "leaf"],
         "endpoints": endpoints,
         "garbage": garbage,
         "longevity": longevity,
@@ -113,6 +145,9 @@ def collect(cfg) -> dict:
         "attrition": attrition,
         "score_spark": score_spark,
         "nodes": nodes,
+        "traffic_range": traffic_range[0] if traffic_range else {},
+        "retention_days": cfg.storage.retention_days,
+        "node_events": _query(db, "SELECT ts, crc, event, reason, streak FROM node_events ORDER BY ts DESC, rowid DESC LIMIT 500"),
     }
 
 
@@ -120,7 +155,7 @@ def _classify_traffic(r: dict) -> dict:
     """Классифицировать строку трафика: leaf / direct / unspecified / other."""
     up, down = r.get("up") or 0, r.get("down") or 0
     crc = r.get("crc")
-    row = {"up": up, "down": down, "total": up + down}
+    row = {"crc": crc, "up": up, "down": down, "total": up + down}
     if r.get("provider") is not None:                 # leaf-нода (есть запись в nodes)
         row.update(kind="leaf", provider=r["provider"], protocol=r.get("protocol"),
                    cc=r.get("country"), node=r.get("tag") or crc)
@@ -153,10 +188,10 @@ def _sum_by(rows: list[dict], field: str, include: set) -> list[dict]:
 
 
 def _switch_history(db: str) -> list[dict]:
-    """История переключений (activations): последние 20; активна = последняя по региону.
+    """История переключений (activations): последние 200; active = последняя запись региона.
     Провайдер/протокол/cc/crc разбираем из тега ноды (как в остальных таблицах)."""
-    rows = _query(db, "SELECT ts, region, tag, crc, reason, score FROM activations "
-                      "ORDER BY ts DESC LIMIT 20")
+    rows = _query(db, "SELECT ts, region, tag, crc, reason, score, prev FROM activations "
+                      "ORDER BY ts DESC, rowid DESC LIMIT 200")
     latest = {r["region"]: r["mts"] for r in _query(
         db, "SELECT region, MAX(ts) AS mts FROM activations GROUP BY region")}
     for r in rows:
@@ -223,24 +258,24 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     except (TypeError, ValueError):
         m = {}
     if not ok:
-        return {"v": "FAIL", "ok": 0, "title": (error or "").strip()}
+        return {"v": "Провал", "ok": 0, "title": (error or "").strip()}
     if test == "connectivity":
         cc = m.get("country")
-        return {"v": "OK" + (f"[{cc}]" if cc else ""), "ok": 1}
+        return {"v": "Успешно" + (f" [{cc}]" if cc else ""), "ok": 1}
     if test == "latency":
-        return {"v": f"{m.get('ttfb_ms', '?')}ms", "ok": 1}
+        return {"v": f"{m.get('ttfb_ms', '?')} мс", "ok": 1}
     if test == "jitter":
-        return {"v": f"{m.get('jitter_ms', '?')}ms {m.get('loss_pct', 0)}%", "ok": 1}
+        return {"v": f"{m.get('jitter_ms', '?')} мс / {m.get('loss_pct', 0)}%", "ok": 1}
     if test == "download":
         # единый транспорт-тест: скорость + троттлинг (+ метка limited при 429)
         thr = m.get("throttle_ratio")
-        tag = " lim" if m.get("limited") else ""
-        spd = f"{m.get('speed_mbps', '?')}M"
+        tag = " (ограничение сервера)" if m.get("limited") else ""
+        spd = f"{m.get('speed_mbps', '?')} Мбит/с"
         return {"v": (f"{spd} ×{thr}{tag}" if thr is not None else f"{spd}{tag}"), "ok": 1}
     if test == "reachability":
         return {"v": f"{m.get('reached', '?')}/{m.get('total', '?')}", "ok": 1}
     if test == "heavy_download":         # veto-тест кандидатов: скорость (FAIL=veto)
-        return {"v": f"{m.get('speed_mbps', '?')}M", "ok": 1}
+        return {"v": f"{m.get('speed_mbps', '?')} Мбит/с", "ok": 1}
     return {"v": "ok", "ok": 1}
 
 
@@ -306,13 +341,14 @@ def _results(db: str) -> dict:
         for r in light:
             if (r["ts"] or 0) != pass_ts:
                 continue
-            node["cells"][r["test"]] = _cell(r["test"], r["ok"], r["metrics"], r.get("error"))
+            node["cells"][r["test"]] = {**_cell(r["test"], r["ok"], r["metrics"], r.get("error")), "ts": r["ts"]}
             tests_seen.add(r["test"])
         # DL50 — последнее известное значение, вне прогона; помечаем off_pass.
         heavy = [r for r in rws if r["test"] == "heavy_download"]
         if heavy:
             hr = max(heavy, key=lambda r: r["ts"] or 0)
             cell = _cell("heavy_download", hr["ok"], hr["metrics"], hr.get("error"))
+            cell["ts"] = hr["ts"]
             # DL50 пишется на пару минут позже лёгких тестов, но с тем же pass_no за тот
             # же день — это ТОТ ЖЕ прогон. «Вне прогона» = другой pass_no или другой день
             # (pass_no цикличен по дням, поэтому одного номера мало).
@@ -518,12 +554,18 @@ def _nodes_list(db: str) -> list[dict]:
                n.country AS country, n.label AS label, n.server AS server,
                n.present AS present, COALESCE(n.banned, 0) AS banned,
                s.score AS score, s.region AS region, s.active AS active,
-               g.reason AS gstate, g.until AS guntil, g.streak AS gstreak
+               g.reason AS gstate, g.until AS guntil, g.streak AS gstreak,
+               g.until_pass AS until_pass
         FROM nodes n
         LEFT JOIN scores s ON s.crc = n.crc
         LEFT JOIN garbage g ON g.crc = n.crc
         ORDER BY n.present DESC, s.score DESC""")
     out = []
+    meta = _query(db, "SELECT value FROM meta WHERE key='pass_seq'")
+    try:
+        pass_seq = int(meta[0]["value"]) if meta else 0
+    except (ValueError, TypeError):
+        pass_seq = 0
     for r in rows:
         out.append({
             "crc": r["crc"], "node": r["node"], "provider": r["provider"],
@@ -531,5 +573,6 @@ def _nodes_list(db: str) -> list[dict]:
             "server": r["server"], "present": r["present"], "banned": r["banned"],
             "score": r["score"], "region": r["region"], "active": r["active"],
             "gstate": r["gstate"], "guntil": r["guntil"], "gstreak": r["gstreak"],
+            "passes_left": max(0, int(r.get("until_pass") or 0) - pass_seq),
         })
     return out

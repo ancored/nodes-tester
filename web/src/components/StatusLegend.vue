@@ -15,7 +15,6 @@ defineProps({ open: { type: Boolean, default: false } })
             <th class="l">статус</th>
             <th class="l">что значит</th>
             <th class="l">кто ставит</th>
-            <th class="l">раньше называлось</th>
           </tr>
         </thead>
         <tbody>
@@ -23,14 +22,12 @@ defineProps({ open: { type: Boolean, default: false } })
             <td class="l"><b :class="s.cls">{{ s.label }}</b></td>
             <td class="l wrap-text">{{ s.what }}</td>
             <td class="l mut">{{ s.who }}</td>
-            <td class="l mut">{{ s.was }}</td>
           </tr>
         </tbody>
       </table>
     </div>
     <p class="mut note">
-      Порядок = приоритет: если у ноды несколько признаков, показывается верхний.
-      «Удалённые» живут только на «Кладбище»; остальные разделы показывают ноды из подписки.
+      У ноды может быть несколько признаков одновременно. Все они видны в списке и карточке ноды; эта таблица объясняет термины.
     </p>
   </details>
 </template>

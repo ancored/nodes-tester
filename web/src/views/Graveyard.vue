@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '../query.js'
 import { useSnapshot } from '../store.js'
 import { dateDM, dur, scoreClass, fixed } from '../format.js'
 import { CAUSES } from '../status.js'
@@ -10,7 +11,7 @@ import Sparkline from '../components/Sparkline.vue'
 const s = useSnapshot()
 const rows = computed(() => s.data.graveyard || [])
 
-const fProv = ref('все'), fCause = ref('все')
+const fProv = useQuery('provider', 'все'), fCause = useQuery('cause', 'все')
 const provs = computed(() => ['все', ...[...new Set(rows.value.map((r) => r.provider).filter(Boolean))].sort()])
 const causeOpts = computed(() => ['все', ...Object.keys(CAUSES).filter((k) => rows.value.some((r) => r.cause === k)).map((k) => CAUSES[k].label)])
 const filtered = computed(() =>
@@ -30,7 +31,7 @@ const kpis = computed(() => {
   const r = rows.value
   const week = Date.now() / 1000 - 7 * 86400
   return [
-    { label: 'На кладбище', value: r.length },
+    { label: 'В архиве', value: r.length },
     { label: 'Ушло за 7 дней', value: r.filter((x) => x.removed_at >= week).length },
     { label: 'Медиана жизни', value: dur(med(r.map((x) => x.lifespan))) },
     { label: 'Ушли рабочими', value: r.filter((x) => x.cause === 'alive').length },
@@ -86,8 +87,8 @@ const cols = [
   <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
   <template v-else>
     <p class="mut" style="margin-top: 0">
-      Ноды, которые провайдер убрал из подписки. Их история хранится в БД ещё
-      <code>retention_days</code> (по умолчанию 30 дн.) после ухода, затем стирается —
+      Ноды, которые исчезли из списка тестера. Причина может быть в подписке или в применённой конфигурации. Их история хранится в БД ещё
+      {{ s.data.retention_days }} дней после последнего присутствия, затем стирается —
       см. колонку «сотрётся через».
     </p>
     <div class="kpis">
@@ -99,14 +100,14 @@ const cols = [
 
     <section>
       <h2>Потери по провайдерам</h2>
-      <DataTable :rows="byProvider" :columns="provCols" :page-size="10" />
+      <DataTable :rows="byProvider" :columns="provCols" :page-size="10" query-key="providers_" />
     </section>
 
     <section>
-      <h2>Надгробия <small>(свежие потери сверху)</small></h2>
+      <h2>История отсутствующих нод <small>(свежие потери сверху)</small></h2>
       <Chips v-model="fProv" :options="provs" label="провайдер" />
       <Chips v-model="fCause" :options="causeOpts" label="как ушла" />
-      <DataTable :rows="filtered" :columns="cols" :page-size="20" empty="кладбище пусто — ни одна нода не уходила">
+      <DataTable :rows="filtered" :columns="cols" :page-size="20" empty="В этом снимке нет архивных нод.">
         <template #cell-spark="{ row }"><Sparkline :vals="row.spark" /></template>
         <template #cell-cause="{ row }">
           <b :class="CAUSES[row.cause]?.cls" :title="CAUSES[row.cause]?.hint">{{ CAUSES[row.cause]?.label || row.cause }}</b>

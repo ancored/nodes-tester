@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '../query.js'
 import { useSnapshot } from '../store.js'
-import { bytes } from '../format.js'
+import { bytes, dateTime } from '../format.js'
 import DataTable from '../components/DataTable.vue'
 import Chips from '../components/Chips.vue'
 
@@ -14,7 +15,8 @@ const MEASURES = {
   'протоколы': { key: 'traffic_protocols', dim: { key: 'protocol', title: 'протокол' } },
   'ноды (топ-10)': { key: 'traffic_nodes', dim: { key: 'node', title: 'нода' } },
 }
-const measure = ref('провайдеры')
+const requestedMeasure = useQuery('measure', 'провайдеры')
+const measure = computed({get: () => Object.hasOwn(MEASURES, requestedMeasure.value) ? requestedMeasure.value : 'провайдеры', set: v => requestedMeasure.value = v})
 const options = Object.keys(MEASURES)
 
 const trafRows = computed(() => s.data[MEASURES[measure.value].key] || [])
@@ -33,10 +35,10 @@ const endpCols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'source_ip', title: 'источник', l: true },
   { key: 'dest_host', title: 'назначение', l: true },
-  { key: 'network', title: 'net', l: true },
+  { key: 'network', title: 'транспорт', l: true },
   { key: 'up', title: 'исх', fmt: bytes },
   { key: 'down', title: 'вх', fmt: bytes },
-  { key: 'flows', title: 'flows' },
+  { key: 'flows', title: 'соединений' },
 ]
 </script>
 
@@ -44,6 +46,7 @@ const endpCols = [
   <div v-if="s.loading" class="empty">Загрузка…</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
   <template v-else>
+    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; хранение — {{ s.data.retention_days }} дней. Топ нод ограничен 10 записями, назначений — 50; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
     <section>
       <h2>Трафик</h2>
       <Chips v-model="measure" :options="options" />
@@ -51,7 +54,7 @@ const endpCols = [
     </section>
     <section>
       <h2>Топ назначений</h2>
-      <DataTable :rows="endpoints" :columns="endpCols" :page-size="15" />
+      <DataTable :rows="endpoints" :columns="endpCols" :page-size="15" query-key="endpoints_" />
     </section>
   </template>
 </template>

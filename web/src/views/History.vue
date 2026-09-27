@@ -1,46 +1,24 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { timeHMS } from '../format.js'
+import { useQuery } from '../query.js'
+import { dateTime } from '../format.js'
 import DataTable from '../components/DataTable.vue'
-import Chips from '../components/Chips.vue'
-
-const s = useSnapshot()
-const region = ref('все')
-
-const rows = computed(() => s.data.history || [])
-const regions = computed(() => ['все', ...[...new Set(rows.value.map((r) => r.region).filter(Boolean))].sort()])
-const filtered = computed(() =>
-  region.value === 'все' ? rows.value : rows.value.filter((r) => r.region === region.value)
-)
-
-const columns = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'protocol', title: 'протокол', l: true },
-  { key: 'cc', title: 'cc', l: true },
-  { key: 'crc', title: 'crc', l: true, cls: () => 'mut' },
-  { key: 'ts', title: 'переключено', fmt: timeHMS },
-  { key: 'reason', title: 'причина', l: true, slot: true },
-  { key: 'active', title: 'активная', slot: true },
+const s=useSnapshot(), region=useQuery('region','все')
+const rows=computed(()=>s.data.history || [])
+const regions=computed(()=>['все',...new Set(rows.value.map(r=>r.region).filter(Boolean))])
+const filtered=computed(()=>region.value==='все' ? rows.value : rows.value.filter(r=>r.region===region.value))
+const reasons={manual:'Ручной выбор',rotation:'Плановая ротация',quality:'Смена по качеству',emergency:'Аварийная замена',
+  'emergency-stuck':'Авария: замена не найдена',initial:'Первый выбор',init:'Первый выбор'}
+const columns=[
+  {key:'ts',title:'Дата и время',fmt:dateTime,l:true},{key:'region',title:'Регион',l:true},
+  {key:'tag',title:'Выбранная нода',l:true},{key:'crc',title:'Карточка',l:true},
+  {key:'prev',title:'Предыдущая нода',l:true},{key:'reason',title:'Причина',l:true,fmt:(v,r)=>r.stuck ? 'Авария: замена не найдена' : reasons[v] || v || 'Не записана'},
+  {key:'active',title:'Последняя запись региона',fmt:v=>+v===1 ? 'Да' : 'Нет'},
 ]
-const rowClass = (r) => (+r.active === 1 ? 'active' : '')
 </script>
-
 <template>
-  <div v-if="s.loading" class="empty">Загрузка…</div>
-  <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
-  <template v-else>
-    <Chips v-model="region" :options="regions" label="регион" />
-    <DataTable :rows="filtered" :columns="columns" :row-class="rowClass" :page-size="20">
-      <template #cell-reason="{ row }">
-        <b v-if="row.stuck" class="bad" title="EMERGENCY без замены — активная заблокирована, здоровых кандидатов нет">⚠ EMERGENCY</b>
-        <b v-else-if="row.emergency" class="bad" title="аварийное переключение (активная заблокирована)">EMERGENCY</b>
-        <span v-else class="mut">{{ row.reason || '' }}</span>
-      </template>
-      <template #cell-active="{ row }">
-        <b v-if="+row.active === 1" class="good">●</b>
-        <span v-else class="mut">·</span>
-      </template>
-    </DataTable>
-  </template>
+  <p class="hint">Последние 200 записей. «Последняя запись региона» не означает текущую активную ноду. При аварии без замены новое переключение не произошло.</p>
+  <div class="toolbar"><label>Регион<select v-model="region"><option v-for="r in regions" :key="r">{{ r }}</option></select></label></div>
+  <DataTable :rows="filtered" :columns="columns" :page-size="20" />
 </template>

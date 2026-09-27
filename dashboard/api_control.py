@@ -42,27 +42,33 @@ def register(app: App) -> None:
     @app.route("POST", "/api/nodes/{crc}/quarantine", needs_token=True)
     def quarantine(app, req, crc):
         r, storage = _storage_node(app, crc, "карантин")
+        if not r.cfg.cooldown.enabled:
+            raise HttpError(409, "Ограничения проверок отключены в cooldown.enabled. Карантин не будет действовать.")
         until = int(time.time() + r.cfg.cooldown.garbage_hours * 3600)
         # Ручной карантин = мусорная нода на весь срок garbage_hours.
         storage.set_backoff(crc, until, r.cfg.cooldown.max_skip + 1, "garbage")
+        storage.add_node_event(crc, "garbage", "manual")
         return {"ok": True, "until": until}
 
     @app.route("POST", "/api/nodes/{crc}/unquarantine", needs_token=True)
     def unquarantine(app, req, crc):
         _r, storage = _storage_node(app, crc, "снятие карантина")
         storage.clear_backoff(crc)
+        storage.add_node_event(crc, "restriction_cleared", "manual")
         return {"ok": True}
 
     @app.route("POST", "/api/nodes/{crc}/ban", needs_token=True)
     def ban(app, req, crc):
         _r, storage = _storage_node(app, crc, "бан")
         storage.set_banned(crc, True)
+        storage.add_node_event(crc, "ban", "manual")
         return {"ok": True}
 
     @app.route("POST", "/api/nodes/{crc}/unban", needs_token=True)
     def unban(app, req, crc):
         _r, storage = _storage_node(app, crc, "разбан")
         storage.set_banned(crc, False)
+        storage.add_node_event(crc, "unban", "manual")
         return {"ok": True}
 
     # --- Форс-переключение активной ноды региона ------------------------
@@ -79,10 +85,15 @@ def register(app: App) -> None:
         if not isinstance(node, str) or not node.strip():
             raise HttpError(400, "поле 'node' обязательно и должно быть строкой")
         node = node.strip()
+        if r.storage is not None:
+            from naming import parse_node
+            crc = parse_node(node).node_id
+            if crc and (not r.storage.node_is_present(crc) or crc in r.storage.banned_crcs() or crc in r.restricted_crcs()):
+                raise HttpError(409, "Нода исключена или находится на паузе/в карантине.")
         ok = r.switcher.force_activate(region, node)
         if not ok:
             raise HttpError(409, "не удалось переключить: нода не кандидат региона или PUT не прошёл")
-        return {"ok": True, "region": region, "node": node}
+        return {"ok": True, "region": region, "node": node, "temporary": True}
 
     # --- Статус / внеплановый прогон / живой лог ------------------------
 
@@ -92,8 +103,11 @@ def register(app: App) -> None:
 
     @app.route("POST", "/api/run/pass", needs_token=True)
     def run_pass(app, req):
-        _runner(app).request_pass()
-        return {"ok": True}
+        r = _runner(app)
+        if not r.status().get("running"):
+            raise HttpError(409, "Тестер остановлен. Запрос проверки не запускает сервис.")
+        queued = r.request_pass()
+        return {"ok": True, "queued": True, "already_queued": queued is False}
 
     @app.route("GET", "/api/logs", needs_token=not open_read)
     def logs(app, req):

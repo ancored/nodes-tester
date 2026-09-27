@@ -16,7 +16,7 @@ _SLICES = {
     "history": ("history",),
     "results": ("results",),
     "traffic": ("traffic_providers", "traffic_countries", "traffic_protocols",
-                "traffic_nodes", "endpoints"),
+                "traffic_nodes", "endpoints", "traffic_total", "traffic_range"),
     "lifecycle": ("provider_quality", "garbage", "longevity", "dropouts", "attrition"),
     "graveyard": ("graveyard",),
 }
@@ -27,7 +27,19 @@ def register(app: App) -> None:
 
     def _snapshot(app: App) -> dict:
         try:
-            return collect(app.cfg)
+            data = collect(app.cfg)
+            r = app.runner
+            data["runner"] = r.status() if r is not None else None
+            board = getattr(r, "board", None)
+            candidates = set()
+            restricted = r.restricted_crcs() if r is not None else set()
+            if board is not None and r.switcher is not None:
+                for region in board.regions():
+                    candidates.update(c["node"] for c in board.candidates(region))
+            for n in data.get("nodes", []):
+                n["can_activate"] = bool(n.get("node") in candidates and n.get("present")
+                                          and not n.get("banned") and n.get("crc") not in restricted)
+            return data
         except Exception as exc:                    # noqa: BLE001
             raise HttpError(500, f"ошибка сбора данных: {exc}") from exc
 
@@ -41,6 +53,7 @@ def register(app: App) -> None:
             snap = _snapshot(app)
             out = {k: snap.get(k) for k in _keys}
             out["generated"] = snap.get("generated")
+            out["source"] = snap.get("source")
             return out
         return _h
 
