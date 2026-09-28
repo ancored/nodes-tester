@@ -110,7 +110,7 @@ const recipeGroups=[
   {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['emit.ensure_regions','Всегда создавать регионы (eu, us, ru, other)','list'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
 ]
 function recipeValue(field){return value(field) ?? getPath(options.value.group_defaults,field)}
-const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'},{field:'rename.labels',label:'Метки по словам исходного имени',note:'Объект: метка → список слов. Первая совпавшая метка используется в имени ноды.'},{field:'selector',label:'Все поля selector (JSON)',note:'Дополнительные поля добавляются во все selector-группы.'},{field:'urltest',label:'Все поля urltest (JSON)',note:'Дополнительные поля добавляются во все urltest-группы.'}]
+const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'},{field:'rename.labels',label:'Метки по словам исходного имени',note:'Объект: метка → список слов. Первая совпавшая метка используется в имени ноды.'}]
 function toggleTest(test,enabled) {
   const tests=[...(value('run.default.tests_enabled') || [])]
   setPath(document.value,'run.default.tests_enabled',enabled ? [...new Set([...tests,test])] : tests.filter(t=>t!==test))
@@ -126,7 +126,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
   </section>
   <p v-if="!can('edit_config')" class="notice">Для редактора требуется проверенный токен администратора. Войдите с помощью кнопки в шапке.</p>
   <template v-else>
-    <nav v-if="subscriptions" class="chips" aria-label="Файлы подписок и сборки"><button v-for="[kind,label] in [['providers','Источники подписок'],['groups','Параметры сборки · groups_params.json']]" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
+    <nav v-if="subscriptions" class="chips" aria-label="Файлы подписок и сборки"><button v-for="[kind,label] in [['providers','Источники подписок'],['groups','Параметры сборки']]" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
     <div class="toolbar">
       <button class="btn" :disabled="busy" @click="load">Перечитать файл</button>
       <button class="btn" :disabled="busy || !document" @click="switchEditor">{{ advanced ? 'К форме' : 'Расширенный JSON' }}</button>
@@ -171,11 +171,11 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             </div>
             <p v-if="sourceKind(sub)==='url'" class="mut">User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.</p>
             <details v-if="sourceKind(sub)==='url' && !userAgent(sub)"><summary>User-Agent по умолчанию</summary><p class="break">{{ options.user_agents[0]?.effective }}</p></details>
-            <section v-if="sourceKind(sub)==='happ'">
-              <h3>HTTP-заголовки Happ</h3><p>Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.</p>
-              <div class="form-grid"><label v-for="key in happFields(sub)" :key="key">{{ key }}<input :type="Object.hasOwn(options.happ_headers,key) && !['X-Hwid','X-Real-Ip','X-Forwarded-For'].includes(key) || showSecrets ? 'text' : 'password'" :value="sub.happ_headers?.[key] ?? options.happ_headers[key]" @input="setHeader(sub,key,$event.target.value)" /><span class="mut">{{ Object.hasOwn(sub.happ_headers || {},key) ? 'Переопределён' : 'По умолчанию' }}</span><button v-if="Object.hasOwn(sub.happ_headers || {},key)" class="btn" @click="removeHeader(sub,key)">{{ Object.hasOwn(options.happ_headers,key) ? 'Вернуть по умолчанию' : 'Удалить заголовок' }}</button></label></div>
+            <details v-if="sourceKind(sub)==='happ'"><summary>HTTP-заголовки Happ</summary>
+              <p>Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.</p>
+              <div class="form-grid"><label v-for="key in happFields(sub)" :key="key">{{ key }}<input type="text" :value="sub.happ_headers?.[key] ?? options.happ_headers[key]" @input="setHeader(sub,key,$event.target.value)" /><span class="mut">{{ Object.hasOwn(sub.happ_headers || {},key) ? 'Переопределён' : 'По умолчанию' }}</span><button v-if="Object.hasOwn(sub.happ_headers || {},key)" class="btn" @click="removeHeader(sub,key)">{{ Object.hasOwn(options.happ_headers,key) ? 'Вернуть по умолчанию' : 'Удалить заголовок' }}</button></label></div>
               <button class="btn" @click="addHeader(sub)">Добавить заголовок</button> <button class="btn" @click="delete sub.happ_headers">Вернуть весь набор Happ по умолчанию</button>
-            </section><button class="btn" @click="removeSub(index)">Удалить подписку</button>
+            </details><button class="btn" @click="removeSub(index)">Удалить подписку</button>
           </section>
           <button class="btn" @click="(document.subscribes ||= []).push({tag:'',url:'',enabled:true})">Добавить подписку</button>
           <section class="panel"><h2>Защита загрузки</h2><div class="form-grid">

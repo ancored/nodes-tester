@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { crcOf } from '../ux.js'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
   pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:'Нет данных в этом снимке.'},
-  queryKey:{type:String,default:''}, total:{type:Number,default:null} })
+  queryKey:{type:String,default:''}, total:{type:Number,default:null},
+  showSearch:{type:Boolean,default:true}, showSort:{type:Boolean,default:true} })
 const route = useRoute(), router = useRouter()
 const key = n => props.queryKey + n
 function param(name,fallback='') { return String(route.query[key(name)] ?? fallback) }
@@ -14,9 +15,9 @@ const sort = computed(()=>param('sort'))
 const sortable = computed(()=>props.columns.filter(c=>props.rows.some(r=>r[c.key] != null && typeof r[c.key] !== 'object')))
 const sortModel = computed({get:()=>sort.value,set:v=>update('sort',v)})
 const filtered = computed(() => {
-  const text = query.value.toLowerCase().trim()
+  const text = props.showSearch ? query.value.toLowerCase().trim() : ''
   let rows = text ? props.rows.filter(r => Object.entries(r).filter(([,v]) => typeof v !== 'object').some(([,v]) => String(v ?? '').toLowerCase().includes(text))) : [...props.rows]
-  if(sort.value) {
+  if(props.showSort && sort.value) {
     const descending = sort.value.startsWith('-'), field = sort.value.replace(/^-/, '')
     rows = [...rows].sort((a,b) => {
       const x=a[field], y=b[field]
@@ -39,15 +40,15 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
 </script>
 <template>
   <div>
-    <div class="toolbar"><label>Поиск <input v-model="query" type="search" placeholder="Имя, провайдер, страна, CRC…" /></label><label>Сортировка<select v-model="sortModel"><option value="">Исходный порядок</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>Показано {{ filtered.length }} из {{ total ?? rows.length }}</span></div>
+    <div class="toolbar"><label v-if="showSearch">Поиск <input v-model="query" type="search" placeholder="Имя, провайдер, страна, CRC…" /></label><label v-if="showSort">Сортировка<select v-model="sortModel"><option value="">Исходный порядок</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>Показано {{ filtered.length }} из {{ total ?? rows.length }}</span></div>
     <div class="wrap">
       <table class="responsive-table">
-        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
-          <button v-if="sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.title }}</template>
+        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
+          <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.title }}</template>
         </th></tr></thead>
         <tbody>
           <tr v-for="row in slice" :key="rowKey(row)" :class="rowClass?.(row)">
-            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.cls?.(row[c.key],row)]">
+            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.cls?.(row[c.key],row)]">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break">{{ cellText(c,row) }}</RouterLink>
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>

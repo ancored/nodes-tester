@@ -145,7 +145,12 @@ def _collect(cfg) -> dict:
         WHERE t.is_tester = 0
         GROUP BY t.crc""")
     rows = [_classify_traffic(r) for r in raw]
-    traffic_total = sum((r.get("up") or 0) + (r.get("down") or 0) for r in rows)
+    user_up = sum(r["up"] for r in rows)
+    user_down = sum(r["down"] for r in rows)
+    traffic_total = user_up + user_down
+    tester_rows = _query(db, "SELECT COALESCE(SUM(up),0) AS up, COALESCE(SUM(down),0) AS down FROM traffic WHERE is_tester=1")
+    tester_up = tester_rows[0]["up"] if tester_rows else 0
+    tester_down = tester_rows[0]["down"] if tester_rows else 0
     traffic_providers = _sum_by(rows, "provider", {"leaf", "unspecified"})
     traffic_countries = _sum_by(rows, "cc", {"leaf", "unspecified"})
     traffic_protocols = _sum_by(rows, "protocol", {"leaf"})   # протокол известен у leaf-нод
@@ -170,6 +175,8 @@ def _collect(cfg) -> dict:
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
     traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
+    tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
+    tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
 
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -179,6 +186,8 @@ def _collect(cfg) -> dict:
         "results": results,
         "traffic_providers": traffic_providers,
         "traffic_total": traffic_total,
+        "traffic_user_totals": {"up": user_up, "down": user_down, "total": traffic_total},
+        "traffic_tester_totals": {"up": tester_up, "down": tester_down, "total": tester_up + tester_down},
         "traffic_countries": traffic_countries,
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
@@ -192,6 +201,8 @@ def _collect(cfg) -> dict:
         "score_spark": score_spark,
         "nodes": nodes,
         "traffic_range": traffic_range[0] if traffic_range else {},
+        "traffic_tester_range": tester_range[0] if tester_range else {},
+        "traffic_tester_range": tester_range[0] if tester_range else {},
         "retention_days": cfg.storage.retention_days,
         "node_events": _query(db, "SELECT ts, crc, event, reason, streak FROM node_events ORDER BY ts DESC, rowid DESC LIMIT 500"),
     }
@@ -337,18 +348,6 @@ def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
     return (a.tm_year, a.tm_yday) == (b.tm_year, b.tm_yday)
 
 
-def _heavy_note(hr: dict, off_pass: bool) -> str:
-    """Примечание для ячейки DL50: это отдельный veto-тест кандидатов, идущий вне
-    обычного прогона (раз в N прогонов), поэтому значение может быть из другого пасса."""
-    note = "DL50 — отдельный veto-тест кандидатов, идёт вне обычного прогона."
-    if off_pass and hr.get("ts"):
-        lt = time.localtime(hr["ts"])
-        note += (f" Это значение измерено {lt.tm_mday:02d}/{lt.tm_mon:02d} "
-                 f"{lt.tm_hour:02d}:{lt.tm_min:02d} (прогон {hr.get('pass_no')}), "
-                 f"не в последнем прогоне ноды.")
-    return note
-
-
 # Тесты, не входящие в «строго последний прогон» лёгких тестов:
 #   _select      — служебная запись переключения (в таблице не показываем);
 #   heavy_download — идёт вне прогона (every N), показываем как есть, но помечаем.
@@ -401,7 +400,6 @@ def _results(db: str) -> dict:
             off_pass = not _same_pass(hr, node["pass_no"], pass_ts)
             cell["heavy"] = 1
             cell["off_pass"] = 1 if off_pass else 0
-            cell["title"] = _heavy_note(hr, off_pass)
             node["cells"]["heavy_download"] = cell
             tests_seen.add("heavy_download")
         node_rows.append(node)

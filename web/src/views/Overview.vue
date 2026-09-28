@@ -30,6 +30,17 @@ const kpis=computed(()=>[
   <h2>Ноды: количество и состояние</h2>
   <div class="kpis"><div v-for="[label,value] in kpis" :key="label" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? value : '—' }}</div></div></div>
   <section class="panel">
+    <h2>Трафик за сохранённый период</h2>
+    <p v-if="s.data.source?.state !== 'ok'" class="mut">Данные трафика недоступны.</p>
+    <p v-else-if="s.data.traffic_range?.start" class="mut">Пользовательские замеры: {{ dateTime(s.data.traffic_range.start) }} — {{ dateTime(s.data.traffic_range.end) }}</p>
+    <p v-else class="mut">Пользовательских замеров за сохранённый период нет.</p>
+    <h3>Пользовательский трафик</h3>
+    <div class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_user_totals?.[key] || 0) : '—' }}</div></div></div>
+    <p>Трафик тестера: <b>{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.total || 0) : '—' }}</b> <span class="mut">(входящий {{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.down || 0) : '—' }}, исходящий {{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.up || 0) : '—' }})</span></p>
+    <p v-if="s.data.traffic_tester_range?.start" class="mut">Замеры тестера: {{ dateTime(s.data.traffic_tester_range.start) }} — {{ dateTime(s.data.traffic_tester_range.end) }}</p>
+    <RouterLink to="/traffic">Подробности пользовательского трафика</RouterLink>
+  </section>
+  <section class="panel">
     <h2>Что настраивать и где смотреть</h2>
     <ol class="guide">
       <li><RouterLink to="/config">Настройки</RouterLink>: адрес Clash API, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
@@ -47,5 +58,4 @@ const kpis=computed(()=>[
     <p v-for="r in runner?.regions || []" :key="r.region" class="break"><b>{{ r.region }}</b> · {{ r.active || 'Нода не выбрана' }}</p>
     <p class="mut">Это состояние переключателя, не самостоятельная проверка боевых селекторов sing-box.</p>
   </section>
-  <details class="panel"><summary>Сводка пользовательского трафика</summary><p>{{ bytes(s.data.traffic_total) }} за сохранённый период {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Трафик тестера исключён.</p><RouterLink to="/traffic">Открыть подробности</RouterLink></details>
 </template>

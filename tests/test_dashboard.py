@@ -35,6 +35,18 @@ class PassLabelTest(unittest.TestCase):
         res = self._run([self._row("connectivity", now, 7)])
         self.assertEqual(res["rows"][0]["pass_no"], 7)
 
+    def test_heavy_success_has_no_failure_details(self):
+        now = int(time.time())
+        rows = [self._row("latency", now, 7), self._row("heavy_download", now + 30, 7)]
+        cell = self._run(rows)["rows"][0]["cells"]["heavy_download"]
+        self.assertEqual(cell["ok"], 1)
+        self.assertNotIn("title", cell)
+
+    def test_failure_keeps_service_error(self):
+        row = self._row("connectivity", int(time.time()), 7)
+        row.update(ok=0, error="connection refused")
+        self.assertEqual(self._run([row])["rows"][0]["cells"]["connectivity"]["title"], "connection refused")
+
 
 class _Cfg:
     def __init__(self, db):
@@ -113,6 +125,20 @@ class LifecycleGraveyardTest(unittest.TestCase):
         out = D._downsample(list(range(100)), 30)
         self.assertEqual(len(out), 30)
         self.assertEqual((out[0], out[-1]), (0, 99))
+
+    def test_user_and_tester_traffic_are_separate(self):
+        from types import SimpleNamespace
+        x = self.st._db.execute
+        x("INSERT INTO traffic (ts,crc,up,down,conns,is_tester) VALUES (?,?,?,?,?,?)",
+          (self.now, "ok", 100, 200, 1, 0))
+        x("INSERT INTO traffic (ts,crc,up,down,conns,is_tester) VALUES (?,?,?,?,?,?)",
+          (self.now + 1, "ok", 30, 40, 1, 1))
+        self.st._db.commit()
+        data = D._collect(SimpleNamespace(storage=_Cfg(self.db)))
+        self.assertEqual(data["traffic_user_totals"], {"up": 100, "down": 200, "total": 300})
+        self.assertEqual(data["traffic_tester_totals"], {"up": 30, "down": 40, "total": 70})
+        self.assertEqual(data["traffic_range"]["start"], self.now)
+        self.assertEqual(data["traffic_tester_range"]["start"], self.now + 1)
 
 
 if __name__ == "__main__":
