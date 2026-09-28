@@ -80,6 +80,32 @@ class Switcher:
                   if st.get("active") and st.get("rotate_deadline")]
         return min(ds) if ds else None
 
+    def rotation_pool(self, region: str) -> list[str]:
+        """Ноды, из которых ближайший evaluate_all выберет новую активную: пул ротации
+        (тот же, что в _pick_rotation), а без активной — первая по score (init)."""
+        with self._lock:
+            cands = self.board.candidates(region)
+            if not cands:
+                return []
+            st = self.state.get(region) or {}
+            if not st.get("active"):
+                return [cands[0]["node"]]
+            return [c["node"] for c in self._rotation_pool(cands, st)]
+
+    def rotation_due(self, region: str) -> bool:
+        """Ближайший evaluate_all сменит активную ноду региона по ротации (или выберет
+        первую, если активной нет). Условия — как в _evaluate_region_locked."""
+        if not self.cfg.enabled:
+            return False
+        with self._lock:
+            st = self.state.get(region) or {}
+            if not st.get("active"):
+                return True
+            now = time.time()
+            return (self.cfg.rotation.enabled
+                    and now >= st.get("rotate_deadline", 0)
+                    and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell)
+
     def force_activate(self, region: str, node: str) -> bool:
         """Ручное форс-переключение активной ноды региона (из админки).
 
@@ -212,16 +238,18 @@ class Switcher:
 
     def _pick_rotation(self, cands, st) -> dict:
         """weighted-random из топ-K, исключая активную и последние avoid_recent."""
+        return self._balanced_choice(self._rotation_pool(cands, st), st)
+
+    def _rotation_pool(self, cands, st) -> list:
         active = st.get("active")
         recent = set(st.get("recent", [])[: self.cfg.rotation.avoid_recent])
         recent.add(active)
         filtered = [c for c in cands
                     if c["node"] not in recent
                     and float(c["score"]) >= self.cfg.rotation.min_score]
-        pool = (filtered[: self.cfg.rotation.top_k]
+        return (filtered[: self.cfg.rotation.top_k]
                 or [c for c in cands if c["node"] != active]
                 or cands)
-        return self._balanced_choice(pool, st)
 
     def _balanced_choice(self, pool: list, st: dict) -> dict:
         """Взвешенный выбор из pool: fair-share по числу нод оси + underuse по трафику.

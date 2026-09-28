@@ -144,16 +144,6 @@ class Scoreboard:
         age = time.time() - int(r.get("heavy_ts", 0) or 0)
         return age < self._heavy_veto_secs    # свежий veto действует, протухший — нет
 
-    def heavy_fresh(self, node: str) -> bool:
-        """Результат тяжёлого download (ok или veto) моложе TTL — пере-качивать рано.
-        TTL 0 = результат не хранится по времени, качаем каждый прогон."""
-        if self._heavy_veto_secs <= 0:
-            return False
-        with self._lock:
-            r = self.rows.get(node)
-            ts = int(r.get("heavy_ts", 0) or 0) if r is not None else 0
-        return ts > 0 and time.time() - ts < self._heavy_veto_secs
-
     def candidates(self, region: str) -> list[dict]:
         """Здоровые ноды региона (score > 0), по убыванию score. Свежий heavy-veto
         исключается — но если не-vetoed не осталось, возвращаем vetoed (мало нод →

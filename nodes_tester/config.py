@@ -104,7 +104,8 @@ class RunParams:
     restore_selection: bool = True
     # Двухуровневое тестирование: лёгкие тесты (tests_enabled, вкл. 10МБ download)
     # скорят ВСЕ ноды; затем тяжёлый 50МБ download гоняется как pass/fail veto только
-    # для heavy_candidates лучших нод региона (+ активная). 0 = двухуровневость выкл.
+    # для всего пула ротации (switching.rotation.top_k) и только в регионах, где в этом
+    # прогоне наступает ротация. > 0 включает, 0 = двухуровневость выкл.
     heavy_candidates: int = 0
     heavy_veto_hours: float = 6.0          # сколько держится veto, пока не пере-проверим
 

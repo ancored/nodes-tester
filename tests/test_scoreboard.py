@@ -49,62 +49,102 @@ class ScoreboardVetoTest(unittest.TestCase):
         self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["B"])
 
 
-class HeavyTtlTest(unittest.TestCase):
-    """heavy_download не пере-качивается, пока результат моложе heavy_veto_hours."""
+class _Ident:
+    def __init__(self, raw):
+        self.raw = raw
+
+
+def _switcher(board, state=None):
+    from nodes_tester.config import SwitchingConfig
+    from nodes_tester.switcher import Switcher
+    sw = Switcher(SwitchingConfig(enabled=True), None, board, "nodes-tester")
+    sw.state = state or {}
+    return sw
+
+
+class HeavyBeforeRotationTest(unittest.TestCase):
+    """heavy_download — весь пул ротации, только в регионах, где наступает ротация."""
 
     def setUp(self):
+        import time
         from tests.helpers import make_runner
         self.tmp = temp_dir()
-        self.runner = make_runner(self.tmp, run={"default": {"heavy_candidates": 2}})
+        self.runner = make_runner(self.tmp, run={"default": {"heavy_candidates": 1}})
+        self.runner._order_by_host = lambda items: items
         self.storage = Storage(StorageConfig(db_file=os.path.join(self.tmp, "h.db")))
         self.sb = Scoreboard(self.storage, ScoringConfig())
         self.sb.set_heavy_veto_ttl(3600)
-        self.sb.rows = {n: _row(n, score=s) for n, s in (("A", 90), ("B", 80), ("C", 70))}
+        eu = [("A", 95), ("B", 90), ("C", 85), ("D", 80), ("E", 75), ("F", 70), ("G", 65), ("H", 40)]
+        self.sb.rows = {n: _row(n, score=s) for n, s in eu}
+        self.sb.rows["U"] = _row("U", region="us", score=90)
+        self.sb.rows["V"] = _row("V", region="us", score=80)
         self.runner.board = self.sb
-        self.runner.switcher = None
-        self.by_raw = {n: ("eu", n) for n in self.sb.rows}
+        now = time.time()
+        self.state = {
+            "eu": {"active": "A", "rotate_deadline": now - 1, "last_switch": now - 7200},
+            "us": {"active": "U", "rotate_deadline": now + 3600, "last_switch": now - 7200},
+        }
+        self.runner.switcher = _switcher(self.sb, self.state)
+        self.by_raw = {n: (row["region"], _Ident(n)) for n, row in self.sb.rows.items()}
 
     def tearDown(self):
         self.storage.close()
 
-    def _targets(self):
-        return [ident for _region, ident in self.runner._heavy_targets(self.by_raw)]
+    def _targets(self, done=frozenset()):
+        return [ident.raw for _region, ident in self.runner._heavy_targets(self.by_raw, done)]
 
-    def test_second_pass_within_ttl_skips(self):
-        self.assertEqual(self._targets(), ["A", "B"])
-        self.sb.set_heavy("A", True)
-        self.sb.set_heavy("B", False)
-        # A свежий ok, B свежий veto → выбыл из топа, его место занял C
-        self.assertEqual(self._targets(), ["C"])
-        self.sb.set_heavy("C", True)
+    def test_whole_rotation_pool_of_due_region(self):
+        # top_k=5 без активной A; us — срок не наступил
+        self.assertEqual(self._targets(), ["B", "C", "D", "E", "F"])
+
+    def test_pool_skips_recent_and_low_score(self):
+        self.state["eu"]["recent"] = ["C"]
+        self.sb.rows["D"]["score"] = 50                 # ниже min_score 55
+        self.assertEqual(self._targets(), ["B", "E", "F", "G"])
+
+    def test_no_active_checks_init_choice(self):
+        self.state["us"] = {}
+        self.assertIn("U", self._targets())
+        self.assertNotIn("V", self._targets())
+
+    def test_min_dwell_blocks(self):
+        import time
+        self.state["eu"]["last_switch"] = time.time() - 60
         self.assertEqual(self._targets(), [])
 
-    def test_expired_result_retested(self):
-        self.sb.set_heavy("A", True)
-        self.sb.rows["A"]["heavy_ts"] -= 3601
-        self.assertEqual(self._targets(), ["A", "B"])
+    def test_no_switcher_no_heavy(self):
+        self.runner.switcher = None
+        self.assertEqual(self._targets(), [])
 
-    def test_ttl_zero_tests_every_pass(self):
-        self.sb.set_heavy_veto_ttl(0)
-        self.sb.set_heavy("A", True)
-        self.assertEqual(self._targets(), ["A", "B"])
+    def test_veto_refills_pool(self):
+        rounds = []
+        fail = {"C", "D"}
 
-    def test_active_node_respects_ttl(self):
-        class Sw:
-            def active_node(self, region):
-                return "C"
-        self.runner.switcher = Sw()
-        self.assertEqual(self._targets(), ["A", "B", "C"])
-        self.sb.set_heavy("C", True)
-        self.assertEqual(self._targets(), ["A", "B"])
+        def fake_round(heavy, targets, pass_no, first):
+            rounds.append([ident.raw for _r, ident in targets])
+            for _r, ident in targets:
+                self.sb.set_heavy(ident.raw, ident.raw not in fail)
 
-    def test_ttl_survives_reload(self):
-        self.sb.set_heavy("A", True)
-        self.sb.write()
-        sb2 = Scoreboard(self.storage, ScoringConfig())
-        sb2.set_heavy_veto_ttl(3600)
-        self.assertTrue(sb2.heavy_fresh("A"))
-        self.assertFalse(sb2.heavy_fresh("B"))
+        self.runner._heavy_round = fake_round
+        self.runner._heavy_test = lambda: object()
+        self.runner._run_heavy_pass(self.by_raw, 1)
+        self.assertEqual(rounds, [["B", "C", "D", "E", "F"], ["G"]])   # H < min_score
+        pick = self.runner.switcher.rotation_pool("eu")
+        self.assertEqual(pick, ["B", "E", "F", "G"])
+
+
+class SwitcherRotationDueTest(unittest.TestCase):
+    def test_conditions(self):
+        import time
+        sw = _switcher(None)
+        self.assertTrue(sw.rotation_due("eu"))                  # активной нет — init
+        now = time.time()
+        sw.state["eu"] = {"active": "A", "rotate_deadline": now + 600, "last_switch": now - 7200}
+        self.assertFalse(sw.rotation_due("eu"))                 # срок не наступил
+        sw.state["eu"]["rotate_deadline"] = now - 1
+        self.assertTrue(sw.rotation_due("eu"))
+        sw.state["eu"]["last_switch"] = now - 60
+        self.assertFalse(sw.rotation_due("eu"))                 # min_dwell
 
 
 if __name__ == "__main__":

@@ -527,22 +527,20 @@ class Runner:
             self._heavy_cache = cls(self.cfg.tests.get("heavy_download") or {}) if cls else None
         return self._heavy_cache
 
-    def _heavy_targets(self, node_by_raw: dict) -> list:
-        """Кандидаты на тяжёлый download: топ-heavy_candidates по (лёгкому) score на
-        регион + активная нода. Ноды со свежим результатом (моложе heavy_veto_hours)
-        пропускаются — и активная тоже, её между прогонами пасёт зонд монитора.
-        Возвращает [(region, ident), …] без повторов."""
-        targets, picked = [], set()
+    def _heavy_targets(self, node_by_raw: dict, done=frozenset()) -> list:
+        """Кандидаты на тяжёлый download: весь пул, из которого switcher выберет новую
+        активную (Switcher.rotation_pool), только в регионах, где в этом прогоне наступает
+        ротация (или активной нет). heavy_candidates > 0 включает фазу для региона.
+        done — уже проверенные в этом прогоне. Возвращает [(region, ident), …] без повторов."""
+        if self.switcher is None:
+            return []
+        targets, picked = [], set(done)
         for region in self.board.regions():
             hc = int(getattr(self._region_params(region), "heavy_candidates", 0) or 0)
-            if hc <= 0:
+            if hc <= 0 or not self.switcher.rotation_due(region):
                 continue
-            raws = [c["node"] for c in self.board.candidates(region)[:hc]]
-            active = self.switcher.active_node(region) if self.switcher else None
-            if active and active not in raws:
-                raws.append(active)
-            for raw in raws:
-                if raw in picked or self.board.heavy_fresh(raw):
+            for raw in self.switcher.rotation_pool(region):
+                if raw in picked:
                     continue
                 picked.add(raw)
                 ni = node_by_raw.get(raw)
@@ -556,10 +554,18 @@ class Runner:
         heavy = self._heavy_test()
         if heavy is None:
             return
-        targets = self._order_by_host(self._heavy_targets(node_by_raw))   # host-aware
-        if not targets:
-            return
-        print(f"\n── Фаза 2 · тяжёлый download-veto — нод: {len(targets)} ──")
+        # Veto выбивает ноду из пула — её место занимает следующая, проверяем и её:
+        # круги, пока в пулах не останется непроверенных.
+        done: set = set()
+        while True:
+            targets = self._order_by_host(self._heavy_targets(node_by_raw, done))  # host-aware
+            if not targets:
+                return
+            done.update(ident.raw for _region, ident in targets)
+            self._heavy_round(heavy, targets, pass_no, first=len(done) == len(targets))
+
+    def _heavy_round(self, heavy, targets: list, pass_no: int, first: bool) -> None:
+        print(f"\n── Фаза 2 · тяжёлый download-veto{'' if first else ' (добор)'} — нод: {len(targets)} ──")
         for index, (region, ident) in enumerate(targets):
             self._progress = {"phase": "heavy_testing", "processed": index,
                               "total": len(targets), "node": ident.raw}
