@@ -529,7 +529,9 @@ class Runner:
 
     def _heavy_targets(self, node_by_raw: dict) -> list:
         """Кандидаты на тяжёлый download: топ-heavy_candidates по (лёгкому) score на
-        регион + активная нода. Возвращает [(region, ident), …] без повторов."""
+        регион + активная нода. Ноды со свежим результатом (моложе heavy_veto_hours)
+        пропускаются — и активная тоже, её между прогонами пасёт зонд монитора.
+        Возвращает [(region, ident), …] без повторов."""
         targets, picked = [], set()
         for region in self.board.regions():
             hc = int(getattr(self._region_params(region), "heavy_candidates", 0) or 0)
@@ -538,9 +540,9 @@ class Runner:
             raws = [c["node"] for c in self.board.candidates(region)[:hc]]
             active = self.switcher.active_node(region) if self.switcher else None
             if active and active not in raws:
-                raws.append(active)                 # активную проверяем всегда
+                raws.append(active)
             for raw in raws:
-                if raw in picked:
+                if raw in picked or self.board.heavy_fresh(raw):
                     continue
                 picked.add(raw)
                 ni = node_by_raw.get(raw)
