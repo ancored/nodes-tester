@@ -148,6 +148,42 @@
   <tr>
     <td colspan="2"><strong>Проверки</strong><br>Этап прохода, очередь, последний результат и живой журнал.</td>
   </tr>
+  <tr>
+    <td colspan="2">
+      <a href="pipeline-light.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="pipeline.png">
+          <source media="(prefers-color-scheme: light)" srcset="pipeline-light.png">
+          <img alt="Конвейер подписок и конфигураций" src="pipeline-light.png">
+        </picture>
+      </a>
+    </td>
+  </tr>
+  <tr><td colspan="2"><strong>Конвейер</strong><br>Ручной запуск, расписание, история и журнал.</td></tr>
+  <tr>
+    <td width="50%">
+      <a href="singbox-light.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="singbox.png">
+          <source media="(prefers-color-scheme: light)" srcset="singbox-light.png">
+          <img alt="Файлы sing-box" src="singbox-light.png">
+        </picture>
+      </a>
+    </td>
+    <td width="50%">
+      <a href="singbox-rules-light.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="singbox-rules.png">
+          <source media="(prefers-color-scheme: light)" srcset="singbox-rules-light.png">
+          <img alt="Источники правил sing-box" src="singbox-rules-light.png">
+        </picture>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td><strong>Файлы sing-box</strong><br>База, клиентские конфиги и история версий.</td>
+    <td><strong>Источники правил</strong><br>Список загрузок и локальные JSON-файлы.</td>
+  </tr>
 </table>
 
 ## Мобильный интерфейс
