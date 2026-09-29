@@ -13,7 +13,7 @@
 # Снимок: /root/backups/nodes-tester-<YYYYmmdd-HHMMSS>/
 #   files.tar.gz   config_dir, /etc/config/nodes-tester, data_dir без БД, /etc/sing-box
 #   code.tar.gz    файлы пакета (код, init.d, /usr/bin/nodes-tester)
-#   stats.db.gz    онлайн-снимок SQLite backup API с integrity_check (сервис не останавливается)
+#   stats.db.gz, pipeline.db.gz  онлайн-снимки SQLite backup API с integrity_check
 #   crontab.txt, enabled.txt, MANIFEST, SHA256SUMS, rollback.sh, пакет (если найден)
 #
 # Пути config_dir и data_dir читаются из /etc/config/nodes-tester.
@@ -68,6 +68,9 @@ EXCL="$DEST/exclude.txt"
 for f in stats.db stats.db-wal stats.db-shm; do
     echo "${DATA_DIR#/}/results/$f"
 done > "$EXCL"
+for f in pipeline.db pipeline.db-wal pipeline.db-shm; do
+    echo "${DATA_DIR#/}/$f"
+done >> "$EXCL"
 tar czf "$DEST/files.tar.gz" -X "$EXCL" -T "$LIST"
 
 # --- 2. Код пакета ------------------------------------------------------------
@@ -101,6 +104,21 @@ else
     echo "  (нет БД, пропуск) ${DB:-storage.db_file}"
 fi
 
+PIPELINE_DB="$DATA_DIR/pipeline.db"
+if [ -f "$PIPELINE_DB" ]; then
+    python3 - "$PIPELINE_DB" "$DEST/pipeline.db" <<'EOF'
+import sqlite3, sys
+src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+dst = sqlite3.connect(sys.argv[2])
+src.backup(dst)
+ok = dst.execute("PRAGMA integrity_check").fetchone()[0]
+dst.close(); src.close()
+print(f"  pipeline.db: integrity_check={ok}")
+sys.exit(0 if ok == "ok" else 1)
+EOF
+    gzip "$DEST/pipeline.db"
+fi
+
 # --- 4. Пакет для отката ------------------------------------------------------
 [ -n "$PKG_FILE" ] || PKG_FILE="$PKG_DIR/nodes-tester-$VERSION.$EXT"
 if [ -f "$PKG_FILE" ]; then
@@ -123,7 +141,7 @@ if [ -f "$SELF_DIR/rollback-nodes-tester.sh" ]; then
     chmod +x "$DEST/rollback.sh"
 fi
 
-( cd "$DEST" && sha256sum files.tar.gz code.tar.gz stats.db.gz nodes-tester-*."$EXT" \
+( cd "$DEST" && sha256sum files.tar.gz code.tar.gz stats.db.gz pipeline.db.gz nodes-tester-*."$EXT" \
     2>/dev/null > SHA256SUMS ) || true
 
 {

@@ -6,8 +6,8 @@
 обёртка) и новый конвейер `migrate → python -m nodes_fetch → python -m nodes_config`.
 
 Наборы:
-- tests/fixtures/golden/*   — синтетические (в git), см. tests/golden/make_synthetic.py;
-- tests/fixtures/local/*    — реальные подписки, записанные на роутере (вне git, секреты);
+- tests/fixtures/golden/*   — синтетические (хранятся в репозитории), см. tests/golden/make_synthetic.py;
+- tests/fixtures/local/*    — реальные подписки, записанные на роутере (не хранятся в репозитории, секреты);
                               тест пропускается, если их нет.
 Пересоздать эталон (только осознанно!): python tests/golden/harness.py golden --project . --set <SET>
 """

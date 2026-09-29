@@ -12,7 +12,7 @@ const data = {nodes:[node],source:{state:'ok',message:'Снимок SQLite'},rat
   runner:{running:true,pass:2,day:'2026-09-27',progress:{phase:'waiting',total:1,processed:1},regions:[],request_queued:true},
   node_events:[],traffic_range:{},retention_days:30}
 globalThis.fetch = async()=>new Response(JSON.stringify(data),{status:200})
-const vite = await createServer({server:{middlewareMode:true},appType:'custom',optimizeDeps:{noDiscovery:true,include:[]}})
+const vite = await createServer({configLoader:'native',server:{middlewareMode:true},appType:'custom',optimizeDeps:{noDiscovery:true,include:[]}})
 const store = await vite.ssrLoadModule('/src/store.js')
 try {
   Object.assign(store.useSnapshot(),{data,ready:true,loading:false,error:''})
@@ -30,6 +30,8 @@ try {
     ['Config','/subscriptions','pipeline router --dry-run'],
     ['Runs','/runs','disabled'],
     ['Traffic','/traffic','Это не последние 24 часа'],
+    ['Pipeline','/pipeline','Конвейер обновления'],
+    ['Singbox','/singbox','Исходные файлы sing-box'],
   ]) {
     const page = (await vite.ssrLoadModule('/src/views/'+view+'.vue')).default
     const router=createRouter({history:createMemoryHistory(),routes:[{path:'/nodes/:crc',component:page},{path:'/:rest(.*)*',component:page}]})

@@ -36,8 +36,8 @@ const kpis=computed(()=>[
     <p v-else class="mut">Пользовательских замеров за сохранённый период нет.</p>
     <h3>Пользовательский трафик</h3>
     <div class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_user_totals?.[key] || 0) : '—' }}</div></div></div>
-    <p>Трафик тестера: <b>{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.total || 0) : '—' }}</b> <span class="mut">(входящий {{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.down || 0) : '—' }}, исходящий {{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.up || 0) : '—' }})</span></p>
-    <p v-if="s.data.traffic_tester_range?.start" class="mut">Замеры тестера: {{ dateTime(s.data.traffic_tester_range.start) }} — {{ dateTime(s.data.traffic_tester_range.end) }}</p>
+    <p>Скачано тестами за 24 часа: <b>{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_test_download_24h?.down || 0) : '—' }}</b> <span class="mut">({{ s.data.traffic_test_download_24h?.tests || 0 }} замеров; тело ответов без сетевых накладных расходов)</span></p>
+    <p class="mut">Выборка соединений тестера за 24 часа: {{ s.data.source?.state === 'ok' ? bytes((s.data.traffic_tester_sample_24h?.up || 0) + (s.data.traffic_tester_sample_24h?.down || 0)) : '—' }}. Короткие соединения могут не попасть в опрос.</p>
     <RouterLink to="/traffic">Подробности пользовательского трафика</RouterLink>
   </section>
   <section class="panel">

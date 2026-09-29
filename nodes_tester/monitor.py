@@ -32,7 +32,7 @@ from .identity import parse_node
 
 
 class ProductionMonitor:
-    def __init__(self, cfg, clash, switcher, prober, tester_group):
+    def __init__(self, cfg, clash, switcher, prober, tester_group, pause_check=None):
         self.cfg = cfg                 # MonitorConfig
         self.clash = clash
         self.sw = switcher
@@ -41,6 +41,7 @@ class ProductionMonitor:
         # это НЕ throttle → сбрасываем страйки. ClashApiError prober пробрасывает наверх.
         self.prober = prober
         self.tester_group = tester_group
+        self.pause_check = pause_check or (lambda: False)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Состояние по региону: тихий таймер, накопленные байты, страйки зонда.
@@ -77,6 +78,8 @@ class ProductionMonitor:
                 print(f"  [monitor] ошибка: {exc}")
 
     def _tick(self) -> None:
+        if self.pause_check():
+            return
         try:
             conns = self.clash.connections()
             proxies = self.clash.all_proxies()

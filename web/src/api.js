@@ -32,7 +32,7 @@ async function request(method, path, body, headers = {}) {
     throw e
   } finally { clearTimeout(timeout) }
 }
-export const api = { get: p => request('GET', p), post: (p,b) => request('POST',p,b ?? {}),
+export const api = { get: p => request('GET', p), post: (p,b,h) => request('POST',p,b ?? {},h),
   put: (p,b,h) => request('PUT',p,b ?? {},h) }
 export async function login(t, remember = false) {
   setToken(t.trim()); const epoch = auth.epoch; auth.checking = true; auth.error = ''

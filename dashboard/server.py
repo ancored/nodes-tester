@@ -191,7 +191,7 @@ function spark(crc){
   const last=vals[n-1],col=last>=70?'--good':last<=20?'--bad':'--accent';
   return `<svg width=${w} height=${h} viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill=none stroke=var(${col}) stroke-width=1.5/></svg>`;
 }
-// --- Мини-график динамики выбытия (появилось/выбыло по дням) ---
+// --- Мини-график появления и исчезновения нод из списка ---
 function attritionChart(rows){
   if(!rows||!rows.length)return '<div class=mut style="margin:0 16px">нет данных</div>';
   rows=rows.slice(-30);
@@ -203,10 +203,10 @@ function attritionChart(rows){
   rows.forEach((r,i)=>{
     const x=pad+i*gw,a=+r.added||0,rm=+r.removed||0,g=+r.garbage||0;
     bars+=`<rect x=${x} y=${y(a).toFixed(1)} width=${bw} height=${(H-pad-y(a)).toFixed(1)} rx=1 fill=var(--good) opacity=.85><title>${r.day}: появилось ${a}</title></rect>`;
-    bars+=`<rect x=${x+bw+1} y=${y(rm).toFixed(1)} width=${bw} height=${(H-pad-y(rm)).toFixed(1)} rx=1 fill=var(--bad) opacity=.85><title>${r.day}: выбыло ${rm}, в мусор ${g}</title></rect>`;
+    bars+=`<rect x=${x+bw+1} y=${y(rm).toFixed(1)} width=${bw} height=${(H-pad-y(rm)).toFixed(1)} rx=1 fill=var(--bad) opacity=.85><title>${r.day}: исчезло ${rm}, в карантин ${g}</title></rect>`;
   });
   const lbl=rows.map((r,i)=>i%Math.ceil(rows.length/8||1)?'':`<text x=${pad+i*gw} y=${H-6} fill=var(--muted) font-size=9>${r.day.slice(5)}</text>`).join('');
-  return `<div class=wrap style="padding:12px 14px"><div class=mut style="margin-bottom:8px"><b class=good>■</b> появилось &nbsp;<b class=bad>■</b> выбыло <small>(по дням)</small></div><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%"><line x1=${pad} y1=${H-pad} x2=${W-pad} y2=${H-pad} stroke=var(--line)/>${bars}${lbl}</svg></div></div>`;
+  return `<div class=wrap style="padding:12px 14px"><div class=mut style="margin-bottom:8px"><b class=good>■</b> появилось &nbsp;<b class=bad>■</b> исчезло из списка <small>(по дням)</small></div><div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%"><line x1=${pad} y1=${H-pad} x2=${W-pad} y2=${H-pad} stroke=var(--line)/>${bars}${lbl}</svg></div></div>`;
 }
 async function load(){
   let d; try{ d=await (await fetch('api/data',{cache:'no-store'})).json(); }
@@ -235,14 +235,14 @@ async function load(){
   // --- Жизненный цикл / деградация нод ---
   const garbCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
     {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'state',t:'статус',f:stateF},
-    {k:'streak',t:'провалов'},{k:'garbage_count',t:'× в мусоре'},{k:'last_garbage',t:'посл. мусор',f:D},
-    {k:'in_garbage',t:'в мусоре',f:DUR},{k:'until',t:'до',f:T},{k:'deleted',t:'удалена',f:delF}];
+    {k:'streak',t:'провалов'},{k:'garbage_count',t:'× в карантине'},{k:'last_garbage',t:'посл. карантин',f:D},
+    {k:'in_garbage',t:'в карантине',f:DUR},{k:'until',t:'до',f:T},{k:'deleted',t:'исчезла',f:delF}];
   const longCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
     {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'age',t:'возраст',f:DUR},
-    {k:'score',t:'score',f:score},{k:'garbage_count',t:'× в мусоре'},{k:'fails',t:'провалов'},{k:'active',t:'act',f:act}];
+    {k:'score',t:'score',f:score},{k:'garbage_count',t:'× в карантине'},{k:'fails',t:'провалов'},{k:'active',t:'act',f:act}];
   const dropCols=[{k:'provider',t:'провайдер',l:1},{k:'protocol',t:'протокол',l:1},{k:'cc',t:'cc',l:1},
-    {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'first_garbage',t:'1-й мусор',f:D},
-    {k:'lifespan',t:'прожила',f:DUR},{k:'garbage_count',t:'× в мусоре'},{k:'deleted',t:'удалена',f:delF}];
+    {k:'crc',t:'crc',l:1,f:crcf},{k:'first_seen',t:'в конфиге с',f:D},{k:'first_garbage',t:'1-й карантин',f:D},
+    {k:'lifespan',t:'прожила',f:DUR},{k:'garbage_count',t:'× в карантине'},{k:'deleted',t:'исчезла',f:delF}];
   const FDIMS=[{k:'provider',t:'провайдер'},{k:'cc',t:'cc'},{k:'protocol',t:'протокол'}];
   const sec=(t,html)=>'<section><h2>'+t+'</h2>'+html+'</section>';
   _d=d;
@@ -254,7 +254,7 @@ async function load(){
     sec('Мусорные / деградирующие ноды',filtered('garb','garbage',garbCols,FDIMS))+
     sec('Динамика выбытия','<div id=attrbody></div>')+
     sec('Долгожители <small>(живые, по возрасту ↓)</small>',plain('long','longevity',longCols))+
-    sec('Быстро выпадающие <small>(по сроку жизни до 1-го мусора ↑)</small>',plain('drop','dropouts',dropCols))+
+    sec('Быстро ограниченные <small>(по сроку жизни до 1-го карантина ↑)</small>',plain('drop','dropouts',dropCols))+
     sec('Трафик',trafficSection())+
     sec('Топ назначений','<div id=endpbody></div>');
   renderTraf();
@@ -295,7 +295,9 @@ def build_app(cfg, *, runner=None, interval: int | None = None) -> App:
     from . import api_control, api_config
     api_control.register(app)
     api_config.register(app)
-    from . import api_session
+    from . import api_pipeline, api_session, api_singbox
+    api_pipeline.register(app)
+    api_singbox.register(app)
     api_session.register(app)
     return app
 

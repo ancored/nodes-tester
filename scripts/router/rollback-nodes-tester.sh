@@ -6,7 +6,7 @@
 #
 #   SNAPSHOT_DIR  каталог снимка (по умолчанию /root/backups/nodes-tester-stable)
 #   -y            без подтверждения
-#   --keep-db     оставить ТЕКУЩУЮ stats.db (по умолчанию восстанавливается БД снимка)
+#   --keep-db     оставить ТЕКУЩИЕ stats.db и pipeline.db
 #   --check       только проверить снимок (контрольные суммы, архивы) и выйти
 #
 # Пакет переустанавливается из файла в снимке; без него код возвращается из code.tar.gz
@@ -118,6 +118,16 @@ if [ -n "$DB" ] && [ -f "$SNAP/stats.db.gz" ] && [ "$KEEP_DB" != 1 ]; then
     log "stats.db восстановлена из снимка (текущая — в $FAILED)"
 else
     log "stats.db: оставлена текущая"
+fi
+
+PIPELINE_DB="$DATA_DIR/pipeline.db"
+if [ -f "$SNAP/pipeline.db.gz" ] && [ "$KEEP_DB" != 1 ]; then
+    mkdir -p "$DATA_DIR"
+    for f in "$PIPELINE_DB" "$PIPELINE_DB-wal" "$PIPELINE_DB-shm"; do
+        [ -f "$f" ] && mv "$f" "$FAILED/"
+    done
+    gunzip -c "$SNAP/pipeline.db.gz" > "$PIPELINE_DB"
+    log "pipeline.db восстановлена из снимка"
 fi
 
 # --- 4. cron и автозапуск -----------------------------------------------------

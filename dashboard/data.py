@@ -151,6 +151,10 @@ def _collect(cfg) -> dict:
     tester_rows = _query(db, "SELECT COALESCE(SUM(up),0) AS up, COALESCE(SUM(down),0) AS down FROM traffic WHERE is_tester=1")
     tester_up = tester_rows[0]["up"] if tester_rows else 0
     tester_down = tester_rows[0]["down"] if tester_rows else 0
+    cutoff = int(time.time()) - 86400
+    tester_sample_24h = _query(db, f"""SELECT COALESCE(SUM(up),0) AS up,
+        COALESCE(SUM(down),0) AS down FROM traffic WHERE is_tester=1 AND ts >= {cutoff}""")
+    tester_download_24h = _test_downloads(db, cutoff)
     traffic_providers = _sum_by(rows, "provider", {"leaf", "unspecified"})
     traffic_countries = _sum_by(rows, "cc", {"leaf", "unspecified"})
     traffic_protocols = _sum_by(rows, "protocol", {"leaf"})   # протокол известен у leaf-нод
@@ -176,7 +180,6 @@ def _collect(cfg) -> dict:
     nodes = _nodes_list(db)
     traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
     tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
-    tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
 
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -188,6 +191,8 @@ def _collect(cfg) -> dict:
         "traffic_total": traffic_total,
         "traffic_user_totals": {"up": user_up, "down": user_down, "total": traffic_total},
         "traffic_tester_totals": {"up": tester_up, "down": tester_down, "total": tester_up + tester_down},
+        "traffic_tester_sample_24h": tester_sample_24h[0] if tester_sample_24h else {"up": 0, "down": 0},
+        "traffic_test_download_24h": tester_download_24h,
         "traffic_countries": traffic_countries,
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
@@ -202,10 +207,28 @@ def _collect(cfg) -> dict:
         "nodes": nodes,
         "traffic_range": traffic_range[0] if traffic_range else {},
         "traffic_tester_range": tester_range[0] if tester_range else {},
-        "traffic_tester_range": tester_range[0] if tester_range else {},
         "retention_days": cfg.storage.retention_days,
         "node_events": _query(db, "SELECT ts, crc, event, reason, streak FROM node_events ORDER BY ts DESC, rowid DESC LIMIT 500"),
     }
+
+
+def _test_downloads(db: str, cutoff: int) -> dict:
+    """Known response-body bytes; short connections need not survive a poll."""
+    rows = _query(db, f"""SELECT ts, metrics FROM results
+        WHERE ts >= {int(cutoff)} AND test IN ('download', 'heavy_download')""")
+    total, count, stamps = 0, 0, []
+    for row in rows:
+        try:
+            value = json.loads(row.get("metrics") or "{}").get("downloaded")
+        except (ValueError, AttributeError):
+            continue
+        if type(value) is int and value >= 0:
+            total += value
+            count += 1
+            stamps.append(row["ts"])
+    return {"down": total, "tests": count,
+            "start": min(stamps) if stamps else None,
+            "end": max(stamps) if stamps else None}
 
 
 def _classify_traffic(r: dict) -> dict:

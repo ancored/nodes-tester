@@ -10,7 +10,8 @@ config_load nodes-tester
 config_get CONFIG_DIR main config_dir /etc/nodes-tester
 config_get DATA_DIR main data_dir /opt/nodes-tester
 
-mkdir -p "$CONFIG_DIR/config-main" "$CONFIG_DIR/config-wh" "$CONFIG_DIR/awg" "$DATA_DIR"
+mkdir -p "$CONFIG_DIR/config-main" "$CONFIG_DIR/config-wh" "$CONFIG_DIR/awg" \
+    "$CONFIG_DIR/singbox/rules" "$CONFIG_DIR/singbox/clients/publish" "$DATA_DIR"
 
 if [ ! -f "$CONFIG_DIR/config.json" ]; then
 	token="$(tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 48)"
@@ -25,5 +26,8 @@ for set in main wh; do
 	[ -f "$d/groups_params.json" ] || cp "$EX/groups_params.json" "$d/groups_params.json"
 done
 [ -f "$CONFIG_DIR/clients.list" ] || cp "$EX/clients.list.example" "$CONFIG_DIR/clients.list"
+[ -f "$CONFIG_DIR/singbox/rules.json" ] || \
+    cp "$EX/singbox/rules.example.json" "$CONFIG_DIR/singbox/rules.json"
+[ -f "$CONFIG_DIR/pipeline.json" ] || cp "$EX/pipeline.example.json" "$CONFIG_DIR/pipeline.json"
 
 exit 0

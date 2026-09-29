@@ -12,7 +12,7 @@ set -eu
 SDK_TAG="${1:-x86-64-25.12.2}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$REPO/dist"
-case "$(uname -s)" in   # Git Bash на Windows: docker нужен путь вида C:/...
+case "$(uname -s)" in   # Bash на Windows: docker нужен путь вида C:/...
     MINGW*|MSYS*) REPO="$(cd "$REPO" && pwd -W)"; export MSYS_NO_PATHCONV=1 ;;
 esac
 

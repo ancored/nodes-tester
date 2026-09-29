@@ -96,7 +96,8 @@ class _Route:
     def __init__(self, method: str, pattern: str, fn, needs_token: bool):
         self.method = method.upper()
         # {name} в пути → именованная группа (без слэшей).
-        rx = re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", pattern)
+        rx = re.sub(r"\{(\w+)\.\.\.\}", r"(?P<\1>.+)", pattern)
+        rx = re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", rx)
         self.regex = re.compile("^" + rx + "$")
         self.fn = fn
         self.needs_token = needs_token

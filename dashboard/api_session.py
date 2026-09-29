@@ -1,4 +1,5 @@
 """Non-secret capabilities and server-side token validation."""
+import shutil
 from .webapp import App
 
 
@@ -10,7 +11,10 @@ def capabilities(app: App) -> dict:
         "edit_config": bool(app.token),
         "node_actions": bool(r is not None and r.storage is not None and app.token),
         "switch": bool(r is not None and r.switcher is not None and app.token),
-        "run_pass": bool(r is not None and app.token), "pipeline": False,
+        "run_pass": bool(r is not None and app.token),
+        "pipeline": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token
+                         and shutil.which("nodes-tester")),
+        "singbox_files": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token),
         "quarantine_hours": app.cfg.cooldown.garbage_hours,
         "cooldown_enabled": app.cfg.cooldown.enabled,
     }

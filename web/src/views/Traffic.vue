@@ -46,7 +46,15 @@ const endpCols = [
   <div v-if="s.loading" class="empty">Загрузка…</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
   <template v-else>
-    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; хранение — {{ s.data.retention_days }} дней. Топ нод ограничен 10 записями, назначений — 50; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
+    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; история исчезнувших нод удаляется через {{ s.data.retention_days }} дней после последнего появления. Топ нод ограничен 10 записями, назначений — 50; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
+    <section class="panel">
+      <h2>Расход тестера за последние 24 часа</h2>
+      <p v-if="s.data.source?.state !== 'ok'" class="mut">Нет доступной базы измерений.</p>
+      <template v-else>
+        <p>Скачано тестами download и heavy_download: <b>{{ bytes(s.data.traffic_test_download_24h?.down || 0) }}</b> за {{ s.data.traffic_test_download_24h?.tests || 0 }} замеров.</p>
+        <p class="mut">Это точно измеренный объём тела ответов. Заголовки, служебный трафик и другие тесты сюда не входят. Выборка по живым соединениям: входящий {{ bytes(s.data.traffic_tester_sample_24h?.down || 0) }}, исходящий {{ bytes(s.data.traffic_tester_sample_24h?.up || 0) }}. Эти величины пересекаются и не складываются.</p>
+      </template>
+    </section>
     <section>
       <h2>Трафик</h2>
       <Chips v-model="measure" :options="options" />

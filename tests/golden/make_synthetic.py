@@ -1,4 +1,4 @@
-"""Генератор синтетических golden-наборов (выдуманные ноды — безопасно для git).
+"""Генератор синтетических golden-наборов (выдуманные ноды — безопасно хранить в репозитории).
 
     python tests/golden/make_synthetic.py        # пишет tests/fixtures/golden/{synthetic,synthetic-wh}/
     python tests/golden/harness.py golden --project . --set tests/fixtures/golden/synthetic

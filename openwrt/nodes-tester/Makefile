@@ -9,7 +9,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
-PKG_VERSION:=0.1.5
+PKG_VERSION:=0.2.0
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
@@ -22,8 +22,8 @@ include $(INCLUDE_DIR)/package.mk
 
 REPO_ROOT:=$(CURDIR)/../..
 APP_DIR:=/usr/lib/nodes-tester
-PY_PACKAGES:=naming nodes_common nodes_fetch nodes_config nodes_tester dashboard
-ROUTER_SCRIPTS:=pipeline.sh apply-nodes.sh update-rules.sh build-clients.sh \
+PY_PACKAGES:=naming nodes_common nodes_fetch nodes_config nodes_tester dashboard nodes_admin
+ROUTER_SCRIPTS:=pipeline.sh pipeline-lock.sh apply-nodes.sh update-rules.sh build-clients.sh merge-configs.py \
 	backup-nodes-tester.sh rollback-nodes-tester.sh
 
 define Package/nodes-tester
@@ -52,6 +52,8 @@ define Package/nodes-tester/conffiles
 /etc/nodes-tester/clients.list
 /etc/nodes-tester/config-main/
 /etc/nodes-tester/config-wh/
+/etc/nodes-tester/singbox/
+/etc/nodes-tester/pipeline.json
 endef
 
 # PySocks нет в фидах OpenWrt: берём два модуля из sdist с PyPI (BSD-3-Clause)
@@ -73,6 +75,11 @@ define Build/Prepare
 		user_nodes.example.json groups_params.json awg/de.conf.example,\
 		cp $(REPO_ROOT)/config/$(f) $(PKG_BUILD_DIR)/config/$(f);)
 	cp $(REPO_ROOT)/scripts/router/clients.list.example $(PKG_BUILD_DIR)/config/
+	mkdir -p $(PKG_BUILD_DIR)/config/singbox
+	cp $(REPO_ROOT)/config/singbox/rules.example.json $(PKG_BUILD_DIR)/config/singbox/
+	cp $(REPO_ROOT)/config/pipeline.example.json $(PKG_BUILD_DIR)/config/
+	mkdir -p $(PKG_BUILD_DIR)/schemas
+	cp $(REPO_ROOT)/schemas/pipeline.schema.json $(PKG_BUILD_DIR)/schemas/
 	find $(PKG_BUILD_DIR) -name __pycache__ -type d -prune -exec rm -rf {} +
 	$(TAR) -xzf $(DL_DIR)/$(PYSOCKS_FILE) -C $(PKG_BUILD_DIR) \
 		PySocks-$(PYSOCKS_VERSION)/socks.py PySocks-$(PYSOCKS_VERSION)/sockshandler.py \
@@ -91,17 +98,20 @@ define Package/nodes-tester/install
 	$(foreach s,$(ROUTER_SCRIPTS),$(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/router/$(s) $(1)$(APP_DIR)/scripts/router/;)
 
 	# Шаблоны: из них uci-defaults создаёт рабочие конфиги при первой установке
-	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg
+	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg $(1)/usr/share/nodes-tester/examples/singbox
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/providers.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/user_nodes.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/groups_params.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/clients.list.example $(1)/usr/share/nodes-tester/examples/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules.example.json $(1)/usr/share/nodes-tester/examples/singbox/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/pipeline.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/awg/de.conf.example $(1)/usr/share/nodes-tester/examples/awg/
 
 	# Схема принадлежит пакету (обновляется вместе с кодом), лежит рядом с config.json
 	$(INSTALL_DIR) $(1)/etc/nodes-tester
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.schema.json $(1)/etc/nodes-tester/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/schemas/pipeline.schema.json $(1)/etc/nodes-tester/
 
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/uci-defaults $(1)/usr/bin
 	$(INSTALL_CONF) ./files/nodes-tester.config $(1)/etc/config/nodes-tester

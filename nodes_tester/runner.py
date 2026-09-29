@@ -63,6 +63,9 @@ class Runner:
         self.board = None
         self.switcher = None
         self.monitor = None
+        self.orchestrator = None
+        self._apply_in_progress = False
+        self._apply_pause_until = 0.0
         # Сериализует доступ к tester-селектору (self._top) и socks между плановым
         # прогоном (лёгкая/тяжёлая фазы) и внеплановым зондом монитора.
         self._tester_lock = threading.Lock()
@@ -115,6 +118,7 @@ class Runner:
                     self.monitor = ProductionMonitor(
                         cfg.monitor, self.clash, self.switcher,
                         prober=self._probe_node, tester_group=self._top,
+                        pause_check=self._apply_paused,
                     )
 
     # --- Планирование --------------------------------------------------
@@ -278,9 +282,11 @@ class Runner:
                 self.monitor.start()
             if self.collector is not None:
                 self.collector.start()
+            self._start_orchestrator()
             if self.cfg.dashboard.enabled:
                 self._start_dashboard()
             while True:
+                self._wait_apply_window()
                 today = time.strftime("%Y-%m-%d")
                 if today != current_day:           # наступила полночь → новый день, сброс
                     current_day, pass_no = today, 0
@@ -326,6 +332,8 @@ class Runner:
             if self.collector is not None:
                 self.collector.stop()
             self._stop_dashboard()
+            if self.orchestrator is not None:
+                self.orchestrator.stop()
             if self.storage is not None:
                 self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, cron)
                 self.storage.close()
@@ -378,6 +386,7 @@ class Runner:
             "request_queued": self._pass_requested.is_set(),
             "last_pass_result": self._last_pass_result,
             "wait_until": self._wait_until,
+            "apply_paused": self._apply_paused(),
         }
         if self.switcher is not None:
             for region in self.switcher.active_regions():
@@ -387,6 +396,39 @@ class Runner:
                 })
             out["next_rotation"] = self.switcher.next_rotate_deadline()
         return out
+
+    def _apply_start(self) -> None:
+        self._apply_in_progress = True
+
+    def _apply_end(self) -> None:
+        self._apply_in_progress = False
+        self._apply_pause_until = time.monotonic() + 120
+
+    def _apply_paused(self) -> bool:
+        return self._apply_in_progress or time.monotonic() < self._apply_pause_until
+
+    def _wait_apply_window(self) -> None:
+        while self._apply_paused():
+            self._progress = {**self._progress, "phase": "apply_wait", "node": None}
+            time.sleep(1)
+
+    def _start_orchestrator(self) -> None:
+        if not self.cfg.dashboard.token:
+            return
+        from pathlib import Path
+        schedule = Path(self.cfg.path).parent / "pipeline.json"
+        if not schedule.is_file():
+            return
+        from nodes_admin.orchestrator import Orchestrator
+        try:
+            self.orchestrator = Orchestrator(
+                schedule.parent, Path.cwd(),
+                on_apply_start=self._apply_start, on_apply_end=self._apply_end,
+            )
+            self.orchestrator.start()
+        except (OSError, ValueError) as exc:
+            self.orchestrator = None
+            print(f"[pipeline] оркестратор не запущен: {exc}")
 
     def _start_dashboard(self) -> None:
         """Поднять HTTP-сервер админки потоком-демоном внутри процесса тестера."""

@@ -11,7 +11,8 @@
 #   --force    перезапустить, даже если итоговый конфиг не изменился
 #
 # sing-box перезапускается ТОЛЬКО если: итоговый config.json изменился, или update-rules.sh
-# оставил маркер «правила обновились» ($RULES_MARK), или --force. Невалидный конфиг
+# оставил маркер «обновилась база» ($RULES_MARK), или --force. Изменённые .srs и source-наборы
+# sing-box перечитывает сам, без перезапуска. Невалидный конфиг
 # (merge/check упали) — работающий config.json не трогается, exit 1.
 #
 # После рестарта — проверка РЕАЛЬНОЙ связности (до $HEALTH_WAIT с): через Clash API sing-box
@@ -123,7 +124,7 @@ PYEOF
 
 REASON=""
 cmp -s "$TMP" "$CONFIG" || REASON="конфиг изменился"
-[ -f "$RULES_MARK" ] && REASON="${REASON:+$REASON, }обновились правила"
+[ -f "$RULES_MARK" ] && REASON="${REASON:+$REASON, }обновилась база"
 [ "$FORCE" = 1 ] && REASON="${REASON:+$REASON, }--force"
 
 if [ -z "$REASON" ]; then
@@ -138,6 +139,8 @@ if [ "$DRY" = 1 ]; then
     exit 0
 fi
 
+# Do not abandon the replacement/health-check/rollback sequence on timeout.
+trap '' TERM INT HUP
 cp -p "$CONFIG" "$CONFIG.prev"
 mv "$TMP" "$CONFIG"
 log "перезапуск sing-box ($REASON)…"

@@ -10,10 +10,14 @@ import Control from './views/Control.vue'
 import Runs from './views/Runs.vue'
 import Config from './views/Config.vue'
 import NodeDetail from './views/NodeDetail.vue'
+import Pipeline from './views/Pipeline.vue'
+import Singbox from './views/Singbox.vue'
 export const sections = [
   { path: '/', name: 'Обзор', component: Overview },
   { path: '/nodes', name: 'Ноды', component: Control },
   { path: '/subscriptions', name: 'Подписки и сборка', component: Config },
+  { path: '/pipeline', name: 'Конвейер', component: Pipeline },
+  { path: '/singbox', name: 'Файлы sing-box', component: Singbox },
   { path: '/runs', name: 'Проверки', component: Runs },
   { path: '/history', name: 'Переключения', component: History },
   { path: '/traffic', name: 'Трафик', component: Traffic },

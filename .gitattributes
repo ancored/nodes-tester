@@ -3,3 +3,6 @@
 
 # OpenWrt-пакет: Makefile, init-скрипты, UCI — тоже только LF
 openwrt/** text eol=lf
+
+# Роутерные скрипты (в т.ч. merge-configs.py) — тоже только LF
+scripts/router/** text eol=lf

@@ -133,10 +133,19 @@ class LifecycleGraveyardTest(unittest.TestCase):
           (self.now, "ok", 100, 200, 1, 0))
         x("INSERT INTO traffic (ts,crc,up,down,conns,is_tester) VALUES (?,?,?,?,?,?)",
           (self.now + 1, "ok", 30, 40, 1, 1))
+        x("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
+          (self.now, "ok", "download", 1, '{"downloaded":10000000}'))
+        x("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
+          (self.now, "ok", "heavy_download", 0, '{"downloaded":5000000}'))
+        x("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
+          (self.now - 90000, "ok", "download", 1, '{"downloaded":10000000}'))
         self.st._db.commit()
         data = D._collect(SimpleNamespace(storage=_Cfg(self.db)))
         self.assertEqual(data["traffic_user_totals"], {"up": 100, "down": 200, "total": 300})
         self.assertEqual(data["traffic_tester_totals"], {"up": 30, "down": 40, "total": 70})
+        self.assertEqual(data["traffic_tester_sample_24h"], {"up": 30, "down": 40})
+        self.assertEqual(data["traffic_test_download_24h"]["down"], 15000000)
+        self.assertEqual(data["traffic_test_download_24h"]["tests"], 2)
         self.assertEqual(data["traffic_range"]["start"], self.now)
         self.assertEqual(data["traffic_tester_range"]["start"], self.now + 1)
 

@@ -17,7 +17,8 @@ _SLICES = {
     "results": ("results",),
     "traffic": ("traffic_providers", "traffic_countries", "traffic_protocols",
                 "traffic_nodes", "endpoints", "traffic_total", "traffic_range",
-                "traffic_user_totals", "traffic_tester_totals", "traffic_tester_range"),
+                "traffic_user_totals", "traffic_tester_totals", "traffic_tester_range",
+                "traffic_tester_sample_24h", "traffic_test_download_24h"),
     "lifecycle": ("provider_quality", "garbage", "longevity", "dropouts", "attrition"),
     "graveyard": ("graveyard",),
 }

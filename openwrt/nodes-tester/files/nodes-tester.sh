@@ -20,7 +20,7 @@ config_load nodes-tester
 config_get CONFIG_DIR main config_dir /etc/nodes-tester
 config_get DATA_DIR main data_dir /opt/nodes-tester
 
-export PYTHONPATH="$APP_DIR" PYTHONIOENCODING=utf-8
+export PYTHONPATH="$APP_DIR" PYTHONIOENCODING=utf-8 CONFIG_DIR
 mkdir -p "$DATA_DIR"
 cd "$DATA_DIR" || exit 1
 
