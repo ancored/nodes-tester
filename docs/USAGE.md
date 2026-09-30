@@ -10,7 +10,7 @@
   <img alt="Список нод с состоянием, рейтингом и фильтрами" src="screenshots/nodes-light.png">
 </picture>
 
-Полная галерея доступна в [`docs/screenshots`](screenshots/README.md).
+Скриншоты обновлены для версии 0.3.4, включая [группы, предпросмотр, пресеты и действия с нодой](screenshots/README.md#группы-правила-и-действия). Полная галерея доступна в [`docs/screenshots`](screenshots/README.md).
 
 ## Где что искать
 

@@ -6,7 +6,7 @@
 Изображения автоматически переключаются между светлой и тёмной темой GitHub. Нажмите на
 скриншот, чтобы открыть исходный размер.
 
-Галерея снята для интерфейса 0.2.0. В версии 0.3.3 добавлены настраиваемые группы и раздел «Правила»; этих экранов здесь пока нет. Текущий порядок действий описан в [руководстве](../USAGE.md).
+Галерея снята для интерфейса 0.3.4 на демонстрационных данных. Текущий порядок действий описан в [руководстве](../USAGE.md).
 
 ## Основные экраны
 
@@ -32,7 +32,7 @@
     </td>
   </tr>
   <tr>
-    <td><strong>Обзор</strong><br>Состояние БД и тестера, сводные показатели и выбранные ноды регионов.</td>
+    <td><strong>Обзор</strong><br>Состояние БД и тестера, сводные показатели и выбранные ноды групп.</td>
     <td><strong>Все ноды</strong><br>Фильтры, поиск, сортировка, рейтинг и переход к карточке.</td>
   </tr>
   <tr>
@@ -57,7 +57,7 @@
   </tr>
   <tr>
     <td><strong>Карточка ноды</strong><br>Состояние, измерения, трафик, события и действия в одном месте.</td>
-    <td><strong>Рейтинг</strong><br>Итоговый балл и нормированные составляющие по регионам.</td>
+    <td><strong>Рейтинг</strong><br>Итоговый балл и нормированные составляющие по группам.</td>
   </tr>
   <tr>
     <td>
@@ -104,7 +104,7 @@
     </td>
   </tr>
   <tr>
-    <td><strong>Переключения</strong><br>Когда, почему и на какую ноду переключался регион.</td>
+    <td><strong>Переключения</strong><br>Когда, почему и на какую ноду переключалась группа.</td>
     <td><strong>Трафик</strong><br>Доступный период, направления и наиболее используемые ноды.</td>
   </tr>
 </table>
@@ -187,6 +187,40 @@
     <td><strong>Источники правил</strong><br>Список загрузок и локальные JSON-файлы.</td>
   </tr>
 </table>
+
+## Группы, правила и действия
+
+### Группы нод
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="groups.png">
+  <source media="(prefers-color-scheme: light)" srcset="groups-light.png">
+  <img alt="Группы нод" src="groups-light.png">
+</picture>
+
+### Предпросмотр состава групп
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="groups-preview.png">
+  <source media="(prefers-color-scheme: light)" srcset="groups-preview-light.png">
+  <img alt="Предпросмотр состава групп" src="groups-preview-light.png">
+</picture>
+
+### Правила и пресеты
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="presets.png">
+  <source media="(prefers-color-scheme: light)" srcset="presets-light.png">
+  <img alt="Правила и пресеты" src="presets-light.png">
+</picture>
+
+### Действия с нодой
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="node-actions.png">
+  <source media="(prefers-color-scheme: light)" srcset="node-actions-light.png">
+  <img alt="Действия с нодой" src="node-actions-light.png">
+</picture>
 
 ## Мобильный интерфейс
 
