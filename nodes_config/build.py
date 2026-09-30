@@ -1,7 +1,7 @@
 """Стадия nodes_config: raw_nodes (+ groups_params, + user_nodes) → фрагмент nodes.json.
 
 Порядок операций перенесён из subscribe/main.py (finalize_nodes) без изменений — от него
-зависят теги/CRC (golden-инвариант, REFACTOR-MODULES.md D8):
+зависят теги/CRC (golden-инвариант):
   1. raw → рабочие узлы (tag = исходный title, _provider, _file_cc);
   2. фильтры по raw: exclude_types, exclude_names (подстрока исходного title);
   3. голые vless/vmess (UNGROUPED) и exclude_protocols (токены naming.node_protocol);

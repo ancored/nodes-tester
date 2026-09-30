@@ -1,4 +1,4 @@
-"""Миграция конфигов v1 → v2 (REFACTOR-MODULES.md §4–5).
+"""Миграция конфигов v1 → v2.
 
 v1: один providers.json (подписки + фильтры/переименование + save_config_path) и
 groups_params.json (selector/urltest/emit/raw_user_nodes).

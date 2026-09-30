@@ -4,7 +4,7 @@
 fingerprint настроек ноды (его считает sing-box-subscribe), поэтому история
 переживает переименования тегов.
 
-Таблицы (полное описание — SCHEMA.md в корне репо):
+Таблицы (описание — nodes_tester/STORAGE.md):
   nodes(crc PK, tag, provider/protocol/country/label, type, server/port, payload JSON,
         crc_ok, first_seen, last_seen, present)   — описание ноды + флаг присутствия
   traffic(ts, crc, up, down, conns, is_tester)                 — временной ряд объёма
