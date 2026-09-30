@@ -1,7 +1,7 @@
 export const TEST_NAMES = { connectivity: 'Соединение', latency: 'Задержка', jitter: 'Джиттер / потери',
-  download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка' }
+  download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка', gemini: 'Gemini / страна Google' }
 export const PHASES = { stopped: 'Остановлен', initializing: 'Подготовка', enumerating: 'Получение списка нод',
-  testing: 'Основные проверки', heavy_testing: 'Тяжёлая проверка кандидатов', switching: 'Выбор нод регионов',
+  testing: 'Основные проверки', required_testing: 'Обязательные тесты групп (gemini)', heavy_testing: 'Тяжёлая проверка кандидатов', switching: 'Выбор нод регионов',
   waiting: 'Ожидание следующего прохода' }
 export function getPath(obj,path) { return path.split('.').reduce((v,k) => v?.[k],obj) }
 export function setPath(obj,path,value) {

@@ -21,7 +21,7 @@
 2. Пройти [установку и первый запуск на OpenWrt](openwrt/README.md).
 3. Открыть [руководство по админке и повседневной работе](docs/USAGE.md).
 
-Актуальный релиз: [`v0.2.0`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.2.0). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет не подписан; проверка файла и установка описаны в [инструкции](openwrt/README.md).
+Актуальный релиз: [`v0.3.3`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.3). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет не подписан; проверка файла и установка описаны в [инструкции](openwrt/README.md).
 
 ## Как устроено обновление
 
@@ -64,9 +64,8 @@ WH-подписки → загрузка → whnodes.json + клиентские
 | [`nodes_common`](nodes_common/README.md) | контракт raw, атомарная запись и блокировки |
 | [`naming`](naming/README.md) | идентичность, протоколы, страны, регионы и CRC |
 | [`scripts/router`](scripts/router/README.md) | применение, проверка, откат и клиентский конвейер |
-| [`subscribe`](subscribe/README.md) | совместимость со старым общим конфигом |
 
-Отдельно: [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.md),
+Отдельно: [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.md),
 [повседневная работа](docs/USAGE.md) и [пакет OpenWrt](openwrt/README.md).
 
 ## Если устанавливаете из исходников

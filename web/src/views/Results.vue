@@ -18,7 +18,7 @@ const columns=computed(()=>[
   <DataTable :rows="rows" :columns="columns" empty="Сохранённых результатов нет. Проверьте журнал и настройку storage.store_results.">
     <template v-for="test in tests" :key="test" #[`cell-${test}`]="{row}">
       <template v-if="row.cells[test]"><b :class="row.cells[test].ok ? 'good' : 'bad'">{{ row.cells[test].v }}</b>
-        <small v-if="test==='heavy_download'" class="cell-note">{{ dateTime(row.cells[test].ts) }}<span v-if="row.cells[test].off_pass"> · другой проход</span></small>
+        <small v-if="row.cells[test].heavy" class="cell-note">{{ dateTime(row.cells[test].ts) }}<span v-if="row.cells[test].off_pass"> · другой проход</span></small>
         <details v-if="!row.cells[test].ok && row.cells[test].title" class="failure-detail"><summary>Подробности</summary><pre>{{ row.cells[test].title }}</pre></details>
       </template><span v-else class="mut">Не измерено в этом проходе</span>
     </template>

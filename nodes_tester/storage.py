@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS scores (
   country TEXT, label TEXT, active INTEGER, score REAL,
   reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
   score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
-  heavy_ok TEXT, heavy_ts INTEGER);
+  heavy_ok TEXT, heavy_ts INTEGER, gemini_ok TEXT, gemini_ts INTEGER, gemini_cc TEXT);
 CREATE TABLE IF NOT EXISTS score_history (
   ts INTEGER, crc TEXT, region TEXT, score REAL, s_run REAL, gate INTEGER);
 CREATE INDEX IF NOT EXISTS idx_score_history_ts ON score_history(ts);
@@ -91,6 +91,7 @@ _SCORE_COLS = (
     "node", "provider", "protocol", "region", "country", "label", "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
     "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
+    "gemini_ok", "gemini_ts", "gemini_cc",
 )
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
@@ -109,7 +110,10 @@ class Storage:
                                 ("nodes", "present", "INTEGER"),
                                 ("nodes", "banned", "INTEGER"),
                                 ("garbage", "streak", "INTEGER"),
-                                ("garbage", "until_pass", "INTEGER")):
+                                ("garbage", "until_pass", "INTEGER"),
+                                ("scores", "gemini_ok", "TEXT"),
+                                ("scores", "gemini_ts", "INTEGER"),
+                                ("scores", "gemini_cc", "TEXT")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:
@@ -397,7 +401,7 @@ class Storage:
             self._db.commit()
 
     def node_is_present(self, crc: str) -> bool:
-        """Present in the last reconciled tester list; not a live Clash probe."""
+        """Present in the last reconciled tester list; not a live API probe."""
         with self._lock:
             row = self._db.execute("SELECT present FROM nodes WHERE crc=?", (crc,)).fetchone()
         return bool(row and row[0])
@@ -431,7 +435,8 @@ class Storage:
             rows = self._db.execute(
                 "SELECT crc,node,provider,protocol,region,country,label,active,score,"
                 "reliability,consistency,throttle,jitter,latency,throughput,"
-                "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts FROM scores"
+                "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
+                "gemini_ok,gemini_ts,gemini_cc FROM scores"
             ).fetchall()
         out: dict[str, dict] = {}
         for r in rows:
@@ -446,6 +451,8 @@ class Storage:
                 "score_ewma": _flt(r[15]), "avail": _flt(r[16]), "flap": _flt(r[17]),
                 "samples": _int(r[18]), "last_seen": _int(r[19]),
                 "heavy_ok": "" if r[20] is None else str(r[20]), "heavy_ts": _int(r[21]),
+                "gemini_ok": "" if r[22] is None else str(r[22]), "gemini_ts": _int(r[23]),
+                "gemini_cc": r[24] or "",
             }
         return out
 
@@ -473,6 +480,8 @@ class Storage:
                 _int(r.get("samples")), _int(r.get("last_seen")),
                 "" if r.get("heavy_ok") in (None,) else str(r.get("heavy_ok")),
                 _int(r.get("heavy_ts")),
+                "" if r.get("gemini_ok") in (None,) else str(r.get("gemini_ok")),
+                _int(r.get("gemini_ts")), r.get("gemini_cc") or "",
             )
             prev = by_crc.get(crc)
             if prev is None or rank > prev[0]:
@@ -484,22 +493,24 @@ class Storage:
                 self._db.executemany(
                     "INSERT INTO scores (crc,node,provider,protocol,region,country,label,"
                     "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
-                    "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+                    "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
+                    "gemini_ok,gemini_ts,gemini_cc) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
             self._db.commit()
 
-    def set_active_crc(self, region: str, crc: "str | None") -> None:
-        """Пометить активную ноду региона в таблице scores (active=1 у crc, 0 у прочих
-        того же региона). Вызывается из switcher при переключении: save_scores полностью
-        переписывает scores лишь раз в прогон (end_pass), а переключения (ротация/emergency
-        из фонового монитора) идут между прогонами — без этого scores.active в БД отстаёт
-        от activations, и дашборд показывает разные активные ноды в двух таблицах."""
+    def set_active_crcs(self, crcs) -> None:
+        """Пометить активные ноды в таблице scores (active=1 у crcs, 0 у прочих): нода
+        активна хотя бы в одной группе. Вызывается из switcher при переключении:
+        save_scores полностью переписывает scores лишь раз в прогон (end_pass), а
+        переключения (ротация/emergency из фонового монитора) идут между прогонами — без
+        этого scores.active в БД отстаёт от activations, и дашборд показывает разные
+        активные ноды в двух таблицах."""
+        crcs = sorted(c for c in crcs if c)
         with self._lock:
-            self._db.execute("UPDATE scores SET active = 0 WHERE region = ?", (region,))
-            if crc:
-                self._db.execute(
-                    "UPDATE scores SET active = 1 WHERE region = ? AND crc = ?",
-                    (region, crc))
+            self._db.execute("UPDATE scores SET active = 0")
+            if crcs:
+                marks = ",".join("?" * len(crcs))
+                self._db.execute(f"UPDATE scores SET active = 1 WHERE crc IN ({marks})", crcs)
             self._db.commit()
 
     def add_score_history(self, ts: int, rows) -> None:

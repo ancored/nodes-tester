@@ -95,6 +95,7 @@ _EUROPE = {
     "pt", "ro", "sm", "rs", "sk", "si", "es", "se", "ch", "tr", "ua", "gb",
     "uk", "va",
 }
+EUROPE = frozenset(_EUROPE)
 
 
 def coarse_region(country: str) -> str:

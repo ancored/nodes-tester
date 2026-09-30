@@ -4,6 +4,8 @@
 #
 #   pipeline.sh router  [--dry-run]   подписки → nodes.json → правила → применение к sing-box
 #   pipeline.sh clients [--dry-run]   WH-подписки → whnodes.json → клиентские конфиги
+#   pipeline.sh apply   [--dry-run]   база + пресеты правил → применение к текущему nodes.json
+#                                     (подписки не загружаются)
 #
 # router:  nodes_fetch (main) → nodes_config → /etc/sing-box-subscribe/nodes.json →
 #          update-rules.sh → apply-nodes.sh (рестарт только при изменениях)
@@ -15,6 +17,8 @@
 # Конфиги v2 — $CFG_ROOT/config-main, $CFG_ROOT/config-wh (из `nodes_config migrate`);
 # CFG_ROOT по умолчанию = $DATA. PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
+# Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету);
+# --dry-run проверяет редактируемую базу $SINGBOX/base.json, а не применённую копию.
 
 set -u
 
@@ -45,11 +49,24 @@ MODE="${1:-}"; DRY=0
 log() { echo "[pipeline] $*"; logger -t nodes-pipeline "$*" 2>/dev/null || true; }
 
 case "$MODE" in
-    router)  SET=main; OUT=/etc/sing-box-subscribe/nodes.json ;;
+    router|apply) SET=main; OUT=/etc/sing-box-subscribe/nodes.json ;;
     clients) SET=wh;   OUT=/etc/sing-box-subscribe/whnodes.json ;;
-    *) echo "использование: pipeline.sh router|clients [--dry-run]" >&2; exit 2 ;;
+    *) echo "использование: pipeline.sh router|clients|apply [--dry-run]" >&2; exit 2 ;;
 esac
+SINGBOX="${SINGBOX:-$CFG_ROOT/singbox}"
+export PRESETS_DIR="$SINGBOX/presets"
 pipeline_lock_acquire || exit $?
+
+if [ "$MODE" = apply ]; then
+    [ -f "$OUT" ] || { log "нет $OUT — сначала соберите конфиг (pipeline router)"; exit 1; }
+    if [ "$DRY" = 1 ]; then
+        BASE="$SINGBOX/base.json" "$HERE/apply-nodes.sh" --dry-run "$OUT"
+    else
+        "$HERE/update-rules.sh" --base-only || { log "база не скопирована"; exit 1; }
+        "$HERE/apply-nodes.sh" "$OUT"
+    fi
+    exit $?
+fi
 CFG="$CFG_ROOT/config-$SET"
 [ "$DRY" = 1 ] && OUT="$DATA/$(basename "$OUT" .json).dry.json"
 [ -f "$CFG/providers.json" ] || { log "нет $CFG/providers.json (сделай nodes_config migrate)"; exit 1; }
@@ -72,7 +89,7 @@ python3 -m nodes_config --raw "$DATA/raw/$SET.json" --groups "$CFG/groups_params
 
 if [ "$MODE" = router ]; then
     if [ "$DRY" = 1 ]; then
-        "$HERE/apply-nodes.sh" --dry-run "$OUT"
+        BASE="$SINGBOX/base.json" "$HERE/apply-nodes.sh" --dry-run "$OUT"
     else
         "$HERE/update-rules.sh" || { log "обновление правил не удалось"; exit 1; }
         "$HERE/apply-nodes.sh" "$OUT"

@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     _force_utf8_output()
     parser = argparse.ArgumentParser(
         prog="nodes_tester",
-        description="Тестер leaf-нод sing-box через SOCKS5 + Clash API",
+        description="Тестер leaf-нод sing-box через SOCKS5 + API-сервис sing-box",
     )
     parser.add_argument(
         "-c", "--config", default="config/config.json",

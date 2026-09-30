@@ -152,8 +152,6 @@ def _collect(cfg) -> dict:
     tester_up = tester_rows[0]["up"] if tester_rows else 0
     tester_down = tester_rows[0]["down"] if tester_rows else 0
     cutoff = int(time.time()) - 86400
-    tester_sample_24h = _query(db, f"""SELECT COALESCE(SUM(up),0) AS up,
-        COALESCE(SUM(down),0) AS down FROM traffic WHERE is_tester=1 AND ts >= {cutoff}""")
     tester_download_24h = _test_downloads(db, cutoff)
     traffic_providers = _sum_by(rows, "provider", {"leaf", "unspecified"})
     traffic_countries = _sum_by(rows, "cc", {"leaf", "unspecified"})
@@ -191,7 +189,6 @@ def _collect(cfg) -> dict:
         "traffic_total": traffic_total,
         "traffic_user_totals": {"up": user_up, "down": user_down, "total": traffic_total},
         "traffic_tester_totals": {"up": tester_up, "down": tester_down, "total": tester_up + tester_down},
-        "traffic_tester_sample_24h": tester_sample_24h[0] if tester_sample_24h else {"up": 0, "down": 0},
         "traffic_test_download_24h": tester_download_24h,
         "traffic_countries": traffic_countries,
         "traffic_protocols": traffic_protocols,
@@ -328,7 +325,9 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
-               "heavy_download"]
+               "heavy_download", "gemini"]
+# Тесты отдельных фаз (для кандидатов групп): последний известный результат, вне прогона.
+_PHASE_TESTS = ("heavy_download", "gemini")
 
 
 def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
@@ -338,6 +337,10 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     except (TypeError, ValueError):
         m = {}
     if not ok:
+        if test == "gemini" and m.get("countries"):
+            seen = sorted({c for c in m["countries"] if c})
+            return {"v": "Провал" + (f" [{', '.join(seen)}]" if seen else ""), "ok": 0,
+                    "title": (error or "").strip()}
         return {"v": "Провал", "ok": 0, "title": (error or "").strip()}
     if test == "connectivity":
         cc = m.get("country")
@@ -356,6 +359,8 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
         return {"v": f"{m.get('reached', '?')}/{m.get('total', '?')}", "ok": 1}
     if test == "heavy_download":         # veto-тест кандидатов: скорость (FAIL=veto)
         return {"v": f"{m.get('speed_mbps', '?')} Мбит/с", "ok": 1}
+    if test == "gemini":                 # обязательный тест групп: страна по мнению Google
+        return {"v": f"Google: {m.get('country') or '?'}", "ok": 1}
     return {"v": "ok", "ok": 1}
 
 
@@ -374,7 +379,7 @@ def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
 # Тесты, не входящие в «строго последний прогон» лёгких тестов:
 #   _select      — служебная запись переключения (в таблице не показываем);
 #   heavy_download — идёт вне прогона (every N), показываем как есть, но помечаем.
-_OFF_PASS_TESTS = {"_select", "heavy_download"}
+_OFF_PASS_TESTS = {"_select", *_PHASE_TESTS}
 
 
 def _results(db: str) -> dict:
@@ -397,7 +402,7 @@ def _results(db: str) -> dict:
     tests_seen: set[str] = set()
     node_rows: list[dict] = []
     for crc, rws in per_node.items():
-        light = [r for r in rws if r["test"] != "heavy_download"]
+        light = [r for r in rws if r["test"] not in _PHASE_TESTS]
         # ts последнего прогона — по лёгким тестам (все они пишутся одним ts за пасс).
         base_pool = light or rws
         base_row = max(base_pool, key=lambda r: r["ts"] or 0)
@@ -411,20 +416,22 @@ def _results(db: str) -> dict:
                 continue
             node["cells"][r["test"]] = {**_cell(r["test"], r["ok"], r["metrics"], r.get("error")), "ts": r["ts"]}
             tests_seen.add(r["test"])
-        # DL50 — последнее известное значение, вне прогона; помечаем off_pass.
-        heavy = [r for r in rws if r["test"] == "heavy_download"]
-        if heavy:
-            hr = max(heavy, key=lambda r: r["ts"] or 0)
-            cell = _cell("heavy_download", hr["ok"], hr["metrics"], hr.get("error"))
+        # DL50 и gemini — последнее известное значение, вне прогона; помечаем off_pass.
+        for test in _PHASE_TESTS:
+            phase = [r for r in rws if r["test"] == test]
+            if not phase:
+                continue
+            hr = max(phase, key=lambda r: r["ts"] or 0)
+            cell = _cell(test, hr["ok"], hr["metrics"], hr.get("error"))
             cell["ts"] = hr["ts"]
-            # DL50 пишется на пару минут позже лёгких тестов, но с тем же pass_no за тот
+            # Фаза пишется на пару минут позже лёгких тестов, но с тем же pass_no за тот
             # же день — это ТОТ ЖЕ прогон. «Вне прогона» = другой pass_no или другой день
             # (pass_no цикличен по дням, поэтому одного номера мало).
             off_pass = not _same_pass(hr, node["pass_no"], pass_ts)
             cell["heavy"] = 1
             cell["off_pass"] = 1 if off_pass else 0
-            node["cells"]["heavy_download"] = cell
-            tests_seen.add("heavy_download")
+            node["cells"][test] = cell
+            tests_seen.add(test)
         node_rows.append(node)
 
     cols = [t for t in _TEST_ORDER if t in tests_seen]

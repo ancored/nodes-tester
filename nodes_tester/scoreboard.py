@@ -26,6 +26,12 @@ class Scoreboard:
         self._seen: set[str] = set()
         self._history: list[tuple] = []       # буфер точек истории за прогон
         self._heavy_veto_secs = 0.0           # 0 = veto не истекает по времени
+        # Группы переключения ({name}-auto-out в sing-box) → теги нод-членов. Нода может
+        # быть в нескольких группах. None — состав неизвестен: группа = регион ноды.
+        self._members: dict[str, set[str]] | None = None
+        self._active: dict[str, str] = {}     # группа → активная нода
+        # Обязательные тесты групп: группа → {тест: срок годности результата, с}.
+        self._required: dict[str, dict[str, float]] = {}
         # Прогон-поток пишет (record/set_heavy/end_pass/write), фоновый монитор читает
         # (candidates/get/regions) и ставит active — защищаем составные операции.
         self._lock = threading.RLock()
@@ -81,6 +87,10 @@ class Scoreboard:
             # veto тяжёлого download не относится к лёгкому прогону — переносим как есть
             "heavy_ok": (prev.get("heavy_ok", "") if prev else ""),
             "heavy_ts": (prev.get("heavy_ts", 0) if prev else 0),
+            # обязательные тесты групп идут отдельной фазой — переносим как есть
+            "gemini_ok": (prev.get("gemini_ok", "") if prev else ""),
+            "gemini_ts": (prev.get("gemini_ts", 0) if prev else 0),
+            "gemini_cc": (prev.get("gemini_cc", "") if prev else ""),
         }
         for comp in scoring.COMPONENTS:
             v = comps.get(comp)
@@ -144,27 +154,103 @@ class Scoreboard:
         age = time.time() - int(r.get("heavy_ts", 0) or 0)
         return age < self._heavy_veto_secs    # свежий veto действует, протухший — нет
 
-    def candidates(self, region: str) -> list[dict]:
-        """Здоровые ноды региона (score > 0), по убыванию score. Свежий heavy-veto
-        исключается — но если не-vetoed не осталось, возвращаем vetoed (мало нод →
-        выбираем из имеющихся, конструкция не разваливается)."""
+    def set_groups(self, members: dict[str, set[str]]) -> None:
+        """Состав групп переключения по данным sing-box (группа → теги нод)."""
         with self._lock:
-            healthy = [r for r in self.rows.values()
-                       if r["region"] == region and float(r.get("score", 0)) > 0]
-            non_veto = [r for r in healthy if not self._vetoed(r)]
-            chosen = non_veto or healthy
-            return [dict(r) for r in                       # копии наружу (монитор-поток)
-                    sorted(chosen, key=lambda r: float(r["score"]), reverse=True)]
+            # Групп нет (нестандартный конфиг) — прежняя схема: группа = регион ноды.
+            self._members = {g: set(tags) for g, tags in members.items() if tags} or None
+
+    def node_groups(self, node: str) -> list[str]:
+        """Группы, в которые входит нода (порядок — как в sing-box)."""
+        with self._lock:
+            if self._members is None:
+                r = self.rows.get(node)
+                return [r["region"]] if r and r.get("region") else []
+            return [g for g, tags in self._members.items() if node in tags]
+
+    def _in_group(self, r: dict, group: str) -> bool:
+        if self._members is None:
+            return r["region"] == group
+        return r["node"] in self._members.get(group, ())
+
+    # --- Обязательные тесты групп (gemini): решающие, в скоринг не входят ---------
+
+    def set_required(self, required: dict[str, dict[str, float]]) -> None:
+        """Группа → {тест: срок годности результата, с}."""
+        with self._lock:
+            self._required = {g: dict(t) for g, t in required.items() if t}
+
+    def required(self, group: str) -> dict[str, float]:
+        with self._lock:
+            return dict(self._required.get(group, {}))
+
+    def set_required_result(self, node: str, test: str, ok: bool, detail: str = "") -> None:
+        with self._lock:
+            r = self.rows.get(node)
+            if r is not None:
+                r[f"{test}_ok"] = "1" if ok else "0"
+                r[f"{test}_ts"] = int(time.time())
+                r[f"{test}_cc"] = detail or ""
+
+    @staticmethod
+    def _fresh(r: dict, test: str, ttl: float) -> bool:
+        return time.time() - int(r.get(f"{test}_ts", 0) or 0) < ttl
+
+    def needs_test(self, node: str, test: str, ttl: float) -> bool:
+        """Нет свежего результата обязательного теста."""
+        with self._lock:
+            r = self.rows.get(node)
+            return r is not None and (str(r.get(f"{test}_ok", "")) == "" or not self._fresh(r, test, ttl))
+
+    def _passed(self, r: dict, group: str) -> bool:
+        return all(str(r.get(f"{t}_ok", "")) == "1" and self._fresh(r, t, ttl)
+                   for t, ttl in self._required.get(group, {}).items())
+
+    def _failed(self, r: dict, group: str) -> bool:
+        return any(str(r.get(f"{t}_ok", "")) == "0" and self._fresh(r, t, ttl)
+                   for t, ttl in self._required.get(group, {}).items())
+
+    def _healthy(self, region: str) -> list[dict]:
+        """Здоровые ноды группы (score > 0), по убыванию score. Свежий heavy-veto
+        исключается — но если не-vetoed не осталось, берём vetoed (мало нод → выбираем
+        из имеющихся, конструкция не разваливается)."""
+        healthy = [r for r in self.rows.values()
+                   if self._in_group(r, region) and float(r.get("score", 0)) > 0]
+        non_veto = [r for r in healthy if not self._vetoed(r)]
+        return sorted(non_veto or healthy, key=lambda r: float(r["score"]), reverse=True)
+
+    def candidates(self, region: str) -> list[dict]:
+        """Кандидаты группы: здоровые ноды; если у группы есть обязательные тесты —
+        только прошедшие их со свежим результатом (решающее условие, без поблажек)."""
+        with self._lock:
+            chosen = [r for r in self._healthy(region) if self._passed(r, region)]
+            return [dict(r) for r in chosen]               # копии наружу (монитор-поток)
+
+    def probe_pool(self, region: str) -> list[str]:
+        """Ноды, которые стоит проверять обязательными тестами: здоровые, без свежего
+        провала, по убыванию score."""
+        with self._lock:
+            return [r["node"] for r in self._healthy(region) if not self._failed(r, region)]
 
     def regions(self) -> list[str]:
+        """Группы переключения (без данных sing-box — регионы нод)."""
         with self._lock:
+            if self._members is not None:
+                return list(self._members)
             return sorted({r["region"] for r in self.rows.values() if r["region"]})
 
     def set_active(self, region: str, node: str) -> None:
+        """Активная нода группы; флаг active у ноды — активна хотя бы в одной группе."""
         with self._lock:
+            if node:
+                self._active[region] = node
+            else:
+                self._active.pop(region, None)
+            actives = set(self._active.values())
             for r in self.rows.values():
-                if r["region"] == region:
-                    r["active"] = 1 if r["node"] == node else 0
+                if self._members is None and r["region"] != region:
+                    continue
+                r["active"] = 1 if r["node"] in actives else 0
 
     # --- Запись --------------------------------------------------------
 

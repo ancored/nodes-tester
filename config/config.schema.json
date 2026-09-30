@@ -5,8 +5,19 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "clash_api",
     "testing_groups"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "box_api"
+      ]
+    },
+    {
+      "required": [
+        "clash_api"
+      ]
+    }
   ],
   "definitions": {
     "runParams": {
@@ -51,6 +62,15 @@
           "minimum": 0,
           "description": "Двухуровневое тестирование: > 0 включает тяжёлый 50МБ download-veto перед ротацией региона: проверяется весь пул ротации (switching.rotation.top_k), место vetoed-ноды занимает следующая. 0 = выкл."
         },
+        "required_tests": {
+          "type": "array",
+          "description": "обязательные тесты группы (отдельная фаза): активной может быть только нода со свежим успешным результатом, иначе группа на failsafe",
+          "items": {
+            "enum": [
+              "gemini"
+            ]
+          }
+        },
         "heavy_veto_hours": {
           "type": "number",
           "minimum": 0,
@@ -63,8 +83,25 @@
     "$schema": {
       "type": "string"
     },
+    "box_api": {
+      "type": "object",
+      "description": "API-сервис sing-box 1.14 (services[].type = \"api\")",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number"
+        }
+      }
+    },
     "clash_api": {
       "type": "object",
+      "description": "Устарело: до 0.3.0. Читается как box_api (base_url → url)",
       "additionalProperties": false,
       "properties": {
         "base_url": {
@@ -204,7 +241,24 @@
             }
           }
         },
+        "node_groups_specifics": {
+          "type": "array",
+          "description": "переопределения тестов по группам нод ({group}-auto-out); у ноды в нескольких группах наборы тестов объединяются",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "group": {
+                "type": "string"
+              },
+              "default_overrides": {
+                "$ref": "#/definitions/runParams"
+              }
+            }
+          }
+        },
         "region_groups_specifics": {
+          "description": "устарело: то же, что node_groups_specifics (region_group_tag = имя группы)",
           "type": "array",
           "items": {
             "type": "object",

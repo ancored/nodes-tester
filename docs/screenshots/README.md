@@ -132,7 +132,7 @@
   </tr>
   <tr>
     <td><strong>Подписки и сборка</strong><br>Источники, секреты, формы и расширенный JSON.</td>
-    <td><strong>Настройки</strong><br>Clash API, SOCKS, проверки, переключение, хранение и dashboard.</td>
+    <td><strong>Настройки</strong><br>API sing-box, SOCKS, проверки, переключение, хранение и dashboard.</td>
   </tr>
   <tr>
     <td colspan="2">

@@ -37,13 +37,14 @@ const kpis=computed(()=>[
     <h3>Пользовательский трафик</h3>
     <div class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_user_totals?.[key] || 0) : '—' }}</div></div></div>
     <p>Скачано тестами за 24 часа: <b>{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_test_download_24h?.down || 0) : '—' }}</b> <span class="mut">({{ s.data.traffic_test_download_24h?.tests || 0 }} замеров; тело ответов без сетевых накладных расходов)</span></p>
-    <p class="mut">Выборка соединений тестера за 24 часа: {{ s.data.source?.state === 'ok' ? bytes((s.data.traffic_tester_sample_24h?.up || 0) + (s.data.traffic_tester_sample_24h?.down || 0)) : '—' }}. Короткие соединения могут не попасть в опрос.</p>
+    <h3>Трафик тестера</h3>
+    <div class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? bytes(s.data.traffic_tester_totals?.[key] || 0) : '—' }}</div></div></div>
     <RouterLink to="/traffic">Подробности пользовательского трафика</RouterLink>
   </section>
   <section class="panel">
     <h2>Что настраивать и где смотреть</h2>
     <ol class="guide">
-      <li><RouterLink to="/config">Настройки</RouterLink>: адрес Clash API, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
+      <li><RouterLink to="/config">Настройки</RouterLink>: адрес API sing-box, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
       <li><RouterLink to="/subscriptions">Подписки и сборка</RouterLink>: источники нод. После сохранения отдельно загрузите и примените конфигурацию через SSH.</li>
       <li><RouterLink to="/runs">Проверки</RouterLink>: этап прохода, очередь и журнал. Кнопка проверки не обновляет подписки.</li>
       <li><RouterLink to="/nodes">Ноды</RouterLink>: найдите ноду и откройте карточку с результатами, ограничениями и действиями.</li>

@@ -72,9 +72,11 @@ def replace_if_changed(destination: Path, payload: bytes) -> bool:
     return True
 
 
-def update(config_dir: Path, target_dir: Path, marker: Path, downloader=_download) -> list:
+def update(config_dir: Path, target_dir: Path, marker: Path, downloader=_download,
+           base_only: bool = False) -> list:
     source_dir = config_dir / "singbox"
-    entries = validate_rules(json.loads((source_dir / "rules.json").read_text(encoding="utf-8")))
+    entries = [] if base_only else validate_rules(
+        json.loads((source_dir / "rules.json").read_text(encoding="utf-8")))
     changed = []
     base = source_dir / "base.json"
     if base.is_file():
@@ -114,9 +116,12 @@ def main(argv=None) -> int:
     parser.add_argument("--config-dir", default=os.environ.get("CONFIG_DIR", "/etc/nodes-tester"))
     parser.add_argument("--target-dir", default=os.environ.get("TARGET_DIR", "/etc/sing-box"))
     parser.add_argument("--marker", default=os.environ.get("RULES_MARK", "/tmp/nodes-rules-changed"))
+    parser.add_argument("--base-only", action="store_true",
+                        help="только скопировать base.json, правила не загружать")
     args = parser.parse_args(argv)
     try:
-        update(Path(args.config_dir), Path(args.target_dir), Path(args.marker))
+        update(Path(args.config_dir), Path(args.target_dir), Path(args.marker),
+               base_only=args.base_only)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.exit(1, f"[rules] ошибка: {exc}\n")
     return 0

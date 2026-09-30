@@ -143,7 +143,6 @@ class LifecycleGraveyardTest(unittest.TestCase):
         data = D._collect(SimpleNamespace(storage=_Cfg(self.db)))
         self.assertEqual(data["traffic_user_totals"], {"up": 100, "down": 200, "total": 300})
         self.assertEqual(data["traffic_tester_totals"], {"up": 30, "down": 40, "total": 70})
-        self.assertEqual(data["traffic_tester_sample_24h"], {"up": 30, "down": 40})
         self.assertEqual(data["traffic_test_download_24h"]["down"], 15000000)
         self.assertEqual(data["traffic_test_download_24h"]["tests"], 2)
         self.assertEqual(data["traffic_range"]["start"], self.now)

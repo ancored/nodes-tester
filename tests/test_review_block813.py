@@ -67,7 +67,7 @@ class TrafficFlushTest(unittest.TestCase):
         class Cfg:
             poll_interval = 5
             flush_interval = 60
-        col = TrafficCollector(Cfg(), clash=None, storage=BadStorage())
+        col = TrafficCollector(Cfg(), api=None, storage=BadStorage())
         col._by_node[("crc", 0)] = [10, 20, 1]
         with self.assertRaises(RuntimeError):
             col._flush()

@@ -29,7 +29,7 @@ onMounted(initSession)
       <main class="main">
         <form v-if="showLogin && !auth.verified" class="panel login" @submit.prevent="enter">
           <h2>Доступ администратора</h2>
-          <p>Токен находится в <code>dashboard.token</code> вашего config.json на роутере. Это не секрет Clash API. Передавайте его только через доверенную сеть или HTTPS.</p>
+          <p>Токен находится в <code>dashboard.token</code> вашего config.json на роутере. Это не секрет API sing-box. Передавайте его только через доверенную сеть или HTTPS.</p>
           <p v-if="auth.capabilities.auth_configured === false" class="notice">На сервере токен не настроен. Задайте dashboard.token через SSH и перезапустите админку.</p>
           <label>Токен <input v-model="token" type="password" autocomplete="off" required /></label>
           <label class="check"><input v-model="remember" type="checkbox" /> Запомнить на этом устройстве (localStorage)</label>

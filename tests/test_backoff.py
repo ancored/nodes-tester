@@ -73,7 +73,7 @@ class BackoffTest(unittest.TestCase):
         r = self.r
         r.storage.set_meta("pass_seq", 500)
         r._pass_seq = 0
-        r.clash.list_group_members = lambda g: []          # пустой прогон
+        r.api.list_group_members = lambda g: []          # пустой прогон
         r._run_pass(1)                                     # посуточный номер 1 («после полуночи»)
         self.assertEqual(r._pass_seq, 501)
         self.assertEqual(r.storage.get_meta("pass_seq"), "501")

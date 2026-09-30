@@ -1,16 +1,15 @@
 """Golden-харнесс генератора nodes.json: запись сетевых ответов подписок и офлайн-повтор.
 
-Инвариант рефактора (REFACTOR-MODULES.md, D8): на одних и тех же входах новый конвейер
-(nodes_fetch → nodes_config) обязан выдать тот же nodes.json (JSON-равенство), что
-`python -m subscribe` до рефактора. Для этого сетевые ответы записываются один раз, а дальше генерация
-гоняется офлайн.
+Инвариант: на одних и тех же входах конвейер (migrate v1→v2 → nodes_fetch → nodes_config)
+выдаёт эталонный nodes.json (JSON-равенство). Сетевые ответы записываются один раз, дальше
+генерация гоняется офлайн.
 
 Набор (set) — каталог:
     config/          копия набора конфигов (providers/groups_params/user_nodes/awg…)
     responses.json   записанные ответы: {"http": {url: {status, b64}|null}, "happ": {url: text|null}}
     golden.json      эталонный nodes.json (выход генератора на этих ответах)
 
-Команды (запуск из любого места, stdlib + зависимости subscribe):
+Команды (запуск из любого места, stdlib + зависимости nodes_fetch):
     python harness.py record --project DIR --config-dir DIR --out SET   # живая сеть → ответы
     python harness.py replay --project DIR --set SET [--out FILE]      # офлайн → nodes.json
     python harness.py golden --project DIR --set SET                   # replay → SET/golden.json
@@ -23,7 +22,6 @@ import base64
 import contextlib
 import json
 import os
-import runpy
 import shutil
 import sys
 import tempfile
@@ -31,7 +29,7 @@ import time
 
 
 class _FakeResponse:
-    """Минимум requests.Response, который использует subscribe.main."""
+    """Минимум requests.Response, который использует nodes_fetch."""
 
     def __init__(self, status, content):
         self.status_code = status
@@ -40,19 +38,11 @@ class _FakeResponse:
 
 
 def _net_points(project):
-    """Точки перехвата сети для кода в project → (subscribe_dir, http_obj, http_name, happ_mod).
-    Новый код (Ф1+): nodes_fetch.util.http_get + nodes_fetch.happ._fetch.
-    Старый (роутер до рефактора): subscribe/tool.getResponse + subscribe/happ._fetch."""
-    sub = os.path.join(project, "subscribe")
-    for p in (project, sub):
-        if p not in sys.path:
-            sys.path.insert(0, p)
-    if os.path.isdir(os.path.join(project, "nodes_fetch")):
-        from nodes_fetch import happ, util  # noqa: E402
-        return sub, util, "http_get", happ
-    import happ  # noqa: E402  (плоские импорты старого subscribe)
-    import tool  # noqa: E402
-    return sub, tool, "getResponse", happ
+    """Точки перехвата сети: nodes_fetch.util.http_get и nodes_fetch.happ._fetch."""
+    if project not in sys.path:
+        sys.path.insert(0, project)
+    from nodes_fetch import happ, util  # noqa: E402
+    return util, "http_get", happ
 
 
 def _no_network(*args, **kwargs):
@@ -69,41 +59,11 @@ def _patched(obj, name, value):
         setattr(obj, name, old)
 
 
-def _prepare_config(config_dir, out_path):
-    """Копия набора конфигов во временный каталог с save_config_path → out_path."""
-    tmp = tempfile.mkdtemp(prefix="golden-cfg-")
-    dst = os.path.join(tmp, "config")
-    shutil.copytree(config_dir, dst)
-    prov_path = os.path.join(dst, "providers.json")
-    with open(prov_path, encoding="utf-8") as f:
-        prov = json.load(f)
-    prov["save_config_path"] = out_path
-    prov.pop("auto_backup", None)
-    with open(prov_path, "w", encoding="utf-8") as f:
-        json.dump(prov, f, ensure_ascii=False, indent=2)
-    return tmp, dst
-
-
-def _run_main(sub_dir, cfg_dir):
-    """Запустить генератор subscribe на наборе cfg_dir. Новая обёртка (Ф2+) — функция
-    main(argv); старый код (роутер) — скрипт с разбором sys.argv в `if __name__`."""
-    path = os.path.join(sub_dir, "main.py")
-    module = runpy.run_path(path, run_name="subscribe_main")
-    if callable(module.get("main")):
-        code = module["main"](["--config-dir", cfg_dir])
-        if code:
-            raise RuntimeError(f"subscribe.main вернул {code}")
-        return
-    argv = sys.argv
-    sys.argv = ["main.py", "--config-dir", cfg_dir]
-    try:
-        runpy.run_path(path, run_name="__main__")
-    finally:
-        sys.argv = argv
-
-
 def record(project, config_dir, out_set):
-    sub, http_obj, http_name, happ = _net_points(project)
+    """Живая сеть: прогнать nodes_fetch по набору и записать ответы подписок."""
+    from nodes_config import migrate
+    from nodes_fetch import __main__ as fetch_cli
+    http_obj, http_name, happ = _net_points(project)
     rec = {"http": {}, "happ": {}}
     real_get, real_fetch = getattr(http_obj, http_name), happ._fetch
 
@@ -123,10 +83,13 @@ def record(project, config_dir, out_set):
         return text
 
     os.makedirs(out_set, exist_ok=True)
-    tmp, cfg = _prepare_config(config_dir, os.path.join(out_set, "recorded_nodes.json"))
+    tmp = tempfile.mkdtemp(prefix="golden-rec-")
     try:
+        v2 = os.path.join(tmp, "v2")
+        migrate.migrate_dir(config_dir, v2, log=lambda m: None)
         with _patched(http_obj, http_name, get), _patched(happ, "_fetch", fetch):
-            _run_main(sub, cfg)
+            fetch_cli.main(["-p", os.path.join(v2, "providers.json"),
+                            "-o", os.path.join(tmp, "raw.json")])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if os.path.exists(os.path.join(out_set, "config")):
@@ -141,9 +104,8 @@ def record(project, config_dir, out_set):
 
 @contextlib.contextmanager
 def _offline(project, set_dir):
-    """Сеть → записанные ответы набора; любые реальные запросы запрещены.
-    → каталог subscribe (для _run_main)."""
-    sub, http_obj, http_name, happ = _net_points(project)
+    """Сеть → записанные ответы набора; любые реальные запросы запрещены."""
+    http_obj, http_name, happ = _net_points(project)
     import requests
     import urllib.request
     with open(os.path.join(set_dir, "responses.json"), encoding="utf-8") as f:
@@ -169,24 +131,12 @@ def _offline(project, set_dir):
                                  (requests, "request", _no_network),
                                  (urllib.request, "urlopen", _no_network)):
             stack.enter_context(_patched(obj, name, value))
-        yield sub
+        yield
 
 
 def replay(project, set_dir, out_path):
-    """Офлайн-генерация прежним интерфейсом `python -m subscribe` (конфиги v1).
-    Незаписанный запрос — ошибка (KeyError): генератор стал ходить в сеть иначе."""
-    tmp, cfg = _prepare_config(os.path.join(set_dir, "config"), out_path)
-    try:
-        with _offline(project, set_dir) as sub:
-            _run_main(sub, cfg)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    return out_path
-
-
-def replay_pipeline(project, set_dir, out_path):
-    """Офлайн-генерация НОВЫМ конвейером (Ф2+): migrate v1→v2 → CLI nodes_fetch → CLI
-    nodes_config — ровно так, как их будут звать оркестратор и роутерные скрипты."""
+    """Офлайн-генерация конвейером: migrate v1→v2 → CLI nodes_fetch → CLI nodes_config —
+    ровно так, как их зовут конвейер и роутерные скрипты. Незаписанный запрос — ошибка."""
     from nodes_config import __main__ as config_cli
     from nodes_config import migrate
     from nodes_fetch import __main__ as fetch_cli

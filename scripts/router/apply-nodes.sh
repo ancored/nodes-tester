@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # apply-nodes.sh — применить nodes.json к sing-box роутера: merge base.json + nodes.json →
-# sing-box check → замена config.json → рестарт. Замена старого хвоста update-singbox-config.sh.
+# sing-box check → замена config.json → рестарт.
 #
 #   apply-nodes.sh [--dry-run] [--force] NODES_JSON
 #   apply-nodes.sh --health          только проверить связность работающего sing-box
@@ -10,29 +10,33 @@
 #              кандидат кладётся в $CANDIDATE для просмотра
 #   --force    перезапустить, даже если итоговый конфиг не изменился
 #
-# sing-box перезапускается ТОЛЬКО если: итоговый config.json изменился, или update-rules.sh
-# оставил маркер «обновилась база» ($RULES_MARK), или --force. Изменённые .srs и source-наборы
-# sing-box перечитывает сам, без перезапуска. Невалидный конфиг
+#   BASE=...         база (по умолчанию $TARGET_DIR/base.json)
+#   PRESETS_DIR=...  каталог пресетов правил: включённые склеиваются после нод по приоритету
+#
+# sing-box перезапускается ТОЛЬКО если итоговый config.json изменился или задан --force.
+# Новая база при том же итоговом конфиге перезапуска не требует. Изменённые .srs и
+# source-наборы sing-box перечитывает сам, без перезапуска. Невалидный конфиг
 # (merge/check упали) — работающий config.json не трогается, exit 1.
 #
-# После рестарта — проверка РЕАЛЬНОЙ связности (до $HEALTH_WAIT с): через Clash API sing-box
-# делает запрос к $HEALTH_URL через боевую группу $HEALTH_GROUP. Не прошла (процесс не
+# После рестарта — проверка РЕАЛЬНОЙ связности (до $HEALTH_WAIT с): через API-сервис sing-box
+# запускается URL-тест боевой группы $HEALTH_GROUP (адрес проверки — из настроек urltest). Не прошла (процесс не
 # поднялся или трафик не ходит) → автоматически возвращается прежний config.json и sing-box
 # перезапускается на нём. Пока sing-box перезапускается, сеть (и удалённая сессия) может
 # пропасть — поэтому скрипт не зависит от того, кто его запустил; запускать его вручную
-# стоит отвязанным от сессии (nohup/setsid, см. switch-to-pipeline.sh).
+# стоит отвязанным от сессии: setsid sh -c 'trap "" HUP; exec …'.
 #
 # Коды выхода: 0 — применено или менять нечего; 1 — ошибка (боевой конфиг цел или возвращён).
 
 set -u
 
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 TARGET_DIR="${TARGET_DIR:-/etc/sing-box}"
-BASE="$TARGET_DIR/base.json"
+BASE="${BASE:-$TARGET_DIR/base.json}"
+PRESETS_DIR="${PRESETS_DIR:-}"
 CONFIG="$TARGET_DIR/config.json"
 RULES_MARK="${RULES_MARK:-/tmp/nodes-rules-changed}"
 CANDIDATE="${CANDIDATE:-${DATA:-/root/nodes-data}/config.candidate.json}"
 HEALTH_GROUP="${HEALTH_GROUP:-global-auto-out}"
-HEALTH_URL="${HEALTH_URL:-https://www.gstatic.com/generate_204}"
 HEALTH_WAIT="${HEALTH_WAIT:-60}"
 DRY=0; FORCE=0; HEALTH_ONLY=0; NODES=""
 
@@ -41,7 +45,7 @@ while [ $# -gt 0 ]; do
         --dry-run) DRY=1 ;;
         --force) FORCE=1 ;;
         --health) HEALTH_ONLY=1 ;;
-        -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
         -*) echo "неизвестный ключ: $1" >&2; exit 2 ;;
         *) NODES="$1" ;;
     esac
@@ -51,27 +55,11 @@ done
 log() { echo "[apply] $(date '+%F %T') $*"; logger -t nodes-apply "$*" 2>/dev/null || true; }
 die() { log "ОШИБКА: $*"; exit 1; }
 
-# Один запрос проверки: Clash API отвечает, и через $HEALTH_GROUP реально проходит запрос
-# к $HEALTH_URL. Адрес и секрет Clash API — из работающего config.json. Печатает задержку, мс.
+# Один запрос проверки: API-сервис sing-box отвечает, и URL-тест группы $HEALTH_GROUP
+# реально проходит до ноды. Адрес и секрет API — из services[type=api] работающего
+# config.json. Печатает задержку, мс.
 probe() {
-    python3 - "$CONFIG" "$HEALTH_GROUP" "$HEALTH_URL" <<'PYEOF'
-import json, sys, urllib.parse, urllib.request
-cfg, group, url = sys.argv[1:4]
-api = json.load(open(cfg, encoding="utf-8")).get("experimental", {}).get("clash_api", {})
-ctl, secret = api.get("external_controller"), api.get("secret", "")
-if not ctl:
-    sys.exit(2)
-q = urllib.parse.urlencode({"url": url, "timeout": 5000})
-req = urllib.request.Request(f"http://{ctl}/proxies/{urllib.parse.quote(group)}/delay?{q}",
-                             headers={"Authorization": f"Bearer {secret}"} if secret else {})
-try:
-    with urllib.request.urlopen(req, timeout=8) as r:
-        delay = json.load(r).get("delay")
-except Exception:
-    sys.exit(1)
-print(delay)
-sys.exit(0 if delay else 1)
-PYEOF
+    PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m nodes_common.box_api health --config "$CONFIG" --group "$HEALTH_GROUP" 2>/dev/null
 }
 
 # Ждать связности до $HEALTH_WAIT с (urltest-группам нужно время на первый замер).
@@ -79,7 +67,7 @@ healthy() {
     waited=0
     while [ "$waited" -lt "$HEALTH_WAIT" ]; do
         if pidof sing-box >/dev/null && d="$(probe)"; then
-            log "связность есть: $HEALTH_GROUP → $HEALTH_URL за ${d} мс"
+            log "связность есть: URL-тест $HEALTH_GROUP за ${d} мс"
             return 0
         fi
         sleep 5
@@ -99,9 +87,25 @@ fi
 [ -f "$BASE" ] || die "нет базы: $BASE"
 
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+FRAGS="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$FRAGS"' EXIT
 
-sing-box merge "$TMP" -c "$BASE" -c "$NODES" >/dev/null 2>&1 \
+# sing-box merge склеивает входы в порядке ИМЁН ФАЙЛОВ, а не аргументов: кладём всё в
+# один каталог с упорядоченными именами. Ноды раньше базы — так было при прежних путях
+# (/etc/sing-box-subscribe/nodes.json < /etc/sing-box/base.json). Затем пресеты правил
+# (nodes_admin/presets.py): включённые фрагменты по приоритету.
+cp "$NODES" "$FRAGS/10-nodes.json" && cp "$BASE" "$FRAGS/20-base.json" \
+    || die "не удалось подготовить входы merge"
+if [ -n "$PRESETS_DIR" ] && [ -d "$PRESETS_DIR" ]; then
+    PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 -m nodes_admin.presets fragments --dir "$PRESETS_DIR" --out-dir "$FRAGS" --log >/dev/null \
+        || die "пресеты правил невалидны — работающий конфиг не тронут"
+fi
+MERGE_ARGS=""
+for f in "$FRAGS"/*.json; do MERGE_ARGS="$MERGE_ARGS -c $f"; done
+
+# Пути без пробелов (mktemp) — MERGE_ARGS без кавычек намеренно.
+sing-box merge "$TMP" $MERGE_ARGS >/dev/null 2>&1 \
     || die "sing-box merge не удался — работающий конфиг не тронут"
 sing-box check -c "$TMP" || die "итоговый конфиг не прошёл sing-box check — работающий конфиг не тронут"
 
@@ -124,11 +128,17 @@ PYEOF
 
 REASON=""
 cmp -s "$TMP" "$CONFIG" || REASON="конфиг изменился"
-[ -f "$RULES_MARK" ] && REASON="${REASON:+$REASON, }обновилась база"
 [ "$FORCE" = 1 ] && REASON="${REASON:+$REASON, }--force"
 
 if [ -z "$REASON" ]; then
-    log "без изменений — sing-box не трогаю"
+    # Итоговый конфиг включает базу целиком: если он тот же, новая база (например, правила,
+    # вынесенные в пресеты) ничего не меняет — перезапуск не нужен.
+    if [ -f "$RULES_MARK" ]; then
+        log "база обновилась, но итоговый конфиг тот же — sing-box не трогаю"
+        [ "$DRY" = 1 ] || rm -f "$RULES_MARK"
+    else
+        log "без изменений — sing-box не трогаю"
+    fi
     exit 0
 fi
 

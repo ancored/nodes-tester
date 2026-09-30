@@ -16,7 +16,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-MODES = ("router", "clients")
+MODES = ("router", "clients")          # по расписанию
+RUN_MODES = MODES + ("apply",)         # вручную: apply — база и пресеты к текущему nodes.json
+APPLY_MODES = ("router", "apply")      # меняют sing-box роутера: тестер на паузе
 STATUSES = ("running", "ok", "error", "busy", "timeout", "interrupted")
 
 
@@ -171,7 +173,7 @@ class Orchestrator:
             rows = db.execute("SELECT id,mode,dry_run,pid,pid_start,log_path FROM runs WHERE status='running'").fetchall()
             for row in rows:
                 if row["pid"] and _run_alive(row["pid"], row["pid_start"]):
-                    if row["mode"] == "router" and not row["dry_run"]:
+                    if row["mode"] in APPLY_MODES and not row["dry_run"]:
                         self.on_apply_start()
                     worker = threading.Thread(target=self._watch_orphan,
                                               args=(row["id"], row["pid"], row["pid_start"], row["mode"], bool(row["dry_run"])),
@@ -195,7 +197,7 @@ class Orchestrator:
                 self._finish(run_id, status, code)
                 completed = True
         finally:
-            if completed and mode == "router" and not dry_run:
+            if completed and mode in APPLY_MODES and not dry_run:
                 self.on_apply_end()
             self._workers.pop(run_id, None)
 
@@ -211,8 +213,9 @@ class Orchestrator:
         return ("busy" if code == 75 else "ok" if code == 0 else "error"), code
 
     def start_run(self, mode: str, dry_run: bool, *, trigger="manual", scheduled_for=None) -> str:
-        if mode not in MODES or type(dry_run) is not bool or trigger not in ("manual", "schedule"):
-            raise ValueError("разрешены router|clients и dry_run: bool")
+        if (mode not in RUN_MODES or type(dry_run) is not bool
+                or trigger not in ("manual", "schedule") or (trigger == "schedule" and mode not in MODES)):
+            raise ValueError("разрешены router|clients|apply и dry_run: bool")
         with self._lock, self._connect() as db:
             if self._active(db):
                 raise BusyError("конвейер уже выполняется")
@@ -228,7 +231,7 @@ class Orchestrator:
             return run_id
 
     def _execute(self, run_id, mode, dry_run, log_path):
-        applying = mode == "router" and not dry_run
+        applying = mode in APPLY_MODES and not dry_run
         try:
             if applying:
                 self.on_apply_start()
@@ -442,7 +445,7 @@ class Orchestrator:
         with self._lock, self._connect() as db:
             current = db.execute("SELECT * FROM runs WHERE status='running' ORDER BY started DESC LIMIT 1").fetchone()
             last = {mode: db.execute("SELECT * FROM runs WHERE mode=? ORDER BY started DESC LIMIT 1",
-                                     (mode,)).fetchone() for mode in MODES}
+                                     (mode,)).fetchone() for mode in RUN_MODES}
         return {
             "schedule": data,
             "revision": revision,

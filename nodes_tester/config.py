@@ -32,8 +32,9 @@ class ConnectionConfig:
 
 
 @dataclass
-class ClashApiConfig:
-    base_url: str = "http://127.0.0.1:9090"
+class BoxApiConfig:
+    """API-сервис sing-box 1.14 (`services[].type = "api"` в конфиге sing-box)."""
+    url: str = "http://127.0.0.1:9090"
     secret: str = ""
     timeout: float = 5.0
 
@@ -81,6 +82,8 @@ _DEFAULT_TESTS = ["connectivity", "latency", "jitter", "download", "reachability
 # Тесты, дающие scoring-компоненты (connectivity — только gate, компонента нет;
 # heavy_download — veto, в score не входит). Набор без пересечения с этим → score 0.
 _SCORING_TESTS = {"latency", "jitter", "download", "reachability"}
+# Обязательные тесты групп (run.*.required_tests): отдельная фаза, в рейтинг не входят.
+REQUIRED_TESTS = {"gemini"}
 
 
 @dataclass
@@ -108,6 +111,10 @@ class RunParams:
     # прогоне наступает ротация. > 0 включает, 0 = двухуровневость выкл.
     heavy_candidates: int = 0
     heavy_veto_hours: float = 6.0          # сколько держится veto, пока не пере-проверим
+    # Обязательные тесты группы (напр. ["gemini"] для ai): в группе может быть активной
+    # только нода со свежим успешным результатом; никто не прошёл — группа на failsafe.
+    # Задаётся для групп через run.node_groups_specifics; гоняются отдельной фазой.
+    required_tests: list[str] = field(default_factory=list)
 
     def merged(self, overrides: dict) -> "RunParams":
         """Копия с наложенными override'ами (мелкий мердж по известным полям)."""
@@ -120,13 +127,24 @@ class RunParams:
 class RunConfig:
     default: RunParams = field(default_factory=RunParams)
     group_overrides: dict[str, dict] = field(default_factory=dict)   # testing_group_tag -> overrides
-    region_overrides: dict[str, dict] = field(default_factory=dict)  # region_group_tag -> overrides
+    # Группа нод ({name}-auto-out) -> overrides (run.node_groups_specifics; до 0.3.0 —
+    # region_groups_specifics с тегом региона, это те же имена групп eu/us/other).
+    node_group_overrides: dict[str, dict] = field(default_factory=dict)
 
     def for_group(self, group_tag: str) -> RunParams:
         return self.default.merged(self.group_overrides.get(group_tag, {}))
 
-    def for_region(self, base: RunParams, region_tag: str) -> RunParams:
-        return base.merged(self.region_overrides.get(region_tag, {}))
+    def for_node_groups(self, base: RunParams, groups) -> RunParams:
+        """Параметры ноды из её групп: переопределения по порядку групп (позднее
+        побеждает), наборы тестов объединяются."""
+        params, tests = base, list(base.tests_enabled)
+        for name in groups:
+            over = self.node_group_overrides.get(name)
+            if not over:
+                continue
+            params = params.merged(over)
+            tests += [t for t in over.get("tests_enabled", []) if t not in tests]
+        return dataclasses.replace(params, tests_enabled=tests) if params is not base else base
 
 
 @dataclass
@@ -290,7 +308,7 @@ class DashboardConfig:
 
 @dataclass
 class Config:
-    clash_api: ClashApiConfig
+    box_api: BoxApiConfig
     testing_groups: list[TestingGroupConfig]
     region_groups: RegionGroupsConfig
     run: RunConfig
@@ -325,6 +343,19 @@ def _filtered(cls, data: dict) -> dict:
     return {k: v for k, v in (data or {}).items() if k in known}
 
 
+def _load_box_api(data: dict) -> BoxApiConfig:
+    """box_api; старый clash_api (до 0.3.0) читается как адрес того же порта API-сервиса."""
+    if "box_api" in data:
+        return BoxApiConfig(**_filtered(BoxApiConfig, _section(data, "box_api")))
+    legacy = _section(data, "clash_api")
+    if legacy:
+        print("  [config] секция clash_api устарела: переименуйте её в box_api "
+              "(base_url → url); тестер работает через API-сервис sing-box 1.14")
+    return BoxApiConfig(url=legacy.get("base_url", BoxApiConfig.url),
+                        secret=legacy.get("secret", ""),
+                        timeout=legacy.get("timeout", BoxApiConfig.timeout))
+
+
 def load_config(path: str) -> Config:
     if not os.path.exists(path):
         raise FileNotFoundError(
@@ -345,7 +376,7 @@ def load_config(path: str) -> Config:
         raise ValueError("Не задано ни одной testing_groups")
 
     cfg = Config(
-        clash_api=ClashApiConfig(**_section(data, "clash_api")),
+        box_api=_load_box_api(data),
         testing_groups=tgs,
         region_groups=RegionGroupsConfig(**_section(data, "region_groups")),
         run=_load_run(_section(data, "run")),
@@ -381,12 +412,16 @@ def _load_run(run: dict) -> RunConfig:
         spec.get("testing_group_tag", ""): spec.get("default_overrides") or {}
         for spec in (run.get("testing_groups_specifics") or [])
     }
-    region_overrides = {
+    node_group_overrides = {
         spec.get("region_group_tag", ""): spec.get("default_overrides") or {}
         for spec in (run.get("region_groups_specifics") or [])
     }
+    node_group_overrides.update({
+        spec.get("group", ""): spec.get("default_overrides") or {}
+        for spec in (run.get("node_groups_specifics") or [])
+    })
     return RunConfig(default=default, group_overrides=group_overrides,
-                     region_overrides=region_overrides)
+                     node_group_overrides=node_group_overrides)
 
 
 def _load_storage(st: dict) -> StorageConfig:
@@ -484,10 +519,16 @@ def _validate(cfg: Config) -> None:
     if not (set(cfg.run.default.tests_enabled) & _SCORING_TESTS):
         print("  [config] ВНИМАНИЕ: run.default.tests_enabled без scoring-теста "
               f"(нужен один из {sorted(_SCORING_TESTS)}) → score будет 0")
-    for tag in cfg.run.region_overrides:
+    for tag, over in [("default", {"required_tests": cfg.run.default.required_tests}),
+                      *cfg.run.node_group_overrides.items()]:
+        unknown = set(over.get("required_tests") or []) - REQUIRED_TESTS
+        if unknown:
+            raise ValueError(f"required_tests группы '{tag}': неизвестные тесты "
+                             f"{', '.join(sorted(unknown))} (доступны: {', '.join(sorted(REQUIRED_TESTS))})")
+    for tag in cfg.run.node_group_overrides:
         if tag.lower() in excl:
             continue                          # регион не тестируется — не предупреждаем
-        eff = cfg.run.for_region(cfg.run.default, tag).tests_enabled
+        eff = cfg.run.for_node_groups(cfg.run.default, [tag]).tests_enabled
         if not (set(eff) & _SCORING_TESTS):
-            print(f"  [config] ВНИМАНИЕ: регион '{tag}' tests_enabled={eff} без scoring-"
-                  f"теста → score 0, ноды региона не станут кандидатами")
+            print(f"  [config] ВНИМАНИЕ: группа '{tag}' tests_enabled={eff} без scoring-"
+                  f"теста → score 0, ноды группы не станут кандидатами")

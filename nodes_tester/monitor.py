@@ -17,7 +17,7 @@
 (delay проходит, но трафик зарезан) не «зависает» до планового прогона: как только
 через неё перестаёт идти достаточный трафик, её догоняет зонд.
 
-Если активной ноды больше нет в Clash API (регенерация конфига сменила теги) —
+Если активной ноды больше нет в sing-box (регенерация конфига сменила теги) —
 монитор НИЧЕГО не делает: остаёмся на дефолтном выборе и ждём первого прогона.
 """
 
@@ -25,29 +25,29 @@ from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict
 
-from .clash_api import ClashApiError
+from .api import ApiError
 from .identity import parse_node
 
 
 class ProductionMonitor:
-    def __init__(self, cfg, clash, switcher, prober, tester_group, pause_check=None):
+    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None):
         self.cfg = cfg                 # MonitorConfig
-        self.clash = clash
+        self.api = api
         self.sw = switcher
         # prober(region, leaf) -> (ok: bool, mbps: float, inconclusive: bool).
         # inconclusive — туннель жив, но замер не показателен (429/limited, http-ошибка):
-        # это НЕ throttle → сбрасываем страйки. ClashApiError prober пробрасывает наверх.
+        # это НЕ throttle → сбрасываем страйки. ApiError prober пробрасывает наверх.
         self.prober = prober
-        self.tester_group = tester_group
+        # traffic() -> {crc: накопительные байты боевого трафика} (TrafficCollector.user_bytes).
+        self.traffic = traffic
         self.pause_check = pause_check or (lambda: False)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Состояние по региону: тихий таймер, накопленные байты, страйки зонда.
         self._state: dict[str, dict] = {}
-        # Кумулятивные байты по id соединения — для дельта-учёта между тиками.
-        self._committed: dict[str, tuple[int, int]] = {}
+        # Счётчики traffic() на прошлом тике — для дельты между тиками.
+        self._last_bytes: dict[str, int] | None = None
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -81,13 +81,12 @@ class ProductionMonitor:
         if self.pause_check():
             return
         try:
-            conns = self.clash.connections()
-            proxies = self.clash.all_proxies()
-        except ClashApiError:
+            proxies = self.api.all_proxies()
+        except ApiError:
             return  # API недоступен (sing-box рестартует) — пропускаем тик
 
         # Боевой трафик по CRC ноды за этот тик (свой трафик тестера/зонда исключаем).
-        node_bytes = self._traffic_delta(conns)
+        node_bytes = self._traffic_delta()
         now = time.monotonic()
 
         for region in self.sw.active_regions():
@@ -120,7 +119,7 @@ class ProductionMonitor:
         st.update(quiet_since=now, quiet_bytes=0)
         try:
             ok, mbps, inconclusive = self.prober(region, node)
-        except ClashApiError:
+        except ApiError:
             return  # API/переключение недоступно — это НЕ смерть ноды, без страйка
 
         if inconclusive or (ok and mbps >= self.cfg.probe_min_mbps):
@@ -136,29 +135,10 @@ class ProductionMonitor:
             self.sw.evaluate_region(region, emergency=True)
             st["strikes"] = 0
 
-    def _traffic_delta(self, conns: list) -> dict:
-        """Дельта байт (up+down) по CRC ноды с прошлого тика; свой трафик исключаем."""
-        out: dict[str, int] = defaultdict(int)
-        seen = set()
-        for c in conns:
-            cid = c.get("id")
-            if not cid:
-                continue
-            seen.add(cid)
-            up, down = int(c.get("upload", 0)), int(c.get("download", 0))
-            pup, pdown = self._committed.get(cid, (0, 0))
-            self._committed[cid] = (up, down)
-            dup, ddown = up - pup, down - pdown
-            if dup <= 0 and ddown <= 0:
-                continue
-            chains = c.get("chains") or []
-            if any(self.tester_group in x for x in chains):
-                continue  # собственный трафик тестера/зонда — не считаем боевым
-            leaf = chains[0] if chains else ""
-            crc = parse_node(leaf).node_id or leaf or "?"
-            out[crc] += max(0, dup) + max(0, ddown)
-        # Забываем закрытые соединения.
-        for cid in list(self._committed):
-            if cid not in seen:
-                del self._committed[cid]
-        return out
+    def _traffic_delta(self) -> dict:
+        """Дельта байт боевого трафика (up+down) по CRC ноды с прошлого тика."""
+        now = self.traffic()
+        last, self._last_bytes = self._last_bytes, now
+        if last is None:                    # первый тик — точка отсчёта
+            return {}
+        return {crc: n - last.get(crc, 0) for crc, n in now.items() if n > last.get(crc, 0)}

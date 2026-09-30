@@ -7,8 +7,7 @@ v2: providers.json — только загрузка (nodes_fetch); groups_param
 
     python -m nodes_config migrate --from config/ --to config-v2/
 
-Та же функция split_v1 используется обёрткой `python -m subscribe` на лету — поэтому
-golden-тест проверяет и миграцию: v1-набор через split_v1 обязан дать прежний nodes.json.
+golden-тест проверяет миграцию: v1-набор через split_v1 обязан дать прежний nodes.json.
 """
 
 import copy

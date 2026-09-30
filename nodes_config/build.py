@@ -181,7 +181,8 @@ def build(raws, params, user_nodes=(), log=print):
     leaf_nodes = finalize_nodes(sub_nodes, user_nodes, params, dropped)
     regions = _region_counts(leaf_nodes)
     group_outbounds = groups.build(leaf_nodes, selector=params["selector"],
-                                   urltest=params["urltest"], emit=params["emit"], log=log)
+                                   urltest=params["urltest"], emit=params["emit"],
+                                   groups=params["groups"], regions=params["regions"], log=log)
     for node in leaf_nodes:
         for key in _META_KEYS:
             node.pop(key, None)

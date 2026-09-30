@@ -1,4 +1,4 @@
-"""UX contracts; all storage/configs are temporary, Clash and network are fake."""
+"""UX contracts; all storage/configs are temporary, sing-box API and network are fake."""
 import json
 import os
 import sqlite3

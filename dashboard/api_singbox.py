@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote
 
+from nodes_admin import presets as presets_mod
 from nodes_admin.rules import validate_rules
 
 from .webapp import App, HttpError
@@ -22,7 +23,8 @@ _edit_lock = threading.Lock()
 _name = r"[A-Za-z0-9_-]+"
 _file = r"[A-Za-z0-9._-]+"
 _allowed = re.compile(
-    rf"(?:base\.json|rules\.json|rules/{_file}\.json|clients/base_{_name}\.json|clients/publish/{_file})"
+    rf"(?:base\.json|rules\.json|rules/{_file}\.json|presets/{_name}\.json|"
+    rf"clients/base_{_name}\.json|clients/publish/{_file})"
 )
 
 
@@ -71,23 +73,57 @@ def _document(path: Path) -> dict:
     return {"data": data, "revision": hashlib.sha256(raw).hexdigest()}
 
 
-def _check_base(app: App, data: dict) -> None:
+def _load_presets(app: App, override: tuple | None = None) -> list:
+    """Пресеты каталога; override = (имя, данные) подменяет/добавляет один файл."""
+    try:
+        items = presets_mod.load(_root(app) / "presets")
+    except presets_mod.PresetError as exc:
+        raise HttpError(422, str(exc)) from exc
+    if override is not None:
+        name, data = override
+        try:
+            meta = presets_mod.validate(name, data)
+        except presets_mod.PresetError as exc:
+            raise HttpError(422, str(exc)) from exc
+        items = [p for p in items if p["name"] != name] + [{"name": name, "meta": meta, "data": data}]
+    return items
+
+
+def _check_assembly(app: App, what: str, base: dict | None = None,
+                    override: tuple | None = None) -> None:
+    """sing-box merge базы, nodes.json и включённых пресетов + sing-box check."""
     nodes_file = Path(app.cfg.storage.nodes_file)
     if not nodes_file.is_file():
-        raise HttpError(422, "Не найден nodes.json для проверки базы sing-box")
+        raise HttpError(422, f"Не найден nodes.json для проверки {what}")
+    if base is None:
+        try:
+            base = json.loads((_root(app) / "base.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise HttpError(422, f"base.json недоступен для проверки {what}: {exc}") from exc
+    items = _load_presets(app, override)
     binary = getattr(app, "singbox_binary", "sing-box")
     with tempfile.TemporaryDirectory() as work:
-        base, merged = Path(work) / "base.json", Path(work) / "merged.json"
-        base.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        for cmd in ([binary, "merge", str(merged), "-c", str(base), "-c", str(nodes_file)],
-                    [binary, "check", "-c", str(merged)]):
+        # sing-box merge упорядочивает входы по именам файлов — как в apply-nodes.sh.
+        inputs, merged = Path(work) / "in", Path(work) / "merged.json"
+        inputs.mkdir()
+        (inputs / "10-nodes.json").write_bytes(nodes_file.read_bytes())
+        (inputs / "20-base.json").write_text(json.dumps(base, ensure_ascii=False), encoding="utf-8")
+        presets_mod.write_fragments(items, inputs)
+        merge = [binary, "merge", str(merged)]
+        for path in sorted(inputs.glob("*.json")):
+            merge += ["-c", str(path)]
+        for cmd in (merge, [binary, "check", "-c", str(merged)]):
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             except (OSError, subprocess.TimeoutExpired) as exc:
-                raise HttpError(422, f"Не удалось проверить base.json: {exc}") from exc
+                raise HttpError(422, f"Не удалось проверить {what}: {exc}") from exc
             if result.returncode:
                 output = (result.stderr or result.stdout).strip()[:4000]
-                raise HttpError(422, f"sing-box отклонил base.json: {output}")
+                raise HttpError(422, f"sing-box отклонил итоговый конфиг ({what}): {output}")
+
+
+def _check_base(app: App, data: dict) -> None:
+    _check_assembly(app, "base.json", base=data)
 
 
 def _validate(app: App, name: str, data: object) -> None:
@@ -100,6 +136,8 @@ def _validate(app: App, name: str, data: object) -> None:
             raise HttpError(422, str(exc)) from exc
     if name == "base.json":
         _check_base(app, data)
+    if name.startswith("presets/"):
+        _check_assembly(app, name, override=(Path(name).stem, data))
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
@@ -172,6 +210,38 @@ def register(app: App) -> None:
                     continue
                 found.append({"path": relative, "revision": _revision(path)})
         return {"files": sorted(found, key=lambda item: item["path"])}
+
+    @app.route("GET", "/api/singbox/presets", needs_token=True)
+    def list_presets(app, req):
+        try:
+            items = presets_mod.load(_root(app) / "presets")
+        except presets_mod.PresetError as exc:
+            return {"presets": [], "error": str(exc)}
+        nodes_file = Path(app.cfg.storage.nodes_file)
+        groups = presets_mod.node_groups(nodes_file) if nodes_file.is_file() else None
+        result = presets_mod.status(items, groups)
+        for item in result:
+            item["path"] = f"presets/{item['name']}.json"
+            item["revision"] = _revision(_root(app) / item["path"])
+        return {"presets": result, "groups": sorted(groups) if groups is not None else None}
+
+    @app.route("DELETE", "/api/singbox/files/{path...}", needs_token=True)
+    def delete_file(app, req, path):
+        name, target = _file_path(app, path)
+        if not name.startswith("presets/"):
+            raise HttpError(400, "Удалять можно только пресеты")
+        expected = req.headers.get("If-Match")
+        if not expected:
+            raise HttpError(400, "Нужен If-Match с revision файла")
+        with _edit_lock:
+            if _revision(target) != expected:
+                raise HttpError(409, "Файл изменился после открытия. Перечитайте его.")
+            if target.is_file():
+                history = _history_dir(app, name)
+                history.mkdir(parents=True, exist_ok=True)
+                _atomic_write(history / str(time.time_ns()), target.read_bytes())
+                target.unlink()
+        return {"ok": True}
 
     @app.route("GET", "/api/singbox/files/{path...}/history", needs_token=True)
     def history(app, req, path):

@@ -26,7 +26,7 @@ class ApiConfigTest(unittest.TestCase):
         r = self._call("GET", "/api/config")
         self.assertEqual(r.status, 200)
         data = json.loads(r.body)
-        self.assertIn("clash_api", data["data"])
+        self.assertIn("box_api", data["data"])
         self.assertTrue(data["path"].endswith("config.json"))
 
     def test_get_schema(self):
@@ -36,7 +36,7 @@ class ApiConfigTest(unittest.TestCase):
         self.assertIn(r.status, (200, 500))
 
     def test_put_invalid_rejected(self):
-        r = self._call("PUT", "/api/config", body={"clash_api": {}})
+        r = self._call("PUT", "/api/config", body={"box_api": {}})
         self.assertEqual(r.status, 400)
 
     def test_put_invalid_dashboard_types_rejected(self):
@@ -67,7 +67,7 @@ class ApiConfigTest(unittest.TestCase):
         self.assertEqual(r.status, 200)
         with open(self.cfg.path, encoding="utf-8") as fh:
             written = json.load(fh)
-        self.assertEqual(written["clash_api"]["base_url"], cur["clash_api"]["base_url"])
+        self.assertEqual(written["box_api"]["url"], cur["box_api"]["url"])
 
     def test_put_bad_json_rejected(self):
         # невалидный JSON в теле → req.json() бросит HttpError 400

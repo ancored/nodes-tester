@@ -4,6 +4,7 @@ import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import { api, auth, can } from '../api.js'
 import { getPath, setPath, changedPaths, TEST_NAMES } from '../ux.js'
 import JsonField from '../components/JsonField.vue'
+import NodeGroups from '../components/NodeGroups.vue'
 const route = useRoute(), subscriptions = computed(()=>route.path === '/subscriptions')
 const selected=ref('providers'), options=ref({user_agents:[],happ_headers:{}}), jsonValid=ref({}), customAgents=ref(new WeakSet())
 const recipe=computed(()=>subscriptions.value && selected.value==='groups')
@@ -68,7 +69,7 @@ async function save() {
 }
 const groups = [
   {title:'Соединение с sing-box',note:'API управляет селекторами, а SOCKS-соединение служит маршрутом тестового трафика. Админка не проверяет соединение при сохранении.',fields:[
-    ['clash_api.base_url','Адрес Clash API','text'],['clash_api.secret','Секрет Clash API','password'],['clash_api.timeout','Тайм-аут API, с','number'],
+    ['box_api.url','Адрес API sing-box','text'],['box_api.secret','Секрет API sing-box','password'],['box_api.timeout','Тайм-аут API, с','number'],
     ['testing_groups.0.connection.host','SOCKS-хост','text'],['testing_groups.0.connection.port','SOCKS-порт','number'],
     ['testing_groups.0.connection.username','SOCKS-логин','text'],['testing_groups.0.connection.password','SOCKS-пароль','password'],
     ['testing_groups.0.selector.group','Тестовый селектор','text']]},
@@ -107,7 +108,7 @@ const recipeGroups=[
   {title:'Переименование',fields:[['rename.domain_resolver_tag','Тег DNS resolver','text']]},
   {title:'Группы selector',fields:[['selector.interrupt_exist_connections','Прерывать существующие соединения при смене ноды','checkbox']]},
   {title:'Группы urltest',fields:[['urltest.url','URL проверки','text'],['urltest.interval','Интервал (например, 5m)','text'],['urltest.tolerance','Допуск задержки, мс','number'],['urltest.idle_timeout','Тайм-аут бездействия (например, 5m)','text'],['urltest.interrupt_exist_connections','Прерывать существующие соединения','checkbox']]},
-  {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['emit.ensure_regions','Всегда создавать регионы (eu, us, ru, other)','list'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
+  {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['emit.ensure_regions','Обязательные регионы прежней схемы (без списка групп)','list'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
 ]
 function recipeValue(field){return value(field) ?? getPath(options.value.group_defaults,field)}
 const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'},{field:'rename.labels',label:'Метки по словам исходного имени',note:'Объект: метка → список слов. Первая совпавшая метка используется в имени ноды.'}]
@@ -154,8 +155,9 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <template v-else>{{ label }}<input :type="type==='list' ? 'text' : type" :value="type==='list' ? (recipeValue(field) || []).join(', ') : recipeValue(field)" @input="update(field,$event,type)" /></template>
             </label></div>
             <template v-for="entry in objectFields.filter(o=>group.fields.some(([f])=>f.split('.')[0]===o.field.split('.')[0]))" :key="entry.field"><JsonField :label="entry.label" :note="entry.note" :model-value="value(entry.field)" @update:model-value="setPath(document,entry.field,$event)" @valid="jsonValid[entry.field]=$event" /></template>
-            <p v-if="group.title==='Создаваемые группы'" class="mut">По умолчанию обязательны eu, us, other. Если в таком регионе нет собственных нод, его селектор заполняется всеми нодами как резерв. Пустой список отключает создание пустых регионов.</p>
+            <p v-if="group.title==='Создаваемые группы'" class="mut">Обязательные регионы действуют, только пока список групп ниже не задан. По умолчанию обязательны eu, us, other: если в таком регионе нет собственных нод, его селектор заполняется всеми нодами как резерв. Пустой список отключает создание пустых регионов.</p>
           </section>
+          <NodeGroups :doc="document" :builtin="options.builtin_regions || {}" @changed="preview=false" @valid="jsonValid.regions=$event" />
         </template>
         <template v-else-if="subscriptions">
           <section v-for="(sub,index) in document.subscribes || []" :key="index" class="panel">
@@ -202,7 +204,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
                 <template v-else>{{ label }}<input :type="type==='password' && showSecrets ? 'text' : type" :value="value(field)" autocomplete="off" @input="update(field,$event,type)" /></template>
               </label>
             </div>
-            <div v-if="group.title==='План проверок'" class="toolbar"><label v-for="(name,test) in Object.fromEntries(Object.entries(TEST_NAMES).filter(([key])=>key!=='heavy_download'))" class="check" :key="test"><input type="checkbox" :checked="(value('run.default.tests_enabled') || []).includes(test)" @change="toggleTest(test,$event.target.checked)" /> {{ name }}</label></div>
+            <div v-if="group.title==='План проверок'" class="toolbar"><label v-for="(name,test) in Object.fromEntries(Object.entries(TEST_NAMES).filter(([key])=>!['heavy_download','gemini'].includes(key)))" class="check" :key="test"><input type="checkbox" :checked="(value('run.default.tests_enabled') || []).includes(test)" @change="toggleTest(test,$event.target.checked)" /> {{ name }}</label></div>
           </section>
         </template>
       </template>

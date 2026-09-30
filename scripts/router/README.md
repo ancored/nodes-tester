@@ -35,6 +35,30 @@ nodes_fetch
 расширения `sing-box-lx`, если они не удалены фильтром. Подробности:
 [`docs/SING_BOX_COMPATIBILITY.md`](../../docs/SING_BOX_COMPATIBILITY.md).
 
+## Пресеты правил и режим `apply`
+
+Схема всей сборки: [`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md).
+
+Правила маршрутизации и DNS можно вынести из `base.json` в пресеты — отдельные JSON-файлы
+`singbox/presets/*.json`. Пресет — фрагмент конфига sing-box (`dns.servers`, `dns.rules`,
+`route.rules`, `route.rule_set`, `outbounds`) с метаданными в ключе `_preset`:
+`title`, `description`, `enabled`, `priority`, `dns_priority` и `requires.groups`.
+
+`apply-nodes.sh` склеивает через `sing-box merge` базу, `nodes.json` и включённые пресеты
+(`PRESETS_DIR`): массивы склеиваются в порядке входов, поэтому правила маршрута идут по
+`priority`, правила DNS — по `dns_priority`, внутри пресета порядок не меняется. Ключ
+`_preset` перед склейкой вырезается (`python3 -m nodes_admin.presets fragments`).
+
+```sh
+nodes-tester pipeline apply --dry-run
+nodes-tester pipeline apply
+```
+
+Режим `apply` не загружает подписки: он копирует `singbox/base.json` и применяет базу и
+пресеты к текущему `nodes.json`. `--dry-run` собирает кандидата из редактируемой базы и
+пресетов и выполняет `sing-box check`, ничего не меняя. Этот же режим запускает страница
+«Правила» в админке. Примеры пресетов: `/usr/share/nodes-tester/examples/singbox/presets/`.
+
 ## Применение и откат
 
 `apply-nodes.sh` выполняет следующую последовательность:
@@ -43,9 +67,9 @@ nodes_fetch
 2. `sing-box check` тем бинарником, который установлен на роутере.
 3. Сравнение списка тегов и итогового файла.
 4. Сохранение предыдущего `config.json`.
-5. Замена конфига и перезапуск только при изменениях итогового конфига или базы. Обновлённые `.srs` и
+5. Замена конфига и перезапуск только при изменениях итогового конфига. Обновлённые `.srs` и
    source-наборы в `/etc/sing-box/rules/` sing-box версии 1.10 и новее перечитывает без перезапуска.
-6. Проверка реального запроса через Clash API и боевую группу.
+6. Проверка связности: URL-тест боевой группы через API-сервис sing-box (`services[type=api]`).
 7. Автоматический возврат предыдущего конфига при потере связности.
 
 Невалидный кандидат не заменяет рабочий файл. Перезапуск может кратко оборвать сеть и SSH,
@@ -59,7 +83,7 @@ nodes_fetch
 во время проверки связности отправьте TERM группе конвейера и убедитесь, что скрипт
 вернул прежний `config.json`, перезапустил sing-box и сохранил связность. Автоматический
 локальный тест этой секции не запускается: в скрипте указан абсолютный путь
-`/etc/init.d/sing-box`, а `pidof sing-box` и Clash API проверяют реальный сервис.
+`/etc/init.d/sing-box`, а `pidof sing-box` и API-сервис проверяют реальный сервис.
 
 ## Резервная копия и откат
 
@@ -121,8 +145,6 @@ nodes-tester pipeline clients
 | `build-clients.sh` | сборка клиентских конфигураций |
 | `backup-nodes-tester.sh` | снимок пакета, конфигов, данных и БД перед обновлением |
 | `rollback-nodes-tester.sh` | откат пакета и данных на снимок |
-| `shadow-pipeline.sh` | теневой прогон без применения |
-| `switch-to-pipeline.sh` | однократный переход старого cron на новый pipeline |
 
 ## Переменные окружения
 
@@ -132,6 +154,7 @@ nodes-tester pipeline clients
 - `DATA`: каталог raw и кандидатов;
 - `CFG_ROOT`: каталог `config-main` и `config-wh`;
 - `CONFIG_DIR`: база sing-box, правила и клиентские источники в `singbox/`;
+- `SINGBOX`: каталог исходников sing-box (по умолчанию `$CFG_ROOT/singbox`), пресеты — в `presets/`;
 - `CLIENTS_FILE`: список имён клиентских баз.
 
 Пакетная команда заполняет основные пути из UCI. Для ручного запуска указывайте их явно,

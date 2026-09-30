@@ -8,7 +8,7 @@
 
 Действие переключения: выбранная нода делается активной ВО ВСЕХ боевых
 selector-группах, где она прямой член (кроме тестовых nodes-tester/*-nodes-tester
-и urltest — их не трогаем). Реализуется через Clash API.
+и urltest — их не трогаем). Реализуется через API-сервис sing-box.
 
 Состояние по регионам (active/таймеры/recent/activations) хранится в SQLite
 (Storage), чтобы переживать рестарт и корректно вести таймеры ротации/кулдауны.
@@ -21,16 +21,16 @@ import statistics
 import threading
 import time
 
-from .clash_api import ClashApiError, ClashApiClient
+from .api import ApiClient, ApiError
 from .identity import parse_node
 from .scoreboard import Scoreboard
 
 
 class Switcher:
-    def __init__(self, cfg, clash: ClashApiClient, scoreboard: Scoreboard,
+    def __init__(self, cfg, api: ApiClient, scoreboard: Scoreboard,
                  tester_group: str, traffic_provider=None, storage=None):
         self.cfg = cfg                      # SwitchingConfig
-        self.clash = clash
+        self.api = api
         self.board = scoreboard
         self._tester_group = tester_group
         # Балансировка нагрузки в ротации (Вариант A): callable → {crc: bytes за окно}.
@@ -41,6 +41,10 @@ class Switcher:
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
+        # Нода может быть активной в нескольких группах: рейтингу нужен полный набор.
+        for group, st in self.state.items():
+            if st.get("active"):
+                self.board.set_active(group, st["active"])
 
     # --- Публичное ------------------------------------------------------
 
@@ -62,6 +66,22 @@ class Switcher:
             for region in self.board.regions():
                 self._evaluate_region_locked(region, emergency=False)
             self._persist()
+
+    def prune_groups(self, groups) -> None:
+        """Забыть состояние групп, которых больше нет в sing-box (группу выключили в
+        groups_params): иначе монитор и ротация продолжали бы обслуживать её ноду."""
+        with self._lock:
+            gone = [g for g in self.state if g not in groups]
+            if not gone:
+                return
+            for g in gone:
+                del self.state[g]
+                self.board.set_active(g, None)
+            if self._storage is not None:
+                self._storage.set_active_crcs(
+                    {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
+            self._persist()
+            print(f"  [switch] группы исчезли из sing-box, состояние сброшено: {', '.join(gone)}")
 
     def active_regions(self) -> list[str]:
         with self._lock:
@@ -142,9 +162,9 @@ class Switcher:
             for sel, child in self._chain_pairs(node, proxies, skip, region):
                 if str(proxies.get(sel, {}).get("now", "")) != child:
                     try:
-                        self.clash.select(sel, child)
+                        self.api.select(sel, child)
                         fixed += 1
-                    except ClashApiError as exc:
+                    except ApiError as exc:
                         print(f"  [monitor] {region}: ошибка в '{sel}': {exc}")
             if fixed:
                 print(f"  [monitor] {region}: восстановлен выбор селекторов ({fixed})")
@@ -168,7 +188,13 @@ class Switcher:
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
         st = self.state.setdefault(region, _new_region_state())
         cands = self.board.candidates(region)
+        required = self.board.required(region)
         if not cands:
+            # У группы с обязательными тестами (gemini) никто их не прошёл — активной
+            # ноды быть не может: группа уходит на свой failsafe (urltest).
+            if required:
+                self._to_failsafe(region, st)
+                return
             # Нет здоровых нод — переключать не на что. Если это emergency (активная
             # заблокирована ТСПУ, замены нет) — фиксируем «застряли», чтобы факт
             # блокировки без восстановления остался в истории.
@@ -178,6 +204,11 @@ class Switcher:
 
         active = st.get("active")
         active_row = self.board.get(active) if active else None
+        if required and active_row is not None and active not in {c["node"] for c in cands}:
+            # Активная больше не проходит обязательный тест (провал или истёк срок) —
+            # оставаться на ней нельзя: немедленно на другую прошедшую.
+            print(f"  [switch] {region}: активная не проходит {', '.join(required)} — замена")
+            emergency = True
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
 
@@ -218,6 +249,29 @@ class Switcher:
                 self._activate(best, region, st, now, "quality")
             return
         st["quality_count"] = 0
+
+    def _to_failsafe(self, region: str, st: dict) -> None:
+        """Выбрать в {group}-auto-out член {group}-auto-out-failsafe (urltest) и снять
+        активную ноду. Повторно не делаем, пока группа уже на failsafe."""
+        if st.get("failsafe") and not st.get("active"):
+            return
+        sel, fs = f"{region}-auto-out", f"{region}-auto-out-failsafe"
+        try:
+            self.api.select(sel, fs)
+        except ApiError as exc:
+            print(f"  [switch] {region}: не удалось переключить на failsafe: {exc}")
+            return
+        prev = st.get("active")
+        st["active"] = None
+        st["failsafe"] = True
+        self.board.set_active(region, None)
+        print(f"  [switch] {region}: ни одна нода не прошла {', '.join(self.board.required(region))} "
+              f"— группа на {fs}")
+        if self._storage is not None:
+            self._storage.add_activation(region, "", fs, "failsafe", 0.0,
+                                         parse_node(prev).node_id if prev else None)
+            self._storage.set_active_crcs(
+                {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
 
     def _note_emergency_stuck(self, region: str, st: dict, detail: str) -> None:
         """Emergency без замены (ТСПУ заблокировал активную, здоровых кандидатов нет).
@@ -281,8 +335,8 @@ class Switcher:
         if node == st.get("active") and reason not in ("init",):
             return False
         try:
-            proxies = self.clash.all_proxies()
-        except ClashApiError as exc:
+            proxies = self.api.all_proxies()
+        except ApiError as exc:
             print(f"  [switch] {region}: не удалось получить прокси: {exc}")
             return False
         skip = self._test_groups(proxies) | set(self.cfg.freeze_groups)
@@ -293,9 +347,9 @@ class Switcher:
         done = 0
         for sel, child in pairs:
             try:
-                self.clash.select(sel, child)
+                self.api.select(sel, child)
                 done += 1
-            except ClashApiError as exc:
+            except ApiError as exc:
                 print(f"  [switch] {region}: ошибка в группе '{sel}': {exc}")
 
         if done != len(pairs):
@@ -310,6 +364,7 @@ class Switcher:
         st["last_switch"] = now
         st["quality_count"] = 0
         st.pop("emg_stuck", None)           # переключились — эпизод emergency закрыт
+        st.pop("failsafe", None)
         st["rotate_deadline"] = now + self._rotate_delay()
         recent = [node] + [n for n in st.get("recent", []) if n != node]
         st["recent"] = recent[:10]
@@ -322,7 +377,8 @@ class Switcher:
                 region, crc, node, reason, cand.get("score"), prev_crc)
             # Держим scores.active в БД в синхроне с activations: save_scores переписывает
             # scores лишь раз в прогон, а переключение может произойти между прогонами.
-            self._storage.set_active_crc(region, crc)
+            self._storage.set_active_crcs(
+                {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
         self.board.set_active(region, node)
         partial = f", ЧАСТИЧНО {done}/{len(pairs)}" if done < len(pairs) else ""
         print(f"  [switch] {region}: {reason.upper()} → {node} "
@@ -334,20 +390,20 @@ class Switcher:
         """Пары (селектор, желаемый_член) по ЦЕПОЧКЕ вверх от ноды.
 
         node → {region}-auto-out → его родители. Группы из skip (тестовые + freeze,
-        напр. global-auto-out) не трогаем. ЧУЖИЕ региональные auto-селекторы ({R}-auto-out
-        для R != region) пропускаем: при малом числе нод нода может быть фолбэк-членом
-        нескольких региональных групп, но переключение региона X не должно менять выбор в
-        группах региона Y (region-aware, см. review.md P1).
+        напр. global-auto-out) не трогаем. ЧУЖИЕ auto-селекторы групп ({G}-auto-out для
+        G != region) пропускаем: нода может входить в несколько групп (eu и ai, фолбэк),
+        но переключение группы X не должно менять выбор в группе Y (см. review.md P1).
         """
         selectors = {t: info for t, info in proxies.items()
                      if str(info.get("type", "")).lower() == "selector"}
+        groups = set(self.board.regions()) | _COARSE_REGIONS
         pairs: list[tuple[str, str]] = []
         queue = [node]
         seen = {node}
         while queue:
             child = queue.pop(0)
             for tag, info in selectors.items():
-                if (tag in skip or _foreign_region_auto(tag, region)
+                if (tag in skip or _foreign_group_auto(tag, region, groups)
                         or child not in (info.get("all") or [])):
                     continue
                 pairs.append((tag, child))
@@ -367,8 +423,8 @@ class Switcher:
             groups.update(proxies.get(self._tester_group, {}).get("all") or [])
         else:
             try:
-                groups.update(self.clash.list_group_members(self._tester_group))
-            except ClashApiError:
+                groups.update(self.api.list_group_members(self._tester_group))
+            except ApiError:
                 pass
         return groups
 
@@ -378,16 +434,16 @@ class Switcher:
         return base + random.uniform(-j, j) if j else base
 
 
-# Коарс-регионы (префикс тега {region}-auto-out) — для region-aware цепочки.
+# Встроенные группы (префикс тега {group}-auto-out) — известны и без данных sing-box.
 _COARSE_REGIONS = {"eu", "us", "ru", "other"}
 
 
-def _foreign_region_auto(tag: str, region: str) -> bool:
-    """tag = '{R}-auto-out' с R != region → чужой региональный auto-селектор."""
+def _foreign_group_auto(tag: str, group: str, groups: set) -> bool:
+    """tag = '{G}-auto-out' известной группы G != group → чужой auto-селектор."""
     if not tag.endswith("-auto-out"):
         return False
-    r = tag.split("-", 1)[0]
-    return r in _COARSE_REGIONS and r != region
+    g = tag[:-len("-auto-out")]
+    return g in groups and g != group
 
 
 # Оси балансировки: (ключ поля кандидата, ключ агрегата в dims).

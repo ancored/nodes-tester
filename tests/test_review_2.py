@@ -126,7 +126,10 @@ class SwitcherRegressionTest(unittest.TestCase):
         def set_active(self, region, node):
             pass
 
-    class Clash:
+        def regions(self):
+            return sorted({r["region"] for r in self.rows.values()})
+
+    class Api:
         def __init__(self, fail_on=None):
             self.fail_on = fail_on
             self.selected = []
@@ -140,9 +143,9 @@ class SwitcherRegressionTest(unittest.TestCase):
             }
 
         def select(self, group, node):
-            from nodes_tester.clash_api import ClashApiError
+            from nodes_tester.api import ApiError
             if group == self.fail_on:
-                raise ClashApiError("injected")
+                raise ApiError("injected")
             self.selected.append((group, node))
 
     def setUp(self):
@@ -156,7 +159,7 @@ class SwitcherRegressionTest(unittest.TestCase):
         self.sw.board = self.Board([
             {"node": "US-node", "id": "us01", "region": "us", "score": 80},
         ])
-        self.sw.clash = self.Clash()
+        self.sw.api = self.Api()
         self.assertFalse(self.sw.force_activate("eu", "US-node"))
         self.assertIsNone(self.sw.active_node("eu"))
 
@@ -164,7 +167,7 @@ class SwitcherRegressionTest(unittest.TestCase):
         self.sw.board = self.Board([
             {"node": "EU-node", "id": "eu01", "region": "eu", "score": 80},
         ])
-        self.sw.clash = self.Clash(fail_on="prod")
+        self.sw.api = self.Api(fail_on="prod")
         self.assertFalse(self.sw.force_activate("eu", "EU-node"))
         self.assertIsNone(self.sw.active_node("eu"))
 

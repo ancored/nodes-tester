@@ -1,6 +1,6 @@
 # nodes_admin
 
-В пакете 0.2.0 оркестратор работает внутри процесса `nodes_tester`.
+Оркестратор работает внутри процесса `nodes_tester`.
 Он не импортирует Runner: при создании получает только хуки окна применения.
 
 `orchestrator.py` запускает allowlist-команду `nodes-tester pipeline router|clients`, хранит

@@ -6,14 +6,20 @@
       "rename":  { "labels": { "AI": ["ChatGPT", …] }, "domain_resolver_tag": "bootstrap" },
       "selector": {…}, "urltest": {…},
       "emit": { "nodes_tester": true, "global_failsafe": false, "ensure_regions": ["eu","us","other"] },
+      "regions": { "eu": ["de", "nl", …], "asia": ["jp", "sg"] },
+      "groups": [ { "name": "eu", "enabled": true, "in_global": true, "fallback": true,
+                    "match": { "regions": ["eu"] } }, … ],
       "raw_user_nodes": false
     }
+
+groups не задан → прежняя схема (eu/us/ru/other, обязательные — emit.ensure_regions).
 
 v1 (без filters/rename) принимается как есть — недостающее берётся из дефолтов.
 Файла нет вовсе → все дефолты (как и прежде при отсутствии groups_params.json).
 """
 
 import copy
+import re
 
 from nodes_common.fileio import read_json
 
@@ -24,8 +30,14 @@ DEFAULTS = {
     "selector": {},
     "urltest": {},
     "emit": {},
+    "regions": {},
+    "groups": None,
     "raw_user_nodes": False,
 }
+
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_]*$")
+_MATCH_KEYS = ("countries", "regions", "labels",
+               "exclude_countries", "exclude_regions", "exclude_labels")
 
 
 class ParamsError(ValueError):
@@ -77,6 +89,53 @@ def load(data=None):
     emit = out["emit"]
     if "ensure_regions" in emit:
         _str_list(emit["ensure_regions"], "emit.ensure_regions")
+
+    regions = data.get("regions") or {}
+    if not isinstance(regions, dict):
+        raise ParamsError("groups_params.regions: ожидается объект {регион: [страны]}")
+    for name, ccs in regions.items():
+        if not _NAME_RE.match(str(name)):
+            raise ParamsError(f"regions: недопустимое имя региона {name!r}")
+        _str_list(ccs, f"regions.{name}")
+    out["regions"] = {name: [c.lower() for c in ccs] for name, ccs in regions.items()}
+
+    if "groups" in data and data["groups"] is not None:
+        out["groups"] = _load_groups(data["groups"], set(out["regions"]))
+    return out
+
+
+def _load_groups(groups, custom_regions):
+    if not isinstance(groups, list):
+        raise ParamsError("groups_params.groups: ожидается список групп")
+    known_regions = {"eu", "us", "ru", "other"} | custom_regions
+    seen, out = set(), []
+    for i, g in enumerate(groups):
+        where = f"groups[{i}]"
+        if not isinstance(g, dict):
+            raise ParamsError(f"{where}: ожидается объект")
+        name = g.get("name")
+        if not isinstance(name, str) or not _NAME_RE.match(name) or name in ("global", "nodes"):
+            raise ParamsError(f"{where}.name: латиница в нижнем регистре, цифры и _; "
+                              f"не global/nodes (получено {name!r})")
+        if name in seen:
+            raise ParamsError(f"{where}.name: группа '{name}' повторяется")
+        seen.add(name)
+        for flag in ("enabled", "in_global", "fallback"):
+            if flag in g and not isinstance(g[flag], bool):
+                raise ParamsError(f"{where}.{flag}: ожидается true/false")
+        match = g.get("match") or {}
+        if not isinstance(match, dict) or set(match) - set(_MATCH_KEYS):
+            raise ParamsError(f"{where}.match: допустимые ключи — {', '.join(_MATCH_KEYS)}")
+        for key, values in match.items():
+            _str_list(values, f"{where}.match.{key}")
+            if key.endswith("regions"):
+                unknown = set(values) - known_regions
+                if unknown:
+                    raise ParamsError(f"{where}.match.{key}: неизвестные регионы "
+                                      f"{', '.join(sorted(unknown))}")
+        out.append({"name": name, "enabled": g.get("enabled", True),
+                    "in_global": g.get("in_global", True), "fallback": g.get("fallback", True),
+                    "match": copy.deepcopy(match)})
     return out
 
 

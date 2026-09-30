@@ -4,11 +4,11 @@
 
 Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
 
-Инструкция относится к [релизу `v0.2.0`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.2.0). Если уже установлен пакет 0.1.x, сначала прочитайте [порядок перехода](../docs/USAGE.md#переход-с-01x).
+Инструкция относится к [релизу `v0.3.3`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.3). Нужен sing-box 1.14 или новее. Если уже установлен пакет 0.2.x или 0.1.x, сначала прочитайте порядок перехода [с 0.2.x](../docs/USAGE.md#переход-с-02x) или [с 0.1.x](../docs/USAGE.md#переход-с-01x).
 
 ## 1. Установить пакет
 
-Скачайте [`nodes-tester-0.2.0-r1.apk`](https://github.com/andreydyadyk/nodes-tester/releases/download/v0.2.0/nodes-tester-0.2.0-r1.apk) для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного выпуска.
+Скачайте [`nodes-tester-0.3.3-r1.apk`](https://github.com/andreydyadyk/nodes-tester/releases/download/v0.3.3/nodes-tester-0.3.3-r1.apk) для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного выпуска.
 
 SHA-256 опубликованного файла `.apk`:
 
@@ -21,7 +21,7 @@ SHA-256 опубликованного файла `.apk`:
 С компьютера передайте файл на роутер; замените `192.168.1.1` своим адресом:
 
 ```sh
-scp -O nodes-tester-0.2.0-r1.apk root@192.168.1.1:/tmp/
+scp -O nodes-tester-0.3.3-r1.apk root@192.168.1.1:/tmp/
 ssh root@192.168.1.1
 ```
 
@@ -29,7 +29,7 @@ ssh root@192.168.1.1
 
 ```sh
 apk update
-apk add --allow-untrusted /tmp/nodes-tester-0.2.0-r1.apk
+apk add --allow-untrusted /tmp/nodes-tester-0.3.3-r1.apk
 ```
 
 Зависимости Python устанавливаются из фидов OpenWrt; PySocks входит в пакет. Не смешивайте эти зависимости с копиями, установленными через `pip`. Если раньше использовали `pip`, сначала разберите старую установку и восстановите пакетные зависимости.
@@ -104,7 +104,17 @@ nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-te
 
 Для тестера нужны три элемента:
 
-- Clash API с адресом и секретом, доступными тестеру.
+- API-сервис sing-box 1.14 с секретом, доступный тестеру. Он же отдаёт веб-панель sing-box:
+
+  ```json
+  "services": [
+    { "type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090,
+      "secret": "<секрет>", "dashboard": true }
+  ]
+  ```
+
+  Для панели из LAN укажите в `listen` адрес роутера, например `192.168.1.1`.
+  `experimental.clash_api` тестеру не нужен.
 - SOCKS inbound для проверок, например:
 
   ```json
@@ -133,7 +143,7 @@ nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-te
 
 | Поле | Что указать |
 |---|---|
-| `clash_api.base_url`, `clash_api.secret` | Адрес и секрет действующего Clash API |
+| `box_api.url`, `box_api.secret` | Адрес и секрет API-сервиса sing-box (`services[type=api]`) |
 | `testing_groups[0].connection` | SOCKS из предыдущего шага: по примеру `127.0.0.1:2080` |
 | `testing_groups[0].selector.group` | `nodes-tester` |
 | `storage.nodes_file` | Путь к собранному фрагменту, по примеру `/etc/sing-box-subscribe/nodes.json` |

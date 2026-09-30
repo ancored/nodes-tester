@@ -1,8 +1,8 @@
 {
   "$schema": "config.schema.json",
-  "clash_api": {
-    "base_url": "http://192.168.1.1:9090",
-    "secret": "YOUR-CLASH-API-SECRET",
+  "box_api": {
+    "url": "http://127.0.0.1:9090",
+    "secret": "YOUR-SING-BOX-API-SECRET",
     "timeout": 5
   },
   "testing_groups": [
@@ -55,7 +55,16 @@
       "heavy_veto_hours": 6
     },
     "testing_groups_specifics": [],
-    "region_groups_specifics": []
+    "node_groups_specifics": [
+      {
+        "group": "ai",
+        "default_overrides": {
+          "required_tests": [
+            "gemini"
+          ]
+        }
+      }
+    ]
   },
   "tests": {
     "connectivity": {
@@ -93,6 +102,11 @@
       },
       "window_bytes": 2000000,
       "duration": 30
+    },
+    "gemini": {
+      "attempts": 3,
+      "ttl_hours": 6,
+      "max_per_pass": 20
     },
     "reachability": {
       "timeout": 8,

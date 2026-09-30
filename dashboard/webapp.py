@@ -228,13 +228,16 @@ class _Handler(BaseHTTPRequestHandler):
             resp = Response.json({"error": f"bad request: {exc}"}, status=400)
         except Exception as exc:                    # noqa: BLE001 — не роняем сервер
             resp = Response.json({"error": f"internal: {exc}"}, status=500)
-        self.send_response(resp.status)
-        self.send_header("Content-Type", resp.ctype)
-        self.send_header("Content-Length", str(len(resp.body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        if method != "HEAD":
-            self.wfile.write(resp.body)
+        try:
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.ctype)
+            self.send_header("Content-Length", str(len(resp.body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if method != "HEAD":
+                self.wfile.write(resp.body)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True            # клиент ушёл раньше ответа
 
     def do_GET(self):
         self._dispatch("GET")

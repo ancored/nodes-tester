@@ -1,7 +1,7 @@
 """Редактор конфигов/подписок (Фаза 4): config.json / providers.json через UI.
 
 GET/PUT с валидацией и атомарной записью (temp + rename). Конфиг содержит секрет
-(clash_api.secret), поэтому ВСЕ эндпоинты этого модуля требуют X-Admin-Token.
+(box_api.secret), поэтому ВСЕ эндпоинты этого модуля требуют X-Admin-Token.
 
 Валидация config.json переиспользует существующий `load_config` (JSON Schema при
 наличии jsonschema + семантическая `_validate`): тело пишется во временный файл в
@@ -228,7 +228,7 @@ def register(app: App) -> None:
         from nodes_fetch.util import DEFAULT_UA
         from nodes_fetch.happ import _HEADERS
         from nodes_config.params import load
-        from nodes_config.groups import DEFAULT_ENSURE_REGIONS
+        from nodes_config.groups import BUILTIN_REGIONS, DEFAULT_ENSURE_REGIONS
         group_defaults = load()
         group_defaults["emit"] = {"nodes_tester": True, "global_failsafe": False,
                                   "ensure_regions": list(DEFAULT_ENSURE_REGIONS)}
@@ -236,7 +236,8 @@ def register(app: App) -> None:
             {"value": "", "label": "По умолчанию (Safari)", "effective": DEFAULT_UA},
             {"value": "curl", "label": "curl"},
             {"value": "clashmeta", "label": "Clash Meta (clashmeta)"},
-        ], "happ_headers": dict(_HEADERS), "group_defaults": group_defaults}
+        ], "happ_headers": dict(_HEADERS), "group_defaults": group_defaults,
+            "builtin_regions": BUILTIN_REGIONS}
 
     @app.route("GET", "/api/config/groups", needs_token=True)
     def get_groups(app, req):

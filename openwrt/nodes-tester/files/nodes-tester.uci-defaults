@@ -11,7 +11,8 @@ config_get CONFIG_DIR main config_dir /etc/nodes-tester
 config_get DATA_DIR main data_dir /opt/nodes-tester
 
 mkdir -p "$CONFIG_DIR/config-main" "$CONFIG_DIR/config-wh" "$CONFIG_DIR/awg" \
-    "$CONFIG_DIR/singbox/rules" "$CONFIG_DIR/singbox/clients/publish" "$DATA_DIR"
+    "$CONFIG_DIR/singbox/rules" "$CONFIG_DIR/singbox/presets" "$CONFIG_DIR/singbox/clients/publish" \
+    "$DATA_DIR"
 
 if [ ! -f "$CONFIG_DIR/config.json" ]; then
 	token="$(tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | head -c 48)"
@@ -20,6 +21,26 @@ if [ ! -f "$CONFIG_DIR/config.json" ]; then
 		"$EX/config.example.json" > "$CONFIG_DIR/config.json"
 	chmod 600 "$CONFIG_DIR/config.json"
 fi
+# 0.3.0: тестер работает через API-сервис sing-box — clash_api {base_url} → box_api {url}.
+python3 - "$CONFIG_DIR/config.json" <<'PYEOF' || true
+import json, os, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    cfg = json.load(fh)
+if "clash_api" in cfg and "box_api" not in cfg:
+    old = cfg["clash_api"] or {}
+    new = {"url": old.get("base_url", "http://127.0.0.1:9090"), "secret": old.get("secret", "")}
+    if "timeout" in old:
+        new["timeout"] = old["timeout"]
+    cfg = {("box_api" if k == "clash_api" else k): (new if k == "clash_api" else v)
+           for k, v in cfg.items()}
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+PYEOF
 for set in main wh; do
 	d="$CONFIG_DIR/config-$set"
 	[ -f "$d/providers.json" ] || cp "$EX/providers.example.json" "$d/providers.json"

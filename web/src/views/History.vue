@@ -18,7 +18,7 @@ const rows=computed(()=>{
 const regions=computed(()=>['все',...new Set(rows.value.map(r=>r.region).filter(Boolean))])
 const filtered=computed(()=>region.value==='все' ? rows.value : rows.value.filter(r=>r.region===region.value))
 const reasons={manual:'Ручной выбор',rotation:'Плановая ротация',quality:'Смена по качеству',emergency:'Аварийная замена',
-  'emergency-stuck':'Авария: замена не найдена',initial:'Первый выбор',init:'Первый выбор'}
+  'emergency-stuck':'Авария: замена не найдена',failsafe:'Никто не прошёл обязательный тест — failsafe',initial:'Первый выбор',init:'Первый выбор'}
 const columns=[
   {key:'ts',title:'Дата и время',fmt:dateTime,l:true},{key:'region',title:'Регион',l:true},
   {key:'tag',title:'Выбранная нода',l:true},{key:'crc',title:'Карточка',l:true},

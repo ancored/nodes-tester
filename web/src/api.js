@@ -33,7 +33,7 @@ async function request(method, path, body, headers = {}) {
   } finally { clearTimeout(timeout) }
 }
 export const api = { get: p => request('GET', p), post: (p,b,h) => request('POST',p,b ?? {},h),
-  put: (p,b,h) => request('PUT',p,b ?? {},h) }
+  put: (p,b,h) => request('PUT',p,b ?? {},h), del: (p,h) => request('DELETE',p,undefined,h) }
 export async function login(t, remember = false) {
   setToken(t.trim()); const epoch = auth.epoch; auth.checking = true; auth.error = ''
   try {

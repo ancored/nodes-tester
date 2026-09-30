@@ -2,8 +2,8 @@
 записанных ответах подписок выдаёт эталон — JSON-равенство (порядок ключей внутри объекта
 не важен, порядок элементов списков — важен). Теги/CRC не должны меняться.
 
-Каждый набор проверяется двумя путями: прежний интерфейс `python -m subscribe` (конфиги v1,
-обёртка) и новый конвейер `migrate → python -m nodes_fetch → python -m nodes_config`.
+Каждый набор (конфиги v1) проверяется конвейером `migrate → python -m nodes_fetch →
+python -m nodes_config` — это заодно проверяет миграцию v1→v2.
 
 Наборы:
 - tests/fixtures/golden/*   — синтетические (хранятся в репозитории), см. tests/golden/make_synthetic.py;
@@ -49,9 +49,8 @@ class GoldenTest(unittest.TestCase):
 
     def _check_all(self, sets):
         for s in sets:
-            for runner in (harness.replay, harness.replay_pipeline):
-                with self.subTest(set=os.path.basename(s), path=runner.__name__):
-                    self._check(s, runner)
+            with self.subTest(set=os.path.basename(s)):
+                self._check(s)
 
     def test_synthetic_sets(self):
         sets = _sets("golden")

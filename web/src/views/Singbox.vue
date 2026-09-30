@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api, auth, can } from '../api.js'
 
 const files = ref([]), path = ref('base.json'), text = ref(''), revision = ref('missing')
@@ -8,6 +8,7 @@ const versions = ref([]), error = ref(''), notice = ref(''), dirty = ref(false),
 const preview = ref(null)
 const newPath = ref(''), ruleRows = ref([]), rulesValid = ref(true)
 const known = ['base.json', 'rules.json']
+const route = useRoute()
 const url = p => '/singbox/files/' + encodeURIComponent(p)
 function changed() { dirty.value = true; auth.dirty = true }
 function changedPaths(left, right, prefix = '', out = []) {
@@ -123,6 +124,15 @@ async function uploadLocal(event, sourcePath) {
     await refreshList()
   } catch (e) { error.value = 'Не удалось загрузить локальный источник: ' + e.message }
 }
+async function removePreset() {
+  if (!window.confirm(`Удалить ${path.value}? Файл сохранится в истории. Работающий sing-box изменится только после «Применить» в разделе «Правила».`)) return
+  try {
+    await api.del(url(path.value), { 'If-Match': revision.value })
+    dirty.value = false; auth.dirty = false
+    await refreshList(); await select('base.json')
+    notice.value = 'Пресет удалён.'
+  } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
+}
 function addPath() {
   const next = newPath.value.trim()
   if (!next) return
@@ -130,7 +140,7 @@ function addPath() {
 }
 watch(() => can('singbox_files'), async ready => {
   if (!ready || files.value.length) return
-  try { await refreshList(); await select('base.json') } catch (e) { error.value = e.message }
+  try { await refreshList(); await select(typeof route.query.file === 'string' ? route.query.file : 'base.json') } catch (e) { error.value = e.message }
 }, { immediate: true })
 onBeforeUnmount(() => { auth.dirty = false })
 onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить несохранённые изменения файла?'))
@@ -148,13 +158,13 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
       <div class="file-picker">
         <button v-for="item in [...new Set([...known, ...files.map(f => f.path)])]" :key="item" class="btn" :aria-current="item === path ? 'true' : undefined" @click="select(item)">{{ item }}</button>
       </div>
-      <label>Другой разрешённый путь <input v-model="newPath" placeholder="rules/my-domains.json" /></label>
+      <label>Другой разрешённый путь <input v-model="newPath" placeholder="rules/my-domains.json или presets/my-rules.json" /></label>
       <button class="btn" @click="addPath">Открыть или создать</button>
     </template>
   </section>
   <section v-if="can('singbox_files')" class="panel">
     <h2>{{ path }}</h2>
-    <p>Редактируйте JSON или загрузите локальный файл. При сохранении base.json сервер проверит итоговую конфигурацию через sing-box.</p>
+    <p>Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box.</p>
     <template v-if="path === 'rules.json'">
       <h3>Источники правил</h3>
       <p>Назначение — имя файла в /etc/sing-box/rules/. URL скачивается при запуске; локальный JSON загружается здесь.</p>
@@ -180,6 +190,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
     <div class="actions">
       <button class="btn" :disabled="!dirty || saving || conflicted" @click="save">Сохранить файл</button>
       <button class="btn" @click="select(path)">Перечитать файл</button>
+      <button v-if="path.startsWith('presets/') && revision !== 'missing'" class="btn" :disabled="saving" @click="removePreset">Удалить пресет</button>
     </div>
     <h3>Предыдущие версии</h3>
     <p v-if="!versions.length">Предыдущих версий нет.</p>

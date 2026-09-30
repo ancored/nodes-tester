@@ -35,7 +35,7 @@ def make_config(tmp: str, **overrides) -> str:
 
 
 def make_runner(tmp: str, tags=None, **overrides):
-    """Runner с временными путями и фейковым Clash (без сети). tags — члены nodes-tester."""
+    """Runner с временными путями и фейковым API sing-box (без сети). tags — члены nodes-tester."""
     from nodes_tester.config import load_config
     from nodes_tester.runner import Runner
 
@@ -46,12 +46,12 @@ def make_runner(tmp: str, tags=None, **overrides):
     r._backoff = {}
     r._endpoints = {}
     r._host_ep_last = {}
-    r.clash = FakeClash(tags or [])
+    r.api = FakeApi(tags or [])
     return r
 
 
-class FakeClash:
-    """Минимальный Clash без сети: члены группы + no-op select."""
+class FakeApi:
+    """Минимальный API sing-box без сети: члены группы + no-op select."""
 
     def __init__(self, tags):
         self._tags = list(tags)
@@ -68,6 +68,9 @@ class FakeClash:
 
     def ping(self):
         pass
+
+    def all_proxies(self):
+        return {}
 
 
 def fresh_nodes_json(tmp: str, outbounds) -> str:

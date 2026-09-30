@@ -42,6 +42,40 @@
         "ensure_regions": { "type": "array", "items": { "enum": ["eu", "us", "ru", "other"] } }
       }
     },
+    "regions": {
+      "type": "object",
+      "description": "именованные списки стран (ISO-коды). Встроенные eu/us/ru можно переопределить; other — страны вне eu/us/ru, если other не задан явно",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9_]*$" },
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "groups": {
+      "type": "array",
+      "description": "группы нод: {name}-auto-out (selector) + {name}-auto-out-failsafe (urltest). Не задано — eu/us/ru/other по emit.ensure_regions",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "not": { "enum": ["global", "nodes"] } },
+          "enabled": { "type": "boolean", "default": true },
+          "in_global": { "type": "boolean", "default": true, "description": "селектор группы входит в global-auto-out" },
+          "fallback": { "type": "boolean", "default": true, "description": "пустую группу заполнить всеми нодами" },
+          "match": {
+            "type": "object",
+            "description": "условия через И; внутри условия — ИЛИ; пусто — все ноды",
+            "additionalProperties": false,
+            "properties": {
+              "countries": { "type": "array", "items": { "type": "string" } },
+              "regions": { "type": "array", "items": { "type": "string" } },
+              "labels": { "type": "array", "items": { "type": "string" } },
+              "exclude_countries": { "type": "array", "items": { "type": "string" } },
+              "exclude_regions": { "type": "array", "items": { "type": "string" } },
+              "exclude_labels": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
     "raw_user_nodes": { "type": "boolean", "default": false }
   }
 }

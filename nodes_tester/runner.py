@@ -20,7 +20,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 
-from .clash_api import ClashApiClient, ClashApiError
+from .api import ApiClient, ApiError
 from .config import Config
 from .identity import NodeIdentity, coarse_region, parse_node
 from .logbuffer import LogRing, TeeStream
@@ -58,7 +58,7 @@ def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0)
 class Runner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.clash = ClashApiClient(cfg.clash_api)
+        self.api = ApiClient(cfg.box_api)
         self._top = cfg.testing_group.selector.group
         self.board = None
         self.switcher = None
@@ -98,7 +98,7 @@ class Runner:
                                         os.path.join(db_dir, "switch_state.json"))
             if cfg.storage.traffic.enabled:
                 self.collector = TrafficCollector(
-                    cfg.storage.traffic, self.clash, self.storage)
+                    cfg.storage.traffic, self.api, self.storage)
 
         if cfg.scoring.enabled and self.storage is not None:
             self.board = Scoreboard(self.storage, cfg.scoring)
@@ -112,12 +112,16 @@ class Runner:
                     else:
                         print("  [switch] load_balance включён, но storage выключен — "
                               "балансировка по трафику недоступна")
-                self.switcher = Switcher(cfg.switching, self.clash, self.board,
+                self.switcher = Switcher(cfg.switching, self.api, self.board,
                                          self._top, traffic_provider, self.storage)
                 if cfg.monitor.enabled:
+                    # Монитору нужен боевой трафик по нодам — поток соединений держим
+                    # и без записи в БД (storage.traffic выключен).
+                    if self.collector is None:
+                        self.collector = TrafficCollector(cfg.storage.traffic, self.api)
                     self.monitor = ProductionMonitor(
-                        cfg.monitor, self.clash, self.switcher,
-                        prober=self._probe_node, tester_group=self._top,
+                        cfg.monitor, self.api, self.switcher,
+                        prober=self._probe_node, traffic=self.collector.user_bytes,
                         pause_check=self._apply_paused,
                     )
 
@@ -133,7 +137,7 @@ class Runner:
         out, skipped = [], 0
         banned_n = 0
         self._present_crcs: set[str] = set()
-        for leaf in self.clash.list_group_members(top):
+        for leaf in self.api.list_group_members(top):
             if leaf in exclude:
                 continue
             ident = parse_node(leaf)
@@ -214,10 +218,46 @@ class Runner:
             self._tests_cache[key] = built
         return self._tests_cache[key]
 
-    def _region_params(self, region: str):
-        if region not in self._region_cache:
-            self._region_cache[region] = self.cfg.run.for_region(self._base, region)
-        return self._region_cache[region]
+    def _groups_params(self, groups) -> "RunParams":
+        key = tuple(groups)
+        if key not in self._region_cache:
+            self._region_cache[key] = self.cfg.run.for_node_groups(self._base, key)
+        return self._region_cache[key]
+
+    def _node_params(self, ident: NodeIdentity):
+        """Параметры тестов ноды — из всех её групп переключения."""
+        groups = self.board.node_groups(ident.raw) if self.board is not None else []
+        return self._groups_params(groups)
+
+    def _refresh_groups(self) -> None:
+        """Состав групп переключения из sing-box: selector {name}-auto-out с членом
+        {name}-auto-out-failsafe; члены — leaf-ноды (с CRC)."""
+        if self.board is None:
+            return
+        try:
+            proxies = self.api.all_proxies()
+        except ApiError as exc:
+            print(f"  [!] состав групп не получен: {exc}")
+            return
+        members = {}
+        for tag, info in proxies.items():
+            if not tag.endswith("-auto-out") or f"{tag}-failsafe" not in (info.get("all") or []):
+                continue
+            leaves = {m for m in info["all"] if parse_node(m).node_id}
+            if leaves:
+                members[tag[:-len("-auto-out")]] = leaves
+        self.board.set_groups(members)
+        if members and self.switcher is not None:
+            self.switcher.prune_groups(set(members))
+        required = {}
+        for group in self.board.regions():
+            tests = self._groups_params([group]).required_tests
+            required[group] = {t: self._required_ttl(t) for t in tests}
+        self.board.set_required(required)
+
+    def _required_ttl(self, test: str) -> float:
+        """Срок годности результата обязательного теста (tests.<name>.ttl_hours, деф. 6 ч)."""
+        return float((self.cfg.tests.get(test) or {}).get("ttl_hours", 6)) * 3600
 
     # --- Прогон --------------------------------------------------------
 
@@ -237,7 +277,7 @@ class Runner:
         self._backoff: dict = {}   # crc -> (until, until_pass, streak, reason), из storage
 
         try:
-            self.clash.ping()
+            self.api.ping()
             if not self._base.tests_enabled:
                 raise ValueError("run.default.tests_enabled пуст — нечего тестировать")
 
@@ -300,8 +340,8 @@ class Runner:
                 error = None
                 try:
                     empty = self._run_pass(pass_no)
-                except ClashApiError as exc:
-                    print(f"[!] Прогон #{pass_no} прерван ошибкой Clash API: {exc}")
+                except ApiError as exc:
+                    print(f"[!] Прогон #{pass_no} прерван ошибкой API sing-box: {exc}")
                     empty = True                       # API-сбой → тоже выдержим паузу
                     error = str(exc)
                 self._last_pass_result = {"pass": pass_no, "started": started,
@@ -495,7 +535,7 @@ class Runner:
                 return
 
     def _run_pass(self, pass_no: int) -> bool:
-        """Один полный прогон. Список нод перечитывается из Clash API.
+        """Один полный прогон. Список нод перечитывается из API sing-box.
         Возвращает True, если прогон пустой (нод нет) — вызывающий выдержит retry-паузу,
         чтобы не крутить цикл вплотную (см. review.md P1)."""
         # Снимок состояния хранилища ДО перечисления: бан влияет на список нод (skip),
@@ -519,6 +559,7 @@ class Runner:
             self._pass_seq += 1
 
         nodes = self._enumerate_nodes()
+        self._refresh_groups()
         if self.storage is not None:
             # Физическое присутствие ведём по ВСЕМ leaf-членам selector, включая бан и
             # исключённые регионы; test-фильтры не должны превращать ноду в «удалённую».
@@ -538,7 +579,7 @@ class Runner:
         for index, (region, ident) in enumerate(self._order_by_host(nodes)):
             self._progress = {"phase": "testing", "processed": index,
                               "total": len(nodes), "node": ident.raw}
-            params = self._region_params(region)
+            params = self._node_params(ident)
             if self._backed_off(ident.node_id):     # backoff/карантин — не тестируем
                 if self.board is not None:
                     self.board.keep(ident.raw)   # чтобы end_pass не удалил строку/score
@@ -551,6 +592,8 @@ class Runner:
             gate = self._score_and_maybe_switch(region, ident, record)
             self._backoff_update(ident.node_id, gate)
 
+        # Фаза обязательных тестов групп (gemini): решает, кто вообще может быть активным.
+        self._run_required_pass(node_by_raw, pass_no)
         # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
         self._run_heavy_pass(node_by_raw, pass_no)
 
@@ -561,6 +604,94 @@ class Runner:
             self.switcher.evaluate_all()
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
+
+    def _required_targets(self, node_by_raw: dict, done: set) -> list:
+        """[(test, region, ident)] для групп с обязательными тестами: верхние top_k
+        нод пула (здоровые, без свежего провала) и активная нода — у кого нет свежего
+        результата. Провал выбивает ноду из пула — в следующем круге её место занимает
+        следующая (как у heavy)."""
+        if self.board is None or self.switcher is None:
+            return []
+        top_k = max(1, int(self.cfg.switching.rotation.top_k or 1))
+        out, picked = [], set(done)
+        for group in self.board.regions():
+            for test, ttl in self.board.required(group).items():
+                pool = self.board.probe_pool(group)[:top_k]
+                active = self.switcher.active_node(group)
+                if active and active not in pool:
+                    pool.append(active)
+                for raw in pool:
+                    if (test, raw) in picked or not self.board.needs_test(raw, test, ttl):
+                        continue
+                    ni = node_by_raw.get(raw)
+                    if ni is not None:
+                        picked.add((test, raw))
+                        out.append((test, *ni))
+        return out
+
+    def _run_required_pass(self, node_by_raw: dict, pass_no: int) -> None:
+        if self.board is None:
+            return
+        done: set = set()
+        budget = {}
+        while True:
+            targets = self._required_targets(node_by_raw, done)
+            fresh = []
+            for test, region, ident in targets:
+                limit = int((self.cfg.tests.get(test) or {}).get("max_per_pass", 20))
+                if budget.get(test, 0) < limit:
+                    budget[test] = budget.get(test, 0) + 1
+                    fresh.append((test, region, ident))
+            if not fresh:
+                return
+            done.update((test, ident.raw) for test, _r, ident in fresh)
+            by_test: dict = {}
+            for test, region, ident in fresh:
+                by_test.setdefault(test, []).append((region, ident))
+            for test, items in by_test.items():
+                self._required_round(test, self._order_by_host(items), pass_no)
+
+    def _required_round(self, test_name: str, targets: list, pass_no: int) -> None:
+        cls = get_test_class(test_name)
+        if cls is None:
+            print(f"  [!] обязательный тест '{test_name}' не найден — пропуск")
+            return
+        test = cls(self.cfg.tests.get(test_name) or {})
+        print(f"\n── Обязательный тест групп · {test_name} — нод: {len(targets)} ──")
+        for index, (region, ident) in enumerate(targets):
+            self._progress = {"phase": "required_testing", "processed": index,
+                              "total": len(targets), "node": ident.raw}
+            if self._backed_off(ident.node_id):
+                continue
+            params = self._node_params(ident)
+            self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
+            with self._tester_lock:
+                self._remember(self._top)
+                try:
+                    self.api.select(self._top, ident.raw)
+                except ApiError as exc:
+                    print(f"  {ident.short()}: ОШИБКА переключения ({test_name}): {exc}")
+                    continue
+                if params.switch_delay > 0:
+                    time.sleep(params.switch_delay)
+                session = make_session(self.cfg.testing_group.connection)
+                ctx = TestContext(session=session, node=ident.raw,
+                                  default_timeout=params.request_timeout, region=region)
+                try:
+                    res = test.run(ctx).to_dict()
+                except Exception as exc:  # noqa: BLE001 — сбой теста не рушит проход
+                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                finally:
+                    session.close()
+            ok = bool(res.get("ok"))
+            self.board.set_required_result(ident.raw, test_name, ok, res.get("country") or "")
+            rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
+                   "tests": {test_name: res}}
+            if self.storage is not None and self.cfg.storage.store_results:
+                self.storage.add_results(rec)
+            if self.cfg.report.console:
+                print(f"  {ident.short()}: {test_name}={'OK' if ok else 'FAIL'} "
+                      f"{res.get('countries') or ''} {res.get('error') or ''}".rstrip())
 
     def _heavy_test(self):
         """Инстанс тяжёлого download-теста (кэш). None — если тест не зарегистрирован."""
@@ -578,7 +709,7 @@ class Runner:
             return []
         targets, picked = [], set(done)
         for region in self.board.regions():
-            hc = int(getattr(self._region_params(region), "heavy_candidates", 0) or 0)
+            hc = int(getattr(self._groups_params([region]), "heavy_candidates", 0) or 0)
             if hc <= 0 or not self.switcher.rotation_due(region):
                 continue
             for raw in self.switcher.rotation_pool(region):
@@ -613,14 +744,14 @@ class Runner:
                               "total": len(targets), "node": ident.raw}
             if self._backed_off(ident.node_id):     # backoff/карантин — не качаем
                 continue
-            params = self._region_params(region)
+            params = self._node_params(ident)
             self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
             # Лок общий с зондом монитора; host-gap-пауза и запись в БД — вне лока.
             with self._tester_lock:
                 self._remember(self._top)
                 try:
-                    self.clash.select(self._top, ident.raw)   # плоско: nodes-tester → нода
-                except ClashApiError as exc:
+                    self.api.select(self._top, ident.raw)   # плоско: nodes-tester → нода
+                except ApiError as exc:
                     print(f"  {ident.short()}: ОШИБКА переключения (heavy): {exc}")
                     continue
                 if params.switch_delay > 0:
@@ -715,13 +846,13 @@ class Runner:
 
         Возвращает (ok, mbps, inconclusive). inconclusive — туннель жив, но замер не
         показателен (429/limited, http-ошибка): монитор трактует как «не throttle», без
-        страйка. ClashApiError (переключение/API) пробрасывает наверх — монитор пропустит.
+        страйка. ApiError (переключение/API) пробрасывает наверх — монитор пропустит.
         """
         mon = self.cfg.monitor
         url = mon.probe_url or f"https://speed.cloudflare.com/__down?bytes={mon.probe_bytes}"
         with self._tester_lock:
             self._remember(self._top)
-            self.clash.select(self._top, leaf)     # ClashApiError → наверх (монитор пропустит)
+            self.api.select(self._top, leaf)     # ApiError → наверх (монитор пропустит)
             if self.cfg.run.default.switch_delay > 0:
                 time.sleep(self.cfg.run.default.switch_delay)
             session = make_session(self.cfg.testing_group.connection)
@@ -743,8 +874,8 @@ class Runner:
         if not self._base.restore_selection or tag in self._originals:
             return
         try:
-            self._originals[tag] = self.clash.current_selection(tag)
-        except ClashApiError:
+            self._originals[tag] = self.api.current_selection(tag)
+        except ApiError:
             self._originals[tag] = ""
 
     def _restore(self) -> None:
@@ -752,8 +883,8 @@ class Runner:
             if not sel:
                 continue
             try:
-                self.clash.select(tag, sel)
-            except ClashApiError as exc:
+                self.api.select(tag, sel)
+            except ApiError as exc:
                 print(f"[!] Не удалось восстановить '{tag}' -> '{sel}': {exc}")
         if self._originals:
             print("Исходный выбор селекторов восстановлен.")
@@ -777,8 +908,8 @@ class Runner:
         with self._tester_lock:
             self._remember(self._top)
             try:
-                self.clash.select(self._top, leaf)
-            except ClashApiError as exc:
+                self.api.select(self._top, leaf)
+            except ApiError as exc:
                 print(f"  {ident.short()}: ОШИБКА переключения: {exc}")
                 base["tests"] = {"_select": {"ok": False, "error": str(exc)}}
                 return base

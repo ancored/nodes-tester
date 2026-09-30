@@ -267,7 +267,7 @@ class SchemaContractTest(FetchTestBase):
     def test_providers_match_schema(self):
         import jsonschema
         schema = self._schema("providers.schema.json")
-        for d in ("config", "config_whitelist", os.path.join("tests", "fixtures", "golden", "synthetic", "config")):
+        for d in ("config", os.path.join("tests", "fixtures", "golden", "synthetic", "config")):
             path = os.path.join(_ROOT, d, "providers.json")
             if os.path.exists(path):
                 with self.subTest(providers=d), open(path, encoding="utf-8") as f:

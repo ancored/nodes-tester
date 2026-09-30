@@ -1,0 +1,32 @@
+{
+  "_preset": {
+    "title": "AI Google",
+    "description": "Gemini и DeepMind резолвятся через SmartDNS и идут на его прокси напрямую; всё, что попало на реальные IP Google, уходит в ai-auto-out, чтобы Google не увидел российский IP. QUIC к ним запрещён",
+    "enabled": false,
+    "priority": 220,
+    "requires": { "groups": ["ai"] }
+  },
+  "dns": {
+    "servers": [
+      { "type": "https", "tag": "dns-ai-smart", "server": "smartdns.example.com" }
+    ],
+    "rules": [
+      { "rule_set": ["google-dm", "google-gemini"], "server": "dns-ai-smart" }
+    ]
+  },
+  "route": {
+    "rules": [
+      { "type": "logical", "mode": "and", "rules": [
+          { "network": "udp", "port": 443 },
+          { "rule_set": ["google-dm", "google-gemini", "geoip-google"] }
+        ], "action": "reject" },
+      { "rule_set": "geoip-google", "outbound": "ai-auto-out" },
+      { "rule_set": ["google-dm", "google-gemini"], "outbound": "direct-out" }
+    ],
+    "rule_set": [
+      { "type": "local", "tag": "google-dm", "format": "binary", "path": "/etc/sing-box/rules/google-deepmind.srs" },
+      { "type": "local", "tag": "google-gemini", "format": "binary", "path": "/etc/sing-box/rules/google-gemini.srs" },
+      { "type": "local", "tag": "geoip-google", "format": "binary", "path": "/etc/sing-box/rules/geoip-google.srs" }
+    ]
+  }
+}
