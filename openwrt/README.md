@@ -8,33 +8,30 @@
 
 ## 1. Установить пакет
 
-Скачайте [`nodes-tester-0.3.4-r1.apk`](https://github.com/andreydyadyk/nodes-tester/releases/download/v0.3.4/nodes-tester-0.3.4-r1.apk) для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного выпуска.
-
-SHA-256 опубликованного файла `.apk`:
-
-```text
-5d92706c4b20e508d1daf6e49d3a77c85e89fa51647a1b4b04ff49054eb3b3e8
-```
-
-Пакет не подписан. `--allow-untrusted` разрешает установку без проверки подписи: используйте его только для доверенного файла этого проекта. Контрольная сумма проверяет совпадение файла, но не заменяет подпись.
-
-С компьютера передайте файл на роутер; замените `192.168.1.1` своим адресом:
+Пакет для OpenWrt 25.x подписан ключом проекта. Один раз добавьте открытый ключ и репозиторий
+пакетов; дальше установка и обновление идут обычным `apk`, без `--allow-untrusted`. Команды
+выполняются на роутере (`ssh root@192.168.1.1`, адрес замените своим):
 
 ```sh
-scp -O nodes-tester-0.3.4-r1.apk root@192.168.1.1:/tmp/
-ssh root@192.168.1.1
-```
-
-Далее команды выполняются на роутере:
-
-```sh
+wget -O /etc/apk/keys/nodes-tester.pem https://raw.githubusercontent.com/andreydyadyk/nodes-tester/master/openwrt/nodes-tester.pem
+echo "https://andreydyadyk.github.io/nodes-tester/packages.adb" >> /etc/apk/repositories.d/customfeeds.list
 apk update
-apk add --allow-untrusted /tmp/nodes-tester-0.3.4-r1.apk
+apk add nodes-tester
 ```
+
+Ключ ([`nodes-tester.pem`](nodes-tester.pem), ECDSA P-256) — это решение доверять пакетам
+проекта: `apk` проверяет им подпись индекса и самих пакетов и откажется ставить подменённый или
+повреждённый файл. Проверьте, что скачанный ключ совпадает с ключом в репозитории.
+
+Без репозитория можно поставить файл из [релиза](https://github.com/andreydyadyk/nodes-tester/releases/latest):
+скопируйте его на роутер (`scp -O nodes-tester-<версия>.apk root@192.168.1.1:/tmp/`) и
+выполните `apk add /tmp/nodes-tester-<версия>.apk` — с установленным ключом подпись тоже
+проверяется. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного
+выпуска; `.ipk` не подписываются.
 
 Зависимости Python устанавливаются из фидов OpenWrt; PySocks входит в пакет. Не смешивайте эти зависимости с копиями, установленными через `pip`. Если раньше использовали `pip`, сначала разберите старую установку и восстановите пакетные зависимости.
 
-Для самостоятельной сборки нужен Docker: из корня исходников выполните `openwrt/build.sh` для SDK по умолчанию либо `openwrt/build.sh mediatek-filogic-24.10.4` для `.ipk`. Результат появится в `dist/`. SDK должен соответствовать версии целевого OpenWrt.
+Для самостоятельной сборки нужен Docker: из корня исходников выполните `openwrt/build.sh` для SDK по умолчанию либо `openwrt/build.sh mediatek-filogic-24.10.4` для `.ipk`. Результат появится в `dist/`. SDK должен соответствовать версии целевого OpenWrt. Чтобы подписать `.apk` своим ключом, задайте `SIGN_KEY=/путь/private-key.pem` (ключ создаётся командой `openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem`) и положите соответствующий открытый ключ в `/etc/apk/keys/` роутера. `openwrt/publish-repo.sh` выкладывает подписанные пакеты с индексом в ветку `gh-pages`.
 
 ## 2. Найти файлы и выбрать хранилище
 
@@ -176,12 +173,17 @@ logread -e nodes-tester
 
 ```sh
 mkdir -p /root/packages
-cp /tmp/nodes-tester-<новая версия>.apk /root/packages/
 nodes-tester backup --stable
-apk add --allow-untrusted /root/packages/nodes-tester-<новая версия>.apk
+apk update
+apk fetch -o /root/packages nodes-tester
+apk upgrade nodes-tester
 /etc/init.d/nodes-tester restart
 logread -e nodes-tester
 ```
+
+Без подключённого репозитория скачайте файл из релиза в `/root/packages/` и выполните
+`apk add /root/packages/nodes-tester-<новая версия>.apk`. Пакеты до 0.3.4 не подписаны: для
+них по-прежнему нужен `--allow-untrusted`.
 
 После `apk add` обязательно перезапустите тестер вручную: пакет не делает этого сам. При переходе с 0.1.x проверьте сохранённые `/etc/nodes-tester/singbox/` и `pipeline.json`, затем выполните [dry-run и настройку расписания](../docs/USAGE.md#переход-с-01x).
 
