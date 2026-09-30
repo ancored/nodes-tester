@@ -39,16 +39,28 @@ async function launch(dryRun) {
 async function poll() {
   clearTimeout(timer)
   if (!run.value) return
+  let more = false
   try {
     const chunk = await api.get(`/pipeline/runs/${run.value.id}/log?offset=${logOffset.value}`)
-    log.value += chunk.text; logOffset.value = chunk.offset
+    log.value += chunk.text; logOffset.value = chunk.offset; more = !!chunk.text
     const history = await api.get('/pipeline/runs?limit=20')
     const row = (history.runs || []).find(r => r.id === run.value.id)
-    if (row) run.value.status = row.status
+    if (row) Object.assign(run.value, { status: row.status, started: row.started })
   } catch (e) { error.value = e.message }
-  if (run.value.status === 'running') timer = setTimeout(poll, 2000)
+  // Дочитываем журнал и после завершения; при сбое сети опрос продолжается.
+  if (run.value.status === 'running' || more) timer = setTimeout(poll, more && run.value.status !== 'running' ? 0 : 2000)
 }
-watch(() => can('singbox_files'), ready => { if (ready) load() }, { immediate: true })
+// Последний прогон apply живёт на сервере: после возврата на страницу подтягиваем его статус и журнал.
+async function restoreRun() {
+  if (run.value) return
+  try {
+    const last = ((await api.get('/pipeline/runs?limit=20')).runs || []).find(r => r.mode === 'apply')
+    if (!last || run.value) return
+    run.value = { id: last.id, dry_run: !!last.dry_run, status: last.status, started: last.started }; log.value = ''; logOffset.value = 0
+    poll()
+  } catch (e) { error.value = e.message }
+}
+watch(() => can('singbox_files'), ready => { if (ready) { load(); restoreRun() } }, { immediate: true })
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
@@ -66,15 +78,24 @@ onBeforeUnmount(() => clearTimeout(timer))
     <section class="panel">
       <h2>Пресеты</h2>
       <p v-if="!presets.length" class="mut">Пресетов нет. Правила берутся только из base.json. Создайте файл presets/&lt;имя&gt;.json в «Файлах sing-box».</p>
-      <div v-for="item in presets" :key="item.name" class="preset-row">
-        <label class="check"><input type="checkbox" :checked="item.enabled" :disabled="busy" @change="toggle(item, $event.target.checked)" /> <b>{{ item.title }}</b></label>
-        <span class="mut">{{ item.name }} · приоритет {{ item.priority }}<template v-if="item.dns_priority !== item.priority"> (DNS {{ item.dns_priority }})</template></span>
-        <p class="desc">{{ item.description }}</p>
-        <p v-if="item.requires.groups.length" :class="item.missing_groups?.length ? 'notice bad' : 'mut'">
-          Нужны группы: {{ item.requires.groups.join(', ') }}<template v-if="item.missing_groups?.length"> · нет в текущем nodes.json: {{ item.missing_groups.join(', ') }} — включите их в «Подписки и сборка» → «Параметры сборки»</template>
-        </p>
-        <RouterLink :to="{ path: '/singbox', query: { file: item.path } }">Открыть JSON</RouterLink>
+      <div v-if="presets.length" class="wrap">
+        <table class="responsive-table presets">
+          <thead><tr><th class="l">Вкл.</th><th class="l">Пресет</th><th>Приоритет</th><th class="l">Нужны группы</th><th class="l">Файл</th></tr></thead>
+          <tbody>
+            <tr v-for="item in presets" :key="item.name">
+              <td class="l" data-label="Вкл."><input type="checkbox" :checked="item.enabled" :disabled="busy" :aria-label="'Включить ' + item.title" @change="toggle(item, $event.target.checked)" /></td>
+              <td class="l" data-label="Пресет"><b>{{ item.title }}</b><small v-if="item.description" class="cell-note">{{ item.description }}</small></td>
+              <td data-label="Приоритет">{{ item.priority }}<small v-if="item.dns_priority !== item.priority" class="cell-note">DNS {{ item.dns_priority }}</small></td>
+              <td class="l" data-label="Нужны группы">
+                <template v-if="item.requires.groups.length">{{ item.requires.groups.join(', ') }}<small v-if="item.missing_groups?.length" class="cell-note bad">нет в nodes.json: {{ item.missing_groups.join(', ') }}</small></template>
+                <span v-else class="mut">—</span>
+              </td>
+              <td class="l" data-label="Файл"><RouterLink :to="{ path: '/singbox', query: { file: item.path } }">{{ item.name }}</RouterLink></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+      <p v-if="presets.some(p => p.missing_groups?.length)" class="notice bad">Недостающие группы включаются в «Подписки и сборка» → «Параметры сборки».</p>
       <p class="mut">Группы в текущем nodes.json: {{ groups ? groups.join(', ') : 'неизвестно' }}.</p>
     </section>
     <section class="panel">
@@ -85,7 +106,7 @@ onBeforeUnmount(() => clearTimeout(timer))
       </div>
       <p class="mut">Проверка собирает конфиг из редактируемой базы и пресетов с текущим nodes.json и прогоняет sing-box check, ничего не меняя. Применение копирует базу, собирает конфиг, перезапускает sing-box только при изменениях и проверяет связность.</p>
       <template v-if="run">
-        <p>{{ run.dry_run ? 'Проверка' : 'Применение' }}: <b>{{ statusLabel[run.status] || run.status }}</b></p>
+        <p>{{ run.dry_run ? 'Проверка' : 'Применение' }}<template v-if="run.started"> от {{ new Date(run.started * 1000).toLocaleString('ru-RU') }}</template>: <b>{{ statusLabel[run.status] || run.status }}</b> · <RouterLink to="/pipeline">история в «Конвейере»</RouterLink></p>
         <pre class="log">{{ log || 'Журнал пуст…' }}</pre>
       </template>
     </section>
@@ -93,9 +114,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 </template>
 
 <style scoped>
-.preset-row { display: grid; gap: .3rem; padding: .7rem 0; border-top: 1px solid var(--line) }
-.preset-row:first-of-type { border-top: 0 }
-.desc { margin: 0 }
+.presets td { vertical-align: top }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 }
 .log { max-height: 26rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem }
 </style>

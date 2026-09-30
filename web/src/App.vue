@@ -1,14 +1,17 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { sections, nodeSections } from './router.js'
 import { useSnapshot, refresh } from './store.js'
 import { auth, login, requestLogout, initSession } from './api.js'
+import { BOX_DASHBOARD, provisionBoxDashboard } from './boxdash.js'
 const s = useSnapshot(), route = useRoute()
 const token = ref(''), remember = ref(false), showLogin = ref(false), menuOpen = ref(false)
 const isNodes = computed(() => nodeSections.some(x => x.path === route.path) || route.path.startsWith('/nodes/'))
 async function enter() { await login(token.value,remember.value); token.value = ''; if(auth.verified) showLogin.value = false }
 onMounted(initSession)
+// Секрет API sing-box подставляется в Dashboard только администратору; без входа она спросит его сама.
+watch(() => auth.verified, v => { if (v) provisionBoxDashboard().catch(() => {}) }, { immediate: true })
 </script>
 <template>
   <div class="layout">
@@ -16,6 +19,7 @@ onMounted(initSession)
       <div class="brand"><span class="brand-identity"><img class="project-icon" src="/nodes-tester-icon.svg" width="32" height="32" alt="" />nodes-tester</span><button class="btn mobile-menu" @click="menuOpen = !menuOpen" :aria-expanded="menuOpen">Меню</button></div>
       <nav class="nav" :class="{ expanded: menuOpen }" aria-label="Основные разделы">
         <RouterLink v-for="item in sections" :key="item.path" :to="item.path" @click="menuOpen = false" :class="{ selected: item.path === '/nodes' && isNodes }">{{ item.name }}</RouterLink>
+        <a :href="BOX_DASHBOARD" target="_blank" rel="noopener" class="external" title="Официальная панель API-сервиса sing-box">sing-box dashboard ↗</a>
       </nav>
     </aside>
     <div class="content">

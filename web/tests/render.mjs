@@ -21,13 +21,13 @@ try {
   session.auth.capabilities={mode:'embedded',edit_config:true,node_actions:true,switch:true}
   for(const [view,path,expected] of [
     ['Control','/nodes','Открыть карточку'],
-    ['Control','/nodes?q=not-found','Поиск ничего не нашёл'],
+    ['Control','/nodes?q=not-found','Ничего не найдено'],
     ['NodeDetail','/nodes/abcd1234','Нет замеров рейтинга'],
     ['NodeDetail','/nodes/abcd1234?tab=Действия','disabled'],
     ['Overview','/','Ожидание следующего прохода'],
     ['Results','/results','Сохранённых результатов нет'],
     ['History','/history','Последние 200 записей'],
-    ['Config','/subscriptions','pipeline router --dry-run'],
+    ['Config','/subscriptions','Для редактора требуется'],
     ['Runs','/runs','disabled'],
     ['Traffic','/traffic','Это не последние 24 часа'],
     ['Pipeline','/pipeline','Конвейер обновления'],

@@ -26,3 +26,10 @@ export function nodeFlags(n) {
     +n.active ? 'Выбрана переключателем' : ''].filter(Boolean)
 }
 export function crcOf(row) { return row.crc || row.id || /\[([0-9a-f]{8})\]/i.exec(row.node || '')?.[1] || '' }
+// Стандартные фильтры таблиц (DataTable): поля строк снимка /api/data.
+export const STANDARD_FILTERS = [
+  { key: 'country', title: 'Страна', get: r => (r.country ?? r.cc)?.toUpperCase?.() },
+  { key: 'group', title: 'Группа', get: r => r.groups },
+  { key: 'protocol', title: 'Протокол' },
+  { key: 'provider', title: 'Провайдер' },
+]

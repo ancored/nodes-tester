@@ -4,26 +4,38 @@ import { useQuery } from '../query.js'
 import { useSnapshot } from '../store.js'
 import { bytes, dateTime } from '../format.js'
 import DataTable from '../components/DataTable.vue'
-import Chips from '../components/Chips.vue'
+import FilterBar from '../components/FilterBar.vue'
+import { useTableFilters } from '../filters.js'
 
 const s = useSnapshot()
 
-// Измерение трафика: ключ снимка + колонки + подпись.
+// Агрегаты считаются из строк трафика (traffic_rows), поэтому общие фильтры
+// таблицы — страна, группа, протокол, провайдер — применяются к любому измерению.
 const MEASURES = {
-  'провайдеры': { key: 'traffic_providers', dim: { key: 'provider', title: 'провайдер' } },
-  'страны': { key: 'traffic_countries', dim: { key: 'cc', title: 'cc' } },
-  'протоколы': { key: 'traffic_protocols', dim: { key: 'protocol', title: 'протокол' } },
-  'ноды (топ-10)': { key: 'traffic_nodes', dim: { key: 'node', title: 'нода' } },
+  'провайдеры': { dim: 'provider', title: 'провайдер', kinds: ['leaf', 'unspecified'] },
+  'страны': { dim: 'cc', title: 'страна', kinds: ['leaf', 'unspecified'] },
+  'протоколы': { dim: 'protocol', title: 'протокол', kinds: ['leaf'] },
+  'ноды': { dim: 'node', title: 'нода', kinds: ['leaf', 'direct'] },
 }
 const requestedMeasure = useQuery('measure', 'провайдеры')
 const measure = computed({get: () => Object.hasOwn(MEASURES, requestedMeasure.value) ? requestedMeasure.value : 'провайдеры', set: v => requestedMeasure.value = v})
 const options = Object.keys(MEASURES)
-
-const trafRows = computed(() => s.data[MEASURES[measure.value].key] || [])
+const allRows = computed(() => s.data.traffic_rows || [])
+// Опции фильтров — по leaf-нодам; фильтр применяется к строкам до свёртки.
+const filterState = useTableFilters(computed(() => allRows.value.filter(r => r.kind === 'leaf')), computed(() => null))
+const trafRows = computed(() => {
+  const m = MEASURES[measure.value], acc = {}
+  for (const r of filterState.apply(allRows.value)) {
+    if (!m.kinds.includes(r.kind) || r[m.dim] == null) continue
+    const a = (acc[r[m.dim]] ??= { [m.dim]: r[m.dim], crc: m.dim === 'node' && r.kind === 'leaf' ? r.crc : undefined, up: 0, down: 0, total: 0 })
+    a.up += r.up; a.down += r.down; a.total += r.total
+  }
+  return Object.values(acc).sort((x, y) => y.total - x.total)
+})
 const trafCols = computed(() => {
-  const dim = MEASURES[measure.value].dim
+  const m = MEASURES[measure.value]
   return [
-    { key: dim.key, title: dim.title, l: true, cls: dim.key === 'node' ? () => 'tag' : null },
+    { key: m.dim, title: m.title, l: true, fmt: m.dim === 'cc' ? v => String(v).toUpperCase() : null },
     { key: 'up', title: 'исх', fmt: bytes },
     { key: 'down', title: 'вх', fmt: bytes },
     { key: 'total', title: 'всего', fmt: bytes },
@@ -46,7 +58,12 @@ const endpCols = [
   <div v-if="s.loading" class="empty">Загрузка…</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
   <template v-else>
-    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; история исчезнувших нод удаляется через {{ s.data.retention_days }} дней после последнего появления. Топ нод ограничен 10 записями, назначений — 50; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
+    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; история исчезнувших нод удаляется через {{ s.data.retention_days }} дней после последнего появления. Топ назначений ограничен 50 записями; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
+    <section class="panel">
+      <h2>Пользовательский трафик</h2>
+      <p v-if="s.data.source?.state !== 'ok'" class="mut">Нет доступной базы измерений.</p>
+      <div v-else class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_user_totals?.[key] || 0) }}</div></div></div>
+    </section>
     <section class="panel">
       <h2>Трафик тестера</h2>
       <p v-if="s.data.source?.state !== 'ok'" class="mut">Нет доступной базы измерений.</p>
@@ -57,9 +74,9 @@ const endpCols = [
       </template>
     </section>
     <section>
-      <h2>Трафик</h2>
-      <Chips v-model="measure" :options="options" />
-      <DataTable :rows="trafRows" :columns="trafCols" :page-size="15" />
+      <h2>Пользовательский трафик по измерениям</h2>
+      <div class="toolbar"><label>Измерение<select v-model="measure"><option v-for="o in options" :key="o">{{ o }}</option></select></label><FilterBar :state="filterState" /></div>
+      <DataTable :rows="trafRows" :columns="trafCols" :filters="[]" :page-size="15" />
     </section>
     <section>
       <h2>Топ назначений</h2>

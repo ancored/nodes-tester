@@ -8,6 +8,7 @@ const error = ref(''), notice = ref(''), log = ref(''), logOffset = ref(0), view
 const saving = ref(false), busy = ref(false), dirty = ref(false), conflicted = ref(false)
 const times = ref({ router: '', clients: '' })
 const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
+const modeLabel = { router: 'роутер', clients: 'клиенты', apply: 'база и правила' }
 let timer = null, polling = false
 
 const live = computed(() => state.value?.current)
@@ -102,13 +103,13 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
           <button class="btn" :disabled="busy || !!live" @click="launch(mode, false)">Применить</button>
         </div>
       </div>
-      <p role="status">{{ live ? `Идёт ${live.mode}${live.dry_run ? ' · проверка' : ' · применение'}` : 'Сейчас конвейер не выполняется' }}</p>
+      <p role="status">{{ live ? `Идёт ${modeLabel[live.mode] || live.mode}${live.dry_run ? ' · проверка' : ' · применение'}` : 'Сейчас конвейер не выполняется' }}</p>
       <h3>Журнал {{ viewedRun ? viewedRun.slice(0, 8) : '' }}</h3>
       <pre class="pipeline-log" aria-live="polite">{{ log || 'Выберите прогон из истории.' }}</pre>
       <h3>История</h3>
       <div class="pipeline-history">
         <button v-for="row in runs" :key="row.id" class="btn" @click="showRun(row)">
-          {{ new Date(row.started * 1000).toLocaleString('ru-RU') }} · {{ row.mode === 'router' ? 'роутер' : 'клиенты' }} · {{ row.dry_run ? 'проверка' : 'применение' }} · {{ statusLabel[row.status] || row.status }}
+          {{ new Date(row.started * 1000).toLocaleString('ru-RU') }} · {{ modeLabel[row.mode] || row.mode }} · {{ row.dry_run ? 'проверка' : 'применение' }} · {{ statusLabel[row.status] || row.status }}
         </button>
       </div>
       <p v-if="!runs.length">Прогонов пока нет.</p>

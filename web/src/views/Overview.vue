@@ -8,7 +8,7 @@ const s=useSnapshot(), nodes=computed(()=>s.data.nodes || []), runner=computed((
 const kpis=computed(()=>[
   ['В списке тестера',nodes.value.filter(n=>+n.present === 1).length],
   ['Есть замеры рейтинга',nodes.value.filter(n=>n.score != null && +n.present === 1).length],
-  ['Доступны для выбора',nodes.value.filter(n=>n.can_activate).length],
+  ['Кандидаты групп',nodes.value.filter(n=>n.can_activate).length],
   ['С ограничениями',nodes.value.filter(n=>n.banned || n.gstate).length],
 ])
 </script>
@@ -45,17 +45,18 @@ const kpis=computed(()=>[
     <h2>Что настраивать и где смотреть</h2>
     <ol class="guide">
       <li><RouterLink to="/config">Настройки</RouterLink>: адрес API sing-box, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
-      <li><RouterLink to="/subscriptions">Подписки и сборка</RouterLink>: источники нод. После сохранения отдельно загрузите и примените конфигурацию через SSH.</li>
+      <li><RouterLink to="/subscriptions">Подписки и сборка</RouterLink>: источники и группы нод. После сохранения откройте <RouterLink to="/pipeline">Конвейер</RouterLink>, проверьте сборку и примените её.</li>
+      <li><RouterLink to="/singbox">Файлы sing-box</RouterLink> и <RouterLink to="/presets">Правила</RouterLink>: база и пресеты. Сохранение файла не меняет работающий sing-box.</li>
       <li><RouterLink to="/runs">Проверки</RouterLink>: этап прохода, очередь и журнал. Кнопка проверки не обновляет подписки.</li>
       <li><RouterLink to="/nodes">Ноды</RouterLink>: найдите ноду и откройте карточку с результатами, ограничениями и действиями.</li>
-      <li><RouterLink to="/history">Переключения</RouterLink> и <RouterLink to="/traffic">трафик</RouterLink>: как выбирались регионы и что использовалось.</li>
+      <li><RouterLink to="/history">Переключения</RouterLink> и <RouterLink to="/traffic">трафик</RouterLink>: как выбирались ноды групп и что использовалось.</li>
     </ol>
     <a href="https://github.com/andreydyadyk/nodes-tester/blob/master/openwrt/README.md" target="_blank" rel="noopener noreferrer">Первый запуск на OpenWrt по SSH</a>
   </section>
   <section class="panel">
-    <h2>Активные ноды по регионам</h2>
+    <h2>Активные ноды по группам</h2>
     <p v-if="!runner">Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.</p>
-    <p v-else-if="!runner.regions?.length">{{ runner.switching ? 'Переключатель пока не выбрал ноды регионов.' : 'Автоматическое переключение отключено.' }}</p>
+    <p v-else-if="!runner.regions?.length">{{ runner.switching ? 'Переключатель пока не выбрал ноды групп.' : 'Автоматическое переключение отключено.' }}</p>
     <p v-for="r in runner?.regions || []" :key="r.region" class="break"><b>{{ r.region }}</b> · {{ r.active || 'Нода не выбрана' }}</p>
     <p class="mut">Это состояние переключателя, не самостоятельная проверка боевых селекторов sing-box.</p>
   </section>

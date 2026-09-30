@@ -43,12 +43,12 @@ watch(()=>s.data.generated,async()=>{
 const jsonLines=computed(()=>{
   const fragment=detail.value?.fragment
   if(!fragment)return []
-  const payload=JSON.parse(detail.value.payload || '{}')
-  const keys=[...Object.keys(payload),...Object.keys(fragment).filter(key=>!Object.hasOwn(payload,key))]
-  const included=new Set(Object.keys(payload))
+  // Порядок полей — как в nodes.json; поле payload выделяется целиком, вместе с вложенными строками.
+  const included=new Set(Object.keys(JSON.parse(detail.value.payload || '{}')))
+  const keys=Object.keys(fragment)
   return [{text:'{',included:false},...keys.flatMap((key,index)=>{
-    const lines=JSON.stringify(included.has(key) ? payload[key] : fragment[key],null,2).split('\n')
-    return lines.map((line,i)=>({text:'  '+(i===0 ? JSON.stringify(key)+': ' : '')+line+(i===lines.length-1 && index<keys.length-1 ? ',' : ''),included:included.has(key) && i===0}))
+    const lines=JSON.stringify(fragment[key],null,2).split('\n')
+    return lines.map((line,i)=>({text:'  '+(i===0 ? JSON.stringify(key)+': ' : '')+line+(i===lines.length-1 && index<keys.length-1 ? ',' : ''),included:included.has(key)}))
   }),{text:'}',included:false}]
 })
 const historyColumns=[{key:'ts',title:'Дата / время',fmt:dateTime,l:true},{key:'score',title:'Рейтинг',fmt:v=>v == null ? '—' : Number(v).toFixed(1)}]
@@ -60,8 +60,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
   <template v-else>
     <section class="panel">
       <h2 class="break">{{ node.node }}</h2>
-      <p>{{ node.provider }} · {{ node.protocol }} · {{ node.country }} · регион {{ node.region || 'не определён' }}</p>
-      <code>{{ node.crc }}</code><div class="chips"><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
+      <div class="chips"><span v-if="node.groups?.length" class="badge">Группы: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">Ограничение по времени до {{ dateTime(node.guntil) }}. Для паузы также учитывается номер прохода.</p>
       <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>
       <p class="mut">Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.</p>
@@ -81,11 +80,11 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
         <p v-if="detailError" class="notice bad">{{ detailError }} <button class="btn" @click="loadDetails">Повторить загрузку</button></p>
         <template v-if="detail?.fragment">
             <pre class="node-json"><code><span v-for="(line,i) in jsonLines" :key="i" class="json-line" :class="{'crc-payload':line.included}">{{ line.text }}{{ '\n' }}</span></code></pre>
-            <p class="mut"><span class="crc-legend">Цветом отмечены ключи payload.</span> Служебные поля не участвуют в CRC.</p>
+            <p class="mut"><span class="crc-legend">Цветом отмечены поля payload.</span> Служебные поля не участвуют в CRC.</p>
             <p v-if="detail.fragment_source!=='nodes_file'" class="mut">Фрагмент восстановлен из SQLite; исключённые из CRC поля, кроме tag, в базе не сохраняются.</p>
             <p>Проверка CRC: <b :class="detail.calculated_crc===crc ? 'good' : 'bad'">{{ detail.calculated_crc===crc ? '✓ OK' : '✕ Не совпадает' }}</b></p>
-            <details><summary>Строка для CRC32 · ключи отсортированы</summary><pre class="node-json">{{ detail.payload }}</pre></details>
-            <p class="mut break">Сервер: {{ node.server || 'неизвестен' }}; причина ограничения: {{ node.gstate || 'нет' }}; последовательных провалов: {{ node.gstreak || 0 }}.</p>
+            <details><summary>Строка для CRC32 — ровно то, что хешируется</summary><pre class="node-json">{{ detail.payload }}</pre></details>
+            <p class="mut break">Причина ограничения: {{ node.gstate || 'нет' }}; последовательных провалов: {{ node.gstreak || 0 }}.</p>
         </template>
         <p v-else-if="detail">JSON этой ноды не сохранён.</p>
       </details>

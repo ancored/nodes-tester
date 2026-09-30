@@ -4,11 +4,11 @@
 
 Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
 
-Инструкция относится к [релизу `v0.3.3`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.3). Нужен sing-box 1.14 или новее. Если уже установлен пакет 0.2.x или 0.1.x, сначала прочитайте порядок перехода [с 0.2.x](../docs/USAGE.md#переход-с-02x) или [с 0.1.x](../docs/USAGE.md#переход-с-01x).
+Инструкция относится к [релизу `v0.3.4`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.4). Нужен sing-box 1.14 или новее. Если уже установлен пакет 0.2.x или 0.1.x, сначала прочитайте порядок перехода [с 0.2.x](../docs/USAGE.md#переход-с-02x) или [с 0.1.x](../docs/USAGE.md#переход-с-01x).
 
 ## 1. Установить пакет
 
-Скачайте [`nodes-tester-0.3.3-r1.apk`](https://github.com/andreydyadyk/nodes-tester/releases/download/v0.3.3/nodes-tester-0.3.3-r1.apk) для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного выпуска.
+Скачайте [`nodes-tester-0.3.4-r1.apk`](https://github.com/andreydyadyk/nodes-tester/releases/download/v0.3.4/nodes-tester-0.3.4-r1.apk) для OpenWrt 25.x. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного выпуска.
 
 SHA-256 опубликованного файла `.apk`:
 
@@ -21,7 +21,7 @@ SHA-256 опубликованного файла `.apk`:
 С компьютера передайте файл на роутер; замените `192.168.1.1` своим адресом:
 
 ```sh
-scp -O nodes-tester-0.3.3-r1.apk root@192.168.1.1:/tmp/
+scp -O nodes-tester-0.3.4-r1.apk root@192.168.1.1:/tmp/
 ssh root@192.168.1.1
 ```
 
@@ -29,7 +29,7 @@ ssh root@192.168.1.1
 
 ```sh
 apk update
-apk add --allow-untrusted /tmp/nodes-tester-0.3.3-r1.apk
+apk add --allow-untrusted /tmp/nodes-tester-0.3.4-r1.apk
 ```
 
 Зависимости Python устанавливаются из фидов OpenWrt; PySocks входит в пакет. Не смешивайте эти зависимости с копиями, установленными через `pip`. Если раньше использовали `pip`, сначала разберите старую установку и восстановите пакетные зависимости.

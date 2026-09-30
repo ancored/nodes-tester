@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api, auth, can } from '../api.js'
 
@@ -71,7 +71,9 @@ async function save() {
     const response = await api.put(url(path.value), data, { 'If-Match': revision.value })
     revision.value = response.revision; dirty.value = false; auth.dirty = false
     preview.value = null
-    notice.value = 'Файл сохранён. Для применения изменений запустите конвейер.'
+    notice.value = path.value.startsWith('presets/')
+      ? 'Пресет сохранён. Чтобы изменить работающий sing-box, откройте «Правила» и нажмите «Применить».'
+      : 'Файл сохранён. Для применения изменений запустите конвейер.'
     await refreshList()
     versions.value = (await api.get(url(path.value) + '/history')).versions || []
   } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
@@ -92,7 +94,9 @@ async function restore(ts) {
     await api.post(url(path.value) + '/restore', { ts }, { 'If-Match': revision.value })
     dirty.value = false; auth.dirty = false
     await select(path.value)
-    notice.value = 'Версия восстановлена. Для применения изменений запустите конвейер.'
+    notice.value = path.value.startsWith('presets/')
+      ? 'Версия восстановлена. Чтобы изменить работающий sing-box, откройте «Правила» и нажмите «Применить».'
+      : 'Версия восстановлена. Для применения изменений запустите конвейер.'
   } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
 }
 async function upload(event) {
@@ -133,6 +137,18 @@ async function removePreset() {
     notice.value = 'Пресет удалён.'
   } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
 }
+// Файлы по назначению: так пресет или клиентская база находятся без прокрутки полосы кнопок.
+const FILE_GROUPS = [['Основные', p => known.includes(p)], ['Пресеты правил', p => p.startsWith('presets/')],
+  ['Источники правил', p => p.startsWith('rules/')], ['Клиентские базы', p => p.startsWith('clients/')], ['Прочее', () => true]]
+const fileGroups = computed(() => {
+  const all = [...new Set([...known, ...files.value.map(f => f.path), path.value])], seen = new Set()
+  return FILE_GROUPS.map(([title, test]) => [title, all.filter(p => !seen.has(p) && test(p) && seen.add(p))]).filter(([, items]) => items.length)
+})
+async function pick(event) {
+  const next = event.target.value
+  await select(next)
+  event.target.value = path.value                 // отмена при несохранённых правках — вернуть выбор
+}
 function addPath() {
   const next = newPath.value.trim()
   if (!next) return
@@ -149,17 +165,21 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
 <template>
   <section class="panel">
     <h2>Исходные файлы sing-box</h2>
-    <p>Здесь хранятся база роутера, источники правил и клиентские базы. Сохранение меняет исходный файл, но не применяет его к работающему sing-box. Для применения перейдите в «Конвейер».</p>
+    <p>Здесь хранятся база роутера, источники правил, пресеты и клиентские базы. Сохранение меняет исходный файл, но не работающий sing-box. Базу и пресеты можно применить в <RouterLink to="/presets">«Правилах»</RouterLink> без загрузки подписок; полный цикл запускается в <RouterLink to="/pipeline">«Конвейере»</RouterLink>.</p>
     <p v-if="!auth.verified" class="notice">Войдите с токеном администратора.</p>
     <p v-else-if="!can('singbox_files')" class="notice">Редактор доступен только во встроенной админке с запущенным оркестратором.</p>
     <template v-else>
       <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
-      <div class="file-picker">
-        <button v-for="item in [...new Set([...known, ...files.map(f => f.path)])]" :key="item" class="btn" :aria-current="item === path ? 'true' : undefined" @click="select(item)">{{ item }}</button>
+      <div class="toolbar file-picker">
+        <label>Файл<select :value="path" @change="pick($event)">
+          <optgroup v-for="[title, items] in fileGroups" :key="title" :label="title">
+            <option v-for="item in items" :key="item" :value="item">{{ item }}</option>
+          </optgroup>
+        </select></label>
+        <label>Новый или другой путь<input v-model="newPath" placeholder="presets/my-rules.json" @keydown.enter="addPath" /></label>
+        <button class="btn" :disabled="!newPath.trim()" @click="addPath">Открыть или создать</button>
       </div>
-      <label>Другой разрешённый путь <input v-model="newPath" placeholder="rules/my-domains.json или presets/my-rules.json" /></label>
-      <button class="btn" @click="addPath">Открыть или создать</button>
     </template>
   </section>
   <section v-if="can('singbox_files')" class="panel">
@@ -210,7 +230,9 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
 </template>
 
 <style scoped>
-.file-picker, .actions, .versions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 }
+.actions, .versions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 }
+.file-picker { align-items: end }
+.file-picker select { min-width: 18rem }
 .json-editor-label { display: block; margin: 1rem 0 }
 textarea { display: block; width: 100%; max-width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .85rem }
 .rule-row { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin: .7rem 0; padding: .7rem; border: 1px solid #64748b; border-radius: .5rem }

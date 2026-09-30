@@ -76,7 +76,7 @@ const groups = [
   {title:'План проверок',note:'Форма меняет общие параметры run.default. Переопределения регионов и групп остаются в JSON и могут иметь приоритет.',fields:[
     ['run.default.loop','Непрерывная работа','checkbox'],['run.default.rotation_bound','Привязать проходы к ротации','checkbox'],
     ['run.default.pass_pause','Пауза между проходами, с','number'],['run.default.min_host_gap','Зазор обращений к одному хосту, с','number'],
-    ['run.default.request_timeout','Тайм-аут проверки, с','number'],['run.default.heavy_candidates','Кандидатов на тяжёлую проверку в регионе','number']]},
+    ['run.default.request_timeout','Тайм-аут проверки, с','number'],['run.default.heavy_candidates','Кандидатов на тяжёлую проверку в группе','number']]},
   {title:'Переключение и наблюдение',note:'Включение автоматики может изменить выбор боевых селекторов после перезапуска тестера.',fields:[
     ['switching.enabled','Автоматическое переключение','checkbox'],['switching.rotation.enabled','Ротация','checkbox'],
     ['switching.rotation.interval','Интервал ротации, с','number'],['monitor.enabled','Монитор активных нод','checkbox'],
@@ -108,7 +108,7 @@ const recipeGroups=[
   {title:'Переименование',fields:[['rename.domain_resolver_tag','Тег DNS resolver','text']]},
   {title:'Группы selector',fields:[['selector.interrupt_exist_connections','Прерывать существующие соединения при смене ноды','checkbox']]},
   {title:'Группы urltest',fields:[['urltest.url','URL проверки','text'],['urltest.interval','Интервал (например, 5m)','text'],['urltest.tolerance','Допуск задержки, мс','number'],['urltest.idle_timeout','Тайм-аут бездействия (например, 5m)','text'],['urltest.interrupt_exist_connections','Прерывать существующие соединения','checkbox']]},
-  {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['emit.ensure_regions','Обязательные регионы прежней схемы (без списка групп)','list'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
+  {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
 ]
 function recipeValue(field){return value(field) ?? getPath(options.value.group_defaults,field)}
 const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'},{field:'rename.labels',label:'Метки по словам исходного имени',note:'Объект: метка → список слов. Первая совпавшая метка используется в имени ноды.'}]
@@ -116,26 +116,20 @@ function toggleTest(test,enabled) {
   const tests=[...(value('run.default.tests_enabled') || [])]
   setPath(document.value,'run.default.tests_enabled',enabled ? [...new Set([...tests,test])] : tests.filter(t=>t!==test))
 }
-function removeSub(index){if(window.confirm('Удалить эту подписку из файла? sing-box изменится только после внешнего применения.')) document.value.subscribes.splice(index,1)}
+function removeSub(index){if(window.confirm('Удалить эту подписку из файла? Работающий sing-box изменится после запуска конвейера.')) document.value.subscribes.splice(index,1)}
 </script>
 <template>
-  <section v-if="subscriptions" class="panel">
-    <h2>Три разных действия</h2>
-    <ol><li>Сохранить источники в providers.json и рецепт сборки в groups_params.json.</li><li>Загрузить подписки, собрать и применить конфигурацию через SSH.</li><li><RouterLink to="/runs">Проверить ноды</RouterLink>, уже доступные в sing-box.</li></ol>
-    <p>Админка не запускает конвейер и не знает время последнего применения. Сохранение файла не подтверждает, что новые ноды появились в sing-box.</p>
-    <details><summary>Как обновить через SSH</summary><p>Для подготовленного конвейера OpenWrt: <code>nodes-tester pipeline router --dry-run</code>, затем <code>nodes-tester pipeline router</code>. Предварительная сборка тоже загружает подписки и записывает промежуточные файлы; применение может перезапустить sing-box.</p><p>Сначала проверьте необходимые base.json и репозиторий правил по <a href="https://github.com/andreydyadyk/nodes-tester/blob/master/openwrt/README.md" target="_blank" rel="noopener noreferrer">инструкции OpenWrt</a>. Проектный конвейер не является универсальной командой первого запуска.</p></details>
-  </section>
   <p v-if="!can('edit_config')" class="notice">Для редактора требуется проверенный токен администратора. Войдите с помощью кнопки в шапке.</p>
   <template v-else>
     <nav v-if="subscriptions" class="chips" aria-label="Файлы подписок и сборки"><button v-for="[kind,label] in [['providers','Источники подписок'],['groups','Параметры сборки']]" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
     <div class="toolbar">
       <button class="btn" :disabled="busy" @click="load">Перечитать файл</button>
       <button class="btn" :disabled="busy || !document" @click="switchEditor">{{ advanced ? 'К форме' : 'Расширенный JSON' }}</button>
-      <button class="btn primary" :disabled="busy || !dirty || !candidate" @click="preview=true">Проверить изменения</button>
+      <button class="btn primary" :disabled="busy || !dirty || !candidate" @click="preview=true">Просмотреть изменения</button>
       <span>{{ dirty ? 'Есть несохранённые изменения' : 'Нет несохранённых изменений' }}</span>
     </div>
     <p class="mut break">Файл: {{ path || 'Загрузка…' }}</p>
-    <p v-if="restart" class="notice">Файл настроек отличается от загруженного при старте админки. Перезапуск требуется; применение к текущему процессу не подтверждено.</p>
+    <p v-if="restart" class="notice">Файл настроек отличается от загруженного при старте админки. Перезапуск тестера требуется; применение к текущему процессу не подтверждено.</p>
     <p v-if="message" class="notice" role="status">{{ message }}</p><p v-if="error" class="notice bad" role="alert">{{ error }}</p>
     <section v-if="preview" class="panel">
       <h2>Изменяемые поля</h2><p class="break">{{ changed.join(', ') }}</p>
@@ -155,7 +149,6 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <template v-else>{{ label }}<input :type="type==='list' ? 'text' : type" :value="type==='list' ? (recipeValue(field) || []).join(', ') : recipeValue(field)" @input="update(field,$event,type)" /></template>
             </label></div>
             <template v-for="entry in objectFields.filter(o=>group.fields.some(([f])=>f.split('.')[0]===o.field.split('.')[0]))" :key="entry.field"><JsonField :label="entry.label" :note="entry.note" :model-value="value(entry.field)" @update:model-value="setPath(document,entry.field,$event)" @valid="jsonValid[entry.field]=$event" /></template>
-            <p v-if="group.title==='Создаваемые группы'" class="mut">Обязательные регионы действуют, только пока список групп ниже не задан. По умолчанию обязательны eu, us, other: если в таком регионе нет собственных нод, его селектор заполняется всеми нодами как резерв. Пустой список отключает создание пустых регионов.</p>
           </section>
           <NodeGroups :doc="document" :builtin="options.builtin_regions || {}" @changed="preview=false" @valid="jsonValid.regions=$event" />
         </template>
@@ -186,15 +179,16 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             <label>Повторов HTTP<input type="number" min="0" :value="value('fetch.retries')" @input="update('fetch.retries',$event,'number')" placeholder="3" /></label>
             <label>Хранить прошлые ноды при сбое, ч<input type="number" min="0" :value="value('fetch.stale_max_hours')" @input="update('fetch.stale_max_hours',$event,'number')" placeholder="48" /></label>
             <label>Прокси загрузки<input :value="value('fetch.proxy')" @input="update('fetch.proxy',$event)" placeholder="socks5://127.0.0.1:2080" /></label>
-          </div><p>При резком уменьшении списка fetch guard может сохранить предыдущие данные. Статус этого выполнения нужно смотреть в журнале конвейера по SSH.</p></section>
+          </div><p>При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале <RouterLink to="/pipeline">«Конвейера»</RouterLink>.</p></section>
         </template>
-        <section v-if="subscriptions" class="panel"><h2>Выходные файлы конвейера</h2>
+        <details v-if="subscriptions" class="panel"><summary><b>Как изменения попадают в sing-box</b></summary>
+          <ol><li>Сохранённые здесь <code>providers.json</code> и <code>groups_params.json</code> читает конвейер.</li><li>Админка запускает конвейер по расписанию или вручную в <RouterLink to="/pipeline">«Конвейере»</RouterLink>: загрузка подписок, сборка <code>nodes.json</code>, <code>sing-box check</code>, применение. sing-box перезапускается только при изменениях; без связности возвращается прежний конфиг.</li><li>Тестер подхватывает новые ноды и группы в следующем проходе.</li></ol>
+          <h3>Файлы конвейера</h3>
           <p>В пакете OpenWrt путь raw задаётся конвейером: <code>/opt/nodes-tester/raw/main.json</code> для router и <code>/opt/nodes-tester/raw/wh.json</code> для clients. Это файлы формата raw_nodes.json; отдельно в providers.json путь не задаётся. В пакете каталог задаёт data_dir в /etc/config/nodes-tester; при прямом запуске скрипта — переменная DATA.</p>
           <p>Выход сборки задаётся аргументом <code>-o</code> команды nodes_config. В pipeline router это <code>/etc/sing-box-subscribe/nodes.json</code>, в clients — <code>/etc/sing-box-subscribe/whnodes.json</code>. При --dry-run используются промежуточные *.dry.json. В groups_params.json путь вывода не хранится.</p>
           <p>Для отдельного запуска укажите нужные пути: <code>nodes-tester fetch -p providers.json -o raw_nodes.json</code>, затем <code>nodes-tester config --raw raw_nodes.json --groups groups_params.json -o nodes.json</code>.</p>
           <p>Поле storage.nodes_file в настройках задаёт файл, который тестер читает для описаний нод. Сам конвейер этот параметр не использует.</p>
-          <p v-if="!recipe && document.save_config_path" class="notice">Старый save_config_path присутствует в providers.json, но текущая стадия fetch его игнорирует. Фактический выход задаётся конвейером или -o.</p>
-        </section>
+        </details>
         <template v-if="!subscriptions">
           <section v-for="group in groups" :key="group.title" class="panel">
             <h2>{{ group.title }}</h2><p class="mut">{{ group.note }}</p>

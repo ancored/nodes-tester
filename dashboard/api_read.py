@@ -53,14 +53,17 @@ def register(app: App) -> None:
             r = app.runner
             data["runner"] = r.status() if r is not None else None
             board = getattr(r, "board", None)
-            candidates = set()
+            candidates: dict[str, list[str]] = {}       # нода → группы, где она кандидат
             restricted = r.restricted_crcs() if r is not None else set()
             if board is not None and r.switcher is not None:
-                for region in board.regions():
-                    candidates.update(c["node"] for c in board.candidates(region))
+                for group in board.regions():
+                    for c in board.candidates(group):
+                        candidates.setdefault(c["node"], []).append(group)
             for n in data.get("nodes", []):
-                n["can_activate"] = bool(n.get("node") in candidates and n.get("present")
-                                          and not n.get("banned") and n.get("crc") not in restricted)
+                allowed = (n.get("present") and not n.get("banned")
+                           and n.get("crc") not in restricted)
+                n["activate_groups"] = candidates.get(n.get("node"), []) if allowed else []
+                n["can_activate"] = bool(n["activate_groups"])
             return data
         except Exception as exc:                    # noqa: BLE001
             raise HttpError(500, f"ошибка сбора данных: {exc}") from exc

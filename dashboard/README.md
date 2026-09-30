@@ -20,7 +20,7 @@ Runner, Switcher, Scoreboard и Storage. В этом режиме работаю
 - запрос внепланового прохода;
 - живой журнал;
 - бан, карантин и снятие ограничений;
-- ручной выбор ноды региона;
+- ручной выбор ноды в группе;
 - чтение и запись конфигов.
 
 ### Отдельный процесс
@@ -56,7 +56,8 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent и стандартные заголовки Happ |
 | Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды и точный payload CRC (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
-| Переключение | `/api/regions/{region}/switch` | ручной выбор кандидата |
+| Переключение | `/api/groups/{group}/switch` (прежний путь `/api/regions/{group}/switch`) | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
+| Предпросмотр групп | `POST /api/config/groups/preview` | состав групп по текущему `raw/main.json` без записи |
 | Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
 | Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
 | Файлы sing-box и пресеты | `/api/singbox/files/...`, `/api/singbox/presets` | ограниченный список JSON-файлов, проверка итоговой сборки при записи базы и пресетов, revision и 20 прошлых версий, удаление пресетов |
@@ -121,7 +122,7 @@ JSON в карточке берётся из `storage.nodes_file`; если фр
 | `webapp.py` | HTTP-каркас, маршрутизация, токен и статика |
 | `data.py` | запросы и агрегаты из SQLite |
 | `api_read.py` | читающие маршруты |
-| `api_control.py` | действия над нодами, регионами и Runner |
+| `api_control.py` | действия над нодами, группами и Runner |
 | `api_config.py` | редакторы `config.json`, providers и `groups_params.json` |
 | `api_session.py` | возможности режима и проверка сессии |
 | `api_pipeline.py` | запуск, расписание и история конвейера |

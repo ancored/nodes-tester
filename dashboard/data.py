@@ -74,6 +74,33 @@ def node_detail(cfg, crc: str, include_config=False) -> dict:
         return result
 
 
+_FAILSAFE_SUFFIX = "-auto-out-failsafe"
+
+
+def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
+    """Группы из nodes.json: порядок групп и CRC ноды → группы, куда она входит.
+
+    Состав берётся из urltest {group}-auto-out-failsafe (прямые члены — ноды).
+    Нет файла — пустой результат: группы неизвестны, а не пусты."""
+    try:
+        with open(nodes_file, encoding="utf-8") as fh:
+            config = json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return [], {}
+    order, by_crc = [], {}
+    for ob in config.get("outbounds", []) if isinstance(config, dict) else []:
+        tag = str(ob.get("tag", "")) if isinstance(ob, dict) else ""
+        if not tag.endswith(_FAILSAFE_SUFFIX) or tag.startswith("global-"):
+            continue
+        group = tag[:-len(_FAILSAFE_SUFFIX)]
+        order.append(group)
+        for member in ob.get("outbounds") or []:
+            crc = parse_node(str(member)).node_id
+            if crc and group not in by_crc.setdefault(crc, []):
+                by_crc[crc].append(group)
+    return order, by_crc
+
+
 def _query(db_path: str, sql: str) -> list[dict]:
     con = _connection.get()
     if con is not None:
@@ -131,6 +158,11 @@ def _collect(cfg) -> dict:
 
     rating.sort(key=_key, reverse=True)
 
+    # --- Группы нод (nodes.json): фильтры таблиц и качество по группам ---
+    group_order, groups_of = node_groups(getattr(cfg.storage, "nodes_file", "") or "")
+    for r in rating:
+        r["groups"] = groups_of.get(r.get("id"), [])
+
     # --- История переключений (таблица activations) ---
     history = _switch_history(db)
     # --- Качество провайдеров (из рейтинга) ---
@@ -176,11 +208,15 @@ def _collect(cfg) -> dict:
     attrition = _attrition(db)
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
+    for table in (nodes, results.get("rows", []), garbage, longevity, dropouts, rows):
+        for r in table:
+            r["groups"] = groups_of.get(r.get("crc"), [])
     traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
     tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
 
     return {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "groups": group_order,
         "rating": rating,
         "history": history,
         "provider_quality": provider_quality,
@@ -194,6 +230,7 @@ def _collect(cfg) -> dict:
         "traffic_protocols": traffic_protocols,
         "traffic_nodes": traffic_nodes,
         "node_traffic": [r for r in rows if r["kind"] == "leaf"],
+        "traffic_rows": rows,                     # все строки: агрегаты и фильтры в админке
         "endpoints": endpoints,
         "garbage": garbage,
         "longevity": longevity,
@@ -285,27 +322,27 @@ def _switch_history(db: str) -> list[dict]:
 
 
 def _provider_quality(rating: list[dict]) -> list[dict]:
-    """Качество провайдеров из score.csv: всего/мёртвых нод и средний рейтинг
-    (без учёта мёртвых), по (провайдер, регион)."""
+    """Качество провайдеров: всего/мёртвых нод и средний рейтинг (без учёта мёртвых)
+    по (провайдер, группа). Нода входит в каждую свою группу."""
     acc: dict = {}
     for r in rating:
         prov = r.get("provider") or "?"
-        region = r.get("region") or "?"
         try:
             sc = float(r.get("score") or 0)
         except (TypeError, ValueError):
             sc = 0.0
-        a = acc.setdefault((prov, region), {"total": 0, "dead": 0, "sum": 0.0, "live": 0})
-        a["total"] += 1
-        if sc <= 0:
-            a["dead"] += 1
-        else:
-            a["sum"] += sc
-            a["live"] += 1
-    out = [{"provider": prov, "region": region, "total": a["total"], "dead": a["dead"],
+        for group in r.get("groups") or ["вне групп"]:
+            a = acc.setdefault((prov, group), {"total": 0, "dead": 0, "sum": 0.0, "live": 0})
+            a["total"] += 1
+            if sc <= 0:
+                a["dead"] += 1
+            else:
+                a["sum"] += sc
+                a["live"] += 1
+    out = [{"provider": prov, "group": group, "total": a["total"], "dead": a["dead"],
             "dead_pct": round(100 * a["dead"] / a["total"]) if a["total"] else 0,
             "avg": round(a["sum"] / a["live"], 1) if a["live"] else 0.0}
-           for (prov, region), a in acc.items()]
+           for (prov, group), a in acc.items()]
     out.sort(key=lambda x: x["avg"], reverse=True)
     return out
 

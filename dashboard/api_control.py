@@ -71,13 +71,13 @@ def register(app: App) -> None:
         storage.add_node_event(crc, "unban", "manual")
         return {"ok": True}
 
-    # --- Форс-переключение активной ноды региона ------------------------
+    # --- Форс-переключение активной ноды группы ------------------------
 
-    @app.route("POST", "/api/regions/{region}/switch", needs_token=True)
-    def force_switch(app, req, region):
+    def force_switch(app, req, group):
         r = _runner(app)
         if r.switcher is None:
-            raise HttpError(409, "switching отключён — форс-переключение недоступно")
+            raise HttpError(409, "switching отключён — форс-переключение недоступно",
+                            {"code": "switching_disabled"})
         data = req.json()
         if not isinstance(data, dict):
             raise HttpError(400, "JSON-тело должно быть объектом")
@@ -89,11 +89,25 @@ def register(app: App) -> None:
             from naming import parse_node
             crc = parse_node(node).node_id
             if crc and (not r.storage.node_is_present(crc) or crc in r.storage.banned_crcs() or crc in r.restricted_crcs()):
-                raise HttpError(409, "Нода исключена или находится на паузе/в карантине.")
-        ok = r.switcher.force_activate(region, node)
+                raise HttpError(409, "Нода исключена или находится на паузе/в карантине.",
+                                {"code": "node_restricted"})
+        ok = r.switcher.force_activate(group, node)
         if not ok:
-            raise HttpError(409, "не удалось переключить: нода не кандидат региона или PUT не прошёл")
-        return {"ok": True, "region": region, "node": node, "temporary": True}
+            board = getattr(r, "board", None)
+            allowed = ([g for g in board.regions()
+                        if any(c.get("node") == node for c in board.candidates(g))]
+                       if board is not None else [])
+            if group in allowed:
+                raise HttpError(409, f"Не удалось выбрать ноду в sing-box для группы {group}.",
+                                {"code": "switch_failed", "allowed_groups": allowed})
+            hint = f" Допустимые группы: {', '.join(allowed)}." if allowed else ""
+            raise HttpError(409, f"Нода не кандидат группы {group}.{hint}",
+                            {"code": "not_candidate", "allowed_groups": allowed})
+        return {"ok": True, "group": group, "region": group, "node": node, "temporary": True}
+
+    app.route("POST", "/api/groups/{group}/switch", needs_token=True)(force_switch)
+    # Прежний путь (до настраиваемых групп): {region} — то же имя группы.
+    app.route("POST", "/api/regions/{group}/switch", needs_token=True)(force_switch)
 
     # --- Статус / внеплановый прогон / живой лог ------------------------
 

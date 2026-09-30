@@ -309,3 +309,12 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
   .responsive-table td:first-child { font-weight: 600; }
   .log-line { display: block; }.log-line .mut { display: block; }
 }
+.inline-select { flex-direction: row; align-items: center; gap: 6px; }
+.table-toolbar { align-items: end; }
+.table-toolbar select { min-width: 110px; }
+.reason { display: inline-flex; align-items: center; white-space: nowrap; }
+.responsive-table th { white-space: normal; min-width: 3.5em; }
+.failure-detail summary { white-space: nowrap; list-style: none; }
+.failure-detail summary::-webkit-details-marker { display: none; }
+.failure-detail summary b { text-decoration: underline dotted; }
+.nav a.external { margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-top: 12px; }

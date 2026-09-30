@@ -295,7 +295,8 @@ def build_app(cfg, *, runner=None, interval: int | None = None) -> App:
     from . import api_control, api_config
     api_control.register(app)
     api_config.register(app)
-    from . import api_pipeline, api_session, api_singbox
+    from . import api_boxdash, api_pipeline, api_session, api_singbox
+    api_boxdash.register(app)
     api_pipeline.register(app)
     api_singbox.register(app)
     api_session.register(app)

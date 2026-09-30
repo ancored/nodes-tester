@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import tempfile
 import threading
 
@@ -96,6 +97,48 @@ def _validate_groups(data):
         if exc.__class__.__name__ == "ValidationError":
             raise HttpError(400, f"groups_params невалиден: {exc.message}") from exc
         raise
+
+
+_FALLBACK_LOG = re.compile(r"группа '([^']+)': нод нет")
+
+
+def preview(data, raw_path, user_nodes_path, nodes_file, samples=5) -> dict:
+    """Оценка состава групп по текущему raw (без записи nodes.json): число нод,
+    примеры, пересечения, сработавший fallback и отличие от текущего nodes.json."""
+    from nodes_common import raw as rawfmt
+    from nodes_config import build, params
+    from nodes_config.__main__ import _load_user_nodes
+    from .data import node_groups
+    if not os.path.isfile(raw_path):
+        raise HttpError(409, f"Нет {raw_path}: запустите конвейер, чтобы загрузить подписки")
+    logs = []
+    try:
+        fragment, report = build.build(
+            [rawfmt.load(str(raw_path))], params.load(data),
+            _load_user_nodes(user_nodes_path if os.path.isfile(user_nodes_path) else None),
+            log=logs.append)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HttpError(422, f"Сборка по текущим данным не удалась: {exc}") from exc
+    fallback = {m.group(1) for line in logs for m in [_FALLBACK_LOG.search(line)] if m}
+    members = {o["tag"][:-len("-auto-out-failsafe")]: o.get("outbounds") or []
+               for o in fragment["outbounds"]
+               if o.get("type") == "urltest" and o["tag"].endswith("-auto-out-failsafe")
+               and not o["tag"].startswith("global-")}
+    sets = {g: set(m) for g, m in members.items()}
+    grouped = set().union(*sets.values()) if sets else set()
+    current, _ = node_groups(nodes_file)
+    return {
+        "raw": str(raw_path), "raw_mtime": int(os.path.getmtime(raw_path)),
+        "leaf_nodes": report["leaf_nodes"],
+        "ungrouped": report["leaf_nodes"] - len(grouped),
+        "groups": [{"name": g, "count": len(m), "fallback": g in fallback, "samples": m[:samples],
+                    "overlaps": {o: len(sets[g] & sets[o]) for o in sets
+                                 if o != g and sets[g] & sets[o]}}
+                   for g, m in members.items()],
+        "added": [g for g in members if g not in current],
+        "removed": [g for g in current if g not in members],
+        "current_known": bool(current),
+    }
 
 
 def _atomic_write(path: str, text: str) -> None:
@@ -245,6 +288,19 @@ def register(app: App) -> None:
         with _edit_lock:
             result = _document(path) if os.path.exists(path) else {"path": path, "data": {}, "revision": "missing"}
         return {**result, "application_state": "unknown"}
+
+    @app.route("POST", "/api/config/groups/preview", needs_token=True)
+    def preview_groups(app, req):
+        data = req.json()
+        if not isinstance(data, dict):
+            raise HttpError(400, "groups_params.json должен быть объектом")
+        _validate_groups(data)
+        orch = getattr(getattr(app, "runner", None), "orchestrator", None)
+        if orch is None:
+            raise HttpError(409, "Предпросмотр доступен во встроенной админке с оркестратором")
+        return preview(data, orch.data_dir / "raw" / "main.json",
+                       os.path.join(os.path.dirname(_groups_path(app)), "user_nodes.json"),
+                       app.cfg.storage.nodes_file)
 
     @app.route("PUT", "/api/config/groups", needs_token=True)
     def put_groups(app, req):

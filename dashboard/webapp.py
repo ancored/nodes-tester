@@ -39,10 +39,11 @@ _MIME = {
 class HttpError(Exception):
     """Хендлер бросает это, чтобы вернуть код ошибки с JSON-телом {error: ...}."""
 
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, extra: dict | None = None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.extra = extra or {}              # машиночитаемые поля рядом с error
 
 
 class Request:
@@ -150,7 +151,7 @@ class App:
                     self._check_token(req)
                 result = route.fn(self, req, **m.groupdict())
             except HttpError as exc:
-                return Response.json({"error": exc.message}, status=exc.status)
+                return Response.json({"error": exc.message, **exc.extra}, status=exc.status)
             if isinstance(result, Response):
                 return result
             return Response.json(result)          # dict/list → JSON 200
