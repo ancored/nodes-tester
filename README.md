@@ -74,4 +74,24 @@ WH-подписки → загрузка → whnodes.json + клиентские
 
 Готовая веб-статика включена в репозиторий; Node.js для запуска не нужен. OpenWrt-пакет собирается [скриптом SDK](openwrt/build.sh). Параметры команд показывает `--help`, а настройки описаны в [схемах](schemas/) и [шаблоне конфига](config/config.example.json).
 
-Парсеры подписок основаны на [Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe).
+## Лицензия
+
+Код проекта распространяется по лицензии [0BSD](LICENSE): его можно использовать, изменять и
+распространять в любых целях без условий.
+
+Исключения — части, взятые из других проектов; на них действуют условия их авторов:
+
+- парсеры подписок в [`nodes_fetch/parsers/`](nodes_fetch/parsers/) и разбор содержимого подписки
+  основаны на [Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe);
+  в этом репозитории файла лицензии нет;
+- расшифровка ссылок `happ://crypt…` ([`nodes_fetch/happ_decode.py`](nodes_fetch/happ_decode.py),
+  ключи в [`happ_keys_crypt5.py`](nodes_fetch/happ_keys_crypt5.py)) — порт
+  [Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr), который распространяется «как есть» для
+  совместимости и исследований, без отдельной лицензии;
+- в пакет OpenWrt вложен [PySocks](https://github.com/Anorov/PySocks) (BSD, файл `LICENSE.PySocks`);
+- веб-админка собрана с [Vue](https://vuejs.org/) и Vue Router (MIT) и шрифтом флагов
+  [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) (MIT;
+  изображения флагов — [Twemoji](https://github.com/twitter/twemoji), CC-BY 4.0).
+
+sing-box и sing-box-lx (GPL-3.0) в проект не входят: тестер запускает установленный sing-box как
+отдельную программу и обращается к его API.

@@ -106,6 +106,9 @@ Hysteria, Hysteria2, WireGuard, AnyTLS и AWG. Happ-ссылки сначала 
 содержит собственные изменения: XHTTP для VLESS и Trojan, дополнительные поля VLESS,
 безопасный разбор Shadowsocks, AWG и сохранение `packet_encoding: xudp`.
 
+Расшифровка `happ://crypt…` — порт [Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr) на
+чистом Python. Условия использования этих частей — в разделе «Лицензия» корневого README.
+
 ## XHTTP и AWG
 
 `nodes_fetch` намеренно разбирает XHTTP и AWG, даже если на машине установлен обычный
