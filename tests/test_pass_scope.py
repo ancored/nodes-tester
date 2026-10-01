@@ -120,7 +120,8 @@ class AlignedRotationTest(unittest.TestCase):
         from nodes_tester.config import RotationConfig, SwitchingConfig
         from nodes_tester.switcher import Switcher
         cfg = SwitchingConfig(enabled=True, rotation=RotationConfig(**rot))
-        storage = type("S", (), {"load_switch_state": lambda self: dict(state or {})})()
+        storage = type("S", (), {"load_switch_state": lambda self: dict(state or {}),
+                                 "set_active_crcs": lambda self, crcs: None})()
         return Switcher(cfg, None, _Board(), "nodes-tester", storage=storage)
 
     def test_switches_at_different_times_share_deadline(self):

@@ -47,6 +47,11 @@ class Switcher:
         for group, st in self.state.items():
             if st.get("active"):
                 self.board.set_active(group, st["active"])
+        if storage is not None:
+            # scores.active в БД — как в состоянии переключателя сразу после старта, а не
+            # после первого прохода (админка читает рейтинг из БД).
+            storage.set_active_crcs({parse_node(st["active"]).node_id
+                                     for st in self.state.values() if st.get("active")})
         self._align_loaded()
 
     # --- Публичное ------------------------------------------------------

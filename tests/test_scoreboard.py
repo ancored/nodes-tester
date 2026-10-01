@@ -80,6 +80,18 @@ class ActiveFlagTest(unittest.TestCase):
         self.sb.set_active("ai", None)
         self.assertEqual((self.sb.rows["A"]["active"], self.sb.rows["B"]["active"]), (1, 0))
 
+    def test_switcher_start_writes_active_flags_to_db(self):
+        from nodes_tester.config import SwitchingConfig
+        from nodes_tester.switcher import Switcher
+        self.sb.write()
+        self.storage.save_switch_state({"eu": {"active": "eu-node [aaaaaaaa]"},
+                                        "ai": {"active": "ai-node [bbbbbbbb]"}})
+        self.storage.save_scores([dict(_row("eu-node [aaaaaaaa]"), id="aaaaaaaa"),
+                                  dict(_row("ai-node [bbbbbbbb]"), id="bbbbbbbb")])
+        Switcher(SwitchingConfig(enabled=True), None, self.sb, "nodes-tester", storage=self.storage)
+        rows = self.storage.load_scores()
+        self.assertEqual(sorted(r["id"] for r in rows.values() if r["active"]), ["aaaaaaaa", "bbbbbbbb"])
+
 
 class RestrictedActiveTest(unittest.TestCase):
     """Активная нода, попавшая под ограничение, заменяется немедленно (emergency)."""
