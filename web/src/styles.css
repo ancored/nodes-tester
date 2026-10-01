@@ -42,7 +42,7 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font: 13.5px/1.5 system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font: 13.5px/1.5 'Twemoji Country Flags', system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;

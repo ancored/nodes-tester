@@ -239,6 +239,15 @@
     "garbage_hours": 72,
     "low_score": 0
   },
+  "notify": {
+    "enabled": false,
+    "name": "",
+    "telegram": { "token": "", "chat_id": "" },
+    "webhook": { "url": "" },
+    "events": ["switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"],
+    "switch_reasons": ["emergency", "emergency-stuck"],
+    "expiry_days": 3
+  },
   "dashboard": {
     "enabled": false,
     "host": "0.0.0.0",

@@ -107,7 +107,7 @@ class AdminRefinementTest(unittest.TestCase):
     def test_happ_headers_override_and_url_user_agent_is_ignored(self):
         sub = {"tag": "HAPP", "url": "happ://crypt/demo", "user_agent": "ignored",
                "happ_headers": {"User-Agent": "Happ/demo", "X-Hwid": "own-device"}}
-        response = Mock(content=b"vless://123@example.invalid:443#demo")
+        response = Mock(content=b"vless://123@example.invalid:443#demo", headers={})
         with patch("nodes_fetch.happ.happ_decode.decode_link", return_value="https://example.invalid/sub"), \
              patch("nodes_fetch.happ.requests.get", return_value=response) as get:
             self.assertTrue(fetch_subscription(sub, Context(self.tmp)))

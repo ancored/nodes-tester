@@ -36,6 +36,13 @@ class FakeRunner:
         self._current_pass = 7
         self._current_day = "2026-09-20"
         self._requested = False
+        self.restricted = []
+
+    def restrict_node(self, crc, on, entry=None):
+        self.restricted.append((crc, on))
+
+    def restricted_crcs(self):
+        return set()
 
     def request_pass(self):
         self._requested = True
@@ -76,6 +83,7 @@ class ApiControlTest(unittest.TestCase):
         self.assertIn("abcd1234", self.storage.banned_crcs())
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234/unban").status, 200)
         self.assertNotIn("abcd1234", self.storage.banned_crcs())
+        self.assertEqual(self.runner.restricted, [("abcd1234", True), ("abcd1234", False)])
 
     def test_quarantine_sets_backoff(self):
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234/quarantine").status, 200)

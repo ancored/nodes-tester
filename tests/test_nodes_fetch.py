@@ -58,8 +58,9 @@ class FakeNet:
         self.table = table
         self.calls = []
 
-    def __call__(self, url, user_agent=None, timeout=None, proxies=None):
+    def __call__(self, url, user_agent=None, timeout=None, proxies=None, headers=None):
         self.calls.append((url, user_agent))
+        self.headers = headers
         body = self.table.get(url)
         return None if body is None else _Resp(base64.b64encode(body.encode()).decode())
 

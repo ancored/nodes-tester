@@ -38,6 +38,9 @@ RULES_MARK="${RULES_MARK:-/tmp/nodes-rules-changed}"
 CANDIDATE="${CANDIDATE:-${DATA:-/root/nodes-data}/config.candidate.json}"
 HEALTH_GROUP="${HEALTH_GROUP:-global-auto-out}"
 HEALTH_WAIT="${HEALTH_WAIT:-60}"
+# Флаг «sing-box остановлен из админки» (nodes_tester.singbox_ctl): пока он есть, конфиг
+# не применяется и sing-box не поднимается.
+STOP_FLAG="${STOP_FLAG:-/var/run/nodes-tester/singbox-stopped}"
 DRY=0; FORCE=0; HEALTH_ONLY=0; NODES=""
 
 while [ $# -gt 0 ]; do
@@ -147,6 +150,10 @@ if [ "$DRY" = 1 ]; then
     cp "$TMP" "$CANDIDATE"
     log "DRY-RUN: применил бы ($REASON); кандидат: $CANDIDATE"
     exit 0
+fi
+
+if [ -f "$STOP_FLAG" ]; then
+    die "sing-box остановлен из админки — применение отложено (запустите sing-box в «Нодах»)"
 fi
 
 # Do not abandon the replacement/health-check/rollback sequence on timeout.

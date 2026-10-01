@@ -47,3 +47,11 @@ export function fixed(v, d = 2) {
 export function pct(v) {
   return (+v || 0) + '%'
 }
+
+// Флаг страны по ISO-коду (NL → 🇳🇱). Не код страны (группа, регион, «other») — как есть.
+export function flag(cc) {
+  let c = String(cc ?? '').trim().toUpperCase()
+  if (c === 'UK') c = 'GB'
+  if (!/^[A-Z]{2}$/.test(c)) return cc ?? '—'
+  return String.fromCodePoint(...[...c].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65))
+}

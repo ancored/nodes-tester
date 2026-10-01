@@ -24,7 +24,18 @@
           "fetched_at": { "type": "string" },
           "last_ok_at": { "type": ["string", "null"], "description": "время последней удачной загрузки" },
           "stale": { "type": "boolean", "description": "ноды взяты из прошлого raw (last-good)" },
-          "error": { "type": ["string", "null"] }
+          "error": { "type": ["string", "null"] },
+          "meta": {
+            "type": "object", "additionalProperties": false,
+            "description": "метаданные из заголовков ответа панели (последняя удачная загрузка)",
+            "properties": {
+              "upload": { "type": "integer" }, "download": { "type": "integer" },
+              "total": { "type": "integer" }, "expire": { "type": "integer" },
+              "title": { "type": "string" }, "announce": { "type": "string" },
+              "support_url": { "type": "string" }, "web_page_url": { "type": "string" },
+              "update_interval_hours": { "type": "number" }
+            }
+          }
         }
       }
     },

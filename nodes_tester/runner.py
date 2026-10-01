@@ -25,6 +25,8 @@ from .config import Config
 from .identity import NodeIdentity, coarse_region, parse_node
 from .logbuffer import LogRing, TeeStream
 from .monitor import ProductionMonitor
+from .notify import Notifier
+from .singbox_ctl import SingboxControl
 from .proxy import make_session
 from .scoreboard import Scoreboard
 from .storage import Storage
@@ -91,6 +93,12 @@ class Runner:
         self._running = False
         self._httpd = None
         self._banned: set = set()
+        self.notifier = Notifier(cfg.notify)
+        self.singbox = SingboxControl(
+            cfg.singbox_control,
+            os.path.join(os.path.dirname(os.path.abspath(cfg.storage.db_file)),
+                         "singbox-control.json"),
+            self.notifier)
 
         # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
         # теперь живут в БД (замена score.csv/switch_state.json).
@@ -120,6 +128,7 @@ class Runner:
                               "балансировка по трафику недоступна")
                 self.switcher = Switcher(cfg.switching, self.api, self.board,
                                          self._top, traffic_provider, self.storage)
+                self.switcher.on_activation = self.notifier.activation
                 if cfg.monitor.enabled:
                     # Монитору нужен боевой трафик по нодам — поток соединений держим
                     # и без записи в БД (storage.traffic выключен).
@@ -329,6 +338,7 @@ class Runner:
             if self.collector is not None:
                 self.collector.start()
             self._start_orchestrator()
+            self.singbox.start_watch()
             if self.cfg.dashboard.enabled:
                 self._start_dashboard()
             while True:
@@ -371,6 +381,7 @@ class Runner:
             print("\nОстановлено пользователем.")
         finally:
             self._running = False
+            self.singbox.stop_watch()
             self._progress = {**self._progress, "phase": "stopped", "node": None}
             self._wait_until = None
             if self.monitor is not None:
@@ -470,11 +481,42 @@ class Runner:
             self.orchestrator = Orchestrator(
                 schedule.parent, Path.cwd(),
                 on_apply_start=self._apply_start, on_apply_end=self._apply_end,
+                on_finish=self._pipeline_finished,
             )
             self.orchestrator.start()
         except (OSError, ValueError) as exc:
             self.orchestrator = None
             print(f"[pipeline] оркестратор не запущен: {exc}")
+
+    def _pipeline_finished(self, row: dict) -> None:
+        """Прогон конвейера завершён: уведомления по журналу (откат, ошибка) и по raw
+        (сбой подписки, срок и трафик подписки)."""
+        if not row or not self.notifier.enabled:
+            return
+        try:
+            with open(row.get("log_path") or "", encoding="utf-8", errors="replace") as fh:
+                log_text = fh.read()
+        except OSError:
+            log_text = ""
+        self.notifier.pipeline_finished(row, log_text)
+        sets = {"router": "main", "clients": "wh"}
+        if row.get("dry_run") or row.get("mode") not in sets or self.orchestrator is None:
+            return
+        name = sets[row["mode"]]
+        import json
+        try:
+            with open(self.orchestrator.data_dir / "raw" / f"{name}.json", encoding="utf-8") as fh:
+                sources = json.load(fh).get("sources") or []
+        except (OSError, ValueError, AttributeError):
+            return
+        stale_max = 48.0
+        try:
+            with open(self.orchestrator.config_dir / f"config-{name}" / "providers.json",
+                      encoding="utf-8") as fh:
+                stale_max = float((json.load(fh).get("fetch") or {}).get("stale_max_hours", 48))
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        self.notifier.subscriptions_state(sources, stale_max)
 
     def _start_dashboard(self) -> None:
         """Поднять HTTP-сервер админки потоком-демоном внутри процесса тестера."""
@@ -566,6 +608,8 @@ class Runner:
             self._pass_seq += 1
 
         scoped, self._scoped_next = self._scoped_next, False
+        if self.board is not None:
+            self.board.set_restricted(self._restricted_now() | self._banned)
         nodes = self._enumerate_nodes()
         self._refresh_groups()
         if self.storage is not None:
@@ -598,6 +642,7 @@ class Runner:
                     if raw not in tested:
                         self.board.keep(raw)
 
+        exit_ips = []
         for index, (region, ident) in enumerate(self._order_by_host(nodes)):
             self._progress = {"phase": "testing", "processed": index,
                               "total": len(nodes), "node": ident.raw}
@@ -611,9 +656,11 @@ class Runner:
                                      self._tests_for(params.tests_enabled), params)
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(record)
+            exit_ips.append((record.get("tests") or {}).get("connectivity", {}).get("exit_ip"))
             gate = self._score_and_maybe_switch(region, ident, record)
             self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
 
+        self._refresh_ip_info(exit_ips)
         # Фаза обязательных тестов групп (gemini): решает, кто вообще может быть активным.
         self._run_required_pass(node_by_raw, pass_no)
         # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
@@ -633,6 +680,19 @@ class Runner:
             self.switcher.evaluate_all(groups)
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
+
+    def _refresh_ip_info(self, ips) -> None:
+        """Тип выходного IP для новых/устаревших exit_ip прогона (один пакетный запрос)."""
+        cfg = self.cfg.ip_info
+        if not cfg.enabled or self.storage is None:
+            return
+        stale = self.storage.ip_info_stale(ips, cfg.ttl_days * 86400)
+        if not stale:
+            return
+        from .ipinfo import lookup
+        infos = lookup(stale, cfg.url, cfg.timeout)
+        self.storage.save_ip_info(infos)
+        print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
 
     def _due_groups(self) -> set:
         """Группы, у которых в этом прогоне наступает ротация (или нет активной)."""
@@ -849,9 +909,32 @@ class Runner:
         Истёкшая, но ещё не снятая запись garbage ограничением не считается."""
         if not self.cfg.cooldown.enabled or self.storage is None:
             return set()
+        return self._restricted_now(self.storage.load_backoff())
+
+    def _restricted_now(self, backoff: "dict | None" = None) -> set:
+        """CRC с действующей паузой/карантином по снимку backoff (по умолчанию — прогона)."""
+        if not self.cfg.cooldown.enabled:
+            return set()
         now = time.time()
-        return {crc for crc, (until, until_pass, _s, reason) in self.storage.load_backoff().items()
+        return {crc for crc, (until, until_pass, _s, reason) in (backoff if backoff is not None
+                                                                 else self._backoff).items()
                 if (now < until if reason == "garbage" else self._pass_seq <= until_pass)}
+
+    def restrict_node(self, crc: str, on: bool, entry: "tuple | None" = None) -> None:
+        """Ручной карантин/бан (on) или снятие (off) из админки: сразу убрать ноду из
+        кандидатов переключателя и, если она активна в какой-то группе, заменить её."""
+        if on and entry is not None:
+            self._backoff[crc] = entry          # прогон в процессе тоже её пропустит
+        elif not on:
+            self._backoff.pop(crc, None)
+        if self.board is None:
+            return
+        self.board.restrict(crc, on)
+        if on and self.switcher is not None:
+            for group in self.switcher.active_regions():
+                active = self.switcher.active_node(group)
+                if active and parse_node(active).node_id == crc:
+                    self.switcher.evaluate_region(group, emergency=True)
 
     def _low_score(self, raw: str) -> bool:
         """Живая, но слабая нода: рейтинг ниже cooldown.low_score (вкл. при > 0).
@@ -876,12 +959,16 @@ class Runner:
             if prev is None or prev[3] != "garbage":
                 self.storage.add_node_event(crc, "garbage", "low-score", streak)
             self._backoff[crc] = (until, 0, streak, "garbage")
+            if self.board is not None:
+                self.board.restrict(crc, True)
             print(f"  · рейтинг ниже {cd.low_score:g}: {crc} → карантин на {cd.garbage_hours:g} ч")
             return
         if gate:
             if crc in self._backoff:
                 self.storage.clear_backoff(crc)      # нода жива — снять backoff/карантин
                 self._backoff.pop(crc, None)
+                if self.board is not None:
+                    self.board.restrict(crc, False)
                 self.storage.add_node_event(crc, "recovered")   # событие восстановления
             return
         cd = self.cfg.cooldown
@@ -904,6 +991,8 @@ class Runner:
         elif prev is None:
             self.storage.add_node_event(crc, "backoff", reason, streak)
         self._backoff[crc] = (until or 0, until_pass or 0, streak, reason)
+        if self.board is not None:
+            self.board.restrict(crc, True)
         if garbage:
             print(f"  · gate-провал {crc} → карантин на {cd.garbage_hours:g} ч")
         else:

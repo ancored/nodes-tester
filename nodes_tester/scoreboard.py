@@ -32,6 +32,9 @@ class Scoreboard:
         self._active: dict[str, str] = {}     # группа → активная нода
         # Обязательные тесты групп: группа → {тест: срок годности результата, с}.
         self._required: dict[str, dict[str, float]] = {}
+        # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся
+        # (board.keep), но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
+        self._restricted: set[str] = set()
         # Прогон-поток пишет (record/set_heavy/end_pass/write), фоновый монитор читает
         # (candidates/get/regions) и ставит active — защищаем составные операции.
         self._lock = threading.RLock()
@@ -215,7 +218,8 @@ class Scoreboard:
         исключается — но если не-vetoed не осталось, берём vetoed (мало нод → выбираем
         из имеющихся, конструкция не разваливается)."""
         healthy = [r for r in self.rows.values()
-                   if self._in_group(r, region) and float(r.get("score", 0)) > 0]
+                   if self._in_group(r, region) and float(r.get("score", 0)) > 0
+                   and r.get("id") not in self._restricted]
         non_veto = [r for r in healthy if not self._vetoed(r)]
         return sorted(non_veto or healthy, key=lambda r: float(r["score"]), reverse=True)
 
@@ -231,6 +235,26 @@ class Scoreboard:
         провала, по убыванию score."""
         with self._lock:
             return [r["node"] for r in self._healthy(region) if not self._failed(r, region)]
+
+    def set_restricted(self, crcs) -> None:
+        """Полный набор ограниченных нод (снимок на прогон)."""
+        with self._lock:
+            self._restricted = {c for c in crcs if c}
+
+    def restrict(self, crc: str, on: bool) -> None:
+        """Ограничение одной ноды поставлено/снято (карантин, бан, снятие)."""
+        if not crc:
+            return
+        with self._lock:
+            if on:
+                self._restricted.add(crc)
+            else:
+                self._restricted.discard(crc)
+
+    def is_restricted(self, node: str) -> bool:
+        with self._lock:
+            r = self.rows.get(node)
+            return bool(r and r.get("id") in self._restricted)
 
     def regions(self) -> list[str]:
         """Группы переключения (без данных sing-box — регионы нод)."""

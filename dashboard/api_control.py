@@ -45,29 +45,37 @@ def register(app: App) -> None:
         if not r.cfg.cooldown.enabled:
             raise HttpError(409, "Ограничения проверок отключены в cooldown.enabled. Карантин не будет действовать.")
         until = int(time.time() + r.cfg.cooldown.garbage_hours * 3600)
+        streak = r.cfg.cooldown.max_skip + 1
         # Ручной карантин = мусорная нода на весь срок garbage_hours.
-        storage.set_backoff(crc, until, r.cfg.cooldown.max_skip + 1, "garbage")
+        storage.set_backoff(crc, until, streak, "garbage")
         storage.add_node_event(crc, "garbage", "manual")
+        # Сразу вне кандидатов переключателя; активная — заменяется.
+        r.restrict_node(crc, True, (until, 0, streak, "garbage"))
         return {"ok": True, "until": until}
 
     @app.route("POST", "/api/nodes/{crc}/unquarantine", needs_token=True)
     def unquarantine(app, req, crc):
-        _r, storage = _storage_node(app, crc, "снятие карантина")
+        r, storage = _storage_node(app, crc, "снятие карантина")
         storage.clear_backoff(crc)
+        if crc not in storage.banned_crcs():
+            r.restrict_node(crc, False)
         storage.add_node_event(crc, "restriction_cleared", "manual")
         return {"ok": True}
 
     @app.route("POST", "/api/nodes/{crc}/ban", needs_token=True)
     def ban(app, req, crc):
-        _r, storage = _storage_node(app, crc, "бан")
+        r, storage = _storage_node(app, crc, "бан")
         storage.set_banned(crc, True)
+        r.restrict_node(crc, True)
         storage.add_node_event(crc, "ban", "manual")
         return {"ok": True}
 
     @app.route("POST", "/api/nodes/{crc}/unban", needs_token=True)
     def unban(app, req, crc):
-        _r, storage = _storage_node(app, crc, "разбан")
+        r, storage = _storage_node(app, crc, "разбан")
         storage.set_banned(crc, False)
+        if crc not in r.restricted_crcs():
+            r.restrict_node(crc, False)
         storage.add_node_event(crc, "unban", "manual")
         return {"ok": True}
 
@@ -108,6 +116,48 @@ def register(app: App) -> None:
     app.route("POST", "/api/groups/{group}/switch", needs_token=True)(force_switch)
     # Прежний путь (до настраиваемых групп): {region} — то же имя группы.
     app.route("POST", "/api/regions/{group}/switch", needs_token=True)(force_switch)
+
+    # --- sing-box: остановка/запуск, killswitch -------------------------
+
+    def _singbox(app):
+        ctl = getattr(_runner(app), "singbox", None)
+        if ctl is None:
+            raise HttpError(409, "управление sing-box недоступно")
+        return ctl
+
+    def _do(fn, *args):
+        from nodes_tester.singbox_ctl import ControlError
+        try:
+            return fn(*args)
+        except ControlError as exc:
+            raise HttpError(409, str(exc)) from exc
+        except OSError as exc:
+            raise HttpError(500, f"{type(exc).__name__}: {exc}") from exc
+
+    @app.route("GET", "/api/singbox/control", needs_token=not open_read)
+    def singbox_status(app, req):
+        return _singbox(app).status()
+
+    @app.route("POST", "/api/singbox/stop", needs_token=True)
+    def singbox_stop(app, req):
+        return _do(_singbox(app).stop)
+
+    @app.route("POST", "/api/singbox/start", needs_token=True)
+    def singbox_start(app, req):
+        return _do(_singbox(app).start)
+
+    @app.route("PUT", "/api/singbox/killswitch", needs_token=True)
+    def singbox_killswitch(app, req):
+        data = req.json()
+        if not isinstance(data, dict) or type(data.get("enabled")) is not bool:
+            raise HttpError(400, "нужно {\"enabled\": true|false}")
+        return _do(_singbox(app).set_killswitch, data["enabled"])
+
+    # --- Уведомления -----------------------------------------------------
+
+    @app.route("POST", "/api/notify/test", needs_token=True)
+    def notify_test(app, req):
+        return _runner(app).notifier.test()
 
     # --- Статус / внеплановый прогон / живой лог ------------------------
 

@@ -401,6 +401,28 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     return {"v": "ok", "ok": 1}
 
 
+_IP_KIND = {"hosting": "ДЦ", "mobile": "мобильный", "residential": "домашний"}
+
+
+def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
+    """Тип выходного IP в строку ноды (ip_type, ip_asn) и в подсказку ячейки connectivity."""
+    try:
+        m = json.loads(metrics_json) if metrics_json else {}
+    except (TypeError, ValueError):
+        return
+    info = ip_info.get(m.get("exit_ip") or "")
+    if not info:
+        return
+    from nodes_tester.ipinfo import kind
+    k = kind(info)
+    node["ip_type"] = _IP_KIND[k] + (", прокси" if info.get("proxy") else "")
+    node["ip_asn"] = (f"AS{info['asn']} " if info.get("asn") else "") + (info.get("as_name") or info.get("isp") or "")
+    geo = (m.get("country") or "").upper()
+    if geo and info.get("country") and geo != info["country"]:
+        node["ip_type"] += f", по базе {info['country']}"
+    node["ip_title"] = " · ".join(x for x in (m.get("exit_ip"), node["ip_asn"], info.get("org")) if x)
+
+
 def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
     """DL50-строка относится к тому же прогону, что и лёгкие тесты: совпадают pass_no и
     календарный день (pass_no цикличен по дням, поэтому сверяем ещё и дату)."""
@@ -430,6 +452,9 @@ def _results(db: str) -> dict:
                r.error AS error, r.ts AS ts, r.pass_no AS pass_no,
                n.provider AS provider, n.protocol AS protocol, n.country AS country
         FROM results r LEFT JOIN nodes n ON n.crc = r.crc""")
+    ip_rows = _query(db, "SELECT ip, asn, as_name, isp, org, country, mobile, proxy, hosting "
+                         "FROM ip_info")
+    ip_info = {r.get("ip"): r for r in ip_rows if r.get("ip")}
     per_node: dict[str, list] = {}
     for r in rows:
         if r["test"] == "_select":            # служебная запись — в таблицу не идёт
@@ -452,6 +477,8 @@ def _results(db: str) -> dict:
             if (r["ts"] or 0) != pass_ts:
                 continue
             node["cells"][r["test"]] = {**_cell(r["test"], r["ok"], r["metrics"], r.get("error")), "ts": r["ts"]}
+            if r["test"] == "connectivity" and r["ok"]:
+                _ip_type(node, r["metrics"], ip_info)
             tests_seen.add(r["test"])
         # DL50 и gemini — последнее известное значение, вне прогона; помечаем off_pass.
         for test in _PHASE_TESTS:

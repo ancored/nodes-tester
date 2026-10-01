@@ -38,6 +38,8 @@ class Switcher:
         self._traffic_provider = traffic_provider
         # Хранилище для истории активаций (опц.); None → не пишем.
         self._storage = storage
+        # Наблюдатель записей истории (уведомления): on_activation(group, reason, node, prev).
+        self.on_activation = None
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
@@ -212,6 +214,10 @@ class Switcher:
             # оставаться на ней нельзя: немедленно на другую прошедшую.
             print(f"  [switch] {region}: активная не проходит {', '.join(required)} — замена")
             emergency = True
+        if active_row is not None and self.board.is_restricted(active):
+            # Активную поставили на паузу/в карантин/забанили — оставаться на ней нельзя.
+            print(f"  [switch] {region}: активная нода ограничена — замена")
+            emergency = True
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
 
@@ -273,6 +279,8 @@ class Switcher:
         if self._storage is not None:
             self._storage.add_activation(region, "", fs, "failsafe", 0.0,
                                          parse_node(prev).node_id if prev else None)
+        self._emit(region, "failsafe", fs, prev)
+        if self._storage is not None:
             self._storage.set_active_crcs(
                 {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
 
@@ -290,6 +298,14 @@ class Switcher:
             crc = parse_node(active).node_id if active else ""
             self._storage.add_activation(region, crc, active or "", "emergency-stuck",
                                          0.0, active)
+        self._emit(region, "emergency-stuck", active or "", active)
+
+    def _emit(self, region: str, reason: str, node: str, prev) -> None:
+        if self.on_activation is not None:
+            try:
+                self.on_activation(region, reason, node, prev)
+            except Exception as exc:  # noqa: BLE001 — уведомление не мешает переключению
+                print(f"  [switch] уведомление не отправлено: {exc}")
 
     # --- Выбор кандидата для ротации -----------------------------------
 
@@ -378,6 +394,8 @@ class Switcher:
             prev_crc = parse_node(prev).node_id if prev else None
             self._storage.add_activation(
                 region, crc, node, reason, cand.get("score"), prev_crc)
+        self._emit(region, reason, node, prev)
+        if self._storage is not None:
             # Держим scores.active в БД в синхроне с activations: save_scores переписывает
             # scores лишь раз в прогон, а переключение может произойти между прогонами.
             self._storage.set_active_crcs(

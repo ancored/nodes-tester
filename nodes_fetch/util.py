@@ -21,9 +21,10 @@ DEFAULT_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1
 DEFAULT_TIMEOUT = (30, 120)
 
 
-def http_get(url, user_agent=None, timeout=DEFAULT_TIMEOUT, proxies=None):
-    """GET подписки. Ответ 200 → requests.Response, иначе (ошибка/не-200) → None."""
-    headers = {'User-Agent': user_agent or DEFAULT_UA}
+def http_get(url, user_agent=None, timeout=DEFAULT_TIMEOUT, proxies=None, headers=None):
+    """GET подписки. Ответ 200 → requests.Response, иначе (ошибка/не-200) → None.
+    headers — дополнительные заголовки (устройство для панелей с лимитом устройств)."""
+    headers = {**(headers or {}), 'User-Agent': user_agent or DEFAULT_UA}
     try:
         response = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
     except requests.RequestException:

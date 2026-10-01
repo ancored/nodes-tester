@@ -61,6 +61,26 @@ def _providers_path(app: App) -> str:
     return os.path.abspath(os.path.join(_cfg_dir(app), configured))
 
 
+def _subscription_states(app: App) -> dict:
+    """Состояние подписок по последнему raw (raw/main.json, raw/wh.json): tag → {ok, count,
+    last_ok_at, stale, error, meta}. Без оркестратора (нет каталога данных) — пусто."""
+    orch = getattr(getattr(app, "runner", None), "orchestrator", None)
+    folder = os.path.join(str(orch.data_dir), "raw") if orch is not None else ""
+    out = {}
+    for name in ("main.json", "wh.json"):
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                sources = json.load(fh).get("sources") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        for src in sources:
+            if isinstance(src, dict) and src.get("provider"):
+                out[src["provider"]] = {k: src.get(k) for k in
+                                        ("ok", "count", "fetched_at", "last_ok_at", "stale",
+                                         "error", "meta")}
+    return out
+
+
 def _groups_path(app: App) -> str:
     configured = (getattr(app.cfg.dashboard, "groups_file", "") or "").strip()
     if configured:
@@ -275,12 +295,20 @@ def register(app: App) -> None:
         group_defaults = load()
         group_defaults["emit"] = {"nodes_tester": True, "global_failsafe": False,
                                   "ensure_regions": list(DEFAULT_ENSURE_REGIONS)}
+        from nodes_fetch import device
+        device_path = device.default_path(_providers_path(app))
+        hwid = device.read(device_path).get("hwid") or ""
+        happ_headers = dict(_HEADERS)
+        if hwid:
+            happ_headers["X-Hwid"] = hwid
         return {"user_agents": [
             {"value": "", "label": "По умолчанию (Safari)", "effective": DEFAULT_UA},
             {"value": "curl", "label": "curl"},
             {"value": "clashmeta", "label": "Clash Meta (clashmeta)"},
-        ], "happ_headers": dict(_HEADERS), "group_defaults": group_defaults,
-            "builtin_regions": BUILTIN_REGIONS}
+        ], "happ_headers": happ_headers, "group_defaults": group_defaults,
+            "builtin_regions": BUILTIN_REGIONS,
+            "device": {"hwid": hwid, "path": device_path},
+            "sources": _subscription_states(app)}
 
     @app.route("GET", "/api/config/groups", needs_token=True)
     def get_groups(app, req):

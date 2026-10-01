@@ -26,3 +26,6 @@ scripts/router/clients.list
 
 # Техническая документация, планы и ревью остаются только в локальном checkout
 /docs-local/
+
+# HWID установки для панелей подписок (nodes_fetch.device)
+device.json

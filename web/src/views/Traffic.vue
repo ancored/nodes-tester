@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useQuery } from '../query.js'
 import { useSnapshot } from '../store.js'
-import { bytes, dateTime } from '../format.js'
+import { bytes, dateTime, flag } from '../format.js'
 import DataTable from '../components/DataTable.vue'
 import FilterBar from '../components/FilterBar.vue'
 import { useTableFilters } from '../filters.js'
@@ -35,7 +35,7 @@ const trafRows = computed(() => {
 const trafCols = computed(() => {
   const m = MEASURES[measure.value]
   return [
-    { key: m.dim, title: m.title, l: true, fmt: m.dim === 'cc' ? v => String(v).toUpperCase() : null },
+    { key: m.dim, title: m.title, l: true, fmt: m.dim === 'cc' ? v => flag(v) + ' ' + String(v).toUpperCase() : null },
     { key: 'up', title: 'исх', fmt: bytes },
     { key: 'down', title: 'вх', fmt: bytes },
     { key: 'total', title: 'всего', fmt: bytes },

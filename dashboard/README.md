@@ -53,12 +53,14 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Данные | `/api/data`, `/api/rating`, `/api/results` и другие срезы | чтение SQLite и состояния |
 | Конфиг | `/api/config`, `/api/config/schema` | чтение и атомарная запись `config.json` |
 | Источники | `/api/config/providers` | чтение и запись файла `dashboard.providers_file` |
-| Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent и стандартные заголовки Happ |
+| Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent, заголовки Happ, HWID установки и состояние подписок из raw (`sources`) |
 | Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды и точный payload CRC (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
 | Переключение | `/api/groups/{group}/switch` (прежний путь `/api/regions/{group}/switch`) | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
 | Предпросмотр групп | `POST /api/config/groups/preview` | состав групп по текущему `raw/main.json` без записи |
 | Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
+| sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, режим killswitch (только OpenWrt) |
+| Уведомления | `POST /api/notify/test` | тестовое сообщение по настройкам работающего процесса |
 | Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
 | Файлы sing-box и пресеты | `/api/singbox/files/...`, `/api/singbox/presets` | ограниченный список JSON-файлов, проверка итоговой сборки при записи базы и пресетов, revision и 20 прошлых версий, удаление пресетов |
 

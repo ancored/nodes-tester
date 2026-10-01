@@ -11,16 +11,18 @@ const rows=computed(()=>s.data.results?.rows || [])
 const columns=computed(()=>[
   {key:'provider',title:'Провайдер',l:true},{key:'protocol',title:'Протокол',l:true},{key:'country',title:'Страна',l:true},
   {key:'crc',title:'Нода',l:true,nowrap:true},{key:'ts',title:'Проход',fmt:short,l:true,nowrap:true},
+  {key:'ip_type',title:'Тип IP',l:true,nowrap:true,slot:true,note:'Выходной IP по базе ip-api.com: ДЦ — дата-центр, домашний или мобильный; «прокси» — IP известен как VPN/прокси; «по базе XX» — база относит IP к другой стране. Наведите курсор: IP и сеть (ASN).'},
   ...tests.value.map(t=>({key:t,title:TEST_NAMES[t] || t,slot:true,l:true})),
 ])
 </script>
 <template>
   <p class="hint">Скорость — Мбит/с, задержка и джиттер — мс, потери — %. Множитель скорости показывает троттлинг. Время обычных тестов указано в колонке «Проход»; «—» — тест не измерялся. Тяжёлая загрузка может относиться к другому проходу. Нажмите на провал, чтобы увидеть подробности.</p>
   <DataTable :rows="rows" :columns="columns" empty="Сохранённых результатов нет. Проверьте журнал и настройку storage.store_results.">
+    <template #cell-ip_type="{row}"><span :title="row.ip_title || null">{{ row.ip_type || '—' }}</span></template>
     <template v-for="test in tests" :key="test" #[`cell-${test}`]="{row}">
       <template v-if="row.cells[test]">
         <details v-if="!row.cells[test].ok && row.cells[test].title" class="failure-detail"><summary><b class="bad">{{ row.cells[test].v }}</b></summary><pre>{{ row.cells[test].title }}</pre></details>
-        <b v-else :class="row.cells[test].ok ? 'good' : 'bad'">{{ row.cells[test].v }}</b>
+        <b v-else :class="row.cells[test].ok ? 'good' : 'bad'" :title="row.cells[test].title || null">{{ row.cells[test].v }}</b>
         <small v-if="row.cells[test].heavy" class="cell-note">{{ short(row.cells[test].ts) }}<span v-if="row.cells[test].off_pass"> · другой проход</span></small>
       </template><span v-else class="mut" title="Не измерено в этом проходе">—</span>
     </template>

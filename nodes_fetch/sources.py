@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import ruamel.yaml
 import yaml
 
+from . import device as devicemod
 from . import happ, parsers, util
 from .parsers.clash2base64 import clash2v2ray
 
@@ -33,12 +34,15 @@ class Context:
     """Параметры загрузки для одного прогона fetch."""
 
     def __init__(self, base_dir, timeout=util.DEFAULT_TIMEOUT, retries=3, proxy=None,
-                 log=print):
+                 log=print, device=None):
         self.base_dir = base_dir
         self.timeout = timeout
         self.retries = retries
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.log = log
+        self.device = device or {}          # device.json: {"hwid": …}
+        self.headers = {}                   # заголовки устройства текущей подписки (url)
+        self.response_headers = {}          # заголовки ответа текущей подписки → meta
 
 
 def kind_of(sub):
@@ -56,13 +60,18 @@ def kind_of(sub):
 def fetch_subscription(sub, ctx):
     """Узлы одной подписки. Ничего не нашли/сбой → FetchError."""
     kind = kind_of(sub)
+    ctx.response_headers = {}
+    ctx.headers = (devicemod.headers(ctx.device)
+                   if kind == "url" and sub.get("send_device") and ctx.device.get("hwid") else {})
     if kind == "folder":
         nodes = _from_folder(sub, ctx)
     elif kind == "file":
         nodes = _from_file(_resolve(sub["file"], ctx), ctx)
     elif kind == "happ":
         text = happ.subscription_text(sub["url"], sub.get("happ_headers") or None,
-                                      timeout=ctx.timeout, proxies=ctx.proxies)
+                                      timeout=ctx.timeout, proxies=ctx.proxies,
+                                      hwid=ctx.device.get("hwid", ""),
+                                      meta_out=ctx.response_headers, log=ctx.log)
         nodes = _flatten(parse_content(text, ctx))
     elif kind == "url":
         nodes = _from_url(sub["url"], sub.get("user_agent"), ctx)
@@ -133,8 +142,19 @@ def _nodes_from_content(content, ctx):
     return _flatten(parse_content(content, ctx))
 
 
+# Паузы перед повторами URL-подписки (разовый 5xx/обрыв панели).
+RETRY_DELAYS = (2, 10, 30)
+
+
 def _get(url, user_agent, ctx):
-    return util.http_get(url, user_agent, timeout=ctx.timeout, proxies=ctx.proxies)
+    if ctx.headers:
+        response = util.http_get(url, user_agent, timeout=ctx.timeout, proxies=ctx.proxies,
+                                 headers=ctx.headers)
+    else:
+        response = util.http_get(url, user_agent, timeout=ctx.timeout, proxies=ctx.proxies)
+    if response is not None:
+        ctx.response_headers = dict(getattr(response, "headers", None) or {})
+    return response
 
 
 def _url_content(url, user_agent, ctx):
@@ -143,8 +163,9 @@ def _url_content(url, user_agent, ctx):
     response = _get(url, user_agent, ctx)
     attempt = 1
     while not response and attempt <= ctx.retries:
-        ctx.log(f"  [fetch] нет ответа, повтор {attempt} из {ctx.retries}…")
-        time.sleep(1)
+        delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS)) - 1]
+        ctx.log(f"  [fetch] нет ответа, повтор {attempt} из {ctx.retries} через {delay} с…")
+        time.sleep(delay)
         response = _get(url, user_agent, ctx)
         attempt += 1
     if not response:

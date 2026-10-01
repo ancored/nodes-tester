@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import { api, auth, can } from '../api.js'
 import { getPath, setPath, changedPaths, TEST_NAMES } from '../ux.js'
+import { bytes, dateTime } from '../format.js'
 import JsonField from '../components/JsonField.vue'
 import NodeGroups from '../components/NodeGroups.vue'
 const route = useRoute(), subscriptions = computed(()=>route.path === '/subscriptions')
@@ -87,7 +88,26 @@ const groups = [
     ['dashboard.providers_file','Файл подписок (относительно config.json)','text'],['dashboard.groups_file','Файл groups_params.json (пусто: рядом с подписками)','text'],['storage.enabled','Хранить статистику','checkbox'],
     ['storage.db_file','Файл SQLite','text'],['storage.nodes_file','Файл описаний нод','text'],['storage.retention_days','Хранить историю, дней','number'],
     ['storage.traffic.enabled','Собирать пользовательский трафик','checkbox']]},
+  {title:'Уведомления',note:'Telegram и/или webhook. Новые настройки действуют после перезапуска тестера. Переключения нод с причиной «ротация» происходят часто — по умолчанию сообщаются только аварийные.',fields:[
+    ['notify.enabled','Отправлять уведомления','checkbox'],['notify.name','Подпись роутера в сообщении','text'],
+    ['notify.telegram.token','Токен Telegram-бота','password'],['notify.telegram.chat_id','Telegram chat_id получателя','text'],
+    ['notify.webhook.url','Webhook URL (POST JSON)','text'],['notify.proxy','Прокси для отправки (пусто — напрямую)','text'],
+    ['notify.expiry_days','Предупреждать о конце подписки за, дней','number']]},
+  {title:'Тип выходного IP и sing-box',note:'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com с роутера по выходным IP нод. Интерфейсы LAN нужны killswitch.',fields:[
+    ['ip_info.enabled','Определять тип выходного IP','checkbox'],['ip_info.ttl_days','Обновлять сведения раз в, дней','number'],
+    ['singbox_control.lan_devices','Интерфейсы LAN для killswitch (пусто — определить автоматически)','list']]},
 ]
+const NOTIFY_EVENTS={switch:'Переключение ноды',failsafe:'Запасная группа',rollback:'Откат конфига sing-box',pipeline:'Ошибка конвейера',subscription:'Сбой подписки',expiry:'Конец подписки и трафика',singbox:'Остановка и сбой sing-box'}
+const SWITCH_REASONS={emergency:'авария',['emergency-stuck']:'авария без замены',rotation:'ротация',quality:'качество',manual:'вручную',init:'первый выбор'}
+const DEFAULT_EVENTS=Object.keys(NOTIFY_EVENTS), DEFAULT_REASONS=['emergency','emergency-stuck']
+function toggleList(field,item,on,defaults){const cur=[...(value(field) ?? defaults)];const next=on?[...new Set([...cur,item])]:cur.filter(x=>x!==item);setPath(document.value,field,next);preview.value=false}
+const notifyBusy=ref(false), notifyResult=ref('')
+async function notifyTest(){notifyBusy.value=true;notifyResult.value='';try{const r=await api.post('/notify/test',{});notifyResult.value=r.ok?'Отправлено. Проверьте Telegram/webhook.':'Не отправлено: '+(r.error||'ошибка')}catch(e){notifyResult.value=e.message}finally{notifyBusy.value=false}}
+function subState(sub){return (options.value.sources || {})[sub.tag] || null}
+function subMeta(sub){return subState(sub)?.meta || {}}
+function daysLeft(m){return m.expire ? Math.ceil((m.expire*1000-Date.now())/86400000) : null}
+function trafficLine(m){if(m.download==null && m.total==null)return '';const used=(m.upload||0)+(m.download||0);return m.total ? `${bytes(used)} из ${bytes(m.total)}` : `${bytes(used)}, без лимита`}
+function lastOk(st){return st?.last_ok_at ? dateTime(Date.parse(st.last_ok_at)/1000) : 'нет'}
 function sourceKind(sub) {return sub.type === 'folder' ? 'folder' : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
 function changeKind(sub,kind) {
   delete sub.url; delete sub.file; delete sub.type; delete sub.path
@@ -166,6 +186,13 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             </div>
             <p v-if="sourceKind(sub)==='url'" class="mut">User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.</p>
             <details v-if="sourceKind(sub)==='url' && !userAgent(sub)"><summary>User-Agent по умолчанию</summary><p class="break">{{ options.user_agents[0]?.effective }}</p></details>
+            <label v-if="sourceKind(sub)==='url'" class="check"><input type="checkbox" :checked="!!sub.send_device" @change="sub.send_device=$event.target.checked || undefined; preview=false" /> Отправлять HWID и описание устройства (для панелей с лимитом устройств)</label>
+            <div v-if="subState(sub)" class="sub-state">
+              <p><span :class="subState(sub).ok ? '' : 'bad'">{{ subState(sub).ok ? 'Загружена' : (subState(sub).stale ? 'Сбой — работают прошлые ноды' : 'Сбой — нод нет') }}</span> · нод {{ subState(sub).count }} · последняя удачная загрузка: {{ lastOk(subState(sub)) }}<template v-if="subMeta(sub).title"> · {{ subMeta(sub).title }}</template></p>
+              <p v-if="!subState(sub).ok && subState(sub).error" class="mut break">{{ subState(sub).error }}</p>
+              <p v-if="trafficLine(subMeta(sub)) || daysLeft(subMeta(sub)) !== null">Трафик: {{ trafficLine(subMeta(sub)) || '—' }}<template v-if="daysLeft(subMeta(sub)) !== null"> · действует до {{ dateTime(subMeta(sub).expire).split(',')[0] }} <span :class="daysLeft(subMeta(sub)) <= 3 ? 'bad' : ''">(осталось {{ daysLeft(subMeta(sub)) }} дн.)</span></template></p>
+              <details v-if="subMeta(sub).announce"><summary>Сообщение провайдера</summary><p class="pre">{{ subMeta(sub).announce }}</p></details>
+            </div>
             <details v-if="sourceKind(sub)==='happ'"><summary>HTTP-заголовки Happ</summary>
               <p>Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.</p>
               <div class="form-grid"><label v-for="key in happFields(sub)" :key="key">{{ key }}<input type="text" :value="sub.happ_headers?.[key] ?? options.happ_headers[key]" @input="setHeader(sub,key,$event.target.value)" /><span class="mut">{{ Object.hasOwn(sub.happ_headers || {},key) ? 'Переопределён' : 'По умолчанию' }}</span><button v-if="Object.hasOwn(sub.happ_headers || {},key)" class="btn" @click="removeHeader(sub,key)">{{ Object.hasOwn(options.happ_headers,key) ? 'Вернуть по умолчанию' : 'Удалить заголовок' }}</button></label></div>
@@ -173,6 +200,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             </details><button class="btn" @click="removeSub(index)">Удалить подписку</button>
           </section>
           <button class="btn" @click="(document.subscribes ||= []).push({tag:'',url:'',enabled:true})">Добавить подписку</button>
+          <p v-if="options.device?.hwid" class="mut">HWID роутера для панелей подписок: <code>{{ options.device.hwid }}</code> (файл {{ options.device.path }}). Отправляется happ-подписками всегда, URL-подписками — при включённом флажке. Свой HWID для одной подписки задаётся заголовком X-Hwid.</p>
           <section class="panel"><h2>Защита загрузки</h2><div class="form-grid">
             <label>Тайм-аут, с<input type="number" :value="value('fetch.timeout')" @input="update('fetch.timeout',$event,'number')" placeholder="По умолчанию" /></label>
             <label>Минимальная доля оставшихся нод (0–1)<input type="number" min="0" max="1" step="0.05" :value="value('fetch.min_ratio')" @input="update('fetch.min_ratio',$event,'number')" placeholder="По умолчанию" /></label>
@@ -195,9 +223,17 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             <div class="form-grid">
               <label v-for="[field,label,type] in group.fields" :key="field" :class="{check:type==='checkbox'}">
                 <template v-if="type==='checkbox'"><input type="checkbox" :checked="!!value(field)" @change="update(field,$event,type)" /> {{ label }}</template>
+                <template v-else-if="type==='list'">{{ label }}<input type="text" :value="(value(field) || []).join(', ')" @input="update(field,$event,type)" /></template>
                 <template v-else>{{ label }}<input :type="type==='password' && showSecrets ? 'text' : type" :value="value(field)" autocomplete="off" @input="update(field,$event,type)" /></template>
               </label>
             </div>
+            <template v-if="group.title==='Уведомления'">
+              <p class="mut">События:</p>
+              <div class="toolbar"><label v-for="(name,ev) in NOTIFY_EVENTS" :key="ev" class="check"><input type="checkbox" :checked="(value('notify.events') ?? DEFAULT_EVENTS).includes(ev)" @change="toggleList('notify.events',ev,$event.target.checked,DEFAULT_EVENTS)" /> {{ name }}</label></div>
+              <p class="mut">Переключения нод — причины:</p>
+              <div class="toolbar"><label v-for="(name,r) in SWITCH_REASONS" :key="r" class="check"><input type="checkbox" :checked="(value('notify.switch_reasons') ?? DEFAULT_REASONS).includes(r)" @change="toggleList('notify.switch_reasons',r,$event.target.checked,DEFAULT_REASONS)" /> {{ name }}</label></div>
+              <div v-if="can('notify')" class="actions"><button class="btn" :disabled="notifyBusy" @click="notifyTest">Отправить тестовое сообщение</button> <span class="mut">{{ notifyResult || 'Тест использует настройки работающего тестера (после перезапуска).' }}</span></div>
+            </template>
             <div v-if="group.title==='План проверок'" class="toolbar"><label v-for="(name,test) in Object.fromEntries(Object.entries(TEST_NAMES).filter(([key])=>!['heavy_download','gemini'].includes(key)))" class="check" :key="test"><input type="checkbox" :checked="(value('run.default.tests_enabled') || []).includes(test)" @change="toggleTest(test,$event.target.checked)" /> {{ name }}</label></div>
           </section>
         </template>
@@ -206,3 +242,8 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
     </template>
   </template>
 </template>
+
+<style scoped>
+.sub-state p { margin: .2rem 0 }
+.sub-state .pre { white-space: pre-wrap }
+</style>

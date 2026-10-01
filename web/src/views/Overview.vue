@@ -1,10 +1,32 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useSnapshot } from '../store.js'
-import { auth } from '../api.js'
+import { api, auth } from '../api.js'
 import { PHASES } from '../ux.js'
 import { bytes, dateTime } from '../format.js'
 const s=useSnapshot(), nodes=computed(()=>s.data.nodes || []), runner=computed(()=>s.data.runner)
+// sing-box: остановка/запуск и killswitch (только встроенная админка на OpenWrt).
+const box=ref(null), boxBusy=ref(false), boxError=ref('')
+const boxAvailable=computed(()=>!!auth.capabilities.singbox_control)
+async function loadBox(){ if(!boxAvailable.value) return; try{ box.value=await api.get('/singbox/control'); boxError.value='' }catch(e){ boxError.value=e.message } }
+let boxTimer
+onMounted(()=>{ loadBox(); boxTimer=setInterval(loadBox,10000) })
+onUnmounted(()=>clearInterval(boxTimer))
+watch(boxAvailable,v=>{ if(v) loadBox() })
+async function boxAction(kind){
+  const ks=box.value?.killswitch
+  const ask = kind==='stop'
+    ? `Остановить sing-box? ${ks ? 'Killswitch включён: интернет у устройств LAN пропадёт' : 'Устройства LAN пойдут в интернет напрямую через провайдера, без прокси'}, пока sing-box не запустят снова. Применение конфига конвейером будет отложено. Админка и SSH останутся доступны.`
+    : 'Запустить sing-box?'
+  if(!window.confirm(ask)) return
+  boxBusy.value=true
+  try{ box.value=await api.post('/singbox/'+kind,{}); boxError.value='' }catch(e){ boxError.value=e.message }finally{ boxBusy.value=false }
+}
+async function setKillswitch(on){
+  boxBusy.value=true
+  try{ box.value=await api.put('/singbox/killswitch',{enabled:on}); boxError.value='' }catch(e){ boxError.value=e.message; await loadBox() }finally{ boxBusy.value=false }
+}
+const boxState=computed(()=>!box.value ? '—' : box.value.running ? 'работает' : box.value.stopped_by_admin ? 'остановлен из админки' : 'не работает')
 const kpis=computed(()=>[
   ['В списке тестера',nodes.value.filter(n=>+n.present === 1).length],
   ['Есть замеры рейтинга',nodes.value.filter(n=>n.score != null && +n.present === 1).length],
@@ -26,6 +48,21 @@ const kpis=computed(()=>[
     <p class="mut">Этап показывает, чем тестер занят сейчас. Один проход может длиться долго: прогресс обновляется после обработки каждой ноды.</p>
     <p class="mut">Доступность этой страницы не подтверждает работу sing-box. Проверки соединения выполняет тестер; их результаты доступны у каждой ноды.</p>
     <p v-if="runner?.request_queued" class="notice">Внеплановая проверка ожидает начала. Повторный запрос не создаст отдельную очередь.</p>
+  </section>
+  <section v-if="boxAvailable" class="panel">
+    <h2>sing-box</h2>
+    <dl class="facts">
+      <dt>Состояние</dt><dd :class="box && !box.running ? 'bad' : ''">{{ boxState }}</dd>
+      <dt>Без sing-box</dt><dd>{{ box?.killswitch ? 'killswitch: интернет у LAN блокируется' : 'трафик LAN идёт напрямую через провайдера' }}<template v-if="box?.blocking"> · <b class="bad">сейчас заблокировано</b></template></dd>
+    </dl>
+    <div v-if="auth.verified" class="actions">
+      <button v-if="box?.running" class="btn" :disabled="boxBusy" @click="boxAction('stop')">Остановить sing-box</button>
+      <button v-else class="btn" :disabled="boxBusy" @click="boxAction('start')">Запустить sing-box</button>
+      <label class="check"><input type="checkbox" :checked="!!box?.killswitch" :disabled="boxBusy || !box" @change="setKillswitch($event.target.checked)" /> Killswitch: блокировать интернет LAN, пока sing-box не работает</label>
+    </div>
+    <p v-else class="mut">Войдите с токеном, чтобы управлять sing-box.</p>
+    <p class="mut">Остановка — аварийный выход, если sing-box сломал сеть. Пока sing-box остановлен из админки, конвейер не применяет новый конфиг. Перезагрузка роутера снова запускает sing-box. Killswitch срабатывает и при сбое sing-box (с задержкой до нескольких секунд); доступ к роутеру не блокирует.</p>
+    <p v-if="boxError || box?.error" class="notice bad">{{ boxError || box.error }}</p>
   </section>
   <h2>Ноды: количество и состояние</h2>
   <div class="kpis"><div v-for="[label,value] in kpis" :key="label" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ s.data.source?.state === 'ok' ? value : '—' }}</div></div></div>

@@ -507,6 +507,64 @@
         }
       }
     },
+    "singbox_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Остановка/запуск sing-box из админки и killswitch (только OpenWrt).",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "init": { "type": "string", "description": "init-скрипт sing-box." },
+        "stop_flag": { "type": "string", "description": "Флаг «остановлен из админки» (tmpfs); пока он есть, apply-nodes.sh не применяет конфиг." },
+        "lan_devices": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9_.@:-]{1,15}$" }, "description": "Интерфейсы LAN, пересылку из которых killswitch запрещает, пока sing-box не работает. Пусто — интерфейс lan из netifd (ubus)." },
+        "interval": { "type": "number", "exclusiveMinimum": 0 },
+        "down_alert": { "type": "number", "minimum": 0 }
+      }
+    },
+    "ip_info": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Тип выходного IP нод (ASN, дата-центр, мобильная сеть, прокси) по exit_ip из connectivity; запрос с роутера, кэш ttl_days.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "url": { "type": "string", "description": "Пакетный эндпоинт ip-api.com (бесплатно — только http)." },
+        "ttl_days": { "type": "number", "minimum": 0 },
+        "timeout": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "notify": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Уведомления в Telegram и/или webhook. Без получателей и при enabled=false не отправляется ничего.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": { "type": "string", "description": "Подпись роутера в начале сообщения." },
+        "telegram": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "token": { "type": "string", "description": "Токен бота от @BotFather." },
+            "chat_id": { "type": ["string", "integer"], "description": "Получатель: свой id или id группы." }
+          }
+        },
+        "webhook": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "url": { "type": "string", "description": "POST JSON {event, text, ts}." } }
+        },
+        "proxy": { "type": "string", "description": "Прокси для отправки, напр. socks5h://host:port; пусто — напрямую." },
+        "events": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": ["switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"] }
+        },
+        "switch_reasons": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": ["init", "rotation", "quality", "emergency", "emergency-stuck", "manual"] },
+          "description": "О каких переключениях нод сообщать (событие switch)."
+        },
+        "expiry_days": { "type": "number", "minimum": 0 },
+        "dedupe_minutes": { "type": "number", "minimum": 0 },
+        "max_per_hour": { "type": "integer", "minimum": 1 },
+        "timeout": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
     "dashboard": {
       "type": "object",
       "additionalProperties": false,

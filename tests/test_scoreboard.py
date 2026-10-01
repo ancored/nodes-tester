@@ -48,6 +48,41 @@ class ScoreboardVetoTest(unittest.TestCase):
         self.sb.rows["A"]["score"] = 0
         self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["B"])
 
+    def test_restricted_node_not_candidate_despite_score(self):
+        # Карантин/пауза/бан сохраняют строку и рейтинг, но выбирать такую ноду нельзя.
+        self.sb.restrict("A", True)
+        self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["B"])
+        self.assertEqual(self.sb.probe_pool("eu"), ["B"])
+        self.assertTrue(self.sb.is_restricted("A"))
+        self.sb.restrict("A", False)
+        self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["A", "B"])
+        self.sb.set_restricted({"B"})
+        self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["A"])
+
+
+class RestrictedActiveTest(unittest.TestCase):
+    """Активная нода, попавшая под ограничение, заменяется немедленно (emergency)."""
+
+    def setUp(self):
+        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.sb.rows = {"A": _row("A", score=80), "B": _row("B", score=60)}
+
+    def tearDown(self):
+        self.storage.close()
+
+    def test_restricted_active_replaced(self):
+        sw = _switcher(self.sb, {"eu": {"active": "A", "last_switch": 0,
+                                        "rotate_deadline": 4e9}})
+        picked = []
+        sw._activate = lambda cand, region, st, now, reason: picked.append(
+            (cand["node"], reason)) or True
+        sw.evaluate_region("eu")
+        self.assertEqual(picked, [])                 # активная в порядке — не трогаем
+        self.sb.restrict("A", True)
+        sw.evaluate_region("eu")
+        self.assertEqual(picked, [("B", "emergency")])
+
 
 class _Ident:
     def __init__(self, raw):

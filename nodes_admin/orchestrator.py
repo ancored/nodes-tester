@@ -120,7 +120,8 @@ def _run_alive(pid: int, start: str) -> bool:
 
 class Orchestrator:
     def __init__(self, config_dir: Path, data_dir: Path, *, command=None,
-                 on_apply_start=None, on_apply_end=None, clock=time.time, kill_grace=300):
+                 on_apply_start=None, on_apply_end=None, on_finish=None, clock=time.time,
+                 kill_grace=300):
         self.config_dir = Path(config_dir)
         self.data_dir = Path(data_dir)
         self.schedule_path = self.config_dir / "pipeline.json"
@@ -129,6 +130,8 @@ class Orchestrator:
         self.command = command or ["nodes-tester", "pipeline"]
         self.on_apply_start = on_apply_start or (lambda: None)
         self.on_apply_end = on_apply_end or (lambda: None)
+        # Прогон завершён: on_finish(row) — строка runs (id, mode, dry_run, status, log_path…).
+        self.on_finish = on_finish or (lambda row: None)
         self.clock = clock
         self.kill_grace = kill_grace
         self._lock = threading.RLock()
@@ -316,9 +319,14 @@ class Orchestrator:
 
     def _finish(self, run_id, status, code):
         with self._lock, self._connect() as db:
-            db.execute("UPDATE runs SET finished=?,status=?,exit_code=? WHERE id=? AND status='running'",
-                       (self.clock(), status, code, run_id))
+            done = db.execute("UPDATE runs SET finished=?,status=?,exit_code=? WHERE id=? AND status='running'",
+                              (self.clock(), status, code, run_id)).rowcount
             self._prune(db)
+        if done:
+            try:
+                self.on_finish(self.run(run_id))
+            except Exception as exc:  # noqa: BLE001 — наблюдатель не должен ронять оркестратор
+                print(f"[pipeline] обработчик завершения прогона: {type(exc).__name__}: {exc}")
 
     def _prune(self, db):
         old = db.execute("SELECT id,log_path FROM runs WHERE status!='running' ORDER BY started DESC LIMIT -1 OFFSET 100").fetchall()

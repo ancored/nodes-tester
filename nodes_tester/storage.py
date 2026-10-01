@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS node_events (
   ts INTEGER, crc TEXT, event TEXT, reason TEXT, streak INTEGER);
 CREATE INDEX IF NOT EXISTS idx_node_events_ts ON node_events(ts);
 CREATE INDEX IF NOT EXISTS idx_node_events_crc ON node_events(crc);
+CREATE TABLE IF NOT EXISTS ip_info (
+  ip TEXT PRIMARY KEY, asn INTEGER, as_name TEXT, isp TEXT, org TEXT, country TEXT,
+  mobile INTEGER, proxy INTEGER, hosting INTEGER, ts INTEGER);
 """
 
 # Колонки снимка рейтинга (таблица scores). Ключ БД — crc; в памяти Scoreboard
@@ -226,6 +229,33 @@ class Storage:
             self._db.executemany(
                 "INSERT INTO results (ts,pass_no,crc,test,ok,url,metrics,error) "
                 "VALUES (?,?,?,?,?,?,?,?)", rows)
+            self._db.commit()
+
+    # --- Тип выходного IP (nodes_tester.ipinfo) ------------------------
+
+    def ip_info_stale(self, ips, ttl_seconds: float) -> list:
+        """IP без сведений или со сведениями старше ttl."""
+        ips = [ip for ip in dict.fromkeys(ips) if ip]
+        if not ips:
+            return []
+        cutoff = int(time.time() - ttl_seconds)
+        with self._lock:
+            fresh = {r[0] for r in self._db.execute(
+                f"SELECT ip FROM ip_info WHERE ts >= ? AND ip IN ({','.join('?' * len(ips))})",
+                (cutoff, *ips)).fetchall()}
+        return [ip for ip in ips if ip not in fresh]
+
+    def save_ip_info(self, infos: dict) -> None:
+        if not infos:
+            return
+        ts = int(time.time())
+        rows = [(ip, i.get("asn"), i.get("as_name", ""), i.get("isp", ""), i.get("org", ""),
+                 i.get("country", ""), i.get("mobile", 0), i.get("proxy", 0),
+                 i.get("hosting", 0), ts) for ip, i in infos.items()]
+        with self._lock:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO ip_info (ip,asn,as_name,isp,org,country,mobile,proxy,"
+                "hosting,ts) VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
             self._db.commit()
 
     # --- Трафик --------------------------------------------------------
@@ -674,6 +704,7 @@ class Storage:
             self._db.execute("DELETE FROM traffic WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM activations WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM score_history WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM ip_info WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM node_events WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM endpoints WHERE last_seen < ?", (cutoff,))
             self._db.commit()

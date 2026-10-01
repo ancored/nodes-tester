@@ -15,6 +15,9 @@ def capabilities(app: App) -> dict:
         "pipeline": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token
                          and shutil.which("nodes-tester")),
         "singbox_files": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token),
+        "singbox_control": bool(r is not None and getattr(r, "singbox", None) is not None
+                                and r.singbox.available),
+        "notify": bool(r is not None and getattr(r, "notifier", None) is not None and app.token),
         "quarantine_hours": app.cfg.cooldown.garbage_hours,
         "cooldown_enabled": app.cfg.cooldown.enabled,
     }

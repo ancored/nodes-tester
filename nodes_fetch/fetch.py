@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from nodes_common import raw as rawfmt
 from nodes_common.fileio import parse_iso
 
+from . import meta as metamod
 from . import sources, util
 
 FETCH_DEFAULTS = {
@@ -71,6 +72,8 @@ def load_providers(data, log=print):
             raise ProvidersError(f"подписка {tag!r}: happ_headers должен быть объектом со строковыми значениями")
         if any(not k.strip() or any(c in k + v for c in '\r\n') for k, v in headers.items()):
             raise ProvidersError(f"подписка {tag!r}: некорректное имя или значение HTTP-заголовка")
+        if "send_device" in sub and not isinstance(sub["send_device"], bool):
+            raise ProvidersError(f"подписка {tag!r}: send_device должен быть true/false")
         if "User-Agent" in norm and "user_agent" not in norm:
             norm["user_agent"] = norm.pop("User-Agent")
         subs.append(norm)
@@ -97,15 +100,18 @@ def _index_previous(previous):
     return nodes, srcs
 
 
-def run(providers, base_dir, name="providers", previous=None, only=None, now=None, log=print):
+def run(providers, base_dir, name="providers", previous=None, only=None, now=None, log=print,
+        device=None):
     """Прогон fetch → raw-конверт (dict). providers — результат load_providers.
-    previous — прошлый raw (для last-good/--only); now — aware datetime (для тестов)."""
+    previous — прошлый raw (для last-good/--only); now — aware datetime (для тестов);
+    device — device.json установки (HWID для панелей)."""
     now = now or datetime.now(timezone.utc)
     now_iso = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     cfg = providers["fetch"]
     ctx = sources.Context(base_dir=base_dir,
                           timeout=(util.DEFAULT_TIMEOUT[0], float(cfg["timeout"])),
-                          retries=int(cfg["retries"]), proxy=cfg["proxy"], log=log)
+                          retries=int(cfg["retries"]), proxy=cfg["proxy"], log=log,
+                          device=device)
     stale_max = timedelta(hours=float(cfg["stale_max_hours"]))
     prev_nodes, prev_srcs = _index_previous(previous)
     only = set(only or ())
@@ -127,6 +133,9 @@ def run(providers, base_dir, name="providers", previous=None, only=None, now=Non
                      for item in items]
             src = {"provider": tag, "kind": sub["kind"], "ok": True, "count": len(nodes),
                    "fetched_at": now_iso, "last_ok_at": now_iso, "stale": False, "error": None}
+            meta = metamod.from_headers(ctx.response_headers)
+            if meta:
+                src["meta"] = meta
         except Exception as exc:  # noqa: BLE001 — любая ошибка подписки изолирована
             error = f"{exc.__class__.__name__}: {exc}"
             prev_src = prev_srcs.get(tag) or {}
@@ -138,6 +147,8 @@ def run(providers, base_dir, name="providers", previous=None, only=None, now=Non
                 nodes = []
             src = {"provider": tag, "kind": sub["kind"], "ok": False, "count": len(nodes),
                    "fetched_at": now_iso, "last_ok_at": last_ok, "stale": stale, "error": error}
+            if prev_src.get("meta"):            # метаданные — от последней удачной загрузки
+                src["meta"] = prev_src["meta"]
             note = f"взяты прошлые ноды ({len(nodes)}, stale)" if stale else "нод нет"
             log(f"  [fetch] {tag}: СБОЙ — {error} → {note}")
         else:

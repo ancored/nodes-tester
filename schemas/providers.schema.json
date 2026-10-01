@@ -24,6 +24,7 @@
           "user_agent": { "type": "string" },
           "User-Agent": { "type": "string", "description": "устаревшее имя user_agent (v1)" },
           "happ_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "send_device": { "type": "boolean", "default": false, "description": "url: отправлять X-Hwid и описание устройства (панели с лимитом устройств); happ шлёт их всегда" },
           "ex-node-name": { "type": "string", "description": "v1: переносится в groups_params.filters.exclude_names" }
         },
         "anyOf": [

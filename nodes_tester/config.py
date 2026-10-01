@@ -317,6 +317,59 @@ class DashboardConfig:
 
 
 @dataclass
+class IpInfoConfig:
+    """Тип выходного IP (nodes_tester.ipinfo): ASN, дата-центр/мобильная сеть/прокси по
+    exit_ip из connectivity. Запрос — с роутера к `url` (ip-api.com, пакетно), кэш ttl_days."""
+    enabled: bool = True
+    url: str = "http://ip-api.com/batch"
+    ttl_days: float = 7.0
+    timeout: float = 10.0
+
+
+@dataclass
+class SingboxControlConfig:
+    """Остановка/запуск sing-box из админки и killswitch (nodes_tester.singbox_ctl).
+    Работает только на OpenWrt (есть `init`). `lan_devices` — интерфейсы LAN, пересылку из
+    которых killswitch запрещает, пока sing-box не работает."""
+    enabled: bool = True
+    init: str = "/etc/init.d/sing-box"
+    stop_flag: str = "/var/run/nodes-tester/singbox-stopped"
+    lan_devices: list[str] = field(default_factory=list)   # пусто — lan из netifd
+    interval: float = 5.0            # период сторожа, с
+    down_alert: float = 60.0         # уведомить, если sing-box не работает дольше, с
+
+
+@dataclass
+class TelegramConfig:
+    token: str = ""                  # токен бота (@BotFather)
+    chat_id: str = ""                # куда писать: свой id или id группы
+
+
+@dataclass
+class WebhookConfig:
+    url: str = ""                    # POST JSON {event, text, ts}
+
+
+@dataclass
+class NotifyConfig:
+    """Уведомления (nodes_tester.notify): Telegram и/или webhook. Без получателей и при
+    enabled=false не отправляется ничего. `events` — какие события слать; переключения
+    нод — только с причинами из `switch_reasons` (ротация каждые часы — шумно)."""
+    enabled: bool = False
+    name: str = ""                   # подпись роутера в начале сообщения
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    webhook: WebhookConfig = field(default_factory=WebhookConfig)
+    proxy: str = ""                  # напр. socks5h://… — если Telegram без прокси недоступен
+    events: list[str] = field(default_factory=lambda: [
+        "switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"])
+    switch_reasons: list[str] = field(default_factory=lambda: ["emergency", "emergency-stuck"])
+    expiry_days: float = 3.0         # предупреждать, когда до конца подписки ≤ стольких дней
+    dedupe_minutes: float = 60.0     # не повторять одинаковое сообщение чаще
+    max_per_hour: int = 20           # общий предел (защита от шквала)
+    timeout: float = 10.0
+
+
+@dataclass
 class Config:
     box_api: BoxApiConfig
     testing_groups: list[TestingGroupConfig]
@@ -329,6 +382,9 @@ class Config:
     storage: StorageConfig
     cooldown: CooldownConfig = field(default_factory=CooldownConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
+    notify: NotifyConfig = field(default_factory=NotifyConfig)
+    ip_info: IpInfoConfig = field(default_factory=IpInfoConfig)
+    singbox_control: SingboxControlConfig = field(default_factory=SingboxControlConfig)
     tests: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -397,6 +453,10 @@ def load_config(path: str) -> Config:
         storage=_load_storage(_section(data, "storage")),
         cooldown=CooldownConfig(**_filtered(CooldownConfig, _section(data, "cooldown"))),
         dashboard=DashboardConfig(**_filtered(DashboardConfig, _section(data, "dashboard"))),
+        notify=_load_notify(_section(data, "notify")),
+        ip_info=IpInfoConfig(**_filtered(IpInfoConfig, _section(data, "ip_info"))),
+        singbox_control=SingboxControlConfig(**_filtered(SingboxControlConfig,
+                                                         _section(data, "singbox_control"))),
         tests=_section(data, "tests"),
     )
     _validate(cfg)
@@ -438,6 +498,15 @@ def _load_storage(st: dict) -> StorageConfig:
     traffic = st.get("traffic") or {}
     cfg = StorageConfig(**{k: v for k, v in st.items() if k != "traffic"})
     cfg.traffic = TrafficConfig(**traffic)
+    return cfg
+
+
+def _load_notify(nt: dict) -> NotifyConfig:
+    cfg = NotifyConfig(**_filtered(NotifyConfig, {k: v for k, v in nt.items()
+                                                  if k not in ("telegram", "webhook")}))
+    cfg.telegram = TelegramConfig(**_filtered(TelegramConfig, nt.get("telegram") or {}))
+    cfg.webhook = WebhookConfig(**_filtered(WebhookConfig, nt.get("webhook") or {}))
+    cfg.telegram.chat_id = str(cfg.telegram.chat_id or "")
     return cfg
 
 
@@ -523,6 +592,17 @@ def _validate(cfg: Config) -> None:
     for key in ("providers_file", "groups_file"):
         if not isinstance(getattr(cfg.dashboard, key), str):
             raise ValueError(f"dashboard.{key} должен быть строкой")
+    from .notify import EVENTS, SWITCH_REASONS
+    nt = cfg.notify
+    unknown = set(nt.events) - set(EVENTS)
+    if unknown:
+        raise ValueError(f"notify.events: неизвестные события {', '.join(sorted(unknown))} "
+                         f"(доступны: {', '.join(EVENTS)})")
+    unknown = set(nt.switch_reasons) - set(SWITCH_REASONS)
+    if unknown:
+        raise ValueError(f"notify.switch_reasons: неизвестные причины {', '.join(sorted(unknown))}")
+    if nt.webhook.url and not nt.webhook.url.startswith(("http://", "https://")):
+        raise ValueError("notify.webhook.url должен начинаться с http:// или https://")
     # Предупреждение: набор тестов без scoring-компонента даёт всем нодам score 0
     # (напр. только connectivity — он лишь gate). Тогда candidates() пуст → нет выбора.
     excl = {r.lower() for r in cfg.region_groups.exclude}

@@ -34,3 +34,11 @@ test('table row keys are unique even when rows share identity-like fields', () =
   assert.equal(new Set(keys.values()).size,3)
   assert.equal(rowKeys([ai,eu]).get(eu),keys.get(eu))
 })
+
+test('country codes become flags, other values stay as is', async () => {
+  const { flag } = await import('../src/format.js')
+  assert.equal(flag('nl'), '🇳🇱')
+  assert.equal(flag('UK'), '🇬🇧')
+  assert.equal(flag('other'), 'other')
+  assert.equal(flag(null), '—')
+})

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { crcOf, rowKeys, STANDARD_FILTERS } from '../ux.js'
 import { useTableFilters } from '../filters.js'
+import { flag } from '../format.js'
 import FilterBar from './FilterBar.vue'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
   pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:'Нет данных в этом снимке.'},
@@ -41,7 +42,9 @@ const page = computed({
   set:v=>router.replace({query:{...route.query,[key('page')]:String(v+1)}})
 })
 const slice = computed(()=>filtered.value.slice(page.value*props.pageSize,(page.value+1)*props.pageSize))
-function cellText(c,r) { return c.fmt ? c.fmt(r[c.key],r) : r[c.key] ?? '—' }
+// Колонки страны (country, cc) — флагом, код — во всплывающей подсказке.
+const isCountry = c => !c.fmt && !c.slot && ['country','cc'].includes(c.key)
+function cellText(c,r) { return c.fmt ? c.fmt(r[c.key],r) : isCountry(c) ? flag(r[c.key]) : r[c.key] ?? '—' }
 const keys = computed(() => rowKeys(props.rows))
 function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value === '-'+c.key ? '' : c.key) }
 </script>
@@ -55,7 +58,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
         </th></tr></thead>
         <tbody>
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
-            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.cls?.(row[c.key],row)]">
+            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break">{{ cellText(c,row) }}</RouterLink>
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>
