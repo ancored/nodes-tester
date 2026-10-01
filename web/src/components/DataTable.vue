@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { crcOf, STANDARD_FILTERS } from '../ux.js'
+import { crcOf, rowKeys, STANDARD_FILTERS } from '../ux.js'
 import { useTableFilters } from '../filters.js'
 import FilterBar from './FilterBar.vue'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
@@ -42,7 +42,7 @@ const page = computed({
 })
 const slice = computed(()=>filtered.value.slice(page.value*props.pageSize,(page.value+1)*props.pageSize))
 function cellText(c,r) { return c.fmt ? c.fmt(r[c.key],r) : r[c.key] ?? '—' }
-function rowKey(r) { return JSON.stringify([crcOf(r),r.sample_id,r.ts,r.region,r.provider,r.protocol,r.country,r.cc,r.source_ip,r.dest_host,r.network,r.node,r.removed_at]) }
+const keys = computed(() => rowKeys(props.rows))
 function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value === '-'+c.key ? '' : c.key) }
 </script>
 <template>
@@ -54,7 +54,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
           <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.title }}</template>
         </th></tr></thead>
         <tbody>
-          <tr v-for="row in slice" :key="rowKey(row)" :class="rowClass?.(row)">
+          <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
             <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.cls?.(row[c.key],row)]">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break">{{ cellText(c,row) }}</RouterLink>

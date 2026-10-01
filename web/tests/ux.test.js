@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getPath, setPath, changedPaths, nodeFlags, crcOf } from '../src/ux.js'
+import { getPath, setPath, changedPaths, nodeFlags, crcOf, rowKeys } from '../src/ux.js'
 import { nodeStatus } from '../src/status.js'
 
 test('nested form fields retain unknown config and group overrides', () => {
@@ -27,4 +27,10 @@ test('stable CRC links work in all legacy table shapes', () => {
   assert.equal(crcOf({crc:'1234abcd'}),'1234abcd')
   assert.equal(crcOf({id:'1234abcd'}),'1234abcd')
   assert.equal(crcOf({node:'DEMO-out [1234abcd]'}),'1234abcd')
+})
+test('table row keys are unique even when rows share identity-like fields', () => {
+  const eu = {provider:'AWG',group:'eu',total:6}, ai = {provider:'AWG',group:'ai',total:6}, dup = {...eu}
+  const keys = rowKeys([eu,ai,dup])
+  assert.equal(new Set(keys.values()).size,3)
+  assert.equal(rowKeys([ai,eu]).get(eu),keys.get(eu))
 })

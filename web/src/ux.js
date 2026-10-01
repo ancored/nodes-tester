@@ -26,6 +26,18 @@ export function nodeFlags(n) {
     +n.active ? 'Выбрана переключателем' : ''].filter(Boolean)
 }
 export function crcOf(row) { return row.crc || row.id || /\[([0-9a-f]{8})\]/i.exec(row.node || '')?.[1] || '' }
+// Ключи строк таблицы для v-for: содержимое строки + номер повтора одинаковых строк.
+// Уникальны по построению (повтор ключа ломает перерисовку Vue) и не зависят от того,
+// какие поля у таблицы считаются «идентификатором».
+export function rowKeys(rows) {
+  const keys = new Map(), seen = new Map()
+  for (const r of rows) {
+    const base = JSON.stringify(r), n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    keys.set(r, n ? base + '#' + n : base)
+  }
+  return keys
+}
 // Стандартные фильтры таблиц (DataTable): поля строк снимка /api/data.
 export const STANDARD_FILTERS = [
   { key: 'country', title: 'Страна', get: r => (r.country ?? r.cc)?.toUpperCase?.() },
