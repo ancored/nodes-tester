@@ -270,10 +270,11 @@ class Scoreboard:
                 self._active[region] = node
             else:
                 self._active.pop(region, None)
+            # По всем строкам: при старте группы восстанавливаются раньше, чем известен их
+            # состав, а нода группы (ai) может иметь другой регион (eu) — фильтр по региону
+            # терял её флаг до следующего переключения.
             actives = set(self._active.values())
             for r in self.rows.values():
-                if self._members is None and r["region"] != region:
-                    continue
                 r["active"] = 1 if r["node"] in actives else 0
 
     # --- Запись --------------------------------------------------------

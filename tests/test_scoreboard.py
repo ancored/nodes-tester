@@ -60,6 +60,27 @@ class ScoreboardVetoTest(unittest.TestCase):
         self.assertEqual([c["node"] for c in self.sb.candidates("eu")], ["A"])
 
 
+class ActiveFlagTest(unittest.TestCase):
+    """Флаг active — «активна хотя бы в одной группе», в том числе до загрузки состава групп."""
+
+    def setUp(self):
+        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.sb.rows = {"A": _row("A", region="eu"), "B": _row("B", region="eu")}
+
+    def tearDown(self):
+        self.storage.close()
+
+    def test_group_named_not_as_region_keeps_flag(self):
+        # Как при старте Switcher: состав групп ещё неизвестен, ai-нода с регионом eu.
+        self.sb.set_active("eu", "A")
+        self.sb.set_active("us", "X")
+        self.sb.set_active("ai", "B")
+        self.assertEqual((self.sb.rows["A"]["active"], self.sb.rows["B"]["active"]), (1, 1))
+        self.sb.set_active("ai", None)
+        self.assertEqual((self.sb.rows["A"]["active"], self.sb.rows["B"]["active"]), (1, 0))
+
+
 class RestrictedActiveTest(unittest.TestCase):
     """Активная нода, попавшая под ограничение, заменяется немедленно (emergency)."""
 
