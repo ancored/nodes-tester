@@ -319,11 +319,13 @@ class DashboardConfig:
 @dataclass
 class IpInfoConfig:
     """Тип выходного IP (nodes_tester.ipinfo): ASN, дата-центр/мобильная сеть/прокси по
-    exit_ip из connectivity. Запрос — с роутера к `url` (ip-api.com, пакетно), кэш ttl_days."""
+    exit_ip из connectivity. Пакетный запрос к `url` (ip-api.com) — через SOCKS тестера на
+    лучшей здоровой ноде (`via_tester`), при неудаче напрямую; кэш ttl_days."""
     enabled: bool = True
     url: str = "http://ip-api.com/batch"
     ttl_days: float = 7.0
     timeout: float = 10.0
+    via_tester: bool = True          # запрос через SOCKS тестера (обход DNS-фильтра роутера)
 
 
 @dataclass

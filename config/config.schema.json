@@ -528,6 +528,7 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "url": { "type": "string", "description": "Пакетный эндпоинт ip-api.com (бесплатно — только http)." },
+        "via_tester": { "type": "boolean", "description": "Запрос через SOCKS тестера (на лучшей здоровой ноде): DNS-фильтры часто блокируют ip-api.com. При неудаче — напрямую." },
         "ttl_days": { "type": "number", "minimum": 0 },
         "timeout": { "type": "number", "exclusiveMinimum": 0 }
       }

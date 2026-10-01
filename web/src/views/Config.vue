@@ -93,7 +93,7 @@ const groups = [
     ['notify.telegram.token','Токен Telegram-бота','password'],['notify.telegram.chat_id','Telegram chat_id получателя','text'],
     ['notify.webhook.url','Webhook URL (POST JSON)','text'],['notify.proxy','Прокси для отправки (пусто — напрямую)','text'],
     ['notify.expiry_days','Предупреждать о конце подписки за, дней','number']]},
-  {title:'Тип выходного IP',note:'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com с роутера по выходным IP нод.',fields:[
+  {title:'Тип выходного IP',note:'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com по выходным IP нод — через тестер на лучшей здоровой ноде, иначе напрямую.',fields:[
     ['ip_info.enabled','Определять тип выходного IP','checkbox'],['ip_info.ttl_days','Обновлять сведения раз в, дней','number']]},
 ]
 const NOTIFY_EVENTS={switch:'Переключение ноды',failsafe:'Запасная группа',rollback:'Откат конфига sing-box',pipeline:'Ошибка конвейера',subscription:'Сбой подписки',expiry:'Конец подписки и трафика',singbox:'Остановка и сбой sing-box'}

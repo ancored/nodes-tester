@@ -686,9 +686,40 @@ class Runner:
         if not stale:
             return
         from .ipinfo import lookup
-        infos = lookup(stale, cfg.url, cfg.timeout)
+        infos = {}
+        if cfg.via_tester:
+            # Через SOCKS тестера (socks5h: имя резолвит нода): DNS-фильтр роутера часто
+            # блокирует ip-api.com. Ставим в тестовый селектор лучшие здоровые ноды.
+            for node in self._healthy_nodes(3):
+                with self._tester_lock:
+                    try:
+                        self.api.select(self._top, node)
+                    except ApiError:
+                        continue
+                    session = make_session(self.cfg.testing_group.connection)
+                    try:
+                        infos = lookup(stale, cfg.url, cfg.timeout, session=session)
+                    finally:
+                        session.close()
+                if infos:
+                    break
+        if not infos:
+            infos = lookup(stale, cfg.url, cfg.timeout)
         self.storage.save_ip_info(infos)
         print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
+
+    def _healthy_nodes(self, limit: int) -> list:
+        """Лучшие по рейтингу ноды без ограничений (для служебных запросов через тестер)."""
+        if self.board is None:
+            return []
+        seen, out = set(), []
+        for group in self.board.regions():
+            for cand in self.board.candidates(group):
+                if cand["node"] not in seen:
+                    seen.add(cand["node"])
+                    out.append(cand)
+        out.sort(key=lambda c: float(c.get("score") or 0), reverse=True)
+        return [c["node"] for c in out[:limit]]
 
     def _due_groups(self) -> set:
         """Группы, у которых в этом прогоне наступает ротация (или нет активной)."""
