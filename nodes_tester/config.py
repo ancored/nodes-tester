@@ -202,6 +202,10 @@ class RotationConfig:
     enabled: bool = True
     interval: float = 10800.0
     jitter: float = 900.0
+    # align: сроки ротации всех групп — на общей сетке слотов (шаг interval, jitter общий
+    # на слот) → один прогон тестера обслуживает все группы. False — у каждой группы
+    # свой срок (now + interval ± jitter).
+    align: bool = True
     min_dwell: float = 1800.0
     top_k: int = 5
     min_score: float = 55.0

@@ -196,6 +196,7 @@
       "enabled": true,
       "interval": 10800,
       "jitter": 900,
+      "align": true,
       "min_dwell": 1800,
       "top_k": 5,
       "min_score": 55,

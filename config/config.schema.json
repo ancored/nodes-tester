@@ -364,6 +364,10 @@
             "jitter": {
               "type": "number"
             },
+            "align": {
+              "type": "boolean",
+              "description": "Общие сроки ротации для всех групп (сетка с шагом interval, jitter общий на слот): один прогон тестера обслуживает все группы. false — у каждой группы свой срок."
+            },
             "min_dwell": {
               "type": "number"
             },

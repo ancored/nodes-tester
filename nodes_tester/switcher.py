@@ -45,6 +45,7 @@ class Switcher:
         for group, st in self.state.items():
             if st.get("active"):
                 self.board.set_active(group, st["active"])
+        self._align_loaded()
 
     # --- Публичное ------------------------------------------------------
 
@@ -367,7 +368,7 @@ class Switcher:
         st["quality_count"] = 0
         st.pop("emg_stuck", None)           # переключились — эпизод emergency закрыт
         st.pop("failsafe", None)
-        st["rotate_deadline"] = now + self._rotate_delay()
+        st["rotate_deadline"] = self._next_deadline(now)
         recent = [node] + [n for n in st.get("recent", []) if n != node]
         st["recent"] = recent[:10]
         st.setdefault("activations", {})
@@ -434,6 +435,46 @@ class Switcher:
         base = self.cfg.rotation.interval
         j = self.cfg.rotation.jitter
         return base + random.uniform(-j, j) if j else base
+
+    # --- Общая сетка сроков ротации (rotation.align) ----------------------
+    # Слот k: k*interval от эпохи + jitter, общий для всех групп и стабильный между
+    # рестартами (зерно — номер слота). Сроки групп совпадают → тестер делает один
+    # прогон на слот вместо прогона к сроку каждой группы.
+
+    def _slot(self, k: int) -> float:
+        rot = self.cfg.rotation
+        j = min(float(rot.jitter or 0), float(rot.interval) / 4)   # слоты не перехлёстываются
+        return k * float(rot.interval) + (random.Random(k).uniform(-j, j) if j else 0.0)
+
+    def _slot_at_or_after(self, t: float) -> float:
+        k = int(t // float(self.cfg.rotation.interval)) - 1
+        while self._slot(k) < t:
+            k += 1
+        return self._slot(k)
+
+    def _next_deadline(self, now: float) -> float:
+        """Срок следующей ротации после переключения в момент now."""
+        rot = self.cfg.rotation
+        if not rot.align or float(rot.interval) <= 0:
+            return now + self._rotate_delay()
+        return self._slot_at_or_after(now + float(rot.min_dwell))
+
+    def _align_loaded(self) -> None:
+        """Сроки, сохранённые до включения align, — на ближайший слот сетки (не раньше
+        last_switch + min_dwell). Наступившие сроки не трогаем."""
+        rot = self.cfg.rotation
+        if not rot.align or float(rot.interval) <= 0:
+            return
+        now = time.time()
+        for st in self.state.values():
+            old = float(st.get("rotate_deadline") or 0)
+            if not st.get("active") or old <= now:
+                continue
+            new = self._slot_at_or_after(old - float(rot.interval) / 2)
+            earliest = float(st.get("last_switch") or 0) + float(rot.min_dwell)
+            if new < earliest:
+                new = self._slot_at_or_after(earliest)
+            st["rotate_deadline"] = new
 
 
 # Встроенные группы (префикс тега {group}-auto-out) — известны и без данных sing-box.

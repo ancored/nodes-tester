@@ -113,5 +113,54 @@ class LowScoreQuarantineTest(unittest.TestCase):
         self.assertNotIn("aaaa0001", r.storage.load_backoff())
 
 
+class AlignedRotationTest(unittest.TestCase):
+    """rotation.align: сроки групп — на общей сетке слотов."""
+
+    def _sw(self, state=None, **rot):
+        from nodes_tester.config import RotationConfig, SwitchingConfig
+        from nodes_tester.switcher import Switcher
+        cfg = SwitchingConfig(enabled=True, rotation=RotationConfig(**rot))
+        storage = type("S", (), {"load_switch_state": lambda self: dict(state or {})})()
+        return Switcher(cfg, None, _Board(), "nodes-tester", storage=storage)
+
+    def test_switches_at_different_times_share_deadline(self):
+        sw = self._sw()
+        base = sw._slot(165_740) + 60                 # сразу после слота (ротация)
+        a = sw._next_deadline(base)
+        b = sw._next_deadline(base + 1200)            # другая группа на 20 мин позже
+        self.assertEqual(a, b)
+        self.assertGreaterEqual(a, base + 1200 + 1800)   # не раньше min_dwell
+        self.assertLessEqual(a - base, 10800 + 1800 + 900 * 2)
+
+    def test_jitter_common_and_bounded(self):
+        sw = self._sw()
+        for k in range(100, 120):
+            self.assertLessEqual(abs(sw._slot(k) - k * 10800), 900)
+        self.assertEqual(sw._slot(7), self._sw()._slot(7))   # стабилен между рестартами
+
+    def test_no_align_keeps_per_group_delay(self):
+        sw = self._sw(align=False, jitter=0)
+        self.assertEqual(sw._next_deadline(1000.0), 1000.0 + 10800)
+
+    def test_loaded_deadlines_snap_to_grid(self):
+        now = time.time()
+        state = {
+            "eu": {"active": A, "rotate_deadline": now + 3600, "last_switch": now - 7200},
+            "us": {"active": U, "rotate_deadline": now + 5400, "last_switch": now - 5400},
+            "ai": {"active": B, "rotate_deadline": now - 10, "last_switch": now - 9000},
+        }
+        sw = self._sw(state)
+        for g in ("eu", "us"):
+            d = sw.state[g]["rotate_deadline"]
+            self.assertEqual(d, sw._slot_at_or_after(d))           # на сетке
+            self.assertGreaterEqual(d, sw.state[g]["last_switch"] + 1800)
+        self.assertEqual(sw.state["ai"]["rotate_deadline"], now - 10)   # наступивший не трогаем
+
+
+class _Board:
+    def set_active(self, group, node):
+        pass
+
+
 if __name__ == "__main__":
     unittest.main()
