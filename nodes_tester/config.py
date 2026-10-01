@@ -328,13 +328,13 @@ class IpInfoConfig:
 
 @dataclass
 class SingboxControlConfig:
-    """Остановка/запуск sing-box из админки и killswitch (nodes_tester.singbox_ctl).
-    Работает только на OpenWrt (есть `init`). `lan_devices` — интерфейсы LAN, пересылку из
-    которых killswitch запрещает, пока sing-box не работает."""
+    """Остановка/запуск sing-box из админки и управление службой killswitch роутера
+    (nodes_tester.singbox_ctl). Работает только на OpenWrt (есть `init`)."""
     enabled: bool = True
     init: str = "/etc/init.d/sing-box"
     stop_flag: str = "/var/run/nodes-tester/singbox-stopped"
-    lan_devices: list[str] = field(default_factory=list)   # пусто — lan из netifd
+    killswitch_init: str = "/etc/init.d/killswitch"
+    killswitch_table: str = "killswitch"     # таблица inet, которую загружает служба
     interval: float = 5.0            # период сторожа, с
     down_alert: float = 60.0         # уведомить, если sing-box не работает дольше, с
 

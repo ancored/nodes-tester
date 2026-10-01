@@ -1,41 +1,51 @@
-"""Остановка/запуск sing-box и killswitch: команды init/nft, флаг остановки, сторож."""
+"""Остановка/запуск sing-box и управление службой killswitch роутера."""
 
 import os
 import subprocess
 import unittest
 
 from nodes_tester.config import SingboxControlConfig
-from nodes_tester.singbox_ctl import TABLE, ControlError, SingboxControl
+from nodes_tester.singbox_ctl import ControlError, SingboxControl
 from tests.helpers import temp_dir
+
+KS_TABLE = """table inet killswitch {
+	chain forward_guard {
+		type filter hook forward priority filter - 1; policy accept;
+		iifname "eth0" oifname "eth1" ip saddr 192.168.1.0/25 meta l4proto tcp counter packets 2511 bytes 103966 reject with tcp reset
+		iifname "eth0" oifname "eth1" ip saddr 192.168.1.0/25 counter packets 1566 bytes 594911 reject with icmpx admin-prohibited
+	}
+}
+"""
 
 
 class FakeRouter:
-    """pidof/nft/init.d как на OpenWrt: состояние процесса и таблицы nftables."""
+    """pidof, nft и init-скрипты sing-box/killswitch как на OpenWrt."""
 
-    def __init__(self):
+    def __init__(self, init, ks_init):
+        self.init, self.ks_init = init, ks_init
         self.running = True
-        self.table = False
+        self.ks_loaded = True
+        self.ks_enabled = True
         self.calls = []
-        self.rules = None
 
     def __call__(self, args, input=None, capture_output=True, text=True, timeout=None):
         self.calls.append(args)
-        rc = 0
+        out, rc = "", 0
         if args[0] == "pidof":
             rc = 0 if self.running else 1
-        elif args[:3] == ["nft", "list", "table"]:
-            rc = 0 if self.table else 1
-        elif args[:2] == ["nft", "-f"]:
-            self.table, self.rules = True, input
-        elif args[:3] == ["nft", "delete", "table"]:
-            self.table = False
-        elif args[0] == "ubus":
-            return subprocess.CompletedProcess(args, 0, '{"l3_device": "eth0"}', "")
-        elif args[-1] == "stop":
-            self.running = False
-        elif args[-1] == "start":
-            self.running = True
-        return subprocess.CompletedProcess(args, rc, "", "")
+        elif args[:4] == ["nft", "list", "table", "inet"]:
+            rc, out = (0, KS_TABLE) if self.ks_loaded else (1, "")
+        elif args[0] == self.init:
+            self.running = args[1] == "start"
+        elif args[0] == self.ks_init:
+            action = args[1]
+            if action == "enabled":
+                rc = 0 if self.ks_enabled else 1
+            elif action in ("start", "stop"):
+                self.ks_loaded = action == "start"
+            elif action in ("enable", "disable"):
+                self.ks_enabled = action == "enable"
+        return subprocess.CompletedProcess(args, rc, out, "")
 
 
 class _Notifier:
@@ -43,77 +53,67 @@ class _Notifier:
         self.sent = []
 
     def send(self, event, text, key=None, ttl=None):
-        self.sent.append((event, key))
+        self.sent.append((event, key, text))
 
 
 class SingboxControlTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
         init = os.path.join(self.tmp, "sing-box")
-        open(init, "w").close()
-        self.cfg = SingboxControlConfig(init=init, stop_flag=os.path.join(self.tmp, "run", "stopped"),
-                                        lan_devices=["br-lan", "bad;dev"], down_alert=60)
-        self.router = FakeRouter()
+        ks = os.path.join(self.tmp, "killswitch")
+        for path in (init, ks):
+            open(path, "w").close()
+        self.cfg = SingboxControlConfig(init=init, killswitch_init=ks,
+                                        stop_flag=os.path.join(self.tmp, "run", "stopped"))
+        self.router = FakeRouter(init, ks)
         self.notifier = _Notifier()
         self.t = [0.0]
-        self.ctl = self._ctl()
+        self.ctl = SingboxControl(self.cfg, self.notifier, run=self.router, clock=lambda: self.t[0])
 
-    def _ctl(self):
-        return SingboxControl(self.cfg, os.path.join(self.tmp, "state.json"), self.notifier,
-                              run=self.router, clock=lambda: self.t[0])
+    def test_killswitch_status_from_service_table(self):
+        ks = self.ctl.status()["killswitch"]
+        self.assertEqual(ks, {"installed": True, "active": True, "enabled": True, "blocked": 4077})
 
-    def test_stop_without_killswitch_goes_direct(self):
+    def test_stop_and_start_do_not_touch_killswitch(self):
         st = self.ctl.stop()
         self.assertFalse(st["running"])
         self.assertTrue(st["stopped_by_admin"])
-        self.assertFalse(st["blocking"])                 # прямой интернет
+        self.assertTrue(st["killswitch"]["active"])          # правила службы остаются
+        self.assertIn("killswitch блокирует", self.notifier.sent[-1][2])
         st = self.ctl.start()
         self.assertTrue(st["running"])
         self.assertFalse(st["stopped_by_admin"])
+        self.assertFalse(any(c[0] == "nft" and c[1] != "list" for c in self.router.calls))
 
-    def test_killswitch_blocks_only_while_down(self):
-        self.ctl.set_killswitch(True)
-        self.assertFalse(self.router.table)              # sing-box работает — блока нет
-        self.ctl.stop()
-        self.assertTrue(self.router.table)
-        self.assertIn('iifname { "br-lan" } counter drop', self.router.rules)
-        self.assertNotIn("bad;dev", self.router.rules)   # некорректное имя не попадает в nft
-        self.ctl.start()
-        self.assertFalse(self.router.table)
-        # Режим переживает перезапуск тестера.
-        self.assertTrue(self._ctl().killswitch)
+    def test_toggle_controls_service_and_autostart(self):
+        st = self.ctl.set_killswitch(False)
+        self.assertEqual((st["killswitch"]["active"], st["killswitch"]["enabled"]), (False, False))
+        st = self.ctl.set_killswitch(True)
+        self.assertEqual((st["killswitch"]["active"], st["killswitch"]["enabled"]), (True, True))
+        actions = [c[1] for c in self.router.calls if c[0] == self.cfg.killswitch_init and c[1] != "enabled"]
+        self.assertEqual(actions, ["stop", "disable", "start", "enable"])
 
-    def test_crash_is_blocked_and_reported(self):
-        self.ctl.set_killswitch(True)
+    def test_missing_service(self):
+        os.remove(self.cfg.killswitch_init)
+        self.assertFalse(self.ctl.status()["killswitch"]["installed"])
+        with self.assertRaises(ControlError):
+            self.ctl.set_killswitch(True)
+
+    def test_crash_is_reported(self):
         self.router.running = False                      # упал сам, не из админки
-        self.ctl.enforce()
         self.ctl._check_down()
-        self.assertTrue(self.router.table)
         self.t[0] = 61
         self.ctl._check_down()
         self.router.running = True
-        self.ctl.enforce()
         self.ctl._check_down()
-        self.assertFalse(self.router.table)
-        keys = [k for _e, k in self.notifier.sent]
-        self.assertEqual(keys[-2:], ["singbox-down", "singbox-up"])
+        self.assertEqual([k for _e, k, _t in self.notifier.sent], ["singbox-down", "singbox-up"])
+        self.assertIn("killswitch блокирует", self.notifier.sent[0][2])
 
     def test_unavailable_off_openwrt(self):
         self.cfg.init = os.path.join(self.tmp, "missing")
-        ctl = self._ctl()
-        self.assertFalse(ctl.status()["available"])
+        self.assertFalse(self.ctl.status()["available"])
         with self.assertRaises(ControlError):
-            ctl.stop()
-
-    def test_lan_device_autodetected(self):
-        self.cfg.lan_devices = []
-        ctl = self._ctl()
-        ctl.set_killswitch(True)
-        ctl.stop()
-        self.assertIn('iifname { "eth0" }', self.router.rules)
-
-    def test_table_name(self):
-        self.assertEqual(TABLE, "nodes_tester_killswitch")
+            self.ctl.stop()
 
 
 if __name__ == "__main__":

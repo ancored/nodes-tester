@@ -93,9 +93,8 @@ const groups = [
     ['notify.telegram.token','Токен Telegram-бота','password'],['notify.telegram.chat_id','Telegram chat_id получателя','text'],
     ['notify.webhook.url','Webhook URL (POST JSON)','text'],['notify.proxy','Прокси для отправки (пусто — напрямую)','text'],
     ['notify.expiry_days','Предупреждать о конце подписки за, дней','number']]},
-  {title:'Тип выходного IP и sing-box',note:'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com с роутера по выходным IP нод. Интерфейсы LAN нужны killswitch.',fields:[
-    ['ip_info.enabled','Определять тип выходного IP','checkbox'],['ip_info.ttl_days','Обновлять сведения раз в, дней','number'],
-    ['singbox_control.lan_devices','Интерфейсы LAN для killswitch (пусто — определить автоматически)','list']]},
+  {title:'Тип выходного IP',note:'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com с роутера по выходным IP нод.',fields:[
+    ['ip_info.enabled','Определять тип выходного IP','checkbox'],['ip_info.ttl_days','Обновлять сведения раз в, дней','number']]},
 ]
 const NOTIFY_EVENTS={switch:'Переключение ноды',failsafe:'Запасная группа',rollback:'Откат конфига sing-box',pipeline:'Ошибка конвейера',subscription:'Сбой подписки',expiry:'Конец подписки и трафика',singbox:'Остановка и сбой sing-box'}
 const SWITCH_REASONS={emergency:'авария',['emergency-stuck']:'авария без замены',rotation:'ротация',quality:'качество',manual:'вручную',init:'первый выбор'}

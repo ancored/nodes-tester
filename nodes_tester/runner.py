@@ -94,11 +94,7 @@ class Runner:
         self._httpd = None
         self._banned: set = set()
         self.notifier = Notifier(cfg.notify)
-        self.singbox = SingboxControl(
-            cfg.singbox_control,
-            os.path.join(os.path.dirname(os.path.abspath(cfg.storage.db_file)),
-                         "singbox-control.json"),
-            self.notifier)
+        self.singbox = SingboxControl(cfg.singbox_control, self.notifier)
 
         # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
         # теперь живут в БД (замена score.csv/switch_state.json).

@@ -510,12 +510,13 @@
     "singbox_control": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Остановка/запуск sing-box из админки и killswitch (только OpenWrt).",
+      "description": "Остановка/запуск sing-box из админки и управление службой killswitch роутера (только OpenWrt).",
       "properties": {
         "enabled": { "type": "boolean" },
         "init": { "type": "string", "description": "init-скрипт sing-box." },
         "stop_flag": { "type": "string", "description": "Флаг «остановлен из админки» (tmpfs); пока он есть, apply-nodes.sh не применяет конфиг." },
-        "lan_devices": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9_.@:-]{1,15}$" }, "description": "Интерфейсы LAN, пересылку из которых killswitch запрещает, пока sing-box не работает. Пусто — интерфейс lan из netifd (ubus)." },
+        "killswitch_init": { "type": "string", "description": "init-скрипт службы killswitch роутера." },
+        "killswitch_table": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Таблица inet, которую загружает служба killswitch (для показа состояния)." },
         "interval": { "type": "number", "exclusiveMinimum": 0 },
         "down_alert": { "type": "number", "minimum": 0 }
       }

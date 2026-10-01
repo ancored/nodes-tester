@@ -59,7 +59,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Переключение | `/api/groups/{group}/switch` (прежний путь `/api/regions/{group}/switch`) | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
 | Предпросмотр групп | `POST /api/config/groups/preview` | состав групп по текущему `raw/main.json` без записи |
 | Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
-| sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, режим killswitch (только OpenWrt) |
+| sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, включение и выключение службы killswitch роутера (только OpenWrt) |
 | Уведомления | `POST /api/notify/test` | тестовое сообщение по настройкам работающего процесса |
 | Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
 | Файлы sing-box и пресеты | `/api/singbox/files/...`, `/api/singbox/presets` | ограниченный список JSON-файлов, проверка итоговой сборки при записи базы и пресетов, revision и 20 прошлых версий, удаление пресетов |
