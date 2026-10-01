@@ -212,15 +212,32 @@ svg polyline { vector-effect: non-scaling-stroke; }
 .actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 
 .hint {
-  background: var(--panel);
-  border: 1px solid var(--heavy);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
   border-radius: 8px;
   padding: 10px 14px;
-  color: var(--heavy);
+  color: var(--muted);
   font-size: 12.5px;
+  line-height: 1.65;
   margin-bottom: 14px;
 }
 .hint code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; }
+.hint summary { color: var(--text); font-weight: 500; }
+.help-text {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: var(--panel2);
+  border-left: 3px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 12px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.help-text > p { margin: 0; }
+.help-text > p + p { margin-top: 8px; }
+.field-note { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .log {
   background: #0a0e15;
@@ -270,7 +287,8 @@ label { display: flex; flex-direction: column; gap: 5px; }
 .badge { padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; }
 .facts { display: grid; grid-template-columns: minmax(130px,220px) 1fr; gap: 12px 20px; }
 .facts dt { color: var(--muted); }.facts dd { margin: 0; overflow-wrap: anywhere; }
-.cell-note { display: block; color: var(--muted); white-space: normal; }
+.cell-note { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 3px; white-space: normal; }
+.cell-note.bad { color: var(--bad); }
 .guide li { margin-bottom: 12px; }
 .primary { border-color: var(--accent); font-weight: 600; }
 .config-fields { min-width: 0; border: 0; padding: 0; margin: 0; }
@@ -305,7 +323,7 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
   .responsive-table tbody, .responsive-table tr, .responsive-table td { display: block; width: 100%; }
   .responsive-table tr { padding: 10px; border-bottom: 2px solid var(--line); }
   .responsive-table td { text-align: left; padding: 5px; border: 0; max-width: none; }
-  .responsive-table td::before { content: attr(data-label); display: inline-block; color: var(--muted); min-width: 105px; margin-right: 8px; }
+  .responsive-table td[data-label]::before { content: attr(data-label); display: inline-block; color: var(--muted); min-width: 105px; margin-right: 8px; }
   .responsive-table td:first-child { font-weight: 600; }
   .log-line { display: block; }.log-line .mut { display: block; }
 }

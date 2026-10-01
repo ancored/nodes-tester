@@ -1,17 +1,22 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api, auth, can } from '../api.js'
 
 const state = ref(null), runs = ref([]), schedule = ref(null), revision = ref('')
-const error = ref(''), notice = ref(''), log = ref(''), logOffset = ref(0), viewedRun = ref('')
+const error = ref(''), pollError = ref(''), logError = ref(''), notice = ref(''), log = ref(''), logOffset = ref(0), viewedRun = ref('')
+const followLive = ref(true)
 const saving = ref(false), busy = ref(false), dirty = ref(false), conflicted = ref(false)
 const times = ref({ router: '', clients: '' })
 const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
 const modeLabel = { router: 'роутер', clients: 'клиенты', apply: 'база и правила' }
-let timer = null, polling = false
+let timer = null, polling = false, selection = 0, disposed = false
 
 const live = computed(() => state.value?.current)
+const selectedRun = computed(() => runs.value.find(row => row.id === viewedRun.value) || (live.value?.id === viewedRun.value ? live.value : null))
+function selectRun(id) {
+  selection++; viewedRun.value = id; log.value = ''; logOffset.value = 0; logError.value = ''
+}
 function setEditor(data) {
   schedule.value = structuredClone(data)
   times.value = Object.fromEntries(['router', 'clients'].map(mode =>
@@ -23,22 +28,29 @@ async function loadSchedule() {
   revision.value = response.revision; setEditor(response.data)
 }
 async function poll() {
-  if (polling || !auth.verified || !can('pipeline')) return
+  if (disposed || polling || !auth.verified || !can('pipeline')) return
   polling = true
   try {
     const [next, history] = await Promise.all([api.get('/pipeline'), api.get('/pipeline/runs?limit=20')])
-    state.value = next; runs.value = history.runs || []; error.value = ''
+    if (disposed) return
+    state.value = next; runs.value = history.runs || []; pollError.value = ''
     if (!schedule.value) { revision.value = next.revision; setEditor(next.schedule) }
-    if (next.current && viewedRun.value !== next.current.id) {
-      viewedRun.value = next.current.id; log.value = ''; logOffset.value = 0
+    if (followLive.value && next.current && viewedRun.value !== next.current.id) {
+      selectRun(next.current.id)
     }
     if (viewedRun.value) await readLog()
-  } catch (e) { error.value = e.message }
+  } catch (e) { pollError.value = e.message }
   finally { polling = false }
 }
 async function readLog() {
-  const chunk = await api.get(`/pipeline/runs/${viewedRun.value}/log?offset=${logOffset.value}`)
-  log.value += chunk.text; logOffset.value = chunk.offset
+  const id = viewedRun.value, offset = logOffset.value, version = selection
+  try {
+    const chunk = await api.get(`/pipeline/runs/${id}/log?offset=${offset}`)
+    if (disposed || version !== selection || offset !== logOffset.value) return
+    log.value += chunk.text; logOffset.value = chunk.offset; logError.value = ''
+  } catch (e) {
+    if (!disposed && version === selection) logError.value = e.message
+  }
 }
 async function launch(mode, dryRun) {
   if (!dryRun && !window.confirm(
@@ -48,7 +60,7 @@ async function launch(mode, dryRun) {
   busy.value = true; error.value = ''; notice.value = ''
   try {
     const result = await api.post('/pipeline/run', { mode, dry_run: dryRun })
-    viewedRun.value = result.run_id; log.value = ''; logOffset.value = 0
+    followLive.value = true; selectRun(result.run_id)
     notice.value = dryRun ? 'Проверка запущена. Результат появится в журнале.' : 'Применение запущено. Следите за журналом.'
     await poll()
   } catch (e) { error.value = e.message }
@@ -57,11 +69,11 @@ async function launch(mode, dryRun) {
 function edit() { dirty.value = true; auth.dirty = true }
 async function saveSchedule() {
   if (conflicted.value) return
-  const next = structuredClone(schedule.value)
+  const next = structuredClone(toRaw(schedule.value))
   for (const mode of ['router', 'clients']) {
     const values = times.value[mode].split(',').map(x => x.trim()).filter(Boolean)
     if (values.some(x => !/^([01]\d|2[0-3]):[0-5]\d$/.test(x)) || new Set(values).size !== values.length) {
-      error.value = `Укажите для ${mode} уникальное время HH:MM через запятую`; return
+      error.value = `Укажите для раздела «${modeLabel[mode]}» время в формате HH:MM через запятую, без повторов.`; return
     }
     next.jobs[mode].times = values
   }
@@ -80,20 +92,24 @@ async function reloadSchedule() {
   if (dirty.value && !window.confirm('Отбросить несохранённое расписание?')) return
   try { await loadSchedule(); error.value = '' } catch (e) { error.value = e.message }
 }
-function showRun(row) { viewedRun.value = row.id; log.value = ''; logOffset.value = 0; readLog().catch(e => { error.value = e.message }) }
-onMounted(async () => { await poll(); timer = setInterval(poll, 2000) })
-onBeforeUnmount(() => { clearInterval(timer); auth.dirty = false })
+function showRun(row) {
+  followLive.value = row.id === live.value?.id
+  selectRun(row.id); readLog()
+}
+onMounted(async () => { await poll(); if (!disposed) timer = setInterval(poll, 2000) })
+onBeforeUnmount(() => { disposed = true; clearInterval(timer); auth.dirty = false })
 onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить несохранённое расписание?'))
 </script>
 
 <template>
   <section class="panel">
     <h2>Конвейер обновления</h2>
-    <p>Router загружает подписки, собирает ноды и правила, затем применяет конфигурацию к роутеру. Clients собирает отдельные клиентские конфигурации. Проверка создаёт промежуточные файлы и может скачивать подписки, но не применяет их.</p>
+    <p class="help-text">Режим «Роутер» загружает подписки, собирает ноды и правила, затем применяет конфигурацию к роутеру. Режим «Клиенты» собирает отдельные клиентские конфигурации. Проверка создаёт промежуточные файлы и может скачивать подписки, но не применяет их.</p>
     <p v-if="!auth.verified" class="notice">Войдите с токеном администратора, чтобы видеть журнал и управлять конвейером.</p>
     <p v-else-if="!can('pipeline')" class="notice">Управление недоступно: нужен работающий тестер с pipeline.json и команда nodes-tester в PATH.</p>
     <template v-if="can('pipeline')">
-      <p v-if="error" class="notice bad" role="alert">{{ error }}. Опрос повторится автоматически.</p>
+      <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
+      <p v-if="pollError" class="notice bad" role="alert">{{ pollError }}. Опрос повторится автоматически.</p>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       <div v-for="mode in ['router', 'clients']" :key="mode" class="panel">
         <h3>{{ mode === 'router' ? 'Роутер' : 'Клиенты' }}</h3>
@@ -104,20 +120,35 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
         </div>
       </div>
       <p role="status">{{ live ? `Идёт ${modeLabel[live.mode] || live.mode}${live.dry_run ? ' · проверка' : ' · применение'}` : 'Сейчас конвейер не выполняется' }}</p>
-      <h3>Журнал {{ viewedRun ? viewedRun.slice(0, 8) : '' }}</h3>
-      <pre class="pipeline-log" aria-live="polite">{{ log || 'Выберите прогон из истории.' }}</pre>
+      <div class="toolbar">
+        <h3>Журнал</h3>
+        <button v-if="live && viewedRun !== live.id" class="btn" @click="showRun(live)">К текущему прогону</button>
+      </div>
+      <p v-if="selectedRun" class="field-note">{{ new Date(selectedRun.started * 1000).toLocaleString('ru-RU') }} · {{ modeLabel[selectedRun.mode] || selectedRun.mode }} · {{ selectedRun.dry_run ? 'проверка' : 'применение' }} · {{ statusLabel[selectedRun.status] || selectedRun.status }}</p>
+      <p v-if="logError" class="notice bad" role="alert">{{ logError }}. Загрузка журнала повторится автоматически.</p>
+      <pre class="log pipeline-log" aria-live="polite">{{ log || (viewedRun ? 'Журнал пока пуст.' : 'Выберите прогон из истории.') }}</pre>
       <h3>История</h3>
-      <div class="pipeline-history">
-        <button v-for="row in runs" :key="row.id" class="btn" @click="showRun(row)">
-          {{ new Date(row.started * 1000).toLocaleString('ru-RU') }} · {{ modeLabel[row.mode] || row.mode }} · {{ row.dry_run ? 'проверка' : 'применение' }} · {{ statusLabel[row.status] || row.status }}
-        </button>
+      <div v-if="runs.length" class="wrap pipeline-history">
+        <table class="responsive-table" aria-label="Последние 20 прогонов конвейера">
+          <thead><tr><th class="l">Начало</th><th class="l">Режим</th><th class="l">Действие</th><th class="l">Запуск</th><th class="l">Статус</th><th class="l">Журнал</th></tr></thead>
+          <tbody>
+            <tr v-for="row in runs" :key="row.id" :class="{ selected: row.id === viewedRun }">
+              <td class="l" data-label="Начало">{{ new Date(row.started * 1000).toLocaleString('ru-RU') }}</td>
+              <td class="l" data-label="Режим">{{ modeLabel[row.mode] || row.mode }}</td>
+              <td class="l" data-label="Действие">{{ row.dry_run ? 'проверка' : 'применение' }}</td>
+              <td class="l" data-label="Запуск">{{ row.trigger === 'schedule' ? 'по расписанию' : row.trigger === 'manual' ? 'вручную' : row.trigger || '—' }}</td>
+              <td class="l" data-label="Статус"><span :class="{ good: row.status === 'ok', bad: ['error', 'timeout', 'interrupted'].includes(row.status) }">{{ statusLabel[row.status] || row.status }}</span></td>
+              <td class="l" data-label="Журнал"><button class="btn sm" :aria-pressed="row.id === viewedRun" :aria-label="'Журнал прогона от ' + new Date(row.started * 1000).toLocaleString('ru-RU')" @click="showRun(row)">{{ row.id === viewedRun ? 'Открыт' : 'Открыть' }}</button></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       <p v-if="!runs.length">Прогонов пока нет.</p>
     </template>
   </section>
   <section v-if="can('pipeline') && schedule" class="panel">
     <h2>Ежедневное расписание</h2>
-    <p>Время роутера. Новое расписание начинает действовать после сохранения; пропущенные после перезапуска задания выполняются один раз.</p>
+    <p class="help-text">Время роутера. Новое расписание начинает действовать после сохранения; пропущенные после перезапуска задания выполняются один раз.</p>
     <p class="notice">Если этот конвейер уже запускает cron, удалите строку <code>nodes-tester pipeline</code> из crontab после включения расписания здесь. Иначе один из совпавших запусков получит статус «занято».</p>
     <div v-for="mode in ['router', 'clients']" :key="mode" class="panel">
       <label class="check"><input v-model="schedule.jobs[mode].enabled" type="checkbox" @change="edit" /> {{ mode === 'router' ? 'Роутер' : 'Клиенты' }}</label>
@@ -133,7 +164,10 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
 </template>
 
 <style scoped>
-.pipeline-log { max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #111827; color: #e5e7eb; padding: 1rem; border-radius: .5rem }
-.pipeline-history { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; max-height: 16rem; overflow: auto }
+.pipeline-log { height: 22rem; overflow: auto; overflow-wrap: anywhere }
+.pipeline-history { max-height: 24rem; overflow: auto }
+.pipeline-history tr.selected { background: var(--hover); box-shadow: inset 3px 0 var(--accent) }
+.pipeline-history button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent) }
+.toolbar h3 { margin: 0 }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem }
 </style>

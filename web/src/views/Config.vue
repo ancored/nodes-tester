@@ -183,7 +183,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <template v-else><label>Папка <input v-model="sub.path" /></label><label>Формат <input v-model="sub.format" /></label><label>Расширение файлов <input v-model="sub.ext" placeholder=".conf" /></label></template>
               <template v-if="sourceKind(sub)==='url'"><label>User-Agent<select :value="uaChoice(sub)" @change="setUA(sub,$event.target.value,true)"><option v-for="o in options.user_agents" :key="o.value" :value="o.value">{{ o.label }}</option><option value="__custom">Свой User-Agent</option></select></label><label v-if="uaChoice(sub)==='__custom'">Свой User-Agent<input :value="userAgent(sub)" @input="setUA(sub,$event.target.value)" /></label></template>
             </div>
-            <p v-if="sourceKind(sub)==='url'" class="mut">User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.</p>
+            <p v-if="sourceKind(sub)==='url'" class="help-text">User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.</p>
             <details v-if="sourceKind(sub)==='url' && !userAgent(sub)"><summary>User-Agent по умолчанию</summary><p class="break">{{ options.user_agents[0]?.effective }}</p></details>
             <label v-if="sourceKind(sub)==='url'" class="check"><input type="checkbox" :checked="!!sub.send_device" @change="sub.send_device=$event.target.checked || undefined; preview=false" /> Отправлять HWID и описание устройства (для панелей с лимитом устройств)</label>
             <div v-if="subState(sub)" class="sub-state">
@@ -193,20 +193,20 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <details v-if="subMeta(sub).announce"><summary>Сообщение провайдера</summary><p class="pre">{{ subMeta(sub).announce }}</p></details>
             </div>
             <details v-if="sourceKind(sub)==='happ'"><summary>HTTP-заголовки Happ</summary>
-              <p>Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.</p>
+              <p class="help-text">Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.</p>
               <div class="form-grid"><label v-for="key in happFields(sub)" :key="key">{{ key }}<input type="text" :value="sub.happ_headers?.[key] ?? options.happ_headers[key]" @input="setHeader(sub,key,$event.target.value)" /><span class="mut">{{ Object.hasOwn(sub.happ_headers || {},key) ? 'Переопределён' : 'По умолчанию' }}</span><button v-if="Object.hasOwn(sub.happ_headers || {},key)" class="btn" @click="removeHeader(sub,key)">{{ Object.hasOwn(options.happ_headers,key) ? 'Вернуть по умолчанию' : 'Удалить заголовок' }}</button></label></div>
               <button class="btn" @click="addHeader(sub)">Добавить заголовок</button> <button class="btn" @click="delete sub.happ_headers">Вернуть весь набор Happ по умолчанию</button>
             </details><button class="btn" @click="removeSub(index)">Удалить подписку</button>
           </section>
           <button class="btn" @click="(document.subscribes ||= []).push({tag:'',url:'',enabled:true})">Добавить подписку</button>
-          <p v-if="options.device?.hwid" class="mut">HWID роутера для панелей подписок: <code>{{ options.device.hwid }}</code> (файл {{ options.device.path }}). Отправляется happ-подписками всегда, URL-подписками — при включённом флажке. Свой HWID для одной подписки задаётся заголовком X-Hwid.</p>
+          <p v-if="options.device?.hwid" class="help-text">HWID роутера для панелей подписок: <code>{{ options.device.hwid }}</code> (файл {{ options.device.path }}). Отправляется happ-подписками всегда, URL-подписками — при включённом флажке. Свой HWID для одной подписки задаётся заголовком X-Hwid.</p>
           <section class="panel"><h2>Защита загрузки</h2><div class="form-grid">
             <label>Тайм-аут, с<input type="number" :value="value('fetch.timeout')" @input="update('fetch.timeout',$event,'number')" placeholder="По умолчанию" /></label>
             <label>Минимальная доля оставшихся нод (0–1)<input type="number" min="0" max="1" step="0.05" :value="value('fetch.min_ratio')" @input="update('fetch.min_ratio',$event,'number')" placeholder="По умолчанию" /></label>
             <label>Повторов HTTP<input type="number" min="0" :value="value('fetch.retries')" @input="update('fetch.retries',$event,'number')" placeholder="3" /></label>
             <label>Хранить прошлые ноды при сбое, ч<input type="number" min="0" :value="value('fetch.stale_max_hours')" @input="update('fetch.stale_max_hours',$event,'number')" placeholder="48" /></label>
             <label>Прокси загрузки<input :value="value('fetch.proxy')" @input="update('fetch.proxy',$event)" placeholder="socks5://127.0.0.1:2080" /></label>
-          </div><p>При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале <RouterLink to="/pipeline">«Конвейера»</RouterLink>.</p></section>
+          </div><p class="help-text">При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале <RouterLink to="/pipeline">«Конвейера»</RouterLink>.</p></section>
         </template>
         <details v-if="subscriptions" class="panel"><summary><b>Как изменения попадают в sing-box</b></summary>
           <ol><li>Сохранённые здесь <code>providers.json</code> и <code>groups_params.json</code> читает конвейер.</li><li>Админка запускает конвейер по расписанию или вручную в <RouterLink to="/pipeline">«Конвейере»</RouterLink>: загрузка подписок, сборка <code>nodes.json</code>, <code>sing-box check</code>, применение. sing-box перезапускается только при изменениях; без связности возвращается прежний конфиг.</li><li>Тестер подхватывает новые ноды и группы в следующем проходе.</li></ol>
@@ -218,7 +218,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
         </details>
         <template v-if="!subscriptions">
           <section v-for="group in groups" :key="group.title" class="panel">
-            <h2>{{ group.title }}</h2><p class="mut">{{ group.note }}</p>
+            <h2>{{ group.title }}</h2><p v-if="group.note" class="help-text">{{ group.note }}</p>
             <div class="form-grid">
               <label v-for="[field,label,type] in group.fields" :key="field" :class="{check:type==='checkbox'}">
                 <template v-if="type==='checkbox'"><input type="checkbox" :checked="!!value(field)" @change="update(field,$event,type)" /> {{ label }}</template>

@@ -63,18 +63,18 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
       <div class="chips"><span v-if="node.groups?.length" class="badge">Группы: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">Ограничение по времени до {{ dateTime(node.guntil) }}. Для паузы также учитывается номер прохода.</p>
       <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>
-      <p class="mut">Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.</p>
+      <p class="help-text">Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.</p>
     </section>
     <nav class="chips" aria-label="Карточка ноды"><button v-for="v in ['Состояние','Результаты','Трафик','События','Действия']" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ v }}</button></nav>
     <section v-if="tab === 'Состояние'" class="panel">
       <h2>Изменение рейтинга</h2><Sparkline :vals="s.data.score_spark?.[crc] || []" />
-      <p class="mut">График показывает последние 24 значения. Все сохранённые замеры доступны в таблице ниже.</p>
+      <p class="help-text">График показывает последние 24 значения. Все сохранённые замеры доступны в таблице ниже.</p>
       <p v-if="historyError" class="notice bad">{{ historyError }} <button class="btn" @click="loadDetails">Повторить загрузку</button></p>
       <details class="rating-history"><summary>Замеры рейтинга · {{ history.length }}</summary>
         <div class="toolbar"><label>С даты и времени<input v-model="historyFrom" type="datetime-local" :max="historyTo || undefined" /></label><label>По дату и время<input v-model="historyTo" type="datetime-local" :min="historyFrom || undefined" /></label><button v-if="historyFrom || historyTo" class="btn" @click="clearHistoryRange">Сбросить период</button></div>
         <DataTable :rows="filteredHistory" :columns="historyColumns" :page-size="15" query-key="score_" :show-search="false" :show-sort="false" empty="За выбранный период замеров нет." />
       </details>
-      <p>CRC связывает данные ноды между переименованиями. Нулевой рейтинг и отсутствие замеров показаны отдельно.</p>
+      <p class="help-text">CRC связывает данные ноды между переименованиями. Нулевой рейтинг и отсутствие замеров показаны отдельно.</p>
       <details><summary>Технические сведения</summary>
         <p v-if="!can('edit_config')">Войдите с токеном администратора, чтобы посмотреть JSON ноды.</p>
         <p v-if="detailError" class="notice bad">{{ detailError }} <button class="btn" @click="loadDetails">Повторить загрузку</button></p>

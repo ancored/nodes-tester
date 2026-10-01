@@ -9,4 +9,4 @@ function edit() {
   catch(e){error.value=e.message;emit('valid',false)}
 }
 </script>
-<template><label>{{ label }}<textarea v-model="text" class="json-field" spellcheck="false" @input="edit" :aria-label="label" /><span class="mut">{{ note }}</span><span v-if="error" class="bad" role="alert">{{ error }}</span></label></template>
+<template><label>{{ label }}<textarea v-model="text" class="json-field" spellcheck="false" @input="edit" :aria-label="label" /><span v-if="note" class="field-note">{{ note }}</span><span v-if="error" class="bad" role="alert">{{ error }}</span></label></template>

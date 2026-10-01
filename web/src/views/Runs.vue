@@ -45,7 +45,7 @@ onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
 <template>
   <section class="panel">
     <h2>Проверки текущих нод sing-box</h2>
-    <p>Внеплановый проход проверяет уже доступные ноды. Он не загружает подписки и не применяет настройки.</p>
+    <p class="help-text">Внеплановый проход проверяет уже доступные ноды. Он не загружает подписки и не применяет настройки.</p>
     <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. Опрос продолжится автоматически.</p>
     <template v-if="status">
       <p><b>{{ PHASES[status.progress?.phase] || (status.running ? 'Процесс запущен' : 'Остановлен') }}</b> · проход {{ status.day }} / {{ status.pass }}</p>

@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import { api, auth, can } from '../api.js'
 
 const presets = ref([]), groups = ref(null), error = ref(''), notice = ref(''), busy = ref(false)
+const loadError = ref('')
 const run = ref(null), log = ref(''), logOffset = ref(0)
 const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
 const fileUrl = p => '/singbox/files/' + encodeURIComponent(p)
@@ -12,8 +13,8 @@ async function load() {
   try {
     const response = await api.get('/singbox/presets')
     presets.value = response.presets || []; groups.value = response.groups
-    error.value = response.error || ''
-  } catch (e) { error.value = e.message }
+    loadError.value = response.error || ''
+  } catch (e) { loadError.value = e.message }
 }
 async function toggle(item, enabled) {
   busy.value = true; error.value = ''; notice.value = ''
@@ -24,7 +25,7 @@ async function toggle(item, enabled) {
     await api.put(fileUrl(item.path), data, { 'If-Match': doc.revision })
     notice.value = `«${item.title}» ${enabled ? 'включён' : 'выключен'} в файле; итоговый конфиг прошёл sing-box check. Чтобы изменить работающий sing-box, нажмите «Применить».`
   } catch (e) { error.value = e.message }
-  finally { busy.value = false; await load() }
+  finally { await load(); busy.value = false }
 }
 async function launch(dryRun) {
   if (!dryRun && !window.confirm('Применить базу и включённые пресеты к sing-box? Если конфиг изменился, sing-box перезапустится; без связности вернётся прежний конфиг.')) return
@@ -67,13 +68,16 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <section class="panel">
     <h2>Правила sing-box</h2>
-    <p>Правила маршрутизации и DNS собираются из пресетов — отдельных JSON-файлов в <code>singbox/presets/</code>. Итоговый конфиг: база + ноды + включённые пресеты по приоритету (меньше — выше). Пресет содержит всё, чего нет в базе: правила, DNS-серверы, наборы правил.</p>
-    <p>Переключатель меняет файл пресета; сервер заранее проверяет итоговый конфиг через <code>sing-box check</code> и не сохраняет изменение, если проверка не прошла. Работающий sing-box меняет только «Применить».</p>
+    <div class="help-text">
+      <p>Правила маршрутизации и DNS собираются из пресетов, отдельных JSON-файлов в <code>singbox/presets/</code>. Итоговый конфиг: база + ноды + включённые пресеты по приоритету (меньше — выше). Пресет содержит всё, чего нет в базе: правила, DNS-серверы, наборы правил.</p>
+      <p>Переключатель меняет файл пресета; сервер заранее проверяет итоговый конфиг через <code>sing-box check</code> и не сохраняет изменение, если проверка не прошла. Работающий sing-box меняет только «Применить».</p>
+    </div>
     <p v-if="!auth.verified" class="notice">Войдите с токеном администратора.</p>
     <p v-else-if="!can('singbox_files')" class="notice">Раздел доступен только во встроенной админке с запущенным оркестратором.</p>
   </section>
   <template v-if="can('singbox_files')">
     <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
+    <p v-if="loadError" class="notice bad" role="alert">{{ loadError }}</p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <section class="panel">
       <h2>Пресеты</h2>
@@ -104,7 +108,7 @@ onBeforeUnmount(() => clearTimeout(timer))
         <button class="btn" :disabled="busy || run?.status === 'running'" @click="launch(true)">Проверить сборку</button>
         <button class="btn primary" :disabled="busy || run?.status === 'running'" @click="launch(false)">Применить</button>
       </div>
-      <p class="mut">Проверка собирает конфиг из редактируемой базы и пресетов с текущим nodes.json и прогоняет sing-box check, ничего не меняя. Применение копирует базу, собирает конфиг, перезапускает sing-box только при изменениях и проверяет связность.</p>
+      <p class="help-text">Проверка собирает конфиг из редактируемой базы и пресетов с текущим nodes.json и прогоняет sing-box check, ничего не меняя. Применение копирует базу, собирает конфиг, перезапускает sing-box только при изменениях и проверяет связность.</p>
       <template v-if="run">
         <p>{{ run.dry_run ? 'Проверка' : 'Применение' }}<template v-if="run.started"> от {{ new Date(run.started * 1000).toLocaleString('ru-RU') }}</template>: <b>{{ statusLabel[run.status] || run.status }}</b> · <RouterLink to="/pipeline">история в «Конвейере»</RouterLink></p>
         <pre class="log">{{ log || 'Журнал пуст…' }}</pre>

@@ -165,7 +165,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
 <template>
   <section class="panel">
     <h2>Исходные файлы sing-box</h2>
-    <p>Здесь хранятся база роутера, источники правил, пресеты и клиентские базы. Сохранение меняет исходный файл, но не работающий sing-box. Базу и пресеты можно применить в <RouterLink to="/presets">«Правилах»</RouterLink> без загрузки подписок; полный цикл запускается в <RouterLink to="/pipeline">«Конвейере»</RouterLink>.</p>
+    <p class="help-text">Здесь хранятся база роутера, источники правил, пресеты и клиентские базы. Сохранение меняет исходный файл, но не работающий sing-box. Базу и пресеты можно применить в <RouterLink to="/presets">«Правилах»</RouterLink> без загрузки подписок; полный цикл запускается в <RouterLink to="/pipeline">«Конвейере»</RouterLink>.</p>
     <p v-if="!auth.verified" class="notice">Войдите с токеном администратора.</p>
     <p v-else-if="!can('singbox_files')" class="notice">Редактор доступен только во встроенной админке с запущенным оркестратором.</p>
     <template v-else>
@@ -184,10 +184,10 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
   </section>
   <section v-if="can('singbox_files')" class="panel">
     <h2>{{ path }}</h2>
-    <p>Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box.</p>
+    <p class="help-text">Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box.</p>
     <template v-if="path === 'rules.json'">
       <h3>Источники правил</h3>
-      <p>Назначение — имя файла в /etc/sing-box/rules/. URL скачивается при запуске; локальный JSON загружается здесь.</p>
+      <p class="help-text">Назначение — имя файла в /etc/sing-box/rules/. URL скачивается при запуске; локальный JSON загружается здесь.</p>
       <p v-if="!rulesValid" class="notice bad">Исправьте JSON ниже, чтобы редактировать список правил.</p>
       <template v-else>
         <div v-for="(item, index) in ruleRows" :key="index" class="rule-row">
@@ -201,11 +201,11 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
           <button class="btn" @click="removeRule(index)">Удалить источник</button>
         </div>
         <button class="btn" @click="addRule">Добавить источник</button>
-        <p>После изменений списка нажмите «Сохранить файл».</p>
+        <p class="help-text">После изменений списка нажмите «Сохранить файл».</p>
       </template>
     </template>
     <label>Загрузить JSON в черновик <input type="file" accept=".json,application/json" @change="upload" /></label>
-    <label class="json-editor-label">Содержимое JSON <textarea v-model="text" spellcheck="false" rows="20" @input="changed(); syncRules()"></textarea></label>
+    <label class="json-editor-label">Содержимое JSON <textarea v-model="text" class="cfg-editor" spellcheck="false" rows="20" @input="changed(); syncRules()"></textarea></label>
     <p v-if="conflicted" class="notice bad" role="alert">Файл изменился в другом окне. Перечитайте его перед сохранением.</p>
     <div class="actions">
       <button class="btn" :disabled="!dirty || saving || conflicted" @click="save">Сохранить файл</button>
@@ -232,11 +232,12 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
 <style scoped>
 .actions, .versions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 }
 .file-picker { align-items: end }
-.file-picker select { min-width: 18rem }
+.file-picker label { min-width: 0; max-width: 100% }
+.file-picker select { width: 18rem }
 .json-editor-label { display: block; margin: 1rem 0 }
-textarea { display: block; width: 100%; max-width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .85rem }
-.rule-row { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin: .7rem 0; padding: .7rem; border: 1px solid #64748b; border-radius: .5rem }
-.rule-row label { display: flex; flex-direction: column; gap: .2rem; min-width: 10rem }
+.cfg-editor { display: block; margin-top: 6px }
+.rule-row { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin: .7rem 0; padding: .7rem; border: 1px solid var(--line); border-radius: .5rem }
+.rule-row label { display: flex; flex-direction: column; gap: .2rem; min-width: 0; max-width: 100% }
 .rule-row input { max-width: 20rem }
 .version-row { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem }
 .version-preview pre { max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere }

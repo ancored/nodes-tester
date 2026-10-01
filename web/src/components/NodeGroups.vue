@@ -49,7 +49,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
 <template>
   <section class="panel">
     <h2>Группы нод</h2>
-    <p class="mut">Для каждой группы сборка создаёт selector <code>{имя}-auto-out</code> и urltest <code>{имя}-auto-out-failsafe</code>. Тестер выбирает активную ноду в каждой группе отдельно. Нода может входить в несколько групп. Условия объединяются через И, значения внутри условия — через ИЛИ; без условий в группу попадают все ноды.</p>
+    <p class="help-text">Для каждой группы сборка создаёт selector <code>{имя}-auto-out</code> и urltest <code>{имя}-auto-out-failsafe</code>. Тестер выбирает активную ноду в каждой группе отдельно. Нода может входить в несколько групп. Условия объединяются через И, значения внутри условия — через ИЛИ; без условий в группу попадают все ноды.</p>
     <p v-if="!groups?.length" class="notice">Группы не заданы. Добавьте хотя бы одну группу.</p>
     <template v-if="groups">
       <div v-for="(g,i) in groups" :key="i" class="panel">
@@ -78,7 +78,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           <button class="btn sm" @click="remove(i)">Удалить группу</button>
         </div>
       </div>
-      <p class="mut">Регионы: {{ regionNames }}. Метки из переименования: {{ labelNames }}. Порядок групп — порядок в конфиге и в global-auto-out.</p>
+      <p class="help-text">Регионы: {{ regionNames }}. Метки из переименования: {{ labelNames }}. Порядок групп — порядок в конфиге и в global-auto-out.</p>
     </template>
     <div class="toolbar">
       <button class="btn" @click="add">Добавить группу</button>
@@ -93,7 +93,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
   </section>
   <section class="panel">
     <h2>Регионы</h2>
-    <p class="mut">Регион — именованный список стран для условий групп. Встроенные: eu — {{ (builtin.eu || []).join(', ') }}; us — us; ru — ru; other — страны вне eu, us и ru. Встроенный регион можно переопределить, указав его здесь; свои регионы добавляются так же.</p>
+    <p class="help-text">Регион — именованный список стран для условий групп. Встроенные: eu — {{ (builtin.eu || []).join(', ') }}; us — us; ru — ru; other — страны вне eu, us и ru. Встроенный регион можно переопределить, указав его здесь; свои регионы добавляются так же.</p>
     <JsonField label="Свои и переопределённые регионы" note='Объект: регион → список стран. Например: {"asia": ["jp", "sg", "kr"]}.' :model-value="doc.regions || {}" @update:model-value="setRegions" @valid="emit('valid',$event)" />
   </section>
 </template>
