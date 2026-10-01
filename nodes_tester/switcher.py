@@ -58,13 +58,15 @@ class Switcher:
                 print(f"  [switch] EMERGENCY: активная нода региона {region} заблокирована")
                 self.evaluate_region(region, emergency=True)
 
-    def evaluate_all(self) -> None:
-        """Вызывать в конце прогона: обычная оценка (quality/rotation/init)."""
+    def evaluate_all(self, groups=None) -> None:
+        """Вызывать в конце прогона: обычная оценка (quality/rotation/init).
+        groups — оценить только эти группы (частичный прогон); None — все."""
         if not self.cfg.enabled:
             return
         with self._lock:
             for region in self.board.regions():
-                self._evaluate_region_locked(region, emergency=False)
+                if groups is None or region in groups:
+                    self._evaluate_region_locked(region, emergency=False)
             self._persist()
 
     def prune_groups(self, groups) -> None:

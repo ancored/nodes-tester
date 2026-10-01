@@ -112,6 +112,12 @@ class HeavyBeforeRotationTest(unittest.TestCase):
         self.state["eu"]["last_switch"] = time.time() - 60
         self.assertEqual(self._targets(), [])
 
+    def test_fresh_heavy_not_repeated(self):
+        import time
+        self.sb.set_heavy("B", True)                     # свежий успех — не перекачиваем
+        self.sb.rows["C"].update(heavy_ok="1", heavy_ts=int(time.time()) - 4 * 3600)  # старше ротации
+        self.assertEqual(self._targets(), ["C", "D", "E", "F"])
+
     def test_no_switcher_no_heavy(self):
         self.runner.switcher = None
         self.assertEqual(self._targets(), [])

@@ -38,6 +38,9 @@ _CLEANUP_INTERVAL = 24 * 3600
 # Пауза после пустого/сорванного прохода — чтобы не крутить цикл вплотную (пустой
 # selector, недоступный API, просроченный rotate_deadline). См. review.md P1.
 _EMPTY_PASS_RETRY = 30.0
+# Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
+# по одному прогону).
+_LOW_SCORE_MIN_SAMPLES = 3
 
 
 def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0):
@@ -78,6 +81,9 @@ class Runner:
         self._last_pass_result = None
         self._wait_until = None
         self._current_pass = 0
+        # Прогон разбужен сроком ротации (rotation_bound) → тестируем только ноды групп,
+        # у которых ротация наступила. Первый и внеплановый прогоны — полные.
+        self._scoped_next = False
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
         self._pass_seq = 0
@@ -523,6 +529,7 @@ class Runner:
             wait = (target - now) if target is not None else interval
             if wait <= 0:
                 print("\n===== rotation_bound: настал срок ротации → новый прогон =====")
+                self._scoped_next = True
                 return
             if announced is None or abs(wait - announced) > poll:
                 mins = wait / 60.0
@@ -558,6 +565,7 @@ class Runner:
         else:
             self._pass_seq += 1
 
+        scoped, self._scoped_next = self._scoped_next, False
         nodes = self._enumerate_nodes()
         self._refresh_groups()
         if self.storage is not None:
@@ -568,14 +576,28 @@ class Runner:
         if not nodes:
             print(f"[!] Прогон #{pass_no}: в группе '{self._top}' нет тестируемых нод — пропуск")
             return True
-        print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
+        # node_by_raw — все ноды: обязательные тесты (gemini) живут по своему сроку
+        # годности и не должны зависеть от того, чья ротация разбудила прогон.
+        node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
+        due = self._due_groups() if scoped else None
+        if due:
+            total = len(nodes)
+            nodes = [(r, i) for r, i in nodes if self._in_due_groups(i.raw, due)]
+            print(f"\n===== Прогон #{pass_no}: ротация {', '.join(sorted(due))} — "
+                  f"нод {len(nodes)} из {total} =====")
+        else:
+            print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
 
         self._host_ep_last: dict = {}         # host -> {sig: monotonic} (зазор, лёгкая+тяжёлая)
         if self.board is not None:
             self.board.set_pass(pass_no)
             self.board.begin_pass()
+            if due:
+                tested = {i.raw for _r, i in nodes}
+                for raw in node_by_raw:        # не тестируем — но строку и score сохраняем
+                    if raw not in tested:
+                        self.board.keep(raw)
 
-        node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
         for index, (region, ident) in enumerate(self._order_by_host(nodes)):
             self._progress = {"phase": "testing", "processed": index,
                               "total": len(nodes), "node": ident.raw}
@@ -590,7 +612,7 @@ class Runner:
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(record)
             gate = self._score_and_maybe_switch(region, ident, record)
-            self._backoff_update(ident.node_id, gate)
+            self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
 
         # Фаза обязательных тестов групп (gemini): решает, кто вообще может быть активным.
         self._run_required_pass(node_by_raw, pass_no)
@@ -601,9 +623,28 @@ class Runner:
             self.board.end_pass(pass_no)
         if self.switcher is not None:
             self._progress = {**self._progress, "phase": "switching", "node": None}
-            self.switcher.evaluate_all()
+            # Частичный прогон: оцениваем только группы, чьи ноды проверены (у прочих
+            # рейтинг не обновлялся — quality-счётчик не должен копиться на старых данных).
+            groups = None
+            if due:
+                groups = set(due)
+                for _r, i in nodes:
+                    groups.update(self.board.node_groups(i.raw))
+            self.switcher.evaluate_all(groups)
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
+
+    def _due_groups(self) -> set:
+        """Группы, у которых в этом прогоне наступает ротация (или нет активной)."""
+        if self.board is None or self.switcher is None:
+            return set()
+        return {g for g in self.board.regions() if self.switcher.rotation_due(g)}
+
+    def _in_due_groups(self, raw: str, due: set) -> bool:
+        """Нода входит в группу с наступившей ротацией. Нода вне групп (новая, без
+        состава) тестируется всегда."""
+        groups = self.board.node_groups(raw)
+        return not groups or bool(due.intersection(groups))
 
     def _required_targets(self, node_by_raw: dict, done: set) -> list:
         """[(test, region, ident)] для групп с обязательными тестами: верхние top_k
@@ -704,9 +745,12 @@ class Runner:
         """Кандидаты на тяжёлый download: весь пул, из которого switcher выберет новую
         активную (Switcher.rotation_pool), только в регионах, где в этом прогоне наступает
         ротация (или активной нет). heavy_candidates > 0 включает фазу для региона.
+        Нода со свежим результатом heavy (моложе интервала ротации) не перекачивается:
+        успех ещё в силе, а свежий провал (veto) и так выбивает её из пула.
         done — уже проверенные в этом прогоне. Возвращает [(region, ident), …] без повторов."""
         if self.switcher is None:
             return []
+        fresh_after = time.time() - float(self.cfg.switching.rotation.interval)
         targets, picked = [], set(done)
         for region in self.board.regions():
             hc = int(getattr(self._groups_params([region]), "heavy_candidates", 0) or 0)
@@ -716,6 +760,10 @@ class Runner:
                 if raw in picked:
                     continue
                 picked.add(raw)
+                row = self.board.get(raw) or {}
+                if (str(row.get("heavy_ok", "")) != ""
+                        and int(row.get("heavy_ts") or 0) > fresh_after):
+                    continue
                 ni = node_by_raw.get(raw)
                 if ni is not None:
                     targets.append(ni)
@@ -805,11 +853,31 @@ class Runner:
         return {crc for crc, (until, until_pass, _s, reason) in self.storage.load_backoff().items()
                 if (now < until if reason == "garbage" else self._pass_seq <= until_pass)}
 
-    def _backoff_update(self, crc: str, gate: bool) -> None:
+    def _low_score(self, raw: str) -> bool:
+        """Живая, но слабая нода: рейтинг ниже cooldown.low_score (вкл. при > 0).
+        Активные и новые (< _LOW_SCORE_MIN_SAMPLES замеров) не трогаем."""
+        threshold = float(self.cfg.cooldown.low_score or 0)
+        row = self.board.get(raw) if threshold > 0 and self.board is not None else None
+        if not row or int(row.get("active") or 0):
+            return False
+        return (int(row.get("samples") or 0) >= _LOW_SCORE_MIN_SAMPLES
+                and float(row.get("score") or 0) < threshold)
+
+    def _backoff_update(self, crc: str, gate: bool, low: bool = False) -> None:
         # Backoff персистентен → нужен storage. Без него ноды тестируются каждый проход.
         if not self.cfg.cooldown.enabled or not crc or self.storage is None:
             return
         prev = self._backoff.get(crc)       # (until, until_pass, streak, reason) до обновления
+        if low:                             # gate пройден, но рейтинг ниже порога → карантин
+            cd = self.cfg.cooldown
+            streak = (prev[2] if prev else 0) + 1
+            until = int(time.time() + cd.garbage_hours * 3600.0)
+            self.storage.set_backoff(crc, until, streak, "garbage")
+            if prev is None or prev[3] != "garbage":
+                self.storage.add_node_event(crc, "garbage", "low-score", streak)
+            self._backoff[crc] = (until, 0, streak, "garbage")
+            print(f"  · рейтинг ниже {cd.low_score:g}: {crc} → карантин на {cd.garbage_hours:g} ч")
+            return
         if gate:
             if crc in self._backoff:
                 self.storage.clear_backoff(crc)      # нода жива — снять backoff/карантин

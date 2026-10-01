@@ -88,7 +88,7 @@
       "interval": 0.2
     },
     "download": {
-      "url": "https://speed.cloudflare.com/__down?bytes=10000000",
+      "url": "https://speed.cloudflare.com/__down?bytes=5000000",
       "url_by_region": {
         "ru": "https://speedtest.selectel.ru/10MB"
       },
@@ -96,7 +96,7 @@
       "duration": 20
     },
     "heavy_download": {
-      "url": "https://speed.cloudflare.com/__down?bytes=50000000",
+      "url": "https://speed.cloudflare.com/__down?bytes=20000000",
       "url_by_region": {
         "ru": "https://speedtest.selectel.ru/100MB"
       },
@@ -235,7 +235,8 @@
   "cooldown": {
     "enabled": true,
     "max_skip": 32,
-    "garbage_hours": 72
+    "garbage_hours": 72,
+    "low_score": 0
   },
   "dashboard": {
     "enabled": false,

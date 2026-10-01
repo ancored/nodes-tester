@@ -19,7 +19,7 @@ from __future__ import annotations
 from ._stream import stream_single, time_at_bytes
 from .base import BaseTest, TestContext, TestResult, register
 
-DEFAULT_URL = "https://speed.cloudflare.com/__down?bytes=10000000"
+DEFAULT_URL = "https://speed.cloudflare.com/__down?bytes=5000000"
 
 
 @register
@@ -80,17 +80,17 @@ class DownloadTest(BaseTest):
                           error=None if ok else "неполная закачка", url=url)
 
 
-HEAVY_URL = "https://speed.cloudflare.com/__down?bytes=50000000"   # 50 МБ
+HEAVY_URL = "https://speed.cloudflare.com/__down?bytes=20000000"   # 20 МБ
 
 
 @register
 class HeavyDownloadTest(DownloadTest):
-    """Тяжёлый sustained-download (50 МБ) — ТОЛЬКО финальный veto-фильтр кандидатов
+    """Тяжёлый sustained-download (20 МБ) — ТОЛЬКО финальный veto-фильтр кандидатов
     в двухуровневом тестировании. В скоринг НЕ входит: гоняется отдельной фазой
     прогона по heavy_candidates нод/регион, результат — pass/fail. Логика замера
     та же, что у лёгкого download; отличается объёмом (url) и назначением.
 
     url/длительность настраиваются в config.tests.heavy_download (url_by_region —
-    напр. фикс-файл 50МБ для RU-зоны вместо cloudflare)."""
+    напр. фикс-файл для RU-зоны вместо cloudflare)."""
     name = "heavy_download"
     default_url = HEAVY_URL
