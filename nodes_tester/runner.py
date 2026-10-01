@@ -93,7 +93,8 @@ class Runner:
         self._running = False
         self._httpd = None
         self._banned: set = set()
-        self.notifier = Notifier(cfg.notify)
+        self.notifier = Notifier(cfg.notify,
+                                 fallback=self.via_tester if cfg.notify.via_tester else None)
         self.singbox = SingboxControl(cfg.singbox_control, self.notifier)
 
         # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
@@ -689,24 +690,36 @@ class Runner:
         infos = {}
         if cfg.via_tester:
             # Через SOCKS тестера (socks5h: имя резолвит нода): DNS-фильтр роутера часто
-            # блокирует ip-api.com. Ставим в тестовый селектор лучшие здоровые ноды.
-            for node in self._healthy_nodes(3):
-                with self._tester_lock:
-                    try:
-                        self.api.select(self._top, node)
-                    except ApiError:
-                        continue
-                    session = make_session(self.cfg.testing_group.connection)
-                    try:
-                        infos = lookup(stale, cfg.url, cfg.timeout, session=session)
-                    finally:
-                        session.close()
-                if infos:
-                    break
+            # блокирует ip-api.com.
+            infos = self.via_tester(lambda session: lookup(stale, cfg.url, cfg.timeout,
+                                                           session=session)) or {}
         if not infos:
             infos = lookup(stale, cfg.url, cfg.timeout)
         self.storage.save_ip_info(infos)
         print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
+
+    def via_tester(self, fn, attempts: int = 3):
+        """Выполнить fn(session) через SOCKS тестера на лучших здоровых нодах (по очереди,
+        под общим локом тестового селектора). Первый непустой результат или None.
+        Для служебных запросов, которым нужен прокси: с роутера напрямую они часто
+        режутся (Telegram) или блокируются DNS-фильтром (ip-api.com)."""
+        for node in self._healthy_nodes(attempts):
+            with self._tester_lock:
+                try:
+                    self.api.select(self._top, node)
+                except ApiError:
+                    continue
+                session = make_session(self.cfg.testing_group.connection)
+                try:
+                    result = fn(session)
+                except Exception as exc:  # noqa: BLE001 — пробуем следующую ноду
+                    print(f"  · через тестер ({node}) не удалось: {type(exc).__name__}")
+                    result = None
+                finally:
+                    session.close()
+            if result:
+                return result
+        return None
 
     def _healthy_nodes(self, limit: int) -> list:
         """Лучшие по рейтингу ноды без ограничений (для служебных запросов через тестер)."""

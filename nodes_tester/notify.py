@@ -49,9 +49,12 @@ def _epoch(iso) -> float:
 
 
 class Notifier:
-    def __init__(self, cfg, session_factory=requests.Session, clock=time.time):
+    def __init__(self, cfg, session_factory=requests.Session, clock=time.time, fallback=None):
         self.cfg = cfg
         self.clock = clock
+        # fallback(fn) → fn(session) через прокси тестера; для каналов, которые напрямую
+        # с роутера недоступны (Telegram режется провайдером).
+        self._fallback = fallback
         self._session_factory = session_factory
         self._queue: queue.Queue = queue.Queue(maxsize=200)
         self._sent: dict[str, float] = {}           # key → время последней отправки
@@ -122,31 +125,50 @@ class Notifier:
             self.deliver(session, event, message)
 
     def deliver(self, session, event: str, message: str) -> bool:
-        """Отправить сразу (из потока очереди или для тестового сообщения)."""
+        """Отправить сразу (из потока очереди или для тестового сообщения). Канал, не
+        прошедший напрямую (или через notify.proxy), повторяется через прокси тестера."""
         ok = True
-        proxies = {"http": self.cfg.proxy, "https": self.cfg.proxy} if self.cfg.proxy else None
         if self._tg():
-            try:
-                r = session.post(f"https://api.telegram.org/bot{self.cfg.telegram.token}/sendMessage",
-                                 json={"chat_id": self.cfg.telegram.chat_id, "text": message,
-                                       "disable_web_page_preview": True},
-                                 timeout=self.cfg.timeout, proxies=proxies)
-                if r.status_code != 200:
-                    raise RuntimeError(f"Telegram HTTP {r.status_code}: {r.text[:200]}")
-            except Exception as exc:  # noqa: BLE001 — уведомление не должно ронять тестер
-                ok = False
-                self._fail("Telegram", exc)
+            ok &= self._via("Telegram", session, lambda s: self._post_telegram(s, message))
         if self.cfg.webhook.url:
-            try:
-                r = session.post(self.cfg.webhook.url,
-                                 json={"event": event, "text": message, "ts": int(self.clock())},
-                                 timeout=self.cfg.timeout, proxies=proxies)
-                if r.status_code >= 300:
-                    raise RuntimeError(f"webhook HTTP {r.status_code}")
-            except Exception as exc:  # noqa: BLE001
-                ok = False
-                self._fail("webhook", exc)
+            ok &= self._via("webhook", session, lambda s: self._post_webhook(s, event, message))
         return ok
+
+    def _via(self, channel: str, session, send) -> bool:
+        try:
+            send(session)
+            return True
+        except Exception as exc:  # noqa: BLE001 — уведомление не должно ронять тестер
+            first = exc
+        if self._fallback is not None:
+            def attempt(s):
+                send(s)
+                return True
+            try:
+                if self._fallback(attempt):
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                first = exc
+        self._fail(channel, first)
+        return False
+
+    def _proxies(self):
+        return {"http": self.cfg.proxy, "https": self.cfg.proxy} if self.cfg.proxy else None
+
+    def _post_telegram(self, session, message: str) -> None:
+        r = session.post(f"https://api.telegram.org/bot{self.cfg.telegram.token}/sendMessage",
+                         json={"chat_id": self.cfg.telegram.chat_id, "text": message,
+                               "disable_web_page_preview": True},
+                         timeout=self.cfg.timeout, proxies=self._proxies())
+        if r.status_code != 200:
+            raise RuntimeError(f"Telegram HTTP {r.status_code}: {r.text[:200]}")
+
+    def _post_webhook(self, session, event: str, message: str) -> None:
+        r = session.post(self.cfg.webhook.url,
+                         json={"event": event, "text": message, "ts": int(self.clock())},
+                         timeout=self.cfg.timeout, proxies=self._proxies())
+        if r.status_code >= 300:
+            raise RuntimeError(f"webhook HTTP {r.status_code}")
 
     def _fail(self, channel: str, exc: Exception) -> None:
         self.last_error = _mask(f"{channel}: {type(exc).__name__}: {exc}")

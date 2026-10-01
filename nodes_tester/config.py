@@ -362,6 +362,7 @@ class NotifyConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
     proxy: str = ""                  # напр. socks5h://… — если Telegram без прокси недоступен
+    via_tester: bool = True          # не прошло напрямую — повторить через SOCKS тестера
     events: list[str] = field(default_factory=lambda: [
         "switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"])
     switch_reasons: list[str] = field(default_factory=lambda: ["emergency", "emergency-stuck"])

@@ -192,8 +192,10 @@ SQLite backup.
 ## Уведомления
 
 `notify` отправляет сообщения в Telegram (`telegram.token`, `telegram.chat_id`) и/или
-webhook (`webhook.url`, POST JSON `{event, text, ts}`); `proxy` — если Telegram доступен
-только через прокси. События (`events`):
+webhook (`webhook.url`, POST JSON `{event, text, ts}`). Собственный трафик роутера часто
+идёт мимо прокси, и Telegram напрямую недоступен: если отправка не прошла, она повторяется
+через SOCKS тестера на лучшей здоровой ноде (`via_tester`, по умолчанию включено); `proxy`
+задаёт свой прокси. События (`events`):
 
 | Событие | Когда |
 |---|---|

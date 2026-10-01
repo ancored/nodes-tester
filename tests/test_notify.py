@@ -111,5 +111,21 @@ class NotifierTest(unittest.TestCase):
         self.assertEqual(session.posts[1][1]["event"], "test")
 
 
+    def test_fallback_through_tester_when_direct_fails(self):
+        used = []
+
+        def fallback(fn):
+            used.append(1)
+            return fn(_Session(status=200))
+        n = Notifier(_cfg(), clock=self.clock, fallback=fallback)
+        self.assertTrue(n.deliver(_Session(status=500), "test", "hi"))   # напрямую 500 → через тестер
+        self.assertEqual(len(used), 2)                                    # Telegram и webhook
+        self.assertIsNone(n.last_error)
+
+    def test_no_fallback_when_direct_works(self):
+        n = Notifier(_cfg(), clock=self.clock, fallback=lambda fn: self.fail("не нужен"))
+        self.assertTrue(n.deliver(_Session(status=200), "test", "hi"))
+
+
 if __name__ == "__main__":
     unittest.main()

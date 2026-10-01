@@ -88,7 +88,7 @@ const groups = [
     ['dashboard.providers_file','Файл подписок (относительно config.json)','text'],['dashboard.groups_file','Файл groups_params.json (пусто: рядом с подписками)','text'],['storage.enabled','Хранить статистику','checkbox'],
     ['storage.db_file','Файл SQLite','text'],['storage.nodes_file','Файл описаний нод','text'],['storage.retention_days','Хранить историю, дней','number'],
     ['storage.traffic.enabled','Собирать пользовательский трафик','checkbox']]},
-  {title:'Уведомления',note:'Telegram и/или webhook. Новые настройки действуют после перезапуска тестера. Переключения нод с причиной «ротация» происходят часто — по умолчанию сообщаются только аварийные.',fields:[
+  {title:'Уведомления',note:'Telegram и/или webhook. Новые настройки действуют после перезапуска тестера. Если напрямую с роутера отправить не удалось (Telegram часто режется провайдером), сообщение уходит через тестер на лучшей здоровой ноде. Переключения нод с причиной «ротация» происходят часто — по умолчанию сообщаются только аварийные.',fields:[
     ['notify.enabled','Отправлять уведомления','checkbox'],['notify.name','Подпись роутера в сообщении','text'],
     ['notify.telegram.token','Токен Telegram-бота','password'],['notify.telegram.chat_id','Telegram chat_id получателя','text'],
     ['notify.webhook.url','Webhook URL (POST JSON)','text'],['notify.proxy','Прокси для отправки (пусто — напрямую)','text'],
