@@ -106,10 +106,16 @@ class Switcher:
 
     def next_rotate_deadline(self) -> "float | None":
         """Ближайший срок ротации среди активных регионов (для rotation_bound-режима
-        тестера). None — если ни один регион ещё не активирован."""
+        тестера). None — если ни один регион ещё не активирован. Срок не раньше
+        last_switch + min_dwell — как в rotation_due: иначе прогон будился бы раньше, чем
+        ротация возможна. Группы, которых нет в рейтинге, не учитываются: их никто не
+        оценит и срок не сдвинет."""
+        dwell = float(self.cfg.rotation.min_dwell)
+        groups = set(self.board.regions())
         with self._lock:
-            ds = [st.get("rotate_deadline") for st in self.state.values()
-                  if st.get("active") and st.get("rotate_deadline")]
+            ds = [max(float(st["rotate_deadline"]), float(st.get("last_switch") or 0) + dwell)
+                  for g, st in self.state.items()
+                  if g in groups and st.get("active") and st.get("rotate_deadline")]
         return min(ds) if ds else None
 
     def rotation_pool(self, region: str) -> list[str]:
@@ -203,6 +209,18 @@ class Switcher:
             self._storage.save_switch_state(self.state)
 
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
+        self._evaluate_region_core(region, emergency)
+        # Инвариант rotation_bound: после оценки у группы с активной нодой срок ротации в
+        # будущем. Любой путь, где ротация не случилась (один кандидат, нет кандидатов,
+        # авария без замены, сбой API), иначе будил бы прогон за прогоном.
+        st = self.state.get(region) or {}
+        now = time.time()
+        if (self.cfg.rotation.enabled and st.get("active")
+                and float(st.get("rotate_deadline") or 0) <= now):
+            st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
+            print(f"  [switch] {region}: ротация сейчас невозможна — срок перенесён")
+
+    def _evaluate_region_core(self, region: str, emergency: bool) -> None:
         st = self.state.setdefault(region, _new_region_state())
         cands = self.board.candidates(region)
         required = self.board.required(region)
@@ -252,17 +270,13 @@ class Switcher:
         st.pop("emg_stuck", None)     # активная жива — вышли из залипшего emergency
 
         # 3. Принудительная ротация по таймеру. Не вышло (единственный кандидат, сбой API)
-        # — срок переносим на следующий интервал: иначе rotation_bound будит прогон за
-        # прогоном, гоняя трафик через одну и ту же ноду.
+        # — срок перенесёт _evaluate_region_locked, а оценка продолжится по качеству.
         if (self.cfg.rotation.enabled
                 and now >= st.get("rotate_deadline", 0)
-                and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell):
-            if len(cands) >= 2 and self._activate(self._pick_rotation(cands, st),
-                                                  region, st, now, "rotation"):
-                return
-            st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
-            print(f"  [switch] {region}: ротация невозможна (кандидатов {len(cands)}) — "
-                  f"срок перенесён")
+                and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
+                and len(cands) >= 2
+                and self._activate(self._pick_rotation(cands, st), region, st, now, "rotation")):
+            return
 
         # 4. Quality-переключение с гистерезисом.
         best = cands[0]

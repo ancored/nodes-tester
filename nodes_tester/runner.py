@@ -42,6 +42,8 @@ _EMPTY_PASS_RETRY = 30.0
 # Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
 # по одному прогону).
 _LOW_SCORE_MIN_SAMPLES = 3
+# Досрочное снятие карантина при аварии без замены — не чаще раза в час на группу.
+_RELEASE_MIN_INTERVAL = 3600.0
 
 
 def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0):
@@ -88,6 +90,7 @@ class Runner:
         # Прогон прерван применением конфига (конвейер перезапускает sing-box, состав нод
         # меняется) — следующий начнётся сразу после окна применения, без ожидания ротации.
         self._pass_aborted = False
+        self._released_at: dict = {}            # группа → время досрочного снятия (monotonic)
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
         self._pass_seq = 0
@@ -562,12 +565,14 @@ class Runner:
         передвинул rotate_deadline) и на Ctrl+C. Нет дедлайнов (регионы не активированы) —
         ждём один интервал ротации и пробуем снова."""
         poll = 30.0
-        interval = self.cfg.switching.rotation.interval
+        # Без дедлайнов — один интервал от начала ожидания (не пересчитывать каждый шаг,
+        # иначе ожидание не кончится); не меньше минуты, чтобы не крутить прогоны.
+        fallback = time.time() + max(float(self.cfg.switching.rotation.interval), 60.0)
         announced = None
         while True:
             target = self.switcher.next_rotate_deadline()
             now = time.time()
-            wait = (target - now) if target is not None else interval
+            wait = (target if target is not None else fallback) - now
             if wait <= 0:
                 print("\n===== rotation_bound: настал срок ротации → новый прогон =====")
                 self._scoped_next = True
@@ -1010,6 +1015,12 @@ class Runner:
         Бан не снимается."""
         if not self.cfg.cooldown.enabled or self.storage is None or self.board is None:
             return
+        # Не чаще раза в час на группу: активная может то оживать, то снова падать, и
+        # каждый эпизод аварии иначе гонял бы проверку всех нод группы.
+        last = self._released_at.get(group)
+        if last is not None and time.monotonic() - last < _RELEASE_MIN_INTERVAL:
+            return
+        self._released_at[group] = time.monotonic()
         crcs = {parse_node(n).node_id for n in self.board.group_nodes(group)}
         crcs -= self.storage.banned_crcs()
         now = int(time.time())
