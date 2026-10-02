@@ -10,7 +10,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
 PKG_VERSION:=0.3.7
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=0BSD
@@ -81,7 +81,8 @@ define Build/Prepare
 	cp $(REPO_ROOT)/config/singbox/presets/*.json $(PKG_BUILD_DIR)/config/singbox/presets/
 	cp $(REPO_ROOT)/config/pipeline.example.json $(PKG_BUILD_DIR)/config/
 	mkdir -p $(PKG_BUILD_DIR)/schemas
-	cp $(REPO_ROOT)/schemas/pipeline.schema.json $(PKG_BUILD_DIR)/schemas/
+	cp $(REPO_ROOT)/schemas/pipeline.schema.json $(REPO_ROOT)/schemas/groups_params.schema.json \
+		$(PKG_BUILD_DIR)/schemas/
 	find $(PKG_BUILD_DIR) -name __pycache__ -type d -prune -exec rm -rf {} +
 	$(TAR) -xzf $(DL_DIR)/$(PYSOCKS_FILE) -C $(PKG_BUILD_DIR) \
 		PySocks-$(PYSOCKS_VERSION)/socks.py PySocks-$(PYSOCKS_VERSION)/sockshandler.py \
@@ -92,7 +93,9 @@ define Build/Compile
 endef
 
 define Package/nodes-tester/install
-	$(INSTALL_DIR) $(1)$(APP_DIR)/scripts/router
+	$(INSTALL_DIR) $(1)$(APP_DIR)/scripts/router $(1)$(APP_DIR)/schemas
+	# админка проверяет groups_params по схеме из каталога кода
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/schemas/groups_params.schema.json $(1)$(APP_DIR)/schemas/
 	$(foreach p,$(PY_PACKAGES),$(CP) $(PKG_BUILD_DIR)/$(p) $(1)$(APP_DIR)/;)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/socks.py $(1)$(APP_DIR)/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/sockshandler.py $(1)$(APP_DIR)/
