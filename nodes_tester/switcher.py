@@ -251,13 +251,18 @@ class Switcher:
             return
         st.pop("emg_stuck", None)     # активная жива — вышли из залипшего emergency
 
-        # 3. Принудительная ротация по таймеру.
+        # 3. Принудительная ротация по таймеру. Не вышло (единственный кандидат, сбой API)
+        # — срок переносим на следующий интервал: иначе rotation_bound будит прогон за
+        # прогоном, гоняя трафик через одну и ту же ноду.
         if (self.cfg.rotation.enabled
                 and now >= st.get("rotate_deadline", 0)
-                and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
-                and len(cands) >= 2):
-            self._activate(self._pick_rotation(cands, st), region, st, now, "rotation")
-            return
+                and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell):
+            if len(cands) >= 2 and self._activate(self._pick_rotation(cands, st),
+                                                  region, st, now, "rotation"):
+                return
+            st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
+            print(f"  [switch] {region}: ротация невозможна (кандидатов {len(cands)}) — "
+                  f"срок перенесён")
 
         # 4. Quality-переключение с гистерезисом.
         best = cands[0]

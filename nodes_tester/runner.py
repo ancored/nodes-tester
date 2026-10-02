@@ -85,6 +85,9 @@ class Runner:
         # Прогон разбужен сроком ротации (rotation_bound) → тестируем только ноды групп,
         # у которых ротация наступила. Первый и внеплановый прогоны — полные.
         self._scoped_next = False
+        # Прогон прерван применением конфига (конвейер перезапускает sing-box, состав нод
+        # меняется) — следующий начнётся сразу после окна применения, без ожидания ротации.
+        self._pass_aborted = False
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
         self._pass_seq = 0
@@ -366,6 +369,8 @@ class Runner:
                     self._last_cleanup = time.monotonic()
                 if not self._should_continue(pass_no):
                     break
+                if self._pass_aborted:
+                    continue                           # ждём окно применения и повторяем
                 if empty:
                     self._wait_interruptible(_EMPTY_PASS_RETRY)   # пауза пустого прохода
                 else:
@@ -602,6 +607,7 @@ class Runner:
             self._pass_seq += 1
 
         scoped, self._scoped_next = self._scoped_next, False
+        self._pass_aborted = False
         if self.board is not None:
             self.board.set_restricted(self._restricted_now() | self._banned)
         nodes = self._enumerate_nodes()
@@ -640,6 +646,8 @@ class Runner:
         for index, (region, ident) in enumerate(self._order_by_host(nodes)):
             self._progress = {"phase": "testing", "processed": index,
                               "total": len(nodes), "node": ident.raw}
+            if self._apply_paused():
+                return self._abort_pass(scoped, node_by_raw)
             params = self._node_params(ident)
             if self._backed_off(ident.node_id):     # backoff/карантин — не тестируем
                 if self.board is not None:
@@ -648,6 +656,12 @@ class Runner:
             self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
             record = self._test_node(region, ident, pass_no,
                                      self._tests_for(params.tests_enabled), params)
+            if self._apply_paused():                # замер мог попасть на перезапуск sing-box
+                return self._abort_pass(scoped, node_by_raw)
+            if record is None:                      # ноды уже нет в селекторе
+                if self.board is not None:
+                    self.board.keep(ident.raw)
+                continue
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(record)
             exit_ips.append((record.get("tests") or {}).get("connectivity", {}).get("exit_ip"))
@@ -673,6 +687,20 @@ class Runner:
                     groups.update(self.board.node_groups(i.raw))
             self.switcher.evaluate_all(groups)
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
+        return False
+
+    def _abort_pass(self, scoped: bool, node_by_raw: dict) -> bool:
+        """Конвейер начал применять конфиг: остаток прогона по старому списку нод не
+        имеет смысла, а замеры во время перезапуска sing-box ложно проваливают gate.
+        Рейтинг сохраняем как есть, переключение не оцениваем; прогон повторится после
+        окна применения (с тем же охватом)."""
+        print("  · конвейер применяет конфиг — прогон прерван, повтор после применения")
+        if self.board is not None:
+            for raw in node_by_raw:
+                self.board.keep(raw)
+            self.board.end_pass(self._current_pass)
+        self._scoped_next = scoped
+        self._pass_aborted = True
         return False
 
     def _refresh_ip_info(self, ips) -> None:
@@ -1120,7 +1148,10 @@ class Runner:
         if self._originals:
             print("Исходный выбор селекторов восстановлен.")
 
-    def _test_node(self, region: str, ident: NodeIdentity, pass_no: int, tests, params) -> dict:
+    def _test_node(self, region: str, ident: NodeIdentity, pass_no: int, tests,
+                   params) -> "dict | None":
+        """Результат проверки ноды; None — ноды уже нет в селекторе (конфиг sing-box
+        сменился после перечисления), оценивать нечего."""
         leaf = ident.raw
         base = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1141,6 +1172,9 @@ class Runner:
             try:
                 self.api.select(self._top, leaf)
             except ApiError as exc:
+                if "not found in selector" in str(exc):
+                    print(f"  {ident.short()}: ноды нет в селекторе (конфиг сменился) — пропуск")
+                    return None
                 print(f"  {ident.short()}: ОШИБКА переключения: {exc}")
                 base["tests"] = {"_select": {"ok": False, "error": str(exc)}}
                 return base
