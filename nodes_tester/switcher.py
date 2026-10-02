@@ -40,6 +40,8 @@ class Switcher:
         self._storage = storage
         # Наблюдатель записей истории (уведомления): on_activation(group, reason, node, prev).
         self.on_activation = None
+        # Наблюдатель аварии без замены (досрочное снятие карантина): on_stuck(group).
+        self.on_stuck = None
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
@@ -121,6 +123,11 @@ class Switcher:
             if not st.get("active"):
                 return [cands[0]["node"]]
             return [c["node"] for c in self._rotation_pool(cands, st)]
+
+    def stuck(self, region: str) -> bool:
+        """Группа в аварии без замены: активная заблокирована, переключаться не на что."""
+        with self._lock:
+            return bool((self.state.get(region) or {}).get("emg_stuck"))
 
     def rotation_due(self, region: str) -> bool:
         """Ближайший evaluate_all сменит активную ноду региона по ротации (или выберет
@@ -304,6 +311,11 @@ class Switcher:
             self._storage.add_activation(region, crc, active or "", "emergency-stuck",
                                          0.0, active)
         self._emit(region, "emergency-stuck", active or "", active)
+        if self.on_stuck is not None:
+            try:
+                self.on_stuck(region)
+            except Exception as exc:  # noqa: BLE001 — сбой наблюдателя не мешает переключателю
+                print(f"  [switch] {region}: досрочное снятие карантина не удалось: {exc}")
 
     def _emit(self, region: str, reason: str, node: str, prev) -> None:
         if self.on_activation is not None:

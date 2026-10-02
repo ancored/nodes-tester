@@ -9,8 +9,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
-PKG_VERSION:=0.3.7
-PKG_RELEASE:=8
+PKG_VERSION:=0.3.8
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=0BSD

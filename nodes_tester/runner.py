@@ -121,6 +121,7 @@ class Runner:
                 self.switcher = Switcher(cfg.switching, self.api, self.board,
                                          self._top, traffic_provider, self.storage)
                 self.switcher.on_activation = self.notifier.activation
+                self.switcher.on_stuck = self._release_group
                 if cfg.monitor.enabled:
                     # Монитору нужен боевой трафик по нодам — поток соединений держим
                     # и без записи в БД (storage.traffic выключен).
@@ -405,6 +406,7 @@ class Runner:
         with self._request_lock:
             fresh = not self._pass_requested.is_set()
             self._pass_requested.set()
+            self._scoped_next = False           # запрос из админки — полный прогон
             return fresh
 
     def _wait_interruptible(self, seconds: float) -> bool:
@@ -730,10 +732,12 @@ class Runner:
         return [c["node"] for c in out[:limit]]
 
     def _due_groups(self) -> set:
-        """Группы, у которых в этом прогоне наступает ротация (или нет активной)."""
+        """Группы, у которых в этом прогоне наступает ротация (или нет активной), и
+        группы в аварии без замены — их ноды нужно перепроверить."""
         if self.board is None or self.switcher is None:
             return set()
-        return {g for g in self.board.regions() if self.switcher.rotation_due(g)}
+        return {g for g in self.board.regions()
+                if self.switcher.rotation_due(g) or self.switcher.stuck(g)}
 
     def _in_due_groups(self, raw: str, due: set) -> bool:
         """Нода входит в группу с наступившей ротацией. Нода вне групп (новая, без
@@ -970,6 +974,41 @@ class Runner:
                 active = self.switcher.active_node(group)
                 if active and parse_node(active).node_id == crc:
                     self.switcher.evaluate_region(group, emergency=True)
+
+    def _release_group(self, group: str) -> None:
+        """Авария без замены: досрочно снять паузу и карантин с нод группы и проверить
+        их ближайшим прогоном (внеплановым, только по этой группе). Запись garbage/backoff
+        остаётся с прежним streak: провал gate вернёт ноду в карантин, успех снимет запись.
+        Бан не снимается."""
+        if not self.cfg.cooldown.enabled or self.storage is None or self.board is None:
+            return
+        crcs = {parse_node(n).node_id for n in self.board.group_nodes(group)}
+        crcs -= self.storage.banned_crcs()
+        now = int(time.time())
+        released = 0
+        for crc, (until, until_pass, streak, reason) in self.storage.load_backoff().items():
+            if crc not in crcs:
+                continue
+            if reason == "garbage":
+                if until <= now:
+                    continue                        # карантин уже истёк — проба и так будет
+                self.storage.set_backoff(crc, now, streak, reason)
+                self._backoff[crc] = (now, 0, streak, reason)
+            else:
+                if self._pass_seq > until_pass:
+                    continue
+                self.storage.set_backoff(crc, None, streak, reason, until_pass=0)
+                self._backoff[crc] = (0, 0, streak, reason)
+            self.storage.add_node_event(crc, "restriction_cleared", "emergency-stuck", streak)
+            released += 1
+        if not released:
+            return
+        print(f"  [switch] {group}: замены нет — досрочно снято ограничений: {released}, "
+              f"внеплановая проверка группы")
+        with self._request_lock:
+            if not self._pass_requested.is_set():   # полный прогон уже запрошен — он и проверит
+                self._scoped_next = True            # иначе — только застрявшие группы
+                self._pass_requested.set()
 
     def _low_score(self, raw: str) -> bool:
         """Живая, но слабая нода: рейтинг ниже cooldown.low_score (вкл. при > 0).

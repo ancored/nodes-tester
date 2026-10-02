@@ -171,6 +171,13 @@ class Scoreboard:
                 return [r["region"]] if r and r.get("region") else []
             return [g for g, tags in self._members.items() if node in tags]
 
+    def group_nodes(self, group: str) -> list[str]:
+        """Ноды группы (без данных sing-box — ноды региона)."""
+        with self._lock:
+            if self._members is None:
+                return [n for n, r in self.rows.items() if r.get("region") == group]
+            return list(self._members.get(group, ()))
+
     def _in_group(self, r: dict, group: str) -> bool:
         if self._members is None:
             return r["region"] == group
