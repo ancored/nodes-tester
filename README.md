@@ -66,7 +66,8 @@ WH-подписки → загрузка → whnodes.json + клиентские
 | [`scripts/router`](scripts/router/README.md) | применение, проверка, откат и клиентский конвейер |
 
 Отдельно: [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.md),
-[повседневная работа](docs/USAGE.md) и [пакет OpenWrt](openwrt/README.md).
+[повседневная работа](docs/USAGE.md), [модель безопасности роутера](docs/SECURITY_MODEL.md)
+и [пакет OpenWrt](openwrt/README.md).
 
 ## Если устанавливаете из исходников
 

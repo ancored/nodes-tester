@@ -11,7 +11,7 @@ fingerprint настроек ноды (его считает sing-box-subscribe)
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
   results(ts, pass_no, crc, test, ok, url, metrics JSON, error)
   activations(ts, region, crc, tag, reason, score, prev)       — история переключений
-  scores(crc PK, …)                — снимок рейтинга (замена score.csv)
+  scores(crc PK, …)                — снимок рейтинга
   score_history(ts, crc, region, score, s_run, gate)           — динамика рейтинга
   switch_state / switch_recent / switch_activations            — состояние switcher
   node_events(ts, crc, event, reason, streak)  — журнал added/removed/backoff/garbage/recovered
@@ -28,7 +28,6 @@ retention_days и КАСКАДОМ все их строки во всех таб
 
 from __future__ import annotations
 
-import csv
 import json
 import os
 import sqlite3
@@ -456,7 +455,7 @@ class Storage:
                  float(score or 0), prev))
             self._db.commit()
 
-    # --- Рейтинг (таблица scores — замена score.csv) -------------------
+    # --- Рейтинг (таблица scores) -------------------------------------
 
     def load_scores(self) -> dict:
         """{node_tag: row} — снимок рейтинга. Ключи row совпадают с тем, что Scoreboard
@@ -554,7 +553,7 @@ class Storage:
                  for (c, rg, sc, sr, g) in rows])
             self._db.commit()
 
-    # --- Состояние переключений (таблицы switch_* — замена switch_state.json) ---
+    # --- Состояние переключений (таблицы switch_*) ---
 
     def load_switch_state(self) -> dict:
         """{region: {active,last_switch,rotate_deadline,quality_count,recent[],activations{},emg_stuck?}}."""
@@ -646,31 +645,6 @@ class Storage:
             self._db.commit()
         return added, removed
 
-    # --- Однократная миграция старых файлов -----------------------------
-
-    def migrate_legacy(self, score_csv: str, switch_json: str) -> None:
-        """Импортировать старые score.csv / switch_state.json в БД, если таблицы пусты и
-        файлы существуют (переход с файлового хранения). После — файлы не используются."""
-        if score_csv and os.path.exists(score_csv) and self._table_empty("scores"):
-            rows = _read_score_csv(score_csv)
-            if rows:
-                self.save_scores(rows)
-                print(f"  [storage] миграция: рейтинг из {score_csv} ({len(rows)} нод)")
-        if switch_json and os.path.exists(switch_json) and self._table_empty("switch_state"):
-            try:
-                with open(switch_json, encoding="utf-8") as fh:
-                    state = json.load(fh)
-            except (OSError, ValueError):
-                state = {}
-            if isinstance(state, dict) and state:
-                self.save_switch_state(state)
-                print(f"  [storage] миграция: состояние переключений из {switch_json}")
-
-    def _table_empty(self, table: str) -> bool:
-        with self._lock:
-            n = self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        return int(n or 0) == 0
-
     # --- Обслуживание --------------------------------------------------
 
     def cleanup(self) -> None:
@@ -735,12 +709,3 @@ def _flt(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
-
-
-def _read_score_csv(path: str) -> list[dict]:
-    """Старый score.csv → список row-словарей (для однократной миграции)."""
-    try:
-        with open(path, encoding="utf-8", newline="") as fh:
-            return [dict(r) for r in csv.DictReader(fh) if r.get("node")]
-    except (OSError, ValueError):
-        return []

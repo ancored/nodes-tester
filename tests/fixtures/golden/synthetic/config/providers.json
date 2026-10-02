@@ -3,7 +3,7 @@
     {
       "url": "https://sub.example/alpha",
       "tag": "ALPHA",
-      "User-Agent": "curl"
+      "user_agent": "curl"
     },
     {
       "url": "https://sub.example/beta.yaml",
@@ -25,20 +25,5 @@
       "ext": ".conf",
       "tag": "AWG"
     }
-  ],
-  "save_config_path": "nodes.json",
-  "exclude_protocol": "ssr",
-  "exclude_countries": [
-    "ru"
-  ],
-  "domain_resolver_tag": "bootstrap",
-  "labels": {
-    "AI": [
-      "ChatGPT",
-      "OpenAI"
-    ],
-    "Media": [
-      "Netflix"
-    ]
-  }
+  ]
 }

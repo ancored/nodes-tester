@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "providers.schema.json",
-  "title": "providers-*.json (v2) — подписки для nodes_fetch",
-  "description": "Только про загрузку. Фильтры/переименование — в groups_params (nodes_config). Ключи v1 (save_config_path, exclude_*, labels, domain_resolver_tag) допускаются на переходный период и игнорируются fetch.",
+  "title": "providers-*.json — подписки для nodes_fetch",
+  "description": "Только про загрузку. Фильтры/переименование — в groups_params (nodes_config).",
   "type": "object",
   "required": ["subscribes"],
   "properties": {
@@ -22,10 +22,8 @@
           "format": { "type": "string", "default": "awg" },
           "ext": { "type": "string", "default": ".conf" },
           "user_agent": { "type": "string" },
-          "User-Agent": { "type": "string", "description": "устаревшее имя user_agent (v1)" },
           "happ_headers": { "type": "object", "additionalProperties": { "type": "string" } },
-          "send_device": { "type": "boolean", "default": false, "description": "url: отправлять X-Hwid и описание устройства (панели с лимитом устройств); happ шлёт их всегда" },
-          "ex-node-name": { "type": "string", "description": "v1: переносится в groups_params.filters.exclude_names" }
+          "send_device": { "type": "boolean", "default": false, "description": "url: отправлять X-Hwid и описание устройства (панели с лимитом устройств); happ шлёт их всегда" }
         },
         "anyOf": [
           { "required": ["url"] },

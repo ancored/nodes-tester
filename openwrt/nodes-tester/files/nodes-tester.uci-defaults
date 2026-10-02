@@ -21,26 +21,6 @@ if [ ! -f "$CONFIG_DIR/config.json" ]; then
 		"$EX/config.example.json" > "$CONFIG_DIR/config.json"
 	chmod 600 "$CONFIG_DIR/config.json"
 fi
-# 0.3.0: тестер работает через API-сервис sing-box — clash_api {base_url} → box_api {url}.
-python3 - "$CONFIG_DIR/config.json" <<'PYEOF' || true
-import json, os, sys
-path = sys.argv[1]
-with open(path, encoding="utf-8") as fh:
-    cfg = json.load(fh)
-if "clash_api" in cfg and "box_api" not in cfg:
-    old = cfg["clash_api"] or {}
-    new = {"url": old.get("base_url", "http://127.0.0.1:9090"), "secret": old.get("secret", "")}
-    if "timeout" in old:
-        new["timeout"] = old["timeout"]
-    cfg = {("box_api" if k == "clash_api" else k): (new if k == "clash_api" else v)
-           for k, v in cfg.items()}
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, ensure_ascii=False, indent=2)
-        fh.write("\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
-PYEOF
 for set in main wh; do
 	d="$CONFIG_DIR/config-$set"
 	[ -f "$d/providers.json" ] || cp "$EX/providers.example.json" "$d/providers.json"

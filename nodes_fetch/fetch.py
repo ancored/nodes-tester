@@ -26,11 +26,6 @@ FETCH_DEFAULTS = {
     "min_ratio": 0.5,         # guard: нод < min_ratio × прошлое → не записывать
 }
 
-# Ключи v1 (общий providers.json старого subscribe), которые относятся к nodes_config.
-CONFIG_STAGE_KEYS = ("save_config_path", "exclude_protocol", "exclude_countries",
-                     "exclude_node_protocols", "labels", "domain_resolver_tag", "auto_backup")
-_LEGACY_SUB_KEYS = ("prefix", "emoji", "subgroup")
-
 
 class ProvidersError(ValueError):
     """Некорректный providers.json."""
@@ -41,7 +36,7 @@ class GuardError(RuntimeError):
 
 
 def load_providers(data, log=print):
-    """dict providers (v2 или совместимый v1) → нормализованный вид.
+    """dict providers → нормализованный вид.
     {subscribes: [{tag, kind, enabled, url|file|path…, user_agent, happ_headers}], fetch: {…}}"""
     if not isinstance(data, dict) or not isinstance(data.get("subscribes"), list):
         raise ProvidersError("providers: нужен объект с массивом 'subscribes'")
@@ -58,15 +53,11 @@ def load_providers(data, log=print):
         kind = sources.kind_of(sub)
         if kind is None:
             raise ProvidersError(f"подписка {tag!r}: нужен 'url', 'file' или type='folder'")
-        for key in _LEGACY_SUB_KEYS:
-            if sub.get(key):
-                log(f"  [fetch] подписка {tag!r}: ключ {key!r} устарел и игнорируется")
         norm = dict(sub)
         norm["kind"] = kind
         norm["enabled"] = sub.get("enabled", True) is not False
-        for key in ("user_agent", "User-Agent"):
-            if key in sub and not isinstance(sub[key], str):
-                raise ProvidersError(f"подписка {tag!r}: {key} должен быть строкой")
+        if "user_agent" in sub and not isinstance(sub["user_agent"], str):
+            raise ProvidersError(f"подписка {tag!r}: user_agent должен быть строкой")
         headers = sub.get("happ_headers", {})
         if not isinstance(headers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
             raise ProvidersError(f"подписка {tag!r}: happ_headers должен быть объектом со строковыми значениями")
@@ -74,8 +65,6 @@ def load_providers(data, log=print):
             raise ProvidersError(f"подписка {tag!r}: некорректное имя или значение HTTP-заголовка")
         if "send_device" in sub and not isinstance(sub["send_device"], bool):
             raise ProvidersError(f"подписка {tag!r}: send_device должен быть true/false")
-        if "User-Agent" in norm and "user_agent" not in norm:
-            norm["user_agent"] = norm.pop("User-Agent")
         subs.append(norm)
     fetch_cfg = dict(FETCH_DEFAULTS)
     fetch_cfg.update({k: v for k, v in (data.get("fetch") or {}).items() if k in FETCH_DEFAULTS})
@@ -192,4 +181,4 @@ def providers_name(path):
 
 
 __all__ = ["load_providers", "run", "check_guard", "summary", "ProvidersError", "GuardError",
-           "FETCH_DEFAULTS", "CONFIG_STAGE_KEYS"]
+           "FETCH_DEFAULTS"]

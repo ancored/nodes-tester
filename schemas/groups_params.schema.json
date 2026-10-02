@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "groups_params.schema.json",
-  "title": "groups_params.json (v2) — «рецепт» потока nodes_config",
-  "description": "Фильтры, переименование и группы. v1 (только selector/urltest/emit/raw_user_nodes) тоже валиден. Файл опционален — без него все дефолты.",
+  "title": "groups_params.json — «рецепт» потока nodes_config",
+  "description": "Фильтры, переименование и группы. Все секции и сам файл опциональны — без них дефолты.",
   "type": "object",
   "properties": {
     "$schema": { "type": "string" },

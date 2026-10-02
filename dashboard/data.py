@@ -15,7 +15,7 @@ from naming import parse_group, parse_node
 _connection = ContextVar("dashboard_connection", default=None)
 
 # Колонки рейтинга (таблица scores) в порядке для дашборда; crc отдаём как 'id',
-# last_pass — как 'last_seen' (совместимо с прежним score.csv).
+# last_pass — как 'last_seen'.
 _SCORE_SELECT = (
     "SELECT node, provider, protocol, region, country, crc AS id, active, score, "
     "reliability, consistency, throttle, jitter, latency, throughput, "
@@ -25,7 +25,7 @@ _SCORE_SELECT = (
 
 
 def _scores(db_path: str) -> list[dict]:
-    """Снимок рейтинга из таблицы scores (замена чтения score.csv)."""
+    """Снимок рейтинга из таблицы scores."""
     return _query(db_path, _SCORE_SELECT)
 
 

@@ -115,9 +115,9 @@ function changeKind(sub,kind) {
   else sub[kind]=''
   preview.value=false
 }
-function userAgent(sub){return sub.user_agent ?? sub['User-Agent'] ?? ''}
+function userAgent(sub){return sub.user_agent ?? ''}
 function uaChoice(sub){const v=userAgent(sub);return customAgents.value.has(sub) ? '__custom' : options.value.user_agents.some(o=>o.value===v) ? v : '__custom'}
-function setUA(sub,v,selection=false){if(v==='__custom' && selection){customAgents.value.add(sub);return}if(selection)customAgents.value.delete(sub);sub.user_agent=v;delete sub['User-Agent'];preview.value=false}
+function setUA(sub,v,selection=false){if(v==='__custom' && selection){customAgents.value.add(sub);return}if(selection)customAgents.value.delete(sub);sub.user_agent=v;preview.value=false}
 function happFields(sub){return [...new Set([...Object.keys(options.value.happ_headers),...Object.keys(sub.happ_headers || {})])]}
 function setHeader(sub,key,v){(sub.happ_headers ||= {})[key]=v;preview.value=false}
 function removeHeader(sub,key){if(sub.happ_headers)delete sub.happ_headers[key];preview.value=false}

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Компоненты рейтинга и их метки (порядок = порядок в score.csv).
+# Компоненты рейтинга и их метки (порядок = порядок колонок рейтинга).
 COMPONENTS = ("reliability", "consistency", "throttle", "jitter", "latency", "throughput")
 
 

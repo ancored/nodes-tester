@@ -4,13 +4,13 @@ import { getPath, setPath, changedPaths, nodeFlags, crcOf, rowKeys } from '../sr
 import { nodeStatus } from '../src/status.js'
 
 test('nested form fields retain unknown config and group overrides', () => {
-  const doc = { custom:42, testing_groups:[{connection:{host:'old',custom:'kept'}}], run:{region_groups_specifics:[{tag:'eu'}]} }
+  const doc = { custom:42, testing_groups:[{connection:{host:'old',custom:'kept'}}], run:{custom_list:[{tag:'eu'}]} }
   setPath(doc,'testing_groups.0.connection.host','new')
   setPath(doc,'dashboard.token','demo')
   assert.equal(getPath(doc,'testing_groups.0.connection.host'),'new')
   assert.equal(doc.testing_groups[0].connection.custom,'kept')
   assert.equal(doc.custom,42)
-  assert.deepEqual(doc.run.region_groups_specifics,[{tag:'eu'}])
+  assert.deepEqual(doc.run.custom_list,[{tag:'eu'}])
 })
 test('preview lists changed field paths, never secret values', () => {
   const changes = changedPaths({secret:'old',subscribes:[{tag:'a'}]}, {secret:'new-secret',subscribes:[{tag:'b'}]})

@@ -114,8 +114,6 @@ def register(app: App) -> None:
         return {"ok": True, "group": group, "region": group, "node": node, "temporary": True}
 
     app.route("POST", "/api/groups/{group}/switch", needs_token=True)(force_switch)
-    # Прежний путь (до настраиваемых групп): {region} — то же имя группы.
-    app.route("POST", "/api/regions/{group}/switch", needs_token=True)(force_switch)
 
     # --- sing-box: остановка/запуск, killswitch -------------------------
 

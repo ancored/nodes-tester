@@ -92,7 +92,7 @@ class ApiConfigTest(unittest.TestCase):
 
 
 class ProvidersFileTest(unittest.TestCase):
-    """dashboard.providers_file: редактор правит тот же файл, что читает nodes_fetch (v2)."""
+    """dashboard.providers_file: редактор правит тот же файл, что читает nodes_fetch."""
 
     V2 = {"subscribes": [{"tag": "A", "url": "https://example.com/sub"},
                          {"tag": "AWG", "type": "folder", "path": "awg", "format": "awg"}],

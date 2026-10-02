@@ -3,7 +3,6 @@
     python -m nodes_config --raw data/raw/main.json [--raw data/raw/extra.json] \\
         [--groups config/groups_params.json] [--user-nodes config/user_nodes.json] \\
         -o /etc/sing-box-subscribe/nodes.json [--json] [--check]
-    python -m nodes_config migrate --from config/ --to config-v2/ [--force]
 
 nodes.json пишется ТОЛЬКО при изменении содержимого (JSON-сравнение с текущим файлом) —
 нет изменений = нечего применять, sing-box не перезапускается.
@@ -19,7 +18,7 @@ import sys
 from nodes_common import raw as rawfmt
 from nodes_common.fileio import LockTimeout, atomic_write_text, dumps_json, file_lock, read_json
 
-from . import build, migrate, params
+from . import build, params
 
 
 def _log(msg):
@@ -98,25 +97,8 @@ def _build_main(argv):
     return code
 
 
-def _migrate_main(argv):
-    ap = argparse.ArgumentParser(prog="python -m nodes_config migrate",
-                                 description="конфиги v1 (providers+groups_params) → v2")
-    ap.add_argument("--from", dest="src", required=True, help="каталог v1")
-    ap.add_argument("--to", dest="dst", required=True, help="каталог v2")
-    ap.add_argument("--force", action="store_true", help="перезаписывать существующие файлы")
-    args = ap.parse_args(argv)
-    try:
-        migrate.migrate_dir(args.src, args.dst, force=args.force, log=_log)
-    except (OSError, ValueError) as exc:
-        _log(f"[migrate] ОШИБКА: {exc}")
-        return 1
-    return 0
-
-
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
-    if argv[:1] == ["migrate"]:
-        return _migrate_main(argv[1:])
     return _build_main(argv)
 
 

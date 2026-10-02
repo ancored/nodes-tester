@@ -56,7 +56,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent, заголовки Happ, HWID установки и состояние подписок из raw (`sources`) |
 | Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды и точный payload CRC (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
-| Переключение | `/api/groups/{group}/switch` (прежний путь `/api/regions/{group}/switch`) | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
+| Переключение | `/api/groups/{group}/switch` | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
 | Предпросмотр групп | `POST /api/config/groups/preview` | состав групп по текущему `raw/main.json` без записи |
 | Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
 | sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, включение и выключение службы killswitch роутера (только OpenWrt) |

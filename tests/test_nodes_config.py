@@ -1,4 +1,4 @@
-"""nodes_config: raw_nodes → nodes.json (+ groups_params v2, migrate v1→v2, CLI).
+"""nodes_config: raw_nodes → nodes.json (+ groups_params, CLI).
 
 Эквивалентность прежнему subscribe проверяет test_golden (оба пути); здесь — собственные
 контракты стадии: параметры, фильтры с учётом причин, запись только при изменении, diff,
@@ -18,7 +18,7 @@ sys.path.insert(0, _ROOT)
 
 from nodes_common import raw as rawfmt  # noqa: E402
 from nodes_config import __main__ as cli  # noqa: E402
-from nodes_config import build, migrate, params  # noqa: E402
+from nodes_config import build, params  # noqa: E402
 
 PBK = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA"
 
@@ -52,7 +52,7 @@ RAW = _raw([
 
 
 class ParamsTest(unittest.TestCase):
-    def test_defaults_and_v1(self):
+    def test_defaults_and_partial(self):
         p = params.load(None)
         self.assertEqual(p["rename"]["domain_resolver_tag"], "bootstrap")
         self.assertFalse(p["raw_user_nodes"])
@@ -68,54 +68,6 @@ class ParamsTest(unittest.TestCase):
                     {"selector": []}, {"emit": {"ensure_regions": "eu"}}):
             with self.subTest(bad=bad), self.assertRaises(params.ParamsError):
                 params.load(bad)
-
-
-class MigrateTest(unittest.TestCase):
-    def test_split_real_v1_config(self):
-        with open(os.path.join(_ROOT, "config", "providers.json"), encoding="utf-8") as f:
-            prov = json.load(f)
-        with open(os.path.join(_ROOT, "config", "groups_params.json"), encoding="utf-8") as f:
-            gp = json.load(f)
-        prov2, gp2, output = migrate.split_v1(prov, gp)
-        self.assertEqual(output, prov["save_config_path"])
-        self.assertEqual(set(prov2), {"subscribes"})
-        self.assertEqual([s["tag"] for s in prov2["subscribes"]], [s["tag"] for s in prov["subscribes"]])
-        self.assertFalse(any("User-Agent" in s for s in prov2["subscribes"]))
-        self.assertEqual(gp2["filters"]["exclude_countries"], prov["exclude_countries"])
-        self.assertIn("shadowsocksr", gp2["filters"]["exclude_types"])
-        self.assertEqual(gp2["rename"]["labels"], prov["labels"])
-        self.assertEqual(gp2["selector"], gp["selector"])
-        params.load(gp2)                                   # v2 валиден
-        import jsonschema
-        with open(os.path.join(_ROOT, "schemas", "groups_params.schema.json"), encoding="utf-8") as f:
-            schema = json.load(f)
-        jsonschema.validate(gp2, schema)
-        jsonschema.validate(gp, schema)                    # v1 тоже
-        with open(os.path.join(_ROOT, "schemas", "providers.schema.json"), encoding="utf-8") as f:
-            jsonschema.validate(prov2, json.load(f))
-        again, gp3, _ = migrate.split_v1(prov2, gp2)       # идемпотентно
-        self.assertEqual((again, gp3), (prov2, gp2))
-
-    def test_ex_node_name_and_types(self):
-        prov2, gp2, _ = migrate.split_v1({
-            "subscribes": [{"tag": "A", "url": "x", "ex-node-name": "promo|test,", "emoji": True}],
-            "exclude_protocol": "ssr, hy2"}, None)
-        self.assertEqual(gp2["filters"]["exclude_names"], {"A": ["promo", "test"]})
-        self.assertEqual(gp2["filters"]["exclude_types"], ["shadowsocksr", "hysteria2"])
-        self.assertEqual(prov2["subscribes"], [{"tag": "A", "url": "x"}])
-
-    def test_migrate_dir(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            src = os.path.join(_ROOT, "tests", "fixtures", "golden", "synthetic", "config")
-            dst = os.path.join(tmp, "v2")
-            migrate.migrate_dir(src, dst, log=lambda m: None)
-            self.assertTrue(os.path.isfile(os.path.join(dst, "awg", "pl.conf")))
-            self.assertTrue(os.path.isfile(os.path.join(dst, "user_nodes.json")))
-            with self.assertRaises(FileExistsError):
-                migrate.migrate_dir(src, dst, log=lambda m: None)
-            migrate.migrate_dir(src, dst, force=True, log=lambda m: None)
-            with self.assertRaises(ValueError):
-                migrate.migrate_dir(src, src, log=lambda m: None)
 
 
 class BuildTest(unittest.TestCase):

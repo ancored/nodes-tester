@@ -12,5 +12,26 @@
     "nodes_tester": false,
     "global_failsafe": true
   },
-  "raw_user_nodes": true
+  "raw_user_nodes": true,
+  "filters": {
+    "exclude_types": [
+      "shadowsocksr"
+    ],
+    "exclude_protocols": [
+      "xhttp",
+      "wg"
+    ]
+  },
+  "rename": {
+    "labels": {
+      "AI": [
+        "ChatGPT",
+        "OpenAI"
+      ],
+      "Media": [
+        "Netflix"
+      ]
+    },
+    "domain_resolver_tag": "dns-whitelist"
+  }
 }

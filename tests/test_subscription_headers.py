@@ -1,7 +1,6 @@
 """Заголовки подписок: HWID установки, метаданные ответа панели, повторы при 5xx."""
 
 import base64
-import json
 import os
 import unittest
 from datetime import datetime, timezone
@@ -9,7 +8,6 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from nodes_fetch import __main__ as fetch_cli
 from nodes_fetch import device, fetch, happ, meta, util
 from nodes_fetch.sources import Context, fetch_subscription
 from tests.helpers import temp_dir
@@ -44,30 +42,13 @@ class DeviceTest(unittest.TestCase):
         path = os.path.join(self.tmp, "device.json")
         first = device.load(path, log=lambda m: None)["hwid"]
         self.assertEqual(len(first), 16)
-        self.assertNotEqual(first, device.LEGACY_HWID)
         self.assertEqual(device.load(path, log=lambda m: None)["hwid"], first)
 
-    def test_legacy_install_keeps_old_hwid(self):
-        path = os.path.join(self.tmp, "device.json")
-        self.assertEqual(device.load(path, legacy=True, log=lambda m: None)["hwid"],
-                         device.LEGACY_HWID)
-
-    def test_default_path_shared_by_v2_sets(self):
+    def test_default_path_shared_by_sets(self):
         main = os.path.join(self.tmp, "config-main", "providers.json")
         wh = os.path.join(self.tmp, "config-wh", "providers.json")
         self.assertEqual(device.default_path(main), device.default_path(wh))
         self.assertEqual(device.default_path(main), os.path.join(self.tmp, "device.json"))
-
-    def test_cli_detects_legacy_from_sibling_raw(self):
-        # Первым после обновления идёт набор без happ: HWID берётся по удачной happ-загрузке
-        # соседнего raw/main.json.
-        raw_dir = os.path.join(self.tmp, "raw")
-        os.makedirs(raw_dir)
-        with open(os.path.join(raw_dir, "main.json"), "w", encoding="utf-8") as fh:
-            json.dump({"sources": [{"provider": "M", "kind": "happ",
-                                    "last_ok_at": "2026-09-30T00:00:00Z"}]}, fh)
-        self.assertTrue(fetch_cli._used_happ(os.path.join(raw_dir, "wh.json")))
-        self.assertFalse(fetch_cli._used_happ(os.path.join(self.tmp, "none", "wh.json")))
 
 
 def _resp(status, body=LINK, headers=None):

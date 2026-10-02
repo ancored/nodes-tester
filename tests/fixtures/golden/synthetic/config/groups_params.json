@@ -12,5 +12,25 @@
     "nodes_tester": true,
     "global_failsafe": false
   },
-  "raw_user_nodes": false
+  "raw_user_nodes": false,
+  "filters": {
+    "exclude_types": [
+      "shadowsocksr"
+    ],
+    "exclude_countries": [
+      "ru"
+    ]
+  },
+  "rename": {
+    "labels": {
+      "AI": [
+        "ChatGPT",
+        "OpenAI"
+      ],
+      "Media": [
+        "Netflix"
+      ]
+    },
+    "domain_resolver_tag": "bootstrap"
+  }
 }

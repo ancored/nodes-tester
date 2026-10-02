@@ -8,7 +8,7 @@
 %-паролем, hy2 (порт и диапазон портов), ss, tuic, anytls, страна не определяется (undef),
 исключённая страна (ru), labels (AI/Media), дубль ноды (dedupe), clash-yaml подписка, упавшая
 подписка, AWG-папка (страна из имени файла), user_nodes; два режима groups_params
-(router: nodes_tester; wh: global_failsafe + raw_user_nodes + exclude_node_protocols).
+(router: nodes_tester; wh: global_failsafe + raw_user_nodes + exclude_protocols).
 """
 
 import base64
@@ -105,7 +105,7 @@ USER_NODES = [{
 LABELS = {"AI": ["ChatGPT", "OpenAI"], "Media": ["Netflix"]}
 
 SUBS = [
-    {"url": "https://sub.example/alpha", "tag": "ALPHA", "User-Agent": "curl"},
+    {"url": "https://sub.example/alpha", "tag": "ALPHA", "user_agent": "curl"},
     {"url": "https://sub.example/beta.yaml", "tag": "BETA"},
     {"url": "https://sub.example/gamma-down", "tag": "GAMMA"},
     {"url": "https://sub.example/disabled", "tag": "OFF", "enabled": False},
@@ -124,25 +124,26 @@ RESPONSES = {
 
 SETS = {
     "synthetic": {
-        "providers": {"subscribes": SUBS, "save_config_path": "nodes.json", "exclude_protocol": "ssr",
-                      "exclude_countries": ["ru"], "domain_resolver_tag": "bootstrap", "labels": LABELS},
+        "providers": {"subscribes": SUBS},
         "groups_params": {
             "selector": {"interrupt_exist_connections": True},
             "urltest": {"interval": "5m", "tolerance": 100, "idle_timeout": "5m",
                         "interrupt_exist_connections": True},
             "emit": {"nodes_tester": True, "global_failsafe": False},
-            "raw_user_nodes": False},
+            "raw_user_nodes": False,
+            "filters": {"exclude_types": ["shadowsocksr"], "exclude_countries": ["ru"]},
+            "rename": {"labels": LABELS, "domain_resolver_tag": "bootstrap"}},
     },
     "synthetic-wh": {
-        "providers": {"subscribes": SUBS, "save_config_path": "whnodes.json", "exclude_protocol": "ssr",
-                      "exclude_node_protocols": ["xhttp", "wg"], "exclude_countries": [],
-                      "domain_resolver_tag": "dns-whitelist", "labels": LABELS},
+        "providers": {"subscribes": SUBS},
         "groups_params": {
             "selector": {"interrupt_exist_connections": True},
             "urltest": {"interval": "5m", "tolerance": 100, "idle_timeout": "5m",
                         "interrupt_exist_connections": True},
             "emit": {"nodes_tester": False, "global_failsafe": True},
-            "raw_user_nodes": True},
+            "raw_user_nodes": True,
+            "filters": {"exclude_types": ["shadowsocksr"], "exclude_protocols": ["xhttp", "wg"]},
+            "rename": {"labels": LABELS, "domain_resolver_tag": "dns-whitelist"}},
     },
 }
 

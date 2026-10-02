@@ -1,6 +1,6 @@
 """Golden-харнесс генератора nodes.json: запись сетевых ответов подписок и офлайн-повтор.
 
-Инвариант: на одних и тех же входах конвейер (migrate v1→v2 → nodes_fetch → nodes_config)
+Инвариант: на одних и тех же входах конвейер (nodes_fetch → nodes_config)
 выдаёт эталонный nodes.json (JSON-равенство). Сетевые ответы записываются один раз, дальше
 генерация гоняется офлайн.
 
@@ -61,7 +61,6 @@ def _patched(obj, name, value):
 
 def record(project, config_dir, out_set):
     """Живая сеть: прогнать nodes_fetch по набору и записать ответы подписок."""
-    from nodes_config import migrate
     from nodes_fetch import __main__ as fetch_cli
     http_obj, http_name, happ = _net_points(project)
     rec = {"http": {}, "happ": {}}
@@ -85,10 +84,9 @@ def record(project, config_dir, out_set):
     os.makedirs(out_set, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="golden-rec-")
     try:
-        v2 = os.path.join(tmp, "v2")
-        migrate.migrate_dir(config_dir, v2, log=lambda m: None)
         with _patched(http_obj, http_name, get), _patched(happ, "_fetch", fetch):
-            fetch_cli.main(["-p", os.path.join(v2, "providers.json"),
+            fetch_cli.main(["-p", os.path.join(config_dir, "providers.json"),
+                            "--device", os.path.join(tmp, "device.json"),
                             "-o", os.path.join(tmp, "raw.json")])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -135,23 +133,22 @@ def _offline(project, set_dir):
 
 
 def replay(project, set_dir, out_path):
-    """Офлайн-генерация конвейером: migrate v1→v2 → CLI nodes_fetch → CLI nodes_config —
+    """Офлайн-генерация конвейером: CLI nodes_fetch → CLI nodes_config —
     ровно так, как их зовут конвейер и роутерные скрипты. Незаписанный запрос — ошибка."""
     from nodes_config import __main__ as config_cli
-    from nodes_config import migrate
     from nodes_fetch import __main__ as fetch_cli
-    tmp = tempfile.mkdtemp(prefix="golden-v2-")
+    tmp = tempfile.mkdtemp(prefix="golden-")
     try:
-        v2 = os.path.join(tmp, "v2")
-        migrate.migrate_dir(os.path.join(set_dir, "config"), v2, log=lambda m: None)
+        cfg = os.path.join(set_dir, "config")
         raw = os.path.join(tmp, "raw.json")
         with _offline(project, set_dir):
-            code = fetch_cli.main(["-p", os.path.join(v2, "providers.json"), "-o", raw])
+            code = fetch_cli.main(["-p", os.path.join(cfg, "providers.json"), "-o", raw,
+                                    "--device", os.path.join(tmp, "device.json")])
         if code:
             raise RuntimeError(f"nodes_fetch вернул {code}")
-        args = ["--raw", raw, "--groups", os.path.join(v2, "groups_params.json"), "-o", out_path]
-        if os.path.exists(os.path.join(v2, "user_nodes.json")):
-            args += ["--user-nodes", os.path.join(v2, "user_nodes.json")]
+        args = ["--raw", raw, "--groups", os.path.join(cfg, "groups_params.json"), "-o", out_path]
+        if os.path.exists(os.path.join(cfg, "user_nodes.json")):
+            args += ["--user-nodes", os.path.join(cfg, "user_nodes.json")]
         code = config_cli.main(args)
         if code:
             raise RuntimeError(f"nodes_config вернул {code}")

@@ -84,10 +84,10 @@ class GroupSwitchTest(unittest.TestCase):
     def _switch(self, path):
         return self.app.handle("POST", path, {"X-Admin-Token": "secret"}, json.dumps({"node": US}).encode())
 
-    def test_groups_route_and_legacy_alias(self):
+    def test_groups_route(self):
         self.assertEqual(self._switch("/api/groups/ai/switch").status, 200)
-        self.assertEqual(self._switch("/api/regions/ai/switch").status, 200)
-        self.assertEqual(self.runner.switcher.forced, [("ai", US), ("ai", US)])
+        self.assertEqual(self._switch("/api/regions/ai/switch").status, 404)
+        self.assertEqual(self.runner.switcher.forced, [("ai", US)])
 
     def test_not_candidate_returns_allowed_groups(self):
         self.runner.switcher.force_activate = lambda group, node: False

@@ -34,25 +34,6 @@ def _load_previous(path):
         return None
 
 
-def _used_happ(output):
-    """Установка уже загружала happ-подписку (со старым общим HWID из кода): ищем удачную
-    happ-загрузку в raw этого и соседних наборов (raw/main.json, raw/wh.json) — HWID один
-    на роутер, и первым после обновления может пойти набор без happ."""
-    folder = os.path.dirname(os.path.abspath(output)) if output else ""
-    names = [n for n in (os.listdir(folder) if folder and os.path.isdir(folder) else [])
-             if n.endswith(".json")]
-    for name in names:
-        try:
-            with open(os.path.join(folder, name), encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError):
-            continue
-        if any(isinstance(src, dict) and src.get("kind") == "happ" and src.get("last_ok_at")
-               for src in (data.get("sources") or [] if isinstance(data, dict) else [])):
-            return True
-    return False
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m nodes_fetch",
                                  description="Подписки → raw_nodes.json")
@@ -86,8 +67,7 @@ def main(argv=None):
 
     def do_run():
         previous = _load_previous(args.output)
-        device = devicemod.load(args.device or devicemod.default_path(args.providers),
-                                legacy=_used_happ(args.output), log=_log)
+        device = devicemod.load(args.device or devicemod.default_path(args.providers), log=_log)
         raw = fetch.run(providers, base_dir, name=name, previous=previous,
                         only=args.only, log=_log, device=device)
         if args.dry_run:

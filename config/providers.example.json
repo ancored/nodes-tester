@@ -3,12 +3,12 @@
         {
             "url": "https://sub.example.com/sub/YOUR-SUBSCRIPTION-TOKEN",
             "tag": "PROV-A",
-            "User-Agent": "curl"
+            "user_agent": "curl"
         },
         {
             "url": "https://sub2.example.net/s/YOUR-SUBSCRIPTION-TOKEN",
             "tag": "PROV-B",
-            "User-Agent": "curl"
+            "user_agent": "curl"
         },
         {
             "url": "happ://crypt5/YOUR-ENCRYPTED-HAPP-LINK",
@@ -21,14 +21,5 @@
             "ext": ".conf",
             "tag": "AWG"
         }
-    ],
-    "save_config_path": "/etc/sing-box-subscribe/nodes.json",
-    "exclude_protocol": "ssr",
-    "exclude_countries": ["cn", "ua", "hk", "by", "ru"],
-    "domain_resolver_tag": "bootstrap",
-    "labels": {
-        "AI": ["Gemini", "OpenAI", "ChatGPT", "Claude", "Anthropic"],
-        "Media": ["Netflix", "Disney", "YouTube"],
-        "LTE": ["LTE"]
-    }
+    ]
 }

@@ -222,7 +222,7 @@ def _validate_config_body(app: App, text: str) -> None:
 
 
 def _validate_providers(data: dict) -> None:
-    """Та же проверка, что у nodes_fetch (v2 и совместимый v1): subscribes, уникальные
+    """Та же проверка, что у nodes_fetch: subscribes, уникальные
     tag, у каждой подписки url/file/type=folder, корректный fetch.min_ratio."""
     from nodes_fetch.fetch import load_providers
 

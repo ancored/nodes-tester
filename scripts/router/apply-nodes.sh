@@ -35,7 +35,7 @@ BASE="${BASE:-$TARGET_DIR/base.json}"
 PRESETS_DIR="${PRESETS_DIR:-}"
 CONFIG="$TARGET_DIR/config.json"
 RULES_MARK="${RULES_MARK:-/tmp/nodes-rules-changed}"
-CANDIDATE="${CANDIDATE:-${DATA:-/root/nodes-data}/config.candidate.json}"
+CANDIDATE="${CANDIDATE:-${DATA:-/opt/nodes-tester}/config.candidate.json}"
 HEALTH_GROUP="${HEALTH_GROUP:-global-auto-out}"
 HEALTH_WAIT="${HEALTH_WAIT:-60}"
 # Флаг «sing-box остановлен из админки» (nodes_tester.singbox_ctl): пока он есть, конфиг

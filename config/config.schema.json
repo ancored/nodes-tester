@@ -5,19 +5,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "testing_groups"
-  ],
-  "anyOf": [
-    {
-      "required": [
-        "box_api"
-      ]
-    },
-    {
-      "required": [
-        "clash_api"
-      ]
-    }
+    "testing_groups",
+    "box_api"
   ],
   "definitions": {
     "runParams": {
@@ -89,22 +78,6 @@
       "additionalProperties": false,
       "properties": {
         "url": {
-          "type": "string"
-        },
-        "secret": {
-          "type": "string"
-        },
-        "timeout": {
-          "type": "number"
-        }
-      }
-    },
-    "clash_api": {
-      "type": "object",
-      "description": "Устарело: до 0.3.0. Читается как box_api (base_url → url)",
-      "additionalProperties": false,
-      "properties": {
-        "base_url": {
           "type": "string"
         },
         "secret": {
@@ -249,22 +222,6 @@
             "additionalProperties": false,
             "properties": {
               "group": {
-                "type": "string"
-              },
-              "default_overrides": {
-                "$ref": "#/definitions/runParams"
-              }
-            }
-          }
-        },
-        "region_groups_specifics": {
-          "description": "устарело: то же, что node_groups_specifics (region_group_tag = имя группы)",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "region_group_tag": {
                 "type": "string"
               },
               "default_overrides": {
@@ -484,11 +441,6 @@
         "enabled": {
           "type": "boolean"
         },
-        "base_seconds": {
-          "type": "number",
-          "minimum": 0,
-          "description": "УСТАРЕЛО, игнорируется (была временная модель паузы). Пауза теперь считается в прогонах."
-        },
         "max_skip": {
           "type": "integer",
           "minimum": 1,
@@ -605,7 +557,7 @@
         },
         "providers_file": {
           "type": "string",
-          "description": "Подписки для редактора админки — тот же файл, что читает nodes_fetch (напр. /root/nodes-data/config-main/providers.json). Относительный путь — от папки config.json; пусто = providers.json рядом с config.json."
+          "description": "Подписки для редактора админки — тот же файл, что читает nodes_fetch (напр. config-main/providers.json). Относительный путь — от папки config.json; пусто = providers.json рядом с config.json."
         }
       }
     }

@@ -14,7 +14,7 @@
 #
 # --dry-run: ничего боевого не трогает — nodes.json/whnodes.json пишутся в $DATA/*.dry.json,
 # правила не обновляются, apply-nodes/build-clients работают в --dry-run.
-# Конфиги v2 — $CFG_ROOT/config-main, $CFG_ROOT/config-wh (из `nodes_config migrate`);
+# Конфиги — $CFG_ROOT/config-main, $CFG_ROOT/config-wh;
 # CFG_ROOT по умолчанию = $DATA. PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
 # Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету);
@@ -23,8 +23,8 @@
 set -u
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
-DATA="${DATA:-/root/nodes-data}"
-CFG_ROOT="${CFG_ROOT:-$DATA}"   # где лежат config-main/ и config-wh/
+DATA="${DATA:-/opt/nodes-tester}"
+CFG_ROOT="${CFG_ROOT:-/etc/nodes-tester}"   # где лежат config-main/ и config-wh/
 export DATA
 HERE="$PROJECT_DIR/scripts/router"
 . "$HERE/pipeline-lock.sh"
@@ -69,7 +69,7 @@ if [ "$MODE" = apply ]; then
 fi
 CFG="$CFG_ROOT/config-$SET"
 [ "$DRY" = 1 ] && OUT="$DATA/$(basename "$OUT" .json).dry.json"
-[ -f "$CFG/providers.json" ] || { log "нет $CFG/providers.json (сделай nodes_config migrate)"; exit 1; }
+[ -f "$CFG/providers.json" ] || { log "нет $CFG/providers.json"; exit 1; }
 
 cd "$PROJECT_DIR" || exit 1
 mkdir -p "$DATA/raw"

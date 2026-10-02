@@ -1,4 +1,4 @@
-"""groups_params (v2) — переиспользуемый «рецепт» потока nodes_config.
+"""groups_params — переиспользуемый «рецепт» потока nodes_config.
 
     {
       "filters": { "exclude_types": [], "exclude_protocols": [], "exclude_countries": [],
@@ -14,8 +14,7 @@
 
 groups не задан → прежняя схема (eu/us/ru/other, обязательные — emit.ensure_regions).
 
-v1 (без filters/rename) принимается как есть — недостающее берётся из дефолтов.
-Файла нет вовсе → все дефолты (как и прежде при отсутствии groups_params.json).
+Отсутствующие секции берутся из дефолтов; файла нет вовсе → все дефолты.
 """
 
 import copy
@@ -51,7 +50,7 @@ def _str_list(value, where):
 
 
 def load(data=None):
-    """dict groups_params (v1/v2) или None → нормализованные параметры (глубокая копия)."""
+    """dict groups_params или None → нормализованные параметры (глубокая копия)."""
     if data is None:
         data = {}
     if not isinstance(data, dict):

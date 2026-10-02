@@ -127,8 +127,7 @@ class RunParams:
 class RunConfig:
     default: RunParams = field(default_factory=RunParams)
     group_overrides: dict[str, dict] = field(default_factory=dict)   # testing_group_tag -> overrides
-    # Группа нод ({name}-auto-out) -> overrides (run.node_groups_specifics; до 0.3.0 —
-    # region_groups_specifics с тегом региона, это те же имена групп eu/us/other).
+    # Группа нод ({name}-auto-out) -> overrides (run.node_groups_specifics).
     node_group_overrides: dict[str, dict] = field(default_factory=dict)
 
     def for_group(self, group_tag: str) -> RunParams:
@@ -280,7 +279,6 @@ class CooldownConfig:
     Счётчик прогонов для паузы — СКВОЗНОЙ (meta.pass_seq, не сбрасывается в полночь),
     поэтому нет залипания из review.md P1 (там сравнивался посуточный pass_no).
     Состояние персистентно (таблица garbage), переживает рестарт.
-    `base_seconds` — устаревший ключ временной модели, игнорируется.
 
     `low_score` > 0 — карантин и для живых, но слабых нод: рейтинг (сглаженный) ниже
     порога → сразу карантин на `garbage_hours`. Не трогает активные ноды и новые
@@ -304,7 +302,7 @@ class DashboardConfig:
     интерфейсу — держите LAN-адрес, не выставляйте наружу.
 
     `providers_file` — подписки, которые правит редактор (тот же файл, что читает
-    nodes_fetch, напр. `/root/nodes-data/config-main/providers.json`); относительный
+    nodes_fetch, напр. `config-main/providers.json`); относительный
     путь — от папки config.json, пусто = `providers.json` рядом с config.json."""
     enabled: bool = False
     host: str = "0.0.0.0"
@@ -413,16 +411,7 @@ def _filtered(cls, data: dict) -> dict:
 
 
 def _load_box_api(data: dict) -> BoxApiConfig:
-    """box_api; старый clash_api (до 0.3.0) читается как адрес того же порта API-сервиса."""
-    if "box_api" in data:
-        return BoxApiConfig(**_filtered(BoxApiConfig, _section(data, "box_api")))
-    legacy = _section(data, "clash_api")
-    if legacy:
-        print("  [config] секция clash_api устарела: переименуйте её в box_api "
-              "(base_url → url); тестер работает через API-сервис sing-box 1.14")
-    return BoxApiConfig(url=legacy.get("base_url", BoxApiConfig.url),
-                        secret=legacy.get("secret", ""),
-                        timeout=legacy.get("timeout", BoxApiConfig.timeout))
+    return BoxApiConfig(**_filtered(BoxApiConfig, _section(data, "box_api")))
 
 
 def load_config(path: str) -> Config:
@@ -486,13 +475,9 @@ def _load_run(run: dict) -> RunConfig:
         for spec in (run.get("testing_groups_specifics") or [])
     }
     node_group_overrides = {
-        spec.get("region_group_tag", ""): spec.get("default_overrides") or {}
-        for spec in (run.get("region_groups_specifics") or [])
-    }
-    node_group_overrides.update({
         spec.get("group", ""): spec.get("default_overrides") or {}
         for spec in (run.get("node_groups_specifics") or [])
-    })
+    }
     return RunConfig(default=default, group_overrides=group_overrides,
                      node_group_overrides=node_group_overrides)
 

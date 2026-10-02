@@ -118,7 +118,6 @@ class App:
         self.static_dir = static_dir
         self._routes: list[_Route] = []
         # Фолбэк-рендерер для '/', пока нет собранного SPA (легаси-страница).
-        self.legacy_index = None        # callable(app) -> Response | None
 
     # --- Регистрация маршрутов ---------------------------------------------
 
@@ -176,10 +175,6 @@ class App:
         if path in ("/", "/index.html"):
             if has_spa:
                 return self._file(index)
-            if self.legacy_index is not None:      # легаси-страница до появления SPA
-                resp = self.legacy_index(self)
-                if resp is not None:
-                    return resp
             return Response.text("nodes-tester: SPA ещё не собрана (web/ → npm run build)",
                                  status=200, ctype="text/html; charset=utf-8")
         # Обычный файл из static/. Оба вида разделителей нормализуем, затем

@@ -255,6 +255,6 @@
     "interval": 10,
     "token": "",
     "read_open": true,
-    "providers_file": "/root/nodes-data/config-main/providers.json"
+    "providers_file": "config-main/providers.json"
   }
 }

@@ -1,6 +1,6 @@
 """nodes_fetch: providers → raw_nodes.json (офлайн, сеть подменена).
 
-Покрытие: нормализация providers (v1/v2), изоляция упавшей подписки, last-good (stale) и его
+Покрытие: нормализация providers, изоляция упавшей подписки, last-good (stale) и его
 истечение, пустой ответ = сбой, --only переносит остальные подписки, guard min_ratio,
 контракт raw (без tag/_-полей в outbound, cc_hint), CLI: коды выхода 0/1/2, dry-run, --json.
 """
@@ -67,7 +67,7 @@ class FakeNet:
 
 def _providers(**fetch_cfg):
     return {"subscribes": [
-        {"tag": "A", "url": "https://s.example/a", "User-Agent": "curl"},
+        {"tag": "A", "url": "https://s.example/a", "user_agent": "curl"},
         {"tag": "B", "url": "https://s.example/b"},
         {"tag": "OFF", "url": "https://s.example/off", "enabled": False},
     ], "fetch": dict({"retries": 0}, **fetch_cfg)}
@@ -93,20 +93,17 @@ class FetchTestBase(unittest.TestCase):
 
 
 class ProvidersTest(unittest.TestCase):
-    def test_normalizes_v1(self):
-        logs = []
+    def test_normalizes(self):
         p = fetch.load_providers({"subscribes": [
-            {"tag": "A", "url": "https://x", "User-Agent": "curl", "prefix": "p-"},
+            {"tag": "A", "url": "https://x", "user_agent": "curl"},
             {"tag": "H", "url": "happ://crypt4/abc"},
             {"tag": "F", "type": "folder", "path": "awg"},
-            {"tag": "L", "file": "subs.txt", "enabled": False}],
-            "save_config_path": "/x", "exclude_countries": ["ru"]}, log=logs.append)
+            {"tag": "L", "file": "subs.txt", "enabled": False}]})
         kinds = {s["tag"]: (s["kind"], s["enabled"]) for s in p["subscribes"]}
         self.assertEqual(kinds, {"A": ("url", True), "H": ("happ", True),
                                  "F": ("folder", True), "L": ("file", False)})
         self.assertEqual(p["subscribes"][0]["user_agent"], "curl")
         self.assertEqual(p["fetch"], fetch.FETCH_DEFAULTS)
-        self.assertTrue(any("prefix" in m for m in logs))
 
     def test_rejects_bad(self):
         for bad in ({}, {"subscribes": [{"url": "x"}]},

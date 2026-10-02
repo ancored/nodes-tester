@@ -95,12 +95,12 @@ class ApiControlTest(unittest.TestCase):
         self.assertNotIn("abcd1234", self.storage.load_backoff())
 
     def test_force_switch(self):
-        self.assertEqual(self._call("POST", "/api/regions/eu/switch",
+        self.assertEqual(self._call("POST", "/api/groups/eu/switch",
                                     body={"node": "X"}).status, 200)
         self.assertEqual(self.runner.switcher.forced, [("eu", "X")])
 
     def test_force_switch_requires_node(self):
-        self.assertEqual(self._call("POST", "/api/regions/eu/switch", body={}).status, 400)
+        self.assertEqual(self._call("POST", "/api/groups/eu/switch", body={}).status, 400)
 
     def test_status_and_run_pass(self):
         r = self._call("GET", "/api/status")
@@ -127,7 +127,7 @@ class ApiControlTest(unittest.TestCase):
 
     def test_switch_rejects_non_object_json(self):
         headers = {"X-Admin-Token": "secret"}
-        r = self.app.handle("POST", "/api/regions/eu/switch", headers, b"[]")
+        r = self.app.handle("POST", "/api/groups/eu/switch", headers, b"[]")
         self.assertEqual(r.status, 400)
 
     def test_node_actions_reject_unknown_crc(self):

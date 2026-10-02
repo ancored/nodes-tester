@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import threading
 import time
@@ -98,15 +97,11 @@ class Runner:
         self.singbox = SingboxControl(cfg.singbox_control, self.notifier)
 
         # Storage создаём РАНЬШЕ switcher/scoreboard: рейтинг и состояние переключений
-        # теперь живут в БД (замена score.csv/switch_state.json).
+        # живут в БД.
         self.storage = None
         self.collector = None
         if cfg.storage.enabled:
             self.storage = Storage(cfg.storage)
-            # Однократный импорт старых файлов из каталога БД (если ещё не в БД).
-            db_dir = os.path.dirname(os.path.abspath(cfg.storage.db_file))
-            self.storage.migrate_legacy(os.path.join(db_dir, "score.csv"),
-                                        os.path.join(db_dir, "switch_state.json"))
             if cfg.storage.traffic.enabled:
                 self.collector = TrafficCollector(
                     cfg.storage.traffic, self.api, self.storage)

@@ -140,7 +140,7 @@ class AdminContractTest(unittest.TestCase):
         path = fresh_nodes_json(self.tmp, [{"tag":tag,"type":"vless","server":"example.invalid","server_port":443}])
         self.runner.storage.load_nodes(path)
         self.runner.storage.set_banned("abcd1234", True)
-        self.assertEqual(self.call("POST", "/api/regions/eu/switch", {"node":tag}).status, 409)
+        self.assertEqual(self.call("POST", "/api/groups/eu/switch", {"node":tag}).status, 409)
 
 
 class RunnerProgressTest(unittest.TestCase):

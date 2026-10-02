@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$HERE/../.." && pwd)}"
 PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
-DATA="${DATA:-/root/nodes-data}"
+DATA="${DATA:-/opt/nodes-tester}"
 . "$HERE/pipeline-lock.sh"
 trap 'pipeline_lock_release' 0
 pipeline_lock_acquire || exit $?

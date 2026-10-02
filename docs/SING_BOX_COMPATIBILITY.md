@@ -113,9 +113,7 @@ WireGuard нужен, а AWG нет, уберите из `providers.json` ист
 `type: "folder", format: "awg"`. Тогда AWG не попадёт в raw.
 После этого решите отдельно, поддерживает ли ваша версия ядра обычные WireGuard endpoints.
 
-Фильтр должен находиться в `groups_params.json`. Поле `exclude_node_protocols` в
-`providers.json` относится к старому формату и переносится в `groups_params.json` командой
-`python -m nodes_config migrate`. Сам `nodes_fetch` его игнорирует.
+Фильтр задаётся только в `groups_params.json`: `nodes_fetch` фильтров не применяет.
 
 ## sing-box-lx: оставить XHTTP и AWG
 
