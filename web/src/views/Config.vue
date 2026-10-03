@@ -7,12 +7,13 @@ import { bytes, dateTime } from '../format.js'
 import JsonField from '../components/JsonField.vue'
 import NodeGroups from '../components/NodeGroups.vue'
 const route = useRoute(), subscriptions = computed(()=>route.path === '/subscriptions')
-const selected=ref('providers'), options=ref({user_agents:[],happ_headers:{}}), jsonValid=ref({}), customAgents=ref(new WeakSet())
+const selected=ref('providers'), branch=ref('router'), options=ref({user_agents:[],happ_headers:{}}), jsonValid=ref({}), customAgents=ref(new WeakSet())
 const recipe=computed(()=>subscriptions.value && selected.value==='groups')
 const document = ref(null), original = ref(null), text = ref(''), advanced = ref(false)
 const path = ref(''), revision = ref(''), busy = ref(false), message = ref(''), error = ref('')
 const preview = ref(false), showSecrets = ref(false), restart = ref(false), conflict = ref(false)
-const endpoint = computed(()=>subscriptions.value ? '/config/'+selected.value : '/config')
+const endpoint = computed(()=>subscriptions.value ? `/config/${selected.value}?set=${branch.value}` : '/config')
+const BRANCHES={router:'Роутер',clients:'Клиенты'}
 const candidate = computed(()=>{ if(!advanced.value) return Object.values(jsonValid.value).every(Boolean) ? document.value : null; try{return JSON.parse(text.value)}catch{return null} })
 const changed = computed(()=>changedPaths(original.value,candidate.value))
 const dirty = computed(()=>document.value !== null && (advanced.value ? text.value !== JSON.stringify(original.value,null,2) : changed.value.length > 0 || !candidate.value))
@@ -37,9 +38,9 @@ async function load() {
   } catch(e) {error.value=e.message}
   finally {busy.value=false}
 }
-async function selectDocument(kind) {
-  if(kind===selected.value || !discardOK())return
-  selected.value=kind;document.value=null;original.value=null;advanced.value=false;jsonValid.value={};await load()
+async function selectDocument(kind,set=branch.value) {
+  if((kind===selected.value && set===branch.value) || !discardOK())return
+  selected.value=kind;branch.value=set;document.value=null;original.value=null;advanced.value=false;jsonValid.value={};await load()
 }
 function switchEditor() {
   if(!advanced.value && !candidate.value){error.value='Исправьте JSON в полях формы перед сменой редактора';return}
@@ -64,7 +65,7 @@ async function save() {
     if(epoch !== auth.epoch) return
     document.value=data; original.value=JSON.parse(JSON.stringify(data)); text.value=JSON.stringify(data,null,2)
     revision.value=result.revision; restart.value=!!result.restart_required; preview.value=false
-    message.value=subscriptions.value ? (recipe.value ? 'Параметры сборки' : 'Подписки')+' сохранены в файл. Загрузка, сборка и применение к sing-box не запускались.' : 'Настройки сохранены в файл. Перезапустите процесс, который использует этот конфиг.'
+    message.value=subscriptions.value ? (recipe.value ? 'Параметры сборки' : 'Подписки')+(branch.value==='clients' ? ' клиентской ветви' : '')+' сохранены в файл. Загрузка, сборка и применение к sing-box не запускались.' : 'Настройки сохранены в файл. Перезапустите процесс, который использует этот конфиг.'
   } catch(e){error.value=e.message; if(e.status === 409) conflict.value=true}
   finally{busy.value=false}
 }
@@ -140,6 +141,8 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
 <template>
   <p v-if="!can('edit_config')" class="notice">Для редактора требуется проверенный токен администратора. Войдите с помощью кнопки в шапке.</p>
   <template v-else>
+    <nav v-if="subscriptions && (options.branches || []).length > 1" class="chips" aria-label="Ветвь конвейера"><button v-for="set in options.branches" :key="set" class="chip" :class="{on:branch===set}" :disabled="busy" @click="selectDocument(selected,set)">{{ BRANCHES[set] || set }}</button></nav>
+    <p v-if="subscriptions && branch==='clients'" class="help-text">Клиентская ветвь: подписки и сборка для клиентских конфигураций (режим «Клиенты» в <RouterLink to="/pipeline">«Конвейере»</RouterLink>), результат — <code>whnodes.json</code>. На sing-box роутера не влияет.</p>
     <nav v-if="subscriptions" class="chips" aria-label="Файлы подписок и сборки"><button v-for="[kind,label] in [['providers','Источники подписок'],['groups','Параметры сборки']]" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
     <div class="toolbar">
       <button class="btn" :disabled="busy" @click="load">Перечитать файл</button>
@@ -169,7 +172,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             </label></div>
             <template v-for="entry in objectFields.filter(o=>group.fields.some(([f])=>f.split('.')[0]===o.field.split('.')[0]))" :key="entry.field"><JsonField :label="entry.label" :note="entry.note" :model-value="value(entry.field)" @update:model-value="setPath(document,entry.field,$event)" @valid="jsonValid[entry.field]=$event" /></template>
           </section>
-          <NodeGroups :doc="document" :builtin="options.builtin_regions || {}" @changed="preview=false" @valid="jsonValid.regions=$event" />
+          <NodeGroups :doc="document" :branch="branch" :builtin="options.builtin_regions || {}" @changed="preview=false" @valid="jsonValid.regions=$event" />
         </template>
         <template v-else-if="subscriptions">
           <section v-for="(sub,index) in document.subscribes || []" :key="index" class="panel">

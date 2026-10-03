@@ -51,14 +51,39 @@ def _cfg_dir(app: App) -> str:
     return os.path.dirname(_config_path(app))
 
 
-def _providers_path(app: App) -> str:
-    """Файл подписок редактора: dashboard.providers_file (относительный — от папки
+def _router_providers_path(app: App) -> str:
+    """Файл подписок роутера: dashboard.providers_file (относительный — от папки
     config.json) либо providers.json рядом с config.json."""
     dash = getattr(app.cfg, "dashboard", None)
     configured = (getattr(dash, "providers_file", "") or "").strip()
     if not configured:
         return os.path.join(_cfg_dir(app), "providers.json")
     return os.path.abspath(os.path.join(_cfg_dir(app), configured))
+
+
+def _clients_dir(app: App) -> str:
+    """Каталог клиентской ветви конвейера: config-wh рядом с config-main (раскладка
+    pipeline.sh). Без такой раскладки ветви нет — пустая строка."""
+    main = os.path.dirname(_router_providers_path(app))
+    if os.path.basename(main) != "config-main":
+        return ""
+    return os.path.join(os.path.dirname(main), "config-wh")
+
+
+def _branch(app: App, req) -> str:
+    """Ветвь конвейера из ?set=: router (по умолчанию) или clients."""
+    branch = req.q("set", "router")
+    if branch not in ("router", "clients"):
+        raise HttpError(400, "set: допустимы router и clients")
+    if branch == "clients" and not _clients_dir(app):
+        raise HttpError(404, "Клиентская ветвь недоступна: подписки роутера лежат не в config-main/")
+    return branch
+
+
+def _providers_path(app: App, branch: str = "router") -> str:
+    if branch == "clients":
+        return os.path.join(_clients_dir(app), "providers.json")
+    return _router_providers_path(app)
 
 
 def _subscription_states(app: App) -> dict:
@@ -81,11 +106,11 @@ def _subscription_states(app: App) -> dict:
     return out
 
 
-def _groups_path(app: App) -> str:
+def _groups_path(app: App, branch: str = "router") -> str:
     configured = (getattr(app.cfg.dashboard, "groups_file", "") or "").strip()
-    if configured:
+    if configured and branch == "router":
         return os.path.abspath(os.path.join(_cfg_dir(app), configured))
-    return os.path.join(os.path.dirname(_providers_path(app)), "groups_params.json")
+    return os.path.join(os.path.dirname(_providers_path(app, branch)), "groups_params.json")
 
 
 def _validate_groups(data):
@@ -270,7 +295,7 @@ def register(app: App) -> None:
 
     @app.route("GET", "/api/config/providers", needs_token=True)
     def get_providers(app, req):
-        path = _providers_path(app)
+        path = _providers_path(app, _branch(app, req))
         with _edit_lock:
             return {**_document(path), "application_state": "unknown"}
 
@@ -280,7 +305,7 @@ def register(app: App) -> None:
         if not isinstance(data, dict):
             raise HttpError(400, "providers.json должен быть объектом")
         _validate_providers(data)
-        path = _providers_path(app)
+        path = _providers_path(app, _branch(app, req))
         text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         revision = _save(req, path, text)
         return {"ok": True, "path": path, "revision": revision,
@@ -296,7 +321,7 @@ def register(app: App) -> None:
         group_defaults["emit"] = {"nodes_tester": True, "global_failsafe": False,
                                   "ensure_regions": list(DEFAULT_ENSURE_REGIONS)}
         from nodes_fetch import device
-        device_path = device.default_path(_providers_path(app))
+        device_path = device.default_path(_router_providers_path(app))
         hwid = device.read(device_path).get("hwid") or ""
         happ_headers = dict(_HEADERS)
         if hwid:
@@ -308,11 +333,12 @@ def register(app: App) -> None:
         ], "happ_headers": happ_headers, "group_defaults": group_defaults,
             "builtin_regions": BUILTIN_REGIONS,
             "device": {"hwid": hwid, "path": device_path},
+            "branches": ["router", "clients"] if _clients_dir(app) else ["router"],
             "sources": _subscription_states(app)}
 
     @app.route("GET", "/api/config/groups", needs_token=True)
     def get_groups(app, req):
-        path = _groups_path(app)
+        path = _groups_path(app, _branch(app, req))
         with _edit_lock:
             result = _document(path) if os.path.exists(path) else {"path": path, "data": {}, "revision": "missing"}
         return {**result, "application_state": "unknown"}
@@ -323,12 +349,17 @@ def register(app: App) -> None:
         if not isinstance(data, dict):
             raise HttpError(400, "groups_params.json должен быть объектом")
         _validate_groups(data)
+        branch = _branch(app, req)
         orch = getattr(getattr(app, "runner", None), "orchestrator", None)
         if orch is None:
             raise HttpError(409, "Предпросмотр доступен во встроенной админке с оркестратором")
-        return preview(data, orch.data_dir / "raw" / "main.json",
-                       os.path.join(os.path.dirname(_groups_path(app)), "user_nodes.json"),
-                       app.cfg.storage.nodes_file)
+        # Выходы веток — как в pipeline.sh: nodes.json у роутера, whnodes.json рядом у клиентов.
+        nodes_file = app.cfg.storage.nodes_file
+        if branch == "clients":
+            nodes_file = os.path.join(os.path.dirname(nodes_file), "whnodes.json")
+        return preview(data, orch.data_dir / "raw" / ("wh.json" if branch == "clients" else "main.json"),
+                       os.path.join(os.path.dirname(_groups_path(app, branch)), "user_nodes.json"),
+                       nodes_file)
 
     @app.route("PUT", "/api/config/groups", needs_token=True)
     def put_groups(app, req):
@@ -336,7 +367,7 @@ def register(app: App) -> None:
         if not isinstance(data, dict):
             raise HttpError(400, "groups_params.json должен быть объектом")
         _validate_groups(data)
-        path = _groups_path(app)
+        path = _groups_path(app, _branch(app, req))
         revision = _save(req, path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         return {"ok": True, "path": path, "revision": revision,
                 "application_state": "not_applied_by_dashboard"}

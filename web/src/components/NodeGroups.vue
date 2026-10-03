@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { api } from '../api.js'
 import JsonField from './JsonField.vue'
-const props=defineProps({doc:{type:Object,required:true},builtin:{type:Object,default:()=>({})}})
+const props=defineProps({doc:{type:Object,required:true},branch:{type:String,default:'router'},builtin:{type:Object,default:()=>({})}})
 const emit=defineEmits(['changed','valid'])
 const CONDITIONS=[
   ['countries','Страны (ISO-коды)'],['regions','Регионы'],['labels','Метки'],
@@ -14,14 +14,14 @@ const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.r
 const labelList=computed(()=>Object.keys(props.doc.rename?.labels || {}))
 const regionNames=computed(()=>regionList.value.join(', '))
 const labelNames=computed(()=>labelList.value.join(', ') || 'нет')
-// Предпросмотр: оценка состава по текущему raw/main.json; после правки формы устаревает.
+// Предпросмотр: оценка состава по текущему raw ветви (main.json или wh.json); после правки формы устаревает.
 const preview=ref(null), previewError=ref(''), previewBusy=ref(false)
 const byName=computed(()=>Object.fromEntries((preview.value?.groups || []).map(g=>[g.name,g])))
 function changed(){preview.value=null;emit('changed')}
 watch(()=>JSON.stringify(props.doc),()=>{preview.value=null})
 async function estimate(){
   previewBusy.value=true;previewError.value=''
-  try{preview.value=await api.post('/config/groups/preview',JSON.parse(JSON.stringify(props.doc)))}
+  try{preview.value=await api.post(`/config/groups/preview?set=${props.branch}`,JSON.parse(JSON.stringify(props.doc)))}
   catch(e){previewError.value=e.message}
   finally{previewBusy.value=false}
 }

@@ -156,5 +156,44 @@ class ProvidersFileTest(unittest.TestCase):
             self.assertEqual(json.load(fh)["fetch"]["timeout"], 30)
 
 
+class BranchTest(unittest.TestCase):
+    """?set=clients: подписки и сборка клиентской ветви в config-wh рядом с config-main."""
+
+    def setUp(self):
+        self.tmp = temp_dir()
+        for d in ("config-main", "config-wh"):
+            os.makedirs(os.path.join(self.tmp, d))
+        cfg = load_config(make_config(self.tmp, dashboard={
+            "token": "secret", "providers_file": os.path.join("config-main", "providers.json")}))
+        self.app = build_app(cfg, runner=None)
+
+    def _call(self, method, path, body=None):
+        return self.app.handle(method, path, {"X-Admin-Token": "secret"},
+                               json.dumps(body).encode() if body is not None else b"")
+
+    def test_clients_files_in_config_wh(self):
+        body = {"subscribes": [{"tag": "WH", "url": "https://example.com/wh"}]}
+        self.assertEqual(self._call("PUT", "/api/config/providers?set=clients", body).status, 200)
+        target = os.path.join(self.tmp, "config-wh", "providers.json")
+        with open(target, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), body)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "config-main", "providers.json")))
+        r = json.loads(self._call("GET", "/api/config/groups?set=clients").body)
+        self.assertEqual(r["path"], os.path.join(self.tmp, "config-wh", "groups_params.json"))
+        r = json.loads(self._call("GET", "/api/config/groups").body)
+        self.assertEqual(r["path"], os.path.join(self.tmp, "config-main", "groups_params.json"))
+
+    def test_unknown_branch_rejected(self):
+        self.assertEqual(self._call("GET", "/api/config/providers?set=wh").status, 400)
+
+
+class NoBranchTest(unittest.TestCase):
+    def test_clients_unavailable_without_config_main(self):
+        tmp = temp_dir()
+        app = build_app(load_config(make_config(tmp, dashboard={"token": "secret"})), runner=None)
+        r = app.handle("GET", "/api/config/providers?set=clients", {"X-Admin-Token": "secret"}, b"")
+        self.assertEqual(r.status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
