@@ -11,6 +11,8 @@
        • «тихо» дольше silence_window → ВНЕПЛАНОВЫЙ ЗОНД: качаем ~1 МБ через socks
          (prober). Провал (нет ответа ИЛИ скорость < probe_min_mbps — значит ТСПУ
          режет трафик, delay такое не ловит) fails раз подряд → EMERGENCY.
+         Обрыв закачки сразу перепроверяется вторым зондом: одиночные обрывы TLS
+         после простоя бывают и у живых нод, страйк — только если не прошёл и повтор.
 
 Порог трафика приравнен к порогу зонда (min_mbps × window): пассивный трафик и
 активный зонд меряют одно — «держит ли нода ≥ min_mbps». Тогда throttled-нода
@@ -35,7 +37,7 @@ class ProductionMonitor:
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
-        # prober(region, leaf) -> (ok: bool, mbps: float, inconclusive: bool).
+        # prober(region, leaf) -> (ok: bool, mbps: float, inconclusive: bool, error: str).
         # inconclusive — туннель жив, но замер не показателен (429/limited, http-ошибка):
         # это НЕ throttle → сбрасываем страйки. ApiError prober пробрасывает наверх.
         self.prober = prober
@@ -118,7 +120,10 @@ class ProductionMonitor:
         """Внеплановый зонд активной ноды: ~1 МБ через socks. Провал → страйк/emergency."""
         st.update(quiet_since=now, quiet_bytes=0)
         try:
-            ok, mbps, inconclusive = self.prober(region, node)
+            ok, mbps, inconclusive, error = self.prober(region, node)
+            if not ok and not inconclusive:
+                # Обрыв мог быть случайным (первое соединение после простоя) — повтор.
+                ok, mbps, inconclusive, error = self.prober(region, node)
         except ApiError:
             return  # API/переключение недоступно — это НЕ смерть ноды, без страйка
 
@@ -127,7 +132,7 @@ class ProductionMonitor:
             return
 
         st["strikes"] += 1
-        why = "нет ответа" if not ok else f"throttle {mbps:.2f} Мбит/с"
+        why = f"нет ответа: {error or '?'}" if not ok else f"throttle {mbps:.2f} Мбит/с"
         print(f"  [monitor] {region}: зонд провален ({why}) "
               f"{st['strikes']}/{self.cfg.fails}")
         if st["strikes"] >= self.cfg.fails:

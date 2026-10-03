@@ -145,6 +145,29 @@ def write_fragments(presets: list[dict], out_dir) -> list[str]:
     return paths
 
 
+# sing-box merge склеивает массивы как есть, одинаковые элементы не схлопываются. Дубль тега
+# outbound sing-box отвергает сам, а дубль DNS-сервера или rule_set проходит check молча.
+def duplicate_tags(config: dict) -> list[str]:
+    """Повторяющиеся теги склеенного конфига: ["dns.servers: bootstrap", …]."""
+    sections = {
+        "inbounds": config.get("inbounds", []),
+        "outbounds+endpoints": config.get("outbounds", []) + config.get("endpoints", []),
+        "dns.servers": config.get("dns", {}).get("servers", []),
+        "route.rule_set": config.get("route", {}).get("rule_set", []),
+        "services": config.get("services", []),
+    }
+    out = []
+    for section, items in sections.items():
+        seen = set()
+        for item in items:
+            tag = item.get("tag") if isinstance(item, dict) else None
+            if tag in seen and f"{section}: {tag}" not in out:
+                out.append(f"{section}: {tag}")
+            elif tag:
+                seen.add(tag)
+    return out
+
+
 def node_groups(nodes_path) -> set[str]:
     """Группы нод, которые есть в nodes.json: {name} для каждого {name}-auto-out."""
     try:
@@ -175,7 +198,19 @@ def main(argv=None) -> int:
     s = sub.add_parser("list", help="состояние пресетов (JSON)")
     s.add_argument("--dir", required=True)
     s.add_argument("--nodes")
+    t = sub.add_parser("check-tags", help="проверить склеенный конфиг на повторяющиеся теги")
+    t.add_argument("--config", required=True)
     args = ap.parse_args(argv)
+    if args.cmd == "check-tags":
+        try:
+            dups = duplicate_tags(json.loads(Path(args.config).read_text(encoding="utf-8")))
+        except (OSError, ValueError) as exc:
+            print(f"[presets] {args.config}: {exc}", file=sys.stderr)
+            return 1
+        if dups:
+            print(f"[presets] повторяющиеся теги: {', '.join(dups)}", file=sys.stderr)
+            return 1
+        return 0
     try:
         presets = load(args.dir)
     except PresetError as exc:

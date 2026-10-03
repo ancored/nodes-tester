@@ -84,6 +84,35 @@ class PresetModuleTest(unittest.TestCase):
         self.assertEqual(json.loads(Path(paths[0].strip()).read_text()), {"route": {"rules": [{"r": 1}]}})
 
 
+def _fake_run(merged=None, returncode=0, stderr=""):
+    """subprocess.run для API: merge пишет итоговый конфиг (по умолчанию пустой)."""
+    def run(cmd, **_):
+        if cmd[1] == "merge":
+            Path(cmd[2]).write_text(json.dumps(merged or {}), encoding="utf-8")
+        return SimpleNamespace(returncode=returncode, stdout="", stderr=stderr)
+    return run
+
+
+class DuplicateTagsTest(unittest.TestCase):
+    def test_sections(self):
+        cfg = {"outbounds": [{"tag": "d"}], "endpoints": [{"tag": "d"}],
+               "dns": {"servers": [{"tag": "b"}, {"tag": "b"}, {"tag": "b"}, {"tag": "c"}]},
+               "route": {"rule_set": [{"tag": "ru"}, {"tag": "ru"}], "rules": [{"r": 1}, {"r": 1}]},
+               "inbounds": [{"tag": "tun-in"}, {}]}
+        self.assertEqual(presets.duplicate_tags(cfg),
+                         ["outbounds+endpoints: d", "dns.servers: b", "route.rule_set: ru"])
+        self.assertEqual(presets.duplicate_tags({"inbounds": [{}, {}]}), [])
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "c.json"
+            path.write_text(json.dumps({"dns": {"servers": [{"tag": "b"}, {"tag": "b"}]}}))
+            with patch("sys.stderr.write"):
+                self.assertEqual(presets.main(["check-tags", "--config", str(path)]), 1)
+            path.write_text(json.dumps({"dns": {"servers": [{"tag": "b"}]}}))
+            self.assertEqual(presets.main(["check-tags", "--config", str(path)]), 0)
+
+
 class PresetApiTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -117,8 +146,7 @@ class PresetApiTest(unittest.TestCase):
 
     def test_save_checks_whole_assembly_and_lists(self):
         url = "/api/singbox/files/presets/us.json"
-        with patch("dashboard.api_singbox.subprocess.run") as run:
-            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with patch("dashboard.api_singbox.subprocess.run", side_effect=_fake_run()) as run:
             status, _ = self.request("PUT", url, _preset(450, route=[{"r": 1}], groups=["us"]),
                                      revision="missing")
             self.assertEqual(status, 200)
@@ -144,6 +172,15 @@ class PresetApiTest(unittest.TestCase):
                                       revision="x")[0], 400)
         self.assertEqual(self.request("DELETE", url, revision=rev)[0], 200)
         self.assertFalse((self.config / "singbox/presets/us.json").exists())
+
+    def test_duplicate_tags_rejected(self):
+        dup = {"dns": {"servers": [{"tag": "bootstrap"}, {"tag": "bootstrap"}]}}
+        with patch("dashboard.api_singbox.subprocess.run", side_effect=_fake_run(dup)) as run:
+            status, body = self.request("PUT", "/api/singbox/files/presets/x.json",
+                                        _preset(450), revision="missing")
+            self.assertEqual(len(run.call_args_list), 1)                # до check не дошло
+        self.assertEqual(status, 422)
+        self.assertIn("dns.servers: bootstrap", body["error"])
 
     def test_invalid_preset_rejected_without_singbox(self):
         with patch("dashboard.api_singbox.subprocess.run") as run:

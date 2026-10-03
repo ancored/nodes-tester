@@ -1,5 +1,8 @@
 export const TEST_NAMES = { connectivity: 'Соединение', latency: 'Задержка', jitter: 'Джиттер / потери',
   download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка', gemini: 'Gemini / страна Google' }
+// Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
+export const TEST_UNITS = { latency: 'мс', jitter: 'мс / %', download: 'Мбит/с', heavy_download: 'Мбит/с' }
+export const testTitle = t => (TEST_NAMES[t] || t) + (TEST_UNITS[t] ? ', ' + TEST_UNITS[t] : '')
 export const PHASES = { stopped: 'Остановлен', initializing: 'Подготовка', enumerating: 'Получение списка нод',
   testing: 'Основные проверки', required_testing: 'Обязательные тесты групп (gemini)', heavy_testing: 'Тяжёлая проверка кандидатов', switching: 'Выбор нод регионов',
   waiting: 'Ожидание следующего прохода' }

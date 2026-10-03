@@ -568,21 +568,23 @@ class Runner:
         # Без дедлайнов — один интервал от начала ожидания (не пересчитывать каждый шаг,
         # иначе ожидание не кончится); не меньше минуты, чтобы не крутить прогоны.
         fallback = time.time() + max(float(self.cfg.switching.rotation.interval), 60.0)
-        announced = None
+        announced = None                 # срок, о котором уже сообщили в лог
         while True:
             target = self.switcher.next_rotate_deadline()
             now = time.time()
-            wait = (target if target is not None else fallback) - now
+            due = target if target is not None else fallback
+            wait = due - now
             if wait <= 0:
                 print("\n===== rotation_bound: настал срок ротации → новый прогон =====")
                 self._scoped_next = True
                 return
-            if announced is None or abs(wait - announced) > poll:
+            # Сообщаем при старте и при сдвиге срока, а не на каждом шаге опроса.
+            if announced is None or abs(due - announced) > poll:
                 mins = wait / 60.0
                 tgt = ("ближайшая ротация" if target is not None
                        else "регионы не активированы, повтор")
                 print(f"\n===== rotation_bound: ждём {mins:.1f} мин ({tgt}) =====")
-                announced = wait
+                announced = due
             if self._wait_interruptible(min(wait, poll)):
                 print("\n===== внеплановый прогон (запрос из админки) =====")
                 return
@@ -857,13 +859,15 @@ class Runner:
                 finally:
                     session.close()
             ok = bool(res.get("ok"))
-            self.board.set_required_result(ident.raw, test_name, ok, res.get("country") or "")
+            if not res.get("inconclusive"):     # сетевой сбой не отменяет прошлый вердикт
+                self.board.set_required_result(ident.raw, test_name, ok, res.get("country") or "")
             rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
                    "tests": {test_name: res}}
             if self.storage is not None and self.cfg.storage.store_results:
                 self.storage.add_results(rec)
             if self.cfg.report.console:
-                print(f"  {ident.short()}: {test_name}={'OK' if ok else 'FAIL'} "
+                verdict = "OK" if ok else ("INCONCLUSIVE" if res.get("inconclusive") else "FAIL")
+                print(f"  {ident.short()}: {test_name}={verdict} "
                       f"{res.get('countries') or ''} {res.get('error') or ''}".rstrip())
 
     def _heavy_test(self):
@@ -1114,7 +1118,7 @@ class Runner:
     def _probe_node(self, region: str, leaf: str) -> tuple[bool, float, bool]:
         """Внеплановый зонд активной ноды для монитора: закачка ~probe_bytes через socks.
 
-        Возвращает (ok, mbps, inconclusive). inconclusive — туннель жив, но замер не
+        Возвращает (ok, mbps, inconclusive, error). inconclusive — туннель жив, но замер не
         показателен (429/limited, http-ошибка): монитор трактует как «не throttle», без
         страйка. ApiError (переключение/API) пробрасывает наверх — монитор пропустит.
         """
@@ -1138,7 +1142,7 @@ class Runner:
         ok = bool(res.get("ok"))
         mbps = float(res.get("speed_mbps", 0.0) or 0.0)
         inconclusive = bool(res.get("limited") or res.get("http_error"))
-        return ok, mbps, inconclusive
+        return ok, mbps, inconclusive, str(res.get("error") or "")
 
     def _remember(self, tag: str) -> None:
         if not self._base.restore_selection or tag in self._originals:

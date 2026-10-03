@@ -3,9 +3,10 @@
 
 import time
 import unittest
+from unittest import mock
 
 from nodes_tester.identity import parse_node
-from nodes_tester.tests import TestContext
+from nodes_tester.tests import TestContext, TestResult
 from nodes_tester.tests.gemini import GeminiTest, google_country
 from tests.helpers import make_runner, temp_dir
 
@@ -54,6 +55,18 @@ class GeminiTestTest(unittest.TestCase):
         self.assertIn("403", _run([_Resp(403)], attempts=1).error)
         self.assertFalse(_run([ConnectionError("reset")], attempts=1).ok)
         self.assertEqual(_run([_Resp(200)], attempts=1).error, "страна не определена")
+
+    def test_network_errors_with_allowed_country_inconclusive(self):
+        r = _run([TimeoutError(), TimeoutError(), _Resp(200, "FRA")])
+        self.assertFalse(r.ok)
+        self.assertTrue(r.metrics["inconclusive"])
+        self.assertIn("2/3", r.error)
+        r = _run([TimeoutError(), _Resp(200, "RUS"), _Resp(200, "FRA")])
+        self.assertNotIn("inconclusive", r.metrics)                  # запрещённая страна важнее
+        r = _run([TimeoutError()] * 3)
+        self.assertNotIn("inconclusive", r.metrics)                  # Google недоступен — провал
+        r = _run([TimeoutError(), _Resp(403), _Resp(200, "FRA")])
+        self.assertNotIn("inconclusive", r.metrics)
 
     def test_forbidden_list_configurable(self):
         self.assertTrue(_run([_Resp(200, "RUS")], attempts=1, forbidden_countries=["CHN"]).ok)
@@ -144,6 +157,20 @@ class RequiredGroupTest(unittest.TestCase):
         nxt = [ident.raw for _t, _r, ident in
                self.r._required_targets(node_by_raw, {("gemini", A), ("gemini", B)})]
         self.assertEqual(nxt, [C])
+
+    def test_inconclusive_keeps_previous_verdict(self):
+        self.r._originals = {}
+        self._pass(A, True)
+        ts = self.board.rows[A]["gemini_ts"] = int(time.time()) - 60
+        answer = TestResult("gemini", False, {"inconclusive": True, "countries": [None, "FRA"]},
+                            error="сеть")
+        with mock.patch.object(GeminiTest, "run", return_value=answer):
+            self.r._required_round("gemini", [("eu", parse_node(A))], 1)
+        self.assertEqual((self.board.rows[A]["gemini_ok"], self.board.rows[A]["gemini_ts"]), ("1", ts))
+        answer.metrics.pop("inconclusive")
+        with mock.patch.object(GeminiTest, "run", return_value=answer):
+            self.r._required_round("gemini", [("eu", parse_node(A))], 1)
+        self.assertEqual(self.board.rows[A]["gemini_ok"], "0")
 
 
 if __name__ == "__main__":

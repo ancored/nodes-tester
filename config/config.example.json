@@ -105,6 +105,7 @@
     },
     "gemini": {
       "attempts": 3,
+      "timeout": 20,
       "ttl_hours": 6,
       "max_per_pass": 20
     },

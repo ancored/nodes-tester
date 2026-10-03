@@ -334,5 +334,5 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 .responsive-table th { white-space: normal; min-width: 3.5em; }
 .failure-detail summary { white-space: nowrap; list-style: none; }
 .failure-detail summary::-webkit-details-marker { display: none; }
-.failure-detail summary b { text-decoration: underline dotted; }
+.failure-detail summary span { text-decoration: underline dotted; }
 .nav a.external { margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-top: 12px; }

@@ -8,6 +8,11 @@
 только если КАЖДАЯ попытка дала HTTP 200 и разрешённую страну. 403 (Google не пускает
 клиента), обрыв и отсутствие кода страны — провал попытки.
 
+Сетевой сбой (таймаут, обрыв) не говорит о стране. Если часть попыток дала разрешённую
+страну, а остальные упали по сети, результат неопределённый (`inconclusive`): runner не
+перезаписывает им прошлый вердикт. Все попытки упали по сети — провал: Google через ноду
+недоступен.
+
 Тест не входит в рейтинг: как heavy_download, он гоняется отдельной фазой для кандидатов
 групп, где он обязателен (run.node_groups_specifics → required_tests), и решает, может ли
 нода стать активной в такой группе.
@@ -64,6 +69,12 @@ class GeminiTest(BaseTest):
         if bad:
             return TestResult(self.name, False, metrics,
                               error=f"Google видит страну {', '.join(bad)}", url=url)
+        net_failed = codes.count(0)
+        if net_failed and seen and len(seen) == attempts - net_failed:
+            metrics["inconclusive"] = True
+            return TestResult(self.name, False, metrics,
+                              error=f"сеть: {net_failed}/{attempts} попыток без ответа "
+                                    f"({', '.join(sorted(set(errors)))})", url=url)
         if any(code != 200 for code in codes):
             why = "403 — Google не пускает" if 403 in codes else \
                   f"HTTP {', '.join(str(c) for c in codes)}" + (f" ({errors[0]})" if errors else "")

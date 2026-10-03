@@ -120,6 +120,14 @@ def _check_assembly(app: App, what: str, base: dict | None = None,
             if result.returncode:
                 output = (result.stderr or result.stdout).strip()[:4000]
                 raise HttpError(422, f"sing-box отклонил итоговый конфиг ({what}): {output}")
+            if cmd is merge:
+                try:
+                    dups = presets_mod.duplicate_tags(json.loads(merged.read_text(encoding="utf-8")))
+                except (OSError, ValueError) as exc:
+                    raise HttpError(422, f"Не удалось проверить {what}: {exc}") from exc
+                if dups:
+                    raise HttpError(422, f"Повторяющиеся теги в итоговом конфиге ({what}): "
+                                         f"{', '.join(dups)}")
 
 
 def _check_base(app: App, data: dict) -> None:

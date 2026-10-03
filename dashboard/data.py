@@ -376,28 +376,29 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     if not ok:
         if test == "gemini" and m.get("countries"):
             seen = sorted({c for c in m["countries"] if c})
-            return {"v": "Провал" + (f" [{', '.join(seen)}]" if seen else ""), "ok": 0,
+            label = "Не определено" if m.get("inconclusive") else "Провал"   # сеть: вердикт прежний
+            return {"v": label + (f" [{', '.join(seen)}]" if seen else ""), "ok": 0,
                     "title": (error or "").strip()}
         return {"v": "Провал", "ok": 0, "title": (error or "").strip()}
     if test == "connectivity":
         cc = m.get("country")
-        return {"v": "Успешно" + (f" [{cc}]" if cc else ""), "ok": 1}
+        return {"v": cc or "OK", "ok": 1}
     if test == "latency":
-        return {"v": f"{m.get('ttfb_ms', '?')} мс", "ok": 1}
+        return {"v": f"{m.get('ttfb_ms', '?')}", "ok": 1}
     if test == "jitter":
-        return {"v": f"{m.get('jitter_ms', '?')} мс / {m.get('loss_pct', 0)}%", "ok": 1}
+        return {"v": f"{m.get('jitter_ms', '?')} / {m.get('loss_pct', 0)}", "ok": 1}
     if test == "download":
         # единый транспорт-тест: скорость + троттлинг (+ метка limited при 429)
         thr = m.get("throttle_ratio")
         tag = " (ограничение сервера)" if m.get("limited") else ""
-        spd = f"{m.get('speed_mbps', '?')} Мбит/с"
+        spd = f"{m.get('speed_mbps', '?')}"
         return {"v": (f"{spd} ×{thr}{tag}" if thr is not None else f"{spd}{tag}"), "ok": 1}
     if test == "reachability":
         return {"v": f"{m.get('reached', '?')}/{m.get('total', '?')}", "ok": 1}
     if test == "heavy_download":         # veto-тест кандидатов: скорость (FAIL=veto)
-        return {"v": f"{m.get('speed_mbps', '?')} Мбит/с", "ok": 1}
+        return {"v": f"{m.get('speed_mbps', '?')}", "ok": 1}
     if test == "gemini":                 # обязательный тест групп: страна по мнению Google
-        return {"v": f"Google: {m.get('country') or '?'}", "ok": 1}
+        return {"v": m.get("country") or "?", "ok": 1}
     return {"v": "ok", "ok": 1}
 
 

@@ -2,7 +2,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSnapshot } from '../store.js'
-import { nodeFlags, TEST_NAMES } from '../ux.js'
+import { nodeFlags, testTitle } from '../ux.js'
 import { dateTime, bytes } from '../format.js'
 import { useQuery } from '../query.js'
 import NodeActions from '../components/NodeActions.vue'
@@ -92,7 +92,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
     <section v-if="tab === 'Результаты'" class="panel">
       <p v-if="!result">Сохранённых результатов нет. Это не означает провал проверки.</p>
       <template v-else><p>Последний проход: {{ result.pass_label }}, {{ dateTime(result.ts) }}</p>
-        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ TEST_NAMES[test] || test }}</dt><dd>{{ cell.v }}<small v-if="cell.heavy" class="cell-note">{{ dateTime(cell.ts) }}<span v-if="cell.off_pass"> · другой проход</span></small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>Подробности</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
+        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small v-if="cell.heavy" class="cell-note">{{ dateTime(cell.ts) }}<span v-if="cell.off_pass" title="Другой проход"> ↻</span></small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>Подробности</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
       </template>
     </section>
     <section v-if="tab === 'Трафик'" class="panel">

@@ -110,6 +110,8 @@ for f in "$FRAGS"/*.json; do MERGE_ARGS="$MERGE_ARGS -c $f"; done
 # Пути без пробелов (mktemp) — MERGE_ARGS без кавычек намеренно.
 sing-box merge "$TMP" $MERGE_ARGS >/dev/null 2>&1 \
     || die "sing-box merge не удался — работающий конфиг не тронут"
+PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m nodes_admin.presets check-tags --config "$TMP" \
+    || die "в итоговом конфиге повторяются теги — работающий конфиг не тронут"
 sing-box check -c "$TMP" || die "итоговый конфиг не прошёл sing-box check — работающий конфиг не тронут"
 
 # Сводка: какие теги outbounds/endpoints появятся и исчезнут.

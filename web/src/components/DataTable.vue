@@ -54,7 +54,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
     <div class="wrap">
       <table class="responsive-table">
         <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
-          <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.title }}</template>
+          <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.head ?? c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.head ?? c.title }}</template>
         </th></tr></thead>
         <tbody>
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
