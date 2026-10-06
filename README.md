@@ -17,6 +17,15 @@
 
 ## Начать
 
+Быстрая установка на чистый OpenWrt 25.x — sing-box-lx и nodes-tester с минимальным конфигом
+(всё напрямую, трафик LAN не перехватывается), подробности в [инструкции](openwrt/README.md#быстрая-установка):
+
+```sh
+wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/install.sh | sh -s -- 'https://provider.example/sub/YOUR-TOKEN'
+```
+
+Ручная установка:
+
 1. Скачать пакет из [релизов](https://github.com/ancored/nodes-tester/releases).
 2. Пройти [установку и первый запуск на OpenWrt](openwrt/README.md).
 3. Открыть [руководство по админке и повседневной работе](docs/USAGE.md).

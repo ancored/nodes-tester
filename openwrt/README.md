@@ -6,6 +6,34 @@
 
 Инструкция относится к [релизу `v0.4.2`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.2). Нужен sing-box 1.14 или новее.
 
+## Быстрая установка
+
+На чистом OpenWrt 25.x (нет ни sing-box, ни nodes-tester) всё ставит один скрипт
+[`install.sh`](install.sh). Подписку можно не указывать и добавить потом в админке:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/install.sh | sh -s -- 'https://provider.example/sub/YOUR-TOKEN'
+```
+
+Скрипт:
+
+- скачивает последний релиз [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) под архитектуру
+  роутера, сверяет `SHA256SUMS` и ставит `/usr/bin/sing-box` со службой `/etc/init.d/sing-box`;
+  версию можно задать: `SINGBOX_LX_VERSION=1.14.2-lx.11`;
+- подключает ключ и репозиторий пакетов и ставит `nodes-tester`;
+- пишет минимальную базу `singbox/base.json`: SOCKS для тестера, API-сервис со случайным
+  секретом, DNS — системный резолвер роутера (`type: local`), без TUN; единственный пресет
+  `presets/direct.json` отправляет весь трафик напрямую. Трафик LAN sing-box не перехватывает,
+  поэтому работа сети не меняется;
+- включает тестер и админку на адресе LAN (порт `8088`) и печатает токен администратора;
+- с подпиской сразу выполняет `nodes-tester pipeline router`. Без неё — добавьте подписку в
+  «Подписках» и нажмите «Применить» в «Конвейере».
+
+Если sing-box или nodes-tester уже стоят, скрипт ничего не меняет — используйте ручную
+установку ниже. Чтобы ноды обслуживали устройства LAN, расширьте базу своими inbound-ами и
+правилами (см. [модель безопасности](../docs/SECURITY_MODEL.md) и
+[сборку конфига](../docs/CONFIG_ASSEMBLY.md)).
+
 ## 1. Установить пакет
 
 Пакет для OpenWrt 25.x подписан ключом проекта. Один раз добавьте открытый ключ и репозиторий
