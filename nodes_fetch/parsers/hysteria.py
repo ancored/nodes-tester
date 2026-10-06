@@ -1,32 +1,43 @@
-import re
-from .. import util
-from urllib.parse import urlparse, parse_qs, unquote
+"""hysteria:// — Hysteria 1 (v1.hysteria.network/docs/uri-scheme).
 
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    netquery = dict(
-        (k, v if len(v) > 1 else v[0])
-        for k, v in parse_qs(server_info.query).items()
-    )
-    node = {
-        'tag': unquote(server_info.fragment) or util.genName()+'_hysteria',
-        'type': 'hysteria',
-        'server': re.sub(r"\[|\]", "", server_info.netloc.rsplit(":", 1)[0]),
-        'server_port': int((server_info.netloc.rsplit(":", 1)[1]).split(",", 1)[0]), #fuck all
-        'up_mbps': int(re.search(r'\d+', netquery.get('upmbps', '10')).group()),
-        'down_mbps': int(re.search(r'\d+', netquery.get('downmbps', '100')).group()),
-        'auth_str': netquery.get('auth', ''),
-        'tls': {
-            'enabled': True,
-            'server_name': netquery.get('sni', netquery.get('peer', '')),
-            'insecure': False
-        }
-    }
-    if netquery.get('alpn'):
-        node['tls']['alpn'] = netquery['alpn'].strip('{}').split(',')
-    if netquery.get('insecure') == '1' or netquery.get('allowInsecure') == '1':
-        node['tls']['insecure'] = True
-    if netquery.get('obfs') and netquery['obfs'] != 'none':
-        node['obfs'] = netquery.get('obfs')
+hysteria://host:port?protocol=udp&auth=…&peer=…&insecure=1&upmbps=…&downmbps=…
+          &alpn=…&obfs=xplus&obfsParam=…#name
+upmbps/downmbps обязательны в протоколе; без них — 10/50 Мбит/с.
+"""
+
+from __future__ import annotations
+
+import re
+
+from ._common import LinkError, csv, is_true, none_like, split_link
+
+
+def _mbps(value, default):
+    m = re.search(r"\d+", value or "")
+    return int(m.group()) if m else default
+
+
+def parse(text: str):
+    link = split_link(text)
+    p = link.params
+    if not link.host:
+        raise LinkError("нет адреса")
+    node = {"tag": link.name,
+            "type": "hysteria",
+            "server": link.host,
+            "server_port": link.port_int(),
+            "up_mbps": _mbps(p.get("upmbps"), 10),
+            "down_mbps": _mbps(p.get("downmbps"), 50)}
+    if p.get("auth"):
+        node["auth_str"] = p["auth"]
+    if p.get("obfsParam"):
+        node["obfs"] = p["obfsParam"]
+    tls = {"enabled": True,
+           "insecure": is_true(p.get("insecure", "")) or is_true(p.get("allowInsecure", ""))}
+    sni = p.get("peer") or p.get("sni")
+    if not none_like(sni):
+        tls["server_name"] = sni
+    if not none_like(p.get("alpn")):
+        tls["alpn"] = csv(p["alpn"])
+    node["tls"] = tls
     return node

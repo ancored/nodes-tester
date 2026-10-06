@@ -9,11 +9,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
-PKG_VERSION:=0.3.12
+PKG_VERSION:=0.4.0
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
-PKG_LICENSE:=0BSD
+PKG_LICENSE:=AGPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE THIRD_PARTY_LICENSES
 
 PYSOCKS_VERSION:=1.7.1
 PYSOCKS_FILE:=PySocks-$(PYSOCKS_VERSION).tar.gz
@@ -36,7 +37,7 @@ define Package/nodes-tester
   # OpenWrt, а SDK не пересобирает их из исходников (python3-jsonschema тянет rust).
   EXTRA_DEPENDS:=python3-light (>=3.8), python3-sqlite3 (>=3.8), python3-urllib (>=3.8), \
 	python3-email (>=3.8), python3-openssl (>=3.8), python3-requests (>=2.31), \
-	python3-yaml (>=6.0), python3-ruamel-yaml (>=0.17), python3-jsonschema (>=4.0)
+	python3-yaml (>=6.0), python3-jsonschema (>=4.0)
 endef
 
 define Package/nodes-tester/description
@@ -75,6 +76,7 @@ define Build/Prepare
 		user_nodes.example.json groups_params.json awg/de.conf.example,\
 		cp $(REPO_ROOT)/config/$(f) $(PKG_BUILD_DIR)/config/$(f);)
 	cp $(REPO_ROOT)/scripts/router/clients.list.example $(PKG_BUILD_DIR)/config/
+	cp $(REPO_ROOT)/LICENSE $(REPO_ROOT)/THIRD_PARTY_LICENSES $(PKG_BUILD_DIR)/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox
 	cp $(REPO_ROOT)/config/singbox/rules.example.json $(PKG_BUILD_DIR)/config/singbox/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox/presets
@@ -100,6 +102,7 @@ define Package/nodes-tester/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/socks.py $(1)$(APP_DIR)/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/sockshandler.py $(1)$(APP_DIR)/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/LICENSE $(1)$(APP_DIR)/LICENSE.PySocks
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/LICENSE $(PKG_BUILD_DIR)/THIRD_PARTY_LICENSES $(1)$(APP_DIR)/
 	$(foreach s,$(ROUTER_SCRIPTS),$(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/router/$(s) $(1)$(APP_DIR)/scripts/router/;)
 
 	# Шаблоны: из них uci-defaults создаёт рабочие конфиги при первой установке

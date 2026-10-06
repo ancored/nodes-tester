@@ -6,6 +6,7 @@ import { useSnapshot, refresh } from './store.js'
 import { auth, login, requestLogout, initSession } from './api.js'
 import { BOX_DASHBOARD, provisionBoxDashboard } from './boxdash.js'
 const s = useSnapshot(), route = useRoute()
+const SOURCE_URL = 'https://github.com/ancored/nodes-tester'
 const token = ref(''), remember = ref(false), showLogin = ref(false), menuOpen = ref(false)
 const isNodes = computed(() => nodeSections.some(x => x.path === route.path) || route.path.startsWith('/nodes/'))
 async function enter() { await login(token.value,remember.value); token.value = ''; if(auth.verified) showLogin.value = false }
@@ -20,6 +21,7 @@ watch(() => auth.verified, v => { if (v) provisionBoxDashboard().catch(() => {})
       <nav class="nav" :class="{ expanded: menuOpen }" aria-label="Основные разделы">
         <RouterLink v-for="item in sections" :key="item.path" :to="item.path" @click="menuOpen = false" :class="{ selected: item.path === '/nodes' && isNodes }">{{ item.name }}</RouterLink>
         <a :href="BOX_DASHBOARD" target="_blank" rel="noopener" class="external" title="Официальная панель API-сервиса sing-box">sing-box dashboard ↗</a>
+        <a :href="auth.capabilities.source_url || SOURCE_URL" target="_blank" rel="noopener" class="external" :title="`nodes-tester ${auth.capabilities.version || ''}, лицензия AGPL-3.0`">Исходный код ↗</a>
       </nav>
     </aside>
     <div class="content">

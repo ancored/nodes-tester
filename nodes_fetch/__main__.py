@@ -17,7 +17,7 @@ from nodes_common import raw as rawfmt
 from nodes_common.fileio import LockTimeout, atomic_write_text, dumps_json, file_lock, read_json
 
 from . import device as devicemod
-from . import fetch
+from . import fetch, happ_keys
 
 
 def _log(msg):
@@ -47,6 +47,8 @@ def main(argv=None):
     ap.add_argument("--device", metavar="PATH",
                     help="device.json с HWID (по умолчанию — рядом с providers, для "
                          "config-main/config-wh — уровнем выше)")
+    ap.add_argument("--happ-keys", metavar="PATH",
+                    help="кэш ключей Happ (по умолчанию happ-keys.json рядом с device.json)")
     args = ap.parse_args(argv)
     if not args.output and not args.dry_run:
         ap.error("нужен -o/--output (или --dry-run)")
@@ -69,7 +71,8 @@ def main(argv=None):
         previous = _load_previous(args.output)
         device = devicemod.load(args.device or devicemod.default_path(args.providers), log=_log)
         raw = fetch.run(providers, base_dir, name=name, previous=previous,
-                        only=args.only, log=_log, device=device)
+                        only=args.only, log=_log, device=device,
+                        happ_keys=args.happ_keys or happ_keys.default_path(args.providers))
         if args.dry_run:
             return fetch.summary(raw, previous), 0
         try:

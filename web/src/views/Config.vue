@@ -108,6 +108,7 @@ function subMeta(sub){return subState(sub)?.meta || {}}
 function daysLeft(m){return m.expire ? Math.ceil((m.expire*1000-Date.now())/86400000) : null}
 function trafficLine(m){if(m.download==null && m.total==null)return '';const used=(m.upload||0)+(m.download||0);return m.total ? `${bytes(used)} из ${bytes(m.total)}` : `${bytes(used)}, без лимита`}
 function lastOk(st){return st?.last_ok_at ? dateTime(Date.parse(st.last_ok_at)/1000) : 'нет'}
+function setHappKeys(v) {v=v.trim();setPath(document.value,'fetch.happ_keys_url',v && v!==options.value.happ_keys?.default_url ? v : undefined);preview.value=false}
 function sourceKind(sub) {return sub.type === 'folder' ? 'folder' : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
 function changeKind(sub,kind) {
   delete sub.url; delete sub.file; delete sub.type; delete sub.path
@@ -203,6 +204,9 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
           </section>
           <button class="btn" @click="(document.subscribes ||= []).push({tag:'',url:'',enabled:true})">Добавить подписку</button>
           <p v-if="options.device?.hwid" class="help-text">HWID роутера для панелей подписок: <code>{{ options.device.hwid }}</code> (файл {{ options.device.path }}). Отправляется happ-подписками всегда, URL-подписками — при включённом флажке. Свой HWID для одной подписки задаётся заголовком X-Hwid.</p>
+          <section v-if="(document.subscribes || []).some(s=>sourceKind(s)==='happ')" class="panel"><h2>Ключи Happ</h2><div class="form-grid">
+            <label>Источник ключей<input :value="value('fetch.happ_keys_url') ?? options.happ_keys?.default_url" @input="setHappKeys($event.target.value)" /><span class="mut">{{ value('fetch.happ_keys_url') ? 'Переопределён' : 'По умолчанию' }}</span><button v-if="value('fetch.happ_keys_url')" class="btn" @click="setHappKeys('')">Вернуть по умолчанию</button></label>
+          </div><p class="help-text">Ключи расшифровки ссылок happ://crypt… принадлежат приложению Happ и в nodes-tester не входят. Они скачиваются из указанного источника (URL или путь к файлу keys.rs или JSON) и хранятся в {{ options.happ_keys?.path }}; обновляются, если для ссылки не нашлось ключа.</p></section>
           <section class="panel"><h2>Защита загрузки</h2><div class="form-grid">
             <label>Тайм-аут, с<input type="number" :value="value('fetch.timeout')" @input="update('fetch.timeout',$event,'number')" placeholder="По умолчанию" /></label>
             <label>Минимальная доля оставшихся нод (0–1)<input type="number" min="0" max="1" step="0.05" :value="value('fetch.min_ratio')" @input="update('fetch.min_ratio',$event,'number')" placeholder="По умолчанию" /></label>

@@ -1,41 +1,26 @@
-import re
-from .. import util
-from urllib.parse import urlparse, parse_qs, unquote
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    '''
-    try:
-        remark = (util.b64Decode(server_info.netloc)).decode().rsplit("/#", 1)
-    except UnicodeDecodeError:
-        remark = (util.b64Decode(server_info.netloc+server_info.path)).decode().rsplit("/#", 1)
-    remark = unquote(remark[1]) if len(remark) > 1 else util.genName() + '_http'
-    _netloc = remark[0].rsplit("@", 1)
-    '''
-    netloc1 = dict(
-        (k, v if len(v) > 1 else v[0])
-        for k, v in parse_qs(server_info.netloc).items()
-    )
-    remark = server_info.fragment
-    netloc = (util.b64Decode(server_info.netloc.split('&')[0])).decode()
-    if '@' in netloc:
-        _netloc = netloc.rsplit("@", 1)
-        server_port = _netloc[1]
-    else:
-       server_port = netloc
-    node = {
-        'tag': remark or util.genName()+'_http',
-        'type': 'http',
-        'server': re.sub(r"\[|\]", "", server_port.rsplit(":", 1)[0]),
-        'server_port': int(server_port.rsplit(":", 1)[1]),
-        'tls': {
-            'enabled': True,
-            'insecure': True
-        }
-    }
-    if netloc1.get('sni'):
-        node['tls']['server_name'] = netloc1['sni']
-    if '@' in netloc:
-        node['username'] = _netloc[0].split(":")[0]
-        node['password'] = _netloc[0].split(":")[1]
-    return (node)
+"""http:// и https:// — HTTP-прокси (https — с TLS до прокси).
+
+http(s)://user:pass@host:port#name; учётные данные или весь адрес бывают в base64.
+Для https: sni=…, allowInsecure=1.
+"""
+
+from __future__ import annotations
+
+from ._common import LinkError, is_true, split_link
+from .socks import credentials, unwrap
+
+
+def parse(text: str):
+    link = unwrap(split_link(text))
+    if not link.host:
+        raise LinkError("нет адреса")
+    node = {"tag": link.name, "type": "http",
+            "server": link.host, "server_port": link.port_int()}
+    if link.userinfo:
+        node["username"], node["password"] = credentials(link)
+    if link.scheme == "https":
+        tls = {"enabled": True, "insecure": is_true(link.params.get("allowInsecure", ""))}
+        if link.params.get("sni"):
+            tls["server_name"] = link.params["sni"]
+        node["tls"] = tls
+    return node

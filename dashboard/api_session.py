@@ -1,6 +1,12 @@
 """Non-secret capabilities and server-side token validation."""
 import shutil
+
+from nodes_tester import __version__
+
 from .webapp import App
+
+# AGPL-3.0, раздел 13: пользователям по сети — ссылка на исходный код работающей версии.
+SOURCE_URL = "https://github.com/ancored/nodes-tester"
 
 
 def capabilities(app: App) -> dict:
@@ -20,6 +26,7 @@ def capabilities(app: App) -> dict:
         "notify": bool(r is not None and getattr(r, "notifier", None) is not None and app.token),
         "quarantine_hours": app.cfg.cooldown.garbage_hours,
         "cooldown_enabled": app.cfg.cooldown.enabled,
+        "version": __version__, "source_url": f"{SOURCE_URL}/tree/v{__version__}",
     }
 
 

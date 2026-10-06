@@ -1,38 +1,36 @@
-import re
-from .. import util
-from urllib.parse import urlparse, parse_qs
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    if server_info.path:
-        server_info = server_info._replace(netloc=server_info.netloc + server_info.path)
-    _netloc = server_info.netloc.rsplit("@", 1)
-    #_netloc = (util.b64Decode(server_info.netloc)).decode().split("@")
-    netquery = dict(
-        (k, v if len(v) > 1 else v[0])
-        for k, v in parse_qs(server_info.query).items()
-    )
-    node = {
-        'tag': server_info.fragment or util.genName()+'_tuic',
-        'type': 'tuic',
-        'server': re.sub(r"\[|\]", "", _netloc[1].rsplit(":", 1)[0]),
-        'server_port': int(re.search(r'\d+', _netloc[1].rsplit(":", 1)[1]).group()),
-        'uuid': _netloc[0].split(":")[0],
-        'password': _netloc[0].split(":")[1] if len(_netloc[0].split(":")) > 1 else netquery.get('password', ''),
-        'congestion_control': netquery.get('congestion_control', 'bbr'),
-        'udp_relay_mode': netquery.get('udp_relay_mode'),
-        'zero_rtt_handshake': False,
-        'heartbeat': '10s',
-        'tls': {
-            'enabled': True,
-            'alpn': (netquery.get('alpn') or "h3").strip('{}').split(','),
-            'insecure': False
-        }
-    }
-    if netquery.get('allow_insecure') == '1' :
-        node['tls']['insecure'] = True
-    if netquery.get('disable_sni') and netquery['disable_sni'] != '1':
-        node['tls']['server_name'] = netquery.get('sni', netquery.get('peer', ''))
-    if netquery.get('sni') or netquery.get('peer'):
-        node['tls']['server_name'] = netquery.get('sni', netquery.get('peer', ''))
+"""tuic:// — TUIC v5 в формате v2rayN/NekoBox.
+
+tuic://uuid:password@host:port?congestion_control=bbr&udp_relay_mode=native&alpn=h3
+       &sni=…&allow_insecure=1&disable_sni=1#name
+"""
+
+from __future__ import annotations
+
+from ._common import LinkError, csv, is_true, none_like, split_link
+
+
+def parse(text: str):
+    link = split_link(text)
+    p = link.params
+    uuid, _, password = link.user.partition(":")
+    if not link.host or not uuid:
+        raise LinkError("нет адреса или uuid")
+    node = {"tag": link.name,
+            "type": "tuic",
+            "server": link.host,
+            "server_port": link.port_int(),
+            "uuid": uuid,
+            "password": password or p.get("password", "")}
+    for key in ("congestion_control", "udp_relay_mode"):
+        if p.get(key):
+            node[key] = p[key]
+    tls = {"enabled": True,
+           "alpn": csv(p.get("alpn") or "h3"),
+           "insecure": is_true(p.get("allow_insecure", "")) or is_true(p.get("insecure", ""))}
+    sni = p.get("sni") or p.get("peer")
+    if is_true(p.get("disable_sni", "")):
+        tls["disable_sni"] = True
+    elif not none_like(sni):
+        tls["server_name"] = sni
+    node["tls"] = tls
     return node

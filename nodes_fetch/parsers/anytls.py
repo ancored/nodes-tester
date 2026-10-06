@@ -1,39 +1,31 @@
-import re
-from .. import util
-from urllib.parse import urlparse, parse_qs, unquote
+"""anytls://password@host:port/?sni=…&insecure=1#name — формат anytls-go.
 
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    netquery = dict(
-        (k, v if len(v) > 1 else v[0])
-        for k, v in parse_qs(server_info.query).items()
-    )
-    node = {
-        'tag': unquote(server_info.fragment) or util.genName()+'_anytls',
-        'type': 'anytls',
-        'server': re.sub(r"\[|\]", "", server_info.netloc.split("@")[-1].rsplit(":", 1)[0]),
-        'server_port': int((server_info.netloc.rsplit(":", 1)[1]).split(",", 1)[0]), #fuck all
-        'password': netquery['auth'] if netquery.get('auth') else server_info.netloc.split("@")[0].rsplit(":", 1)[-1],
-        'tls': {
-            'enabled': True,
-            'server_name': netquery.get('sni', netquery.get('peer', '')),
-            'insecure': False
-        }
-    }
-    if netquery.get('idleSessionCheckInterval'):
-        node['idle_session_check_interval'] = netquery['idleSessionCheckInterval']+'s'
-    if netquery.get('idleSessionTimeout'):
-        node['idle_session_timeout'] = netquery['idleSessionTimeout']+'s'
-    if netquery.get('minIdleSession'):
-        node['min_idle_session'] = int(netquery['minIdleSession'])
-    if netquery.get('fp'):
-        node['tls']['utls'] = {
-            'enabled': True,
-            'fingerprint': netquery.get('fp')
-        }
-    if netquery.get('alpn'):
-        node['tls']['alpn'] = netquery['alpn'].strip('{}').split(',')
-    if netquery.get('insecure') == '1' or netquery.get('allowInsecure') == '1':
-        node['tls']['insecure'] = True
+Дополнительно: fp, alpn и параметры пула сессий idleSessionCheckInterval,
+idleSessionTimeout (секунды), minIdleSession.
+"""
+
+from __future__ import annotations
+
+from ._common import LinkError, split_link, tls_block
+
+
+def parse(text: str):
+    link = split_link(text)
+    p = link.params
+    if not link.host:
+        raise LinkError("нет адреса")
+    node = {"tag": link.name,
+            "type": "anytls",
+            "server": link.host,
+            "server_port": link.port_int(),
+            "password": p.get("auth") or link.user,
+            "tls": tls_block(p)}
+    if not node["tls"]["server_name"]:
+        del node["tls"]["server_name"]
+    for key, field in (("idleSessionCheckInterval", "idle_session_check_interval"),
+                       ("idleSessionTimeout", "idle_session_timeout")):
+        if p.get(key, "").isdigit():
+            node[field] = p[key] + "s"
+    if p.get("minIdleSession", "").isdigit():
+        node["min_idle_session"] = int(p["minIdleSession"])
     return node

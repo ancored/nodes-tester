@@ -83,7 +83,7 @@ providers.json
 ```json
 {
   "filters": {
-    "exclude_types": ["shadowsocksr"],
+    "exclude_types": ["hysteria"],
     "exclude_protocols": ["xhttp", "wg"],
     "exclude_countries": [],
     "exclude_names": {}

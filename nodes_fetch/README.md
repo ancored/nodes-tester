@@ -92,20 +92,29 @@ happ-подписки отправляют HWID и описание устрой
 
 ## Парсеры
 
-Парсеры находятся в `nodes_fetch/parsers`. Обычные share-схемы реализуют `parse`, а
-форматы папок — `parse_file`.
+Парсеры находятся в `nodes_fetch/parsers`: `parse_link` разбирает строку подписки,
+`FOLDER_FORMATS` — каталоги файлов (AWG), `clash.convert` — записи `proxies` Clash/mihomo.
 
-Поддерживаются HTTP, SOCKS, Shadowsocks, ShadowsocksR, VMess, Trojan, VLESS, TUIC,
-Hysteria, Hysteria2, WireGuard, AnyTLS и AWG. Happ-ссылки сначала раскрываются до обычной
-подписки.
+Поддерживаются VLESS, VMess, Trojan, Shadowsocks (SIP002 и прежний формат), Hysteria,
+Hysteria2, TUIC, AnyTLS, SOCKS, HTTP/HTTPS, WireGuard и AWG. Содержимое подписки
+распознаётся само: share-ссылки построчно, base64 от них, Clash YAML или JSON sing-box.
+ShadowsocksR и другие типы, которых нет в sing-box, пропускаются.
 
-Парсеры основаны на
-[Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe), но проект
-содержит собственные изменения: XHTTP для VLESS и Trojan, дополнительные поля VLESS,
-безопасный разбор Shadowsocks, AWG и сохранение `packet_encoding: xudp`.
+Нераспознанная или битая строка пропускается с записью в журнал, подписка из-за неё не
+падает. Если в ссылке нет имени, тегом становится `тип адрес:порт`.
 
-Расшифровка `happ://crypt…` — порт [Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr) на
-чистом Python. Условия использования этих частей — в разделе «Лицензия» корневого README.
+## Подписки Happ
+
+Ссылка `happ://crypt…/…` содержит зашифрованный адрес подписки. Ключи расшифровки
+принадлежат приложению Happ и в nodes-tester не входят. Они скачиваются из
+`fetch.happ_keys_url` providers.json — URL или путь к файлу `keys.rs` либо JSON
+`{"crypt": [...], "crypt5": {...}}`. По умолчанию это `src/keys.rs` проекта
+[Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr). Источник меняется в админке на
+вкладке подписок.
+
+Ключи кэшируются в `happ-keys.json` рядом с `device.json`. Кэш обновляется, если его нет
+или для ссылки не нашлось ключа, но не чаще раза в 6 часов. Подписка скачивается с
+заголовками мобильного Happ; их можно переопределить в `happ_headers`.
 
 ## XHTTP и AWG
 
@@ -166,6 +175,8 @@ sing-box:
 | `__main__.py` | CLI, lock, guard и атомарная запись |
 | `fetch.py` | загрузка providers, last-good и итоговая сводка |
 | `sources.py` | URL, файл, папка и happ как источники |
-| `util.py` | общие функции парсеров, HTTP и XHTTP |
-| `happ.py`, `happ_decode.py` | раскрытие happ-подписок |
-| `parsers/` | преобразование протоколов в объекты sing-box |
+| `util.py` | HTTP-загрузка подписок |
+| `happ.py` | раскрытие и загрузка happ-подписок |
+| `happ_crypto.py`, `_chacha.py` | расшифровка `happ://crypt…` (RSA, ChaCha20-Poly1305) |
+| `happ_keys.py` | источник и кэш ключей Happ |
+| `parsers/` | share-ссылки и Clash → объекты sing-box; `_common.py` — адрес, TLS, транспорты, XHTTP |

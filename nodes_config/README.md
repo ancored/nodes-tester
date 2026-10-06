@@ -54,7 +54,7 @@ python3 -m nodes_config \
 ```json
 {
   "filters": {
-    "exclude_types": ["shadowsocksr"],
+    "exclude_types": ["hysteria"],
     "exclude_protocols": ["xhttp", "wg"],
     "exclude_countries": ["cn", "ru"],
     "exclude_names": {
@@ -88,7 +88,7 @@ python3 -m nodes_config \
 
 ### Фильтры
 
-- `exclude_types` сравнивается с `type` outbound, например `shadowsocksr`.
+- `exclude_types` сравнивается с `type` outbound, например `hysteria`.
 - `exclude_protocols` сравнивается с токенами дескриптора протокола. `xhttp` ловит
   `vless|xhttp|tls` и `trojan|xhttp|tls`; `wg` ловит WireGuard и AWG.
 - `exclude_countries` содержит двухбуквенные коды стран.

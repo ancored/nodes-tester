@@ -61,7 +61,7 @@ def _resp(status, body=LINK, headers=None):
 class HappTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        patcher = patch("nodes_fetch.happ.happ_decode.decode_link",
+        patcher = patch("nodes_fetch.happ.resolve_url",
                         return_value="https://panel.invalid/sub")
         patcher.start()
         self.addCleanup(patcher.stop)

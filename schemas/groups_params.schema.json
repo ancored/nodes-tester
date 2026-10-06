@@ -10,7 +10,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "exclude_types": { "type": "array", "items": { "type": "string" }, "description": "типы outbound: shadowsocksr, hysteria2, …" },
+        "exclude_types": { "type": "array", "items": { "type": "string" }, "description": "типы outbound: hysteria, hysteria2, …" },
         "exclude_protocols": { "type": "array", "items": { "type": "string" }, "description": "токены naming.node_protocol: xhttp, wg, reality, …" },
         "exclude_countries": { "type": "array", "items": { "type": "string" }, "description": "ISO-коды стран (ru, cn, …)" },
         "exclude_names": {

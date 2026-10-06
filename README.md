@@ -21,7 +21,7 @@
 2. Пройти [установку и первый запуск на OpenWrt](openwrt/README.md).
 3. Открыть [руководство по админке и повседневной работе](docs/USAGE.md).
 
-Актуальный релиз: [`v0.3.12`](https://github.com/ancored/nodes-tester/releases/tag/v0.3.12). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет подписан ключом проекта и доступен из репозитория `apk` на GitHub Pages; подключение описано в [инструкции](openwrt/README.md).
+Актуальный релиз: [`v0.4.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.0). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет подписан ключом проекта и доступен из репозитория `apk` на GitHub Pages; подключение описано в [инструкции](openwrt/README.md).
 
 ## Как устроено обновление
 
@@ -77,22 +77,24 @@ WH-подписки → загрузка → whnodes.json + клиентские
 
 ## Лицензия
 
-Код проекта распространяется по лицензии [0BSD](LICENSE): его можно использовать, изменять и
-распространять в любых целях без условий.
+Copyright © 2026 Andrey Dyadyk
 
-Исключения — части, взятые из других проектов; на них действуют условия их авторов:
+nodes-tester — свободная программа: её можно распространять и изменять на условиях
+[GNU Affero General Public License](LICENSE) версии 3 либо (по вашему выбору) любой более
+поздней версии (`AGPL-3.0-or-later`). Программа распространяется без каких-либо гарантий.
+Если вы даёте доступ к изменённой версии по сети, например к админке, пользователи должны
+иметь возможность получить её исходный код; ссылка «Исходный код» в админке ведёт на код
+работающей версии.
 
-- парсеры подписок в [`nodes_fetch/parsers/`](nodes_fetch/parsers/) и разбор содержимого подписки
-  основаны на [Toperlock/sing-box-subscribe](https://github.com/Toperlock/sing-box-subscribe);
-  в этом репозитории файла лицензии нет;
-- расшифровка ссылок `happ://crypt…` ([`nodes_fetch/happ_decode.py`](nodes_fetch/happ_decode.py),
-  ключи в [`happ_keys_crypt5.py`](nodes_fetch/happ_keys_crypt5.py)) — порт
-  [Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr), который распространяется «как есть» для
-  совместимости и исследований, без отдельной лицензии;
-- в пакет OpenWrt вложен [PySocks](https://github.com/Anorov/PySocks) (BSD, файл `LICENSE.PySocks`);
-- веб-админка собрана с [Vue](https://vuejs.org/) и Vue Router (MIT) и шрифтом флагов
-  [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) (MIT;
-  изображения флагов — [Twemoji](https://github.com/twitter/twemoji), CC-BY 4.0).
+Сторонние компоненты в составе админки и пакета OpenWrt — Vue и Vue Router (MIT),
+[country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) (MIT;
+изображения флагов — [Twemoji](https://github.com/twitter/twemoji), CC-BY 4.0) и
+[PySocks](https://github.com/Anorov/PySocks) (BSD-3-Clause); их лицензии — в
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+
+Ключи расшифровки ссылок Happ в проект не входят: при наличии таких подписок они
+скачиваются из источника, заданного пользователем (по умолчанию —
+[Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr)).
 
 sing-box и sing-box-lx (GPL-3.0) в проект не входят: тестер запускает установленный sing-box как
 отдельную программу и обращается к его API.

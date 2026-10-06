@@ -52,7 +52,7 @@
       "domain_resolver": "dns-whitelist"
     },
     {
-      "tag": "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+      "tag": "ALPHA-vmess|ws|tls-us-out [Media] [09fa3582]",
       "type": "vmess",
       "server": "10.0.0.5",
       "server_port": 443,
@@ -62,15 +62,15 @@
       "packet_encoding": "xudp",
       "tls": {
         "enabled": true,
-        "insecure": true,
+        "insecure": false,
         "server_name": "vm.example.com"
       },
       "transport": {
         "type": "ws",
+        "path": "/vm",
         "headers": {
           "Host": "vm.example.com"
-        },
-        "path": "/vm"
+        }
       },
       "domain_resolver": "dns-whitelist"
     },
@@ -113,8 +113,8 @@
       "password": "pw",
       "tls": {
         "enabled": true,
-        "server_name": "hy.example.com",
         "insecure": true,
+        "server_name": "hy.example.com",
         "alpn": [
           "h3"
         ]
@@ -127,17 +127,17 @@
       "server": "10.0.0.9",
       "server_port": 20000,
       "password": "pw",
+      "server_ports": [
+        "20000:30000"
+      ],
       "tls": {
         "enabled": true,
-        "server_name": "hy.example.com",
         "insecure": false,
+        "server_name": "hy.example.com",
         "alpn": [
           "h3"
         ]
       },
-      "server_ports": [
-        "20000:30000"
-      ],
       "domain_resolver": "dns-whitelist"
     },
     {
@@ -159,16 +159,13 @@
       "domain_resolver": "dns-whitelist"
     },
     {
-      "tag": "ALPHA-tuic-ch-out [0b9068e1]",
+      "tag": "ALPHA-tuic-ch-out [47475775]",
       "type": "tuic",
       "server": "10.0.0.12",
       "server_port": 443,
       "uuid": "22222222-2222-4222-8222-222222222222",
       "password": "pw",
       "congestion_control": "bbr",
-      "udp_relay_mode": null,
-      "zero_rtt_handshake": false,
-      "heartbeat": "10s",
       "tls": {
         "enabled": true,
         "alpn": [
@@ -187,8 +184,8 @@
       "password": "pw",
       "tls": {
         "enabled": true,
-        "server_name": "at.example.com",
-        "insecure": false
+        "insecure": false,
+        "server_name": "at.example.com"
       },
       "domain_resolver": "dns-whitelist"
     },
@@ -220,34 +217,34 @@
       "type": "trojan",
       "server": "10.0.1.1",
       "server_port": 443,
-      "password": "yamlpass",
       "tls": {
         "enabled": true,
         "insecure": false,
         "server_name": "fr.example.com"
       },
+      "password": "yamlpass",
       "domain_resolver": "dns-whitelist"
     },
     {
-      "tag": "BETA-vmess|ws|tls-es-out [9580508b]",
+      "tag": "BETA-vmess|ws|tls-es-out [c3e0e152]",
       "type": "vmess",
       "server": "10.0.1.2",
       "server_port": 443,
+      "tls": {
+        "enabled": true,
+        "insecure": false,
+        "server_name": "es.example.com"
+      },
       "uuid": "33333333-3333-4333-8333-333333333333",
       "security": "auto",
       "alter_id": 0,
       "packet_encoding": "xudp",
-      "tls": {
-        "enabled": true,
-        "insecure": true,
-        "server_name": "es.example.com"
-      },
       "transport": {
         "type": "ws",
+        "path": "/es",
         "headers": {
           "Host": "es.example.com"
-        },
-        "path": "/es"
+        }
       },
       "domain_resolver": "dns-whitelist"
     },
@@ -296,10 +293,10 @@
         "ALPHA-trojan|tls-gb-out [a951356e]",
         "ALPHA-hy2-se-out [e30523e2]",
         "ALPHA-ss-pl-out [2337a2e4]",
-        "ALPHA-tuic-ch-out [0b9068e1]",
+        "ALPHA-tuic-ch-out [47475775]",
         "ALPHA-anytls|tls-at-out [ed5abd81]",
         "BETA-trojan|tls-fr-out [a2bee939]",
-        "BETA-vmess|ws|tls-es-out [9580508b]"
+        "BETA-vmess|ws|tls-es-out [c3e0e152]"
       ],
       "interrupt_exist_connections": true
     },
@@ -309,7 +306,7 @@
       "default": "us-auto-out-failsafe",
       "outbounds": [
         "us-auto-out-failsafe",
-        "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+        "ALPHA-vmess|ws|tls-us-out [Media] [09fa3582]",
         "ALPHA-trojan|ws|tls-us-out [0e9cd45b]"
       ],
       "interrupt_exist_connections": true
@@ -343,10 +340,10 @@
         "ALPHA-trojan|tls-gb-out [a951356e]",
         "ALPHA-hy2-se-out [e30523e2]",
         "ALPHA-ss-pl-out [2337a2e4]",
-        "ALPHA-tuic-ch-out [0b9068e1]",
+        "ALPHA-tuic-ch-out [47475775]",
         "ALPHA-anytls|tls-at-out [ed5abd81]",
         "BETA-trojan|tls-fr-out [a2bee939]",
-        "BETA-vmess|ws|tls-es-out [9580508b]"
+        "BETA-vmess|ws|tls-es-out [c3e0e152]"
       ],
       "interval": "5m",
       "tolerance": 100,
@@ -357,7 +354,7 @@
       "tag": "us-auto-out-failsafe",
       "type": "urltest",
       "outbounds": [
-        "ALPHA-vmess|ws|tls-us-out [Media] [92be9368]",
+        "ALPHA-vmess|ws|tls-us-out [Media] [09fa3582]",
         "ALPHA-trojan|ws|tls-us-out [0e9cd45b]"
       ],
       "interval": "5m",

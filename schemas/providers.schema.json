@@ -40,7 +40,8 @@
         "retries": { "type": "integer", "minimum": 0, "default": 3 },
         "proxy": { "type": ["string", "null"], "default": null, "description": "напр. socks5://127.0.0.1:2080" },
         "stale_max_hours": { "type": "number", "minimum": 0, "default": 48 },
-        "min_ratio": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 }
+        "min_ratio": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 },
+        "happ_keys_url": { "type": "string", "minLength": 1, "default": "https://raw.githubusercontent.com/Omegaplexx/hpwnr/main/src/keys.rs", "description": "источник ключей Happ для ссылок happ://crypt…: URL или путь к keys.rs/JSON" }
       }
     }
   }

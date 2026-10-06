@@ -1,37 +1,39 @@
-import re
-from .. import util
-from urllib.parse import urlparse,unquote
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    if server_info.path:
-        server_info = server_info._replace(netloc=server_info.netloc + server_info.path, path="")
-    node = {
-        'tag': unquote(server_info.fragment)  or util.genName()+'_socks',
-        'type': 'socks',
-        "version": "5"
-    }
+"""socks:// (socks5://) — SOCKS5-прокси.
+
+socks://user:pass@host:port#name; учётные данные бывают в base64:
+socks://base64(user:pass)@host:port, а у части клиентов base64 — весь адрес.
+"""
+
+from __future__ import annotations
+
+from ._common import LinkError, b64text, split_link, to_port
+
+
+def credentials(link):
+    """user:pass из base64 или открытого вида."""
     try:
-        netloc = (util.b64Decode(server_info.netloc)).decode()
-    except:
-        netloc = server_info.netloc
-    if '@' in netloc:
-        userinfo, address = netloc.rsplit('@', 1)
-        node['server'] = re.sub(r"\[|\]", "", address.rsplit(":", 1)[0])
-        node['server_port'] = int(address.rsplit(":", 1)[1])
-        try:
-            userinfo = util.b64Decode(userinfo).decode('utf-8')   # socks://base64(user:pass)@host:port
-        except:
-            pass
-        node['username'] = userinfo.split(":")[0]
-        node['password'] = userinfo.split(":")[1]
-    elif '@' in server_info.netloc:
-        _netloc = server_info.netloc.split("@")
-        node['server'] = re.sub(r"\[|\]", "", _netloc[1].rsplit(":", 1)[0])
-        node['server_port'] = int(_netloc[1].rsplit(":", 1)[1])
-        node['username'] = netloc.split(":")[0]
-        node['password'] = netloc.split(":")[1]
-    else:
-        node['server'] = re.sub(r"\[|\]", "", netloc.rsplit(":", 1)[0])
-        node['server_port'] = int(netloc.rsplit(":", 1)[1])
-    return (node)
+        decoded = b64text(link.userinfo)
+    except LinkError:
+        decoded = ""
+    user, sep, password = (decoded if ":" in decoded else link.user).partition(":")
+    return user, password
+
+
+def unwrap(link):
+    """Весь адрес в base64 (scheme://base64(user:pass@host:port)#name) → обычная ссылка."""
+    if link.userinfo or link.port:
+        return link
+    inner = split_link(f"{link.scheme}://{b64text(link.host + link.path)}")
+    inner.name = link.name
+    return inner
+
+
+def parse(text: str):
+    link = unwrap(split_link(text))
+    if not link.host:
+        raise LinkError("нет адреса")
+    node = {"tag": link.name, "type": "socks", "version": "5",
+            "server": link.host, "server_port": to_port(link.port)}
+    if link.userinfo:
+        node["username"], node["password"] = credentials(link)
+    return node

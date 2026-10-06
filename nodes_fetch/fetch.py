@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from nodes_common import raw as rawfmt
 from nodes_common.fileio import parse_iso
 
+from . import happ_keys as happkeys
 from . import meta as metamod
 from . import sources, util
 
@@ -24,6 +25,7 @@ FETCH_DEFAULTS = {
     "proxy": None,            # "socks5://127.0.0.1:2080" — качать подписки через туннель
     "stale_max_hours": 48,    # сколько держать last-good ноды упавшей подписки
     "min_ratio": 0.5,         # guard: нод < min_ratio × прошлое → не записывать
+    "happ_keys_url": happkeys.DEFAULT_URL,   # источник ключей Happ (URL или путь)
 }
 
 
@@ -73,6 +75,8 @@ def load_providers(data, log=print):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 \
                 or (key == "timeout" and v == 0) or (key == "retries" and not isinstance(v, int)):
             raise ProvidersError(f"fetch.{key}: недопустимое значение {v!r}")
+    if not isinstance(fetch_cfg["happ_keys_url"], str) or not fetch_cfg["happ_keys_url"].strip():
+        raise ProvidersError("fetch.happ_keys_url: нужна непустая строка")
     if not (0 <= float(fetch_cfg["min_ratio"]) <= 1):
         raise ProvidersError("fetch.min_ratio должен быть в [0, 1]")
     return {"subscribes": subs, "fetch": fetch_cfg}
@@ -90,17 +94,18 @@ def _index_previous(previous):
 
 
 def run(providers, base_dir, name="providers", previous=None, only=None, now=None, log=print,
-        device=None):
+        device=None, happ_keys=None):
     """Прогон fetch → raw-конверт (dict). providers — результат load_providers.
     previous — прошлый raw (для last-good/--only); now — aware datetime (для тестов);
-    device — device.json установки (HWID для панелей)."""
+    device — device.json установки (HWID для панелей); happ_keys — путь к кэшу ключей Happ."""
     now = now or datetime.now(timezone.utc)
     now_iso = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     cfg = providers["fetch"]
     ctx = sources.Context(base_dir=base_dir,
                           timeout=(util.DEFAULT_TIMEOUT[0], float(cfg["timeout"])),
                           retries=int(cfg["retries"]), proxy=cfg["proxy"], log=log,
-                          device=device)
+                          device=device, happ_keys=happ_keys,
+                          happ_keys_url=cfg["happ_keys_url"])
     stale_max = timedelta(hours=float(cfg["stale_max_hours"]))
     prev_nodes, prev_srcs = _index_previous(previous)
     only = set(only or ())

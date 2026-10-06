@@ -1,28 +1,23 @@
-"""Подписки Happ: расшифровка ссылок happ://crypt..crypt5 и загрузка подписки.
+"""Подписки Happ: ссылка happ://crypt…/ → URL подписки → текст со share-ссылками.
 
-Ссылка happ://cryptN/… содержит зашифрованный реальный URL подписки. Мы его
-расшифровываем (happ_decode, чистый Python — работает и на роутере) и скачиваем
-подписку, отправляя заголовки, имитирующие приложение Happ (иначе провайдер может
-отдать пустой ответ / упереться в лимит устройств). Ответ при необходимости
-распаковывается gzip и декодируется из Base64 — на выходе текст со share-links.
-
-Порт логики из medved-vpn/happ_sub.py. Загрузка — requests (gzip распаковывается
-автоматически; поддерживается proxy, в т.ч. socks5 через PySocks).
+URL расшифровывается ключами Happ (happ_keys, happ_crypto). Подписка скачивается с
+заголовками мобильного приложения Happ — без них панели часто отдают пустой ответ или
+упираются в лимит устройств. Ответ в base64 декодируется.
 """
 
 from __future__ import annotations
 
 import base64
+import binascii
 import time
 
 import requests
 
-from . import happ_decode
+from . import happ_crypto, happ_keys
 from .device import DEVICE_HEADERS
 
-# Заголовки, имитирующие мобильное приложение Happ (без них подписка часто пустая).
-# X-Hwid берётся из device.json установки (nodes_fetch.device); X-Real-Ip намеренно
-# фиксированный. Любой заголовок можно заменить в providers.json через happ_headers подписки.
+# Заголовки мобильного Happ. X-Hwid — из device.json установки; X-Real-Ip фиксированный.
+# Любой заголовок переопределяется в providers.json (happ_headers подписки).
 _HEADERS = {
     "User-Agent": "Happ/3.13.0",
     **DEVICE_HEADERS,
@@ -34,6 +29,8 @@ _HEADERS = {
 _TIMEOUT = 30
 # Паузы перед повторами: разовый 5xx/обрыв панели не должен ронять подписку на сутки.
 RETRY_DELAYS = (2, 10, 30)
+# Не чаще: ссылка с неизвестным ключом не должна скачивать ключи на каждом прогоне.
+KEYS_REFRESH_INTERVAL = 6 * 3600
 
 
 def is_happ_link(url: str) -> bool:
@@ -41,22 +38,37 @@ def is_happ_link(url: str) -> bool:
     return isinstance(url, str) and url.strip().startswith("happ://crypt")
 
 
+def resolve_url(link: str, keys_path: str = "", keys_url: str = "", proxies=None, log=None) -> str:
+    """URL подписки из ссылки happ. Ключи — из кэша; нет кэша или нужного ключа — скачать."""
+    keys = happ_keys.load(keys_path) if keys_path else None
+    if keys is not None:
+        try:
+            return happ_crypto.decode(link, keys)
+        except happ_crypto.UnknownKey as exc:
+            if happ_keys.age(keys_path) < KEYS_REFRESH_INTERVAL:
+                raise
+            if log:
+                log(f"  [fetch] {exc} — обновляю ключи Happ")
+    keys = happ_keys.refresh(keys_path, keys_url, proxies=proxies, log=log)
+    return happ_crypto.decode(link, keys)
+
+
 def _fetch(url: str, headers: dict, timeout=_TIMEOUT, proxies=None, meta_out=None) -> str:
-    """GET подписки с happ-заголовками (+ попытка Base64-декода). Ошибка HTTP → исключение.
-    meta_out — dict, куда кладутся заголовки ответа (метаданные подписки)."""
+    """GET подписки (gzip распаковывает requests); base64 → текст. Ошибка HTTP → исключение.
+    meta_out — dict для заголовков ответа (метаданные подписки)."""
     resp = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
     resp.raise_for_status()
     if meta_out is not None:
         meta_out.update(resp.headers)
-    text = resp.content.decode("utf-8", errors="replace")   # gzip уже распакован requests
-    try:                                    # подписка часто отдаётся в Base64
+    text = resp.content.decode("utf-8", errors="replace")
+    try:
         return base64.b64decode(text, validate=True).decode("utf-8", errors="replace")
-    except Exception:                       # noqa: BLE001 — не Base64: берём как есть
+    except (binascii.Error, ValueError):
         return text
 
 
 def _retryable(exc: Exception) -> bool:
-    """Сеть/таймаут/5xx — повторяем; 4xx (ссылка, лимит устройств) — нет."""
+    """Сеть/таймаут/5xx/429 — повторяем; прочие 4xx (ссылка, лимит устройств) — нет."""
     if isinstance(exc, requests.HTTPError):
         code = exc.response.status_code if exc.response is not None else 0
         return code >= 500 or code == 429
@@ -65,21 +77,16 @@ def _retryable(exc: Exception) -> bool:
 
 def subscription_text(happ_link: str, headers: "dict | None" = None,
                       timeout=_TIMEOUT, proxies=None, hwid: str = "",
-                      meta_out=None, log=None) -> str:
-    """happ://crypt…/… → расшифровать URL → скачать → текст подписки (share-links).
-
-    hwid — X-Hwid установки; headers — оверрайд/добавка к happ-заголовкам подписки.
-    Сетевые сбои и 5xx повторяются с паузами RETRY_DELAYS.
-    """
-    real_url = happ_decode.decode_link(happ_link)
+                      meta_out=None, log=None, keys_path: str = "", keys_url: str = "") -> str:
+    """happ://crypt…/… → текст подписки. headers дополняют и переопределяют заголовки Happ."""
+    url = resolve_url(happ_link, keys_path, keys_url, proxies=proxies, log=log)
     hdrs = dict(_HEADERS)
     if hwid:
         hdrs["X-Hwid"] = hwid
-    if headers:
-        hdrs.update(headers)
+    hdrs.update(headers or {})
     for attempt, delay in enumerate((*RETRY_DELAYS, None), 1):
         try:
-            return _fetch(real_url, hdrs, timeout=timeout, proxies=proxies, meta_out=meta_out)
+            return _fetch(url, hdrs, timeout=timeout, proxies=proxies, meta_out=meta_out)
         except Exception as exc:  # noqa: BLE001 — решаем по типу ниже
             if delay is None or not _retryable(exc):
                 raise

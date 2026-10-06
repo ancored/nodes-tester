@@ -1,143 +1,65 @@
-import re
-from .. import util
-from urllib.parse import urlparse, parse_qs, unquote
-def parse(data):
-    info = data[:]
-    server_info = urlparse(info)
-    netloc = server_info.netloc
-    try:
-        netloc = util.b64Decode(server_info.netloc).decode('utf-8') # shadowrocket: base64(method:uuid@host:port)
-        decoded = True
-    except:
-        decoded = False
-    _netloc = netloc.rsplit("@", 1)
-    uuid = _netloc[0].split(':', 1)[-1] if decoded else _netloc[0]
-    try:
-        _netloc_parts = _netloc[1].rsplit(":", 1)
-    except:
-        return None
-    if _netloc_parts[1].isdigit(): #fuck
-        server = re.sub(r"\[|\]", "", _netloc_parts[0])
-        server_port = int(_netloc_parts[1])
+"""vless://uuid@host:port?security=…&type=…#name — формат Xray (XTLS/Xray-core#716).
+
+Shadowrocket-вариант: vless://base64(auto:uuid@host:port)?…&remarks=имя.
+"""
+
+from __future__ import annotations
+
+from ._common import (LinkError, add_reality, b64text, multiplex, none_like, split_hostport,
+                      split_link, stream_transport, tls_block, ws_transport)
+
+
+def _shadowrocket(link):
+    """Адрес целиком в base64: 'auto:uuid@host:port'."""
+    decoded = b64text(link.host + link.path)
+    cred, _, hostport = decoded.rpartition("@")
+    link.userinfo = cred.split(":", 1)[-1]
+    link.host, link.port = split_hostport(hostport)
+    return link
+
+
+def parse(text: str):
+    link = split_link(text)
+    if not link.userinfo:
+        link = _shadowrocket(link)
+    p = link.params
+    node = {"tag": p.get("remarks") or link.name,
+            "type": "vless",
+            "server": link.host,
+            "server_port": link.port_int(),
+            "uuid": link.user}
+    if not node["server"] or not node["uuid"]:
+        raise LinkError("нет адреса или uuid")
+    # xudp — значение ядра по умолчанию; поле явно входит в отпечаток ноды.
+    encoding = p.get("packetEncoding", "xudp")
+    if not none_like(encoding):
+        node["packet_encoding"] = encoding
+    kind = (p.get("type") or "").lower()
+    if not none_like(p.get("flow")) and kind != "xhttp":
+        node["flow"] = p["flow"]
+
+    security = (p.get("security") or "").lower()
+    if not none_like(security) or p.get("tls") == "1" or p.get("pbk"):
+        node["tls"] = tls_block(p)
+        if security == "reality" or p.get("pbk"):
+            add_reality(node["tls"], p)
+            if p.get("fp"):
+                node["tls"]["utls"]["fingerprint"] = p["fp"]
+
+    if kind == "ws" or (not kind and p.get("obfs") == "websocket"):
+        host = p.get("host") or p.get("obfsParam") or p.get("sni") or ""
+        node["transport"] = ws_transport(p.get("path", "/"), host)
+        tls = node.get("tls")
+        if tls is not None and not tls["server_name"] and host:
+            tls["server_name"] = host
     else:
-        return None
-    netquery = dict(
-        (k, v if len(v) > 1 else v[0])
-        for k, v in parse_qs(server_info.query).items()
-    )
-    if netquery.get('remarks'):
-        remarks = netquery['remarks']
-    else:
-        remarks = server_info.fragment
-    node = {
-        'tag': unquote(remarks) or util.genName()+'_vless',
-        'type': 'vless',
-        'server': server,
-        'server_port': server_port,
-        'uuid': uuid,
-    }
-    # xudp по умолчанию оставлен намеренно (в upstream убран): для vless это и так
-    # дефолт sing-box, а поле входит в CRC-отпечаток — убрать = сменить теги всех нод.
-    packet_encoding = netquery.get('packetEncoding') or 'xudp'
-    if packet_encoding.lower() != 'none':
-        node['packet_encoding'] = packet_encoding
-    flow = netquery.get('flow')
-    if flow and flow.lower() != 'none' and netquery.get('type') != 'xhttp':
-        node['flow'] = flow
-    if netquery.get('security', '') not in ['None', 'none', ''] or netquery.get('tls') == '1':
-        node['tls'] = {
-            'enabled': True,
-            'insecure': False,
-            'server_name': ''
-        }
-        if netquery.get('allowInsecure') == '1':
-            node['tls']['insecure'] = True
-        node['tls']['server_name'] = netquery.get('sni', '') or netquery.get('peer', '')
-        if node['tls']['server_name'] == 'None':
-            node['tls']['server_name'] = ''
-        if netquery.get('alpn') and netquery.get('alpn') != 'None':
-            node['tls']['alpn'] = netquery['alpn'].split(',')
-        if netquery.get('fp'):          # uTLS-отпечаток и вне reality (напр. XHTTP+tls)
-            node['tls']['utls'] = {
-                'enabled': True,
-                'fingerprint': netquery['fp']
-            }
-        if netquery.get('security') == 'reality' or netquery.get('pbk'): #shadowrocket
-            node['tls']['reality'] = {
-                'enabled': True,
-                'public_key': netquery.get('pbk'),
-            }
-            # normalise short_id, guarding against 'None' or null
-            sid = netquery.get('sid')
-            if isinstance(sid, str) and sid.strip().lower() != "none":
-                node['tls']['reality']['short_id'] = netquery['sid']
-            node['tls']['utls'] = {
-                'enabled': True
-            }
-            if netquery.get('fp'):
-                node['tls']['utls'] = {
-                    'enabled': True,
-                    'fingerprint': netquery['fp']
-                }
-    if netquery.get('type'):
-        if netquery['type'] == 'http':
-            node['transport'] = {
-                'type':'http'
-            }
-        elif netquery['type'] == 'ws':
-            matches = re.search(r'\?ed=(\d+)$', netquery.get('path', '/'))
-            node['transport'] = {
-                'type':'ws',
-                "path": netquery.get('path', '/').rsplit("?ed=", 1)[0] if matches else netquery.get('path', '/'),
-                "headers": {
-                    "Host": '' if netquery.get('host') is None and netquery.get('sni') == 'None' else netquery.get('host', netquery.get('sni', ''))
-                }
-            }
-            if node.get('tls'):
-                if node['tls']['server_name'] == '':
-                    if node['transport']['headers']['Host']:
-                        node['tls']['server_name'] = node['transport']['headers']['Host']
-            if matches:
-                node['transport']['early_data_header_name'] = 'Sec-WebSocket-Protocol'
-                node['transport']['max_early_data'] = int(netquery.get('path', '/').rsplit("?ed=", 1)[1])
-        elif netquery['type'] == 'grpc':
-            node['transport'] = {
-                'type':'grpc',
-                'service_name':netquery.get('serviceName', '')
-            }
-        elif netquery['type'] == 'xhttp':
-            node['transport'] = util.xhttp_transport(netquery)
-    elif netquery.get('obfs'):  #shadowrocket
-        if netquery['obfs'] == 'websocket':
-            matches = re.search(r'\?ed=(\d+)$', netquery.get('path', '/'))
-            node['transport'] = {
-                'type':'ws',
-                "path": netquery.get('path', '/').rsplit("?ed=", 1)[0] if matches else netquery.get('path', '/'),
-                "headers": {
-                    "Host": '' if netquery.get('obfsParam') is None and netquery.get('sni') == 'None' else netquery.get('peer', netquery.get('obfsParam'))
-                }
-            }
-            if node.get('tls'):
-                if node['tls']['server_name'] == '':
-                    if node['transport']['headers']['Host']:
-                        node['tls']['server_name'] = node['transport']['headers']['Host']
-            if matches:
-                node['transport']['early_data_header_name'] = 'Sec-WebSocket-Protocol'
-                node['transport']['max_early_data'] = int(netquery.get('path', '/').rsplit("?ed=", 1)[1])
-    if netquery.get('protocol') in ['smux', 'yamux', 'h2mux']:
-        node['multiplex'] = {
-            'enabled': True,
-            'protocol': netquery['protocol']
-        }
-        if netquery.get('max-streams'):
-            node['multiplex']['max_streams'] = int(netquery['max-streams'])
-        else:
-            node['multiplex']['max_connections'] = int(netquery['max-connections'])
-            node['multiplex']['min_streams'] = int(netquery['min-streams'])
-        if netquery.get('padding') == 'True':
-            node['multiplex']['padding'] = True
-    # VLESS encryption (PQ, фича 012) — пробрасываем на верхний уровень аутбаунда.
-    # Ядро должно быть собрано с поддержкой; иначе такие ноды фильтровать.
-    if netquery.get('encryption') and netquery.get('encryption') not in ('none', 'None'):
-        node['encryption'] = netquery['encryption']
+        transport = stream_transport(p, server=link.host)
+        if transport:
+            node["transport"] = transport
+
+    mux = multiplex(p)
+    if mux:
+        node["multiplex"] = mux
+    if not none_like(p.get("encryption")):
+        node["encryption"] = p["encryption"]
     return node

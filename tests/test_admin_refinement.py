@@ -108,7 +108,7 @@ class AdminRefinementTest(unittest.TestCase):
         sub = {"tag": "HAPP", "url": "happ://crypt/demo", "user_agent": "ignored",
                "happ_headers": {"User-Agent": "Happ/demo", "X-Hwid": "own-device"}}
         response = Mock(content=b"vless://123@example.invalid:443#demo", headers={})
-        with patch("nodes_fetch.happ.happ_decode.decode_link", return_value="https://example.invalid/sub"), \
+        with patch("nodes_fetch.happ.resolve_url", return_value="https://example.invalid/sub"), \
              patch("nodes_fetch.happ.requests.get", return_value=response) as get:
             self.assertTrue(fetch_subscription(sub, Context(self.tmp)))
         sent = get.call_args.kwargs["headers"]

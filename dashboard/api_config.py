@@ -320,7 +320,7 @@ def register(app: App) -> None:
         group_defaults = load()
         group_defaults["emit"] = {"nodes_tester": True, "global_failsafe": False,
                                   "ensure_regions": list(DEFAULT_ENSURE_REGIONS)}
-        from nodes_fetch import device
+        from nodes_fetch import device, happ_keys
         device_path = device.default_path(_router_providers_path(app))
         hwid = device.read(device_path).get("hwid") or ""
         happ_headers = dict(_HEADERS)
@@ -333,6 +333,8 @@ def register(app: App) -> None:
         ], "happ_headers": happ_headers, "group_defaults": group_defaults,
             "builtin_regions": BUILTIN_REGIONS,
             "device": {"hwid": hwid, "path": device_path},
+            "happ_keys": {"default_url": happ_keys.DEFAULT_URL,
+                          "path": happ_keys.default_path(_router_providers_path(app))},
             "branches": ["router", "clients"] if _clients_dir(app) else ["router"],
             "sources": _subscription_states(app)}
 
