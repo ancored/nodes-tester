@@ -69,6 +69,15 @@ class ApiConfigTest(unittest.TestCase):
             written = json.load(fh)
         self.assertEqual(written["box_api"]["url"], cur["box_api"]["url"])
 
+    @unittest.skipUnless(os.name == "posix", "права файлов — только POSIX")
+    def test_put_keeps_config_private(self):
+        # В config.json секреты, пакет ставит ему chmod 600: сохранение из админки
+        # не должно открывать файл на чтение остальным.
+        os.chmod(self.cfg.path, 0o600)
+        cur = json.loads(self._call("GET", "/api/config").body)["data"]
+        self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 200)
+        self.assertEqual(os.stat(self.cfg.path).st_mode & 0o777, 0o600)
+
     def test_put_bad_json_rejected(self):
         # невалидный JSON в теле → req.json() бросит HttpError 400
         headers = {"X-Admin-Token": "secret"}

@@ -240,7 +240,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <div class="toolbar"><label v-for="(name,r) in SWITCH_REASONS" :key="r" class="check"><input type="checkbox" :checked="(value('notify.switch_reasons') ?? DEFAULT_REASONS).includes(r)" @change="toggleList('notify.switch_reasons',r,$event.target.checked,DEFAULT_REASONS)" /> {{ name }}</label></div>
               <div v-if="can('notify')" class="actions"><button class="btn" :disabled="notifyBusy" @click="notifyTest">Отправить тестовое сообщение</button> <span class="mut">{{ notifyResult || 'Тест использует настройки работающего тестера (после перезапуска).' }}</span></div>
             </template>
-            <div v-if="group.title==='План проверок'" class="toolbar"><label v-for="(name,test) in Object.fromEntries(Object.entries(TEST_NAMES).filter(([key])=>!['heavy_download','gemini'].includes(key)))" class="check" :key="test"><input type="checkbox" :checked="(value('run.default.tests_enabled') || []).includes(test)" @change="toggleTest(test,$event.target.checked)" /> {{ name }}</label></div>
+            <div v-if="group.title==='План проверок'" class="toolbar"><label v-for="(name,test) in Object.fromEntries(Object.entries(TEST_NAMES).filter(([key])=>!['heavy_download','gemini','openai','anthropic'].includes(key)))" class="check" :key="test"><input type="checkbox" :checked="(value('run.default.tests_enabled') || []).includes(test)" @change="toggleTest(test,$event.target.checked)" /> {{ name }}</label></div>
           </section>
         </template>
       </template>

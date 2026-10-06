@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import re
 
-_SS_ALIASES = {"chacha20-poly1305": "chacha20-ietf-poly1305",
-               "xchacha20-poly1305": "xchacha20-ietf-poly1305"}
+from .ss import METHOD_ALIASES
 
 
 def _tls(proxy, *, always=False, sni_key="servername"):
@@ -122,7 +121,7 @@ def _vless(p, node):
 
 
 def _shadowsocks(p, node):
-    node.update(method=_SS_ALIASES.get(p["cipher"], p["cipher"]), password=p["password"])
+    node.update(method=METHOD_ALIASES.get(p["cipher"], p["cipher"]), password=p["password"])
     plugin, opts = p.get("plugin"), p.get("plugin-opts") or {}
     if plugin in ("obfs", "obfs-local"):
         node["plugin"] = "obfs-local"
@@ -153,8 +152,9 @@ def _shadow_tls(p, node):
 
 def _hysteria(p, node):
     node.update(up_mbps=_mbps(p.get("up")) or 10, down_mbps=_mbps(p.get("down")) or 50)
-    if p.get("auth-str") or p.get("auth_str"):
-        node["auth_str"] = p.get("auth-str") or p["auth_str"]
+    auth = p.get("auth-str") or p.get("auth_str")
+    if auth:
+        node["auth_str"] = auth
     if p.get("obfs"):
         node["obfs"] = p["obfs"]
     if p.get("ports"):
@@ -166,8 +166,9 @@ def _hysteria2(p, node):
     if p.get("ports"):
         node["server_ports"] = _ports(p["ports"])
     for key, field in (("up", "up_mbps"), ("down", "down_mbps")):
-        if _mbps(p.get(key)):
-            node[field] = _mbps(p[key])
+        mbps = _mbps(p.get(key))
+        if mbps:
+            node[field] = mbps
     if p.get("obfs"):
         node["obfs"] = {"type": p["obfs"], "password": p.get("obfs-password", "")}
 

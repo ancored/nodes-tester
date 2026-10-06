@@ -48,8 +48,9 @@ def parse(text: str):
     if ranges:
         node["server_ports"] = ranges
     for key, field in (("upmbps", "up_mbps"), ("downmbps", "down_mbps")):
-        if _mbps(p.get(key)):
-            node[field] = _mbps(p[key])
+        mbps = _mbps(p.get(key))
+        if mbps:
+            node[field] = mbps
     tls = {"enabled": True}
     sni = p.get("sni") or p.get("peer")
     if not none_like(sni):

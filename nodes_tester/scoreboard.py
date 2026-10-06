@@ -16,6 +16,7 @@ from typing import Optional
 
 from . import scoring
 from .identity import NodeIdentity
+from .ipinfo import db_country_mismatch, preferred
 
 
 class Scoreboard:
@@ -32,6 +33,9 @@ class Scoreboard:
         self._active: dict[str, str] = {}     # группа → активная нода
         # Обязательные тесты групп: группа → {тест: срок годности результата, с}.
         self._required: dict[str, dict[str, float]] = {}
+        # Группы со строгим выходным IP (run.*.strict_exit_ip) и сведения о выходных IP.
+        self._strict: set[str] = set()
+        self._ip_info: dict[str, dict] = {}
         # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся
         # (board.keep), но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
         self._restricted: set[str] = set()
@@ -62,10 +66,11 @@ class Scoreboard:
         s_run, gate, comps = scoring.instant_score(
             tests, self.cfg.thresholds, self.cfg.weights
         )
+        conn = tests.get("connectivity") or {}
         with self._lock:
-            return self._record_locked(ident, region, s_run, gate, comps)
+            return self._record_locked(ident, region, s_run, gate, comps, conn)
 
-    def _record_locked(self, ident, region, s_run, gate, comps):
+    def _record_locked(self, ident, region, s_run, gate, comps, conn):
         prev = self.rows.get(ident.raw)
         prev_state = None
         if prev is not None:
@@ -91,10 +96,13 @@ class Scoreboard:
             "heavy_ok": (prev.get("heavy_ok", "") if prev else ""),
             "heavy_ts": (prev.get("heavy_ts", 0) if prev else 0),
             # обязательные тесты групп идут отдельной фазой — переносим как есть
-            "gemini_ok": (prev.get("gemini_ok", "") if prev else ""),
-            "gemini_ts": (prev.get("gemini_ts", 0) if prev else 0),
-            "gemini_cc": (prev.get("gemini_cc", "") if prev else ""),
+            "required": dict(prev.get("required") or {}) if prev else {},
+            "exit_ip": (prev.get("exit_ip", "") if prev else ""),
+            "exit_cc": (prev.get("exit_cc", "") if prev else ""),
         }
+        if conn.get("exit_ip"):               # без ответа connectivity — прежний выход
+            row["exit_ip"] = conn["exit_ip"]
+            row["exit_cc"] = (conn.get("country") or "").upper()
         for comp in scoring.COMPONENTS:
             v = comps.get(comp)
             row[comp] = round(v, 3) if v is not None else ""
@@ -198,27 +206,48 @@ class Scoreboard:
         with self._lock:
             r = self.rows.get(node)
             if r is not None:
-                r[f"{test}_ok"] = "1" if ok else "0"
-                r[f"{test}_ts"] = int(time.time())
-                r[f"{test}_cc"] = detail or ""
+                r.setdefault("required", {})[test] = {"ok": "1" if ok else "0",
+                                                      "ts": int(time.time()), "cc": detail or ""}
 
     @staticmethod
-    def _fresh(r: dict, test: str, ttl: float) -> bool:
-        return time.time() - int(r.get(f"{test}_ts", 0) or 0) < ttl
+    def _result(r: dict, test: str) -> dict:
+        return (r.get("required") or {}).get(test) or {}
+
+    def _verdict(self, r: dict, test: str, ttl: float) -> str:
+        """Свежий результат обязательного теста: "1"/"0", "" — нет или просрочен."""
+        res = self._result(r, test)
+        fresh = time.time() - int(res.get("ts", 0) or 0) < ttl
+        return str(res.get("ok", "")) if fresh else ""
 
     def needs_test(self, node: str, test: str, ttl: float) -> bool:
         """Нет свежего результата обязательного теста."""
         with self._lock:
             r = self.rows.get(node)
-            return r is not None and (str(r.get(f"{test}_ok", "")) == "" or not self._fresh(r, test, ttl))
+            return r is not None and self._verdict(r, test, ttl) == ""
 
     def _passed(self, r: dict, group: str) -> bool:
-        return all(str(r.get(f"{t}_ok", "")) == "1" and self._fresh(r, t, ttl)
-                   for t, ttl in self._required.get(group, {}).items())
+        return all(self._verdict(r, t, ttl) == "1" for t, ttl in self._required.get(group, {}).items())
 
     def _failed(self, r: dict, group: str) -> bool:
-        return any(str(r.get(f"{t}_ok", "")) == "0" and self._fresh(r, t, ttl)
-                   for t, ttl in self._required.get(group, {}).items())
+        return any(self._verdict(r, t, ttl) == "0" for t, ttl in self._required.get(group, {}).items())
+
+    # --- Строгий выходной IP (strict_exit_ip): страна по базе и тип IP -----------
+
+    def set_strict(self, groups) -> None:
+        with self._lock:
+            self._strict = set(groups)
+
+    def set_ip_info(self, infos: dict) -> None:
+        """Сведения о выходных IP (кэш ip_info): {ip: {country, mobile, proxy, hosting, …}}."""
+        with self._lock:
+            self._ip_info = dict(infos or {})
+
+    def _exit_info(self, r: dict) -> "dict | None":
+        return self._ip_info.get(r.get("exit_ip") or "")
+
+    def _geo_bad(self, r: dict, group: str) -> bool:
+        """База относит выходной IP к другой стране, чем connectivity («по базе XX»)."""
+        return group in self._strict and bool(db_country_mismatch(self._exit_info(r), r.get("exit_cc") or ""))
 
     def _healthy(self, region: str) -> list[dict]:
         """Здоровые ноды группы (score > 0), по убыванию score. Свежий heavy-veto
@@ -232,16 +261,26 @@ class Scoreboard:
 
     def candidates(self, region: str) -> list[dict]:
         """Кандидаты группы: здоровые ноды; если у группы есть обязательные тесты —
-        только прошедшие их со свежим результатом (решающее условие, без поблажек)."""
+        только прошедшие их со свежим результатом (решающее условие, без поблажек).
+        Строгая группа: без расхождения страны по базе; дата-центры, прокси и IP без
+        сведений — только если домашних и мобильных не осталось."""
         with self._lock:
-            chosen = [r for r in self._healthy(region) if self._passed(r, region)]
+            chosen = [r for r in self._healthy(region)
+                      if self._passed(r, region) and not self._geo_bad(r, region)]
+            if region in self._strict:
+                good = [r for r in chosen if preferred(self._exit_info(r))]
+                chosen = good or chosen
             return [dict(r) for r in chosen]               # копии наружу (монитор-поток)
 
     def probe_pool(self, region: str) -> list[str]:
         """Ноды, которые стоит проверять обязательными тестами: здоровые, без свежего
-        провала, по убыванию score."""
+        провала, по убыванию score (в строгой группе — сначала домашние и мобильные)."""
         with self._lock:
-            return [r["node"] for r in self._healthy(region) if not self._failed(r, region)]
+            pool = [r for r in self._healthy(region)
+                    if not self._failed(r, region) and not self._geo_bad(r, region)]
+            if region in self._strict:                     # домашние и мобильные — раньше, порядок score внутри
+                pool.sort(key=lambda r: not preferred(self._exit_info(r)))
+            return [r["node"] for r in pool]
 
     def set_restricted(self, crcs) -> None:
         """Полный набор ограниченных нод (снимок на прогон)."""

@@ -29,6 +29,18 @@ def kind(info: dict) -> str:
     return "residential"
 
 
+def preferred(info: "dict | None") -> bool:
+    """Домашний или мобильный IP без признака прокси — лучший выход для AI-сервисов."""
+    return bool(info) and not info.get("proxy") and kind(info) != "hosting"
+
+
+def db_country_mismatch(info: "dict | None", country: str) -> str:
+    """Страна IP по базе, если она не совпадает с измеренной (connectivity), иначе ""."""
+    db_cc = ((info or {}).get("country") or "").upper()
+    cc = (country or "").upper()
+    return db_cc if db_cc and cc and db_cc != cc else ""
+
+
 def _asn(value: str) -> "int | None":
     head = (value or "").split(" ", 1)[0]
     if head.upper().startswith("AS") and head[2:].isdigit():

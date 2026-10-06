@@ -143,7 +143,7 @@ class RequiredGroupTest(unittest.TestCase):
     def test_stale_result_needs_test(self):
         self._pass(A, True)
         self.assertFalse(self.board.needs_test(A, "gemini", 3600))
-        self.board.rows[A]["gemini_ts"] = int(time.time()) - 7 * 3600    # старше 6 ч
+        self.board.rows[A]["required"]["gemini"]["ts"] = int(time.time()) - 7 * 3600    # старше 6 ч
         self.assertTrue(self.board.needs_test(A, "gemini", 6 * 3600))
         self.assertEqual(self.board.candidates("ai"), [])            # просроченный — не кандидат
 
@@ -161,16 +161,18 @@ class RequiredGroupTest(unittest.TestCase):
     def test_inconclusive_keeps_previous_verdict(self):
         self.r._originals = {}
         self._pass(A, True)
-        ts = self.board.rows[A]["gemini_ts"] = int(time.time()) - 60
+        res = self.board.rows[A]["required"]["gemini"]
+        ts = res["ts"] = int(time.time()) - 60
         answer = TestResult("gemini", False, {"inconclusive": True, "countries": [None, "FRA"]},
                             error="сеть")
         with mock.patch.object(GeminiTest, "run", return_value=answer):
             self.r._required_round("gemini", [("eu", parse_node(A))], 1)
-        self.assertEqual((self.board.rows[A]["gemini_ok"], self.board.rows[A]["gemini_ts"]), ("1", ts))
+        res = self.board.rows[A]["required"]["gemini"]
+        self.assertEqual((res["ok"], res["ts"]), ("1", ts))
         answer.metrics.pop("inconclusive")
         with mock.patch.object(GeminiTest, "run", return_value=answer):
             self.r._required_round("gemini", [("eu", parse_node(A))], 1)
-        self.assertEqual(self.board.rows[A]["gemini_ok"], "0")
+        self.assertEqual(self.board.rows[A]["required"]["gemini"]["ok"], "0")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ stop + disable).
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -25,6 +24,7 @@ import threading
 import time
 
 _COUNTER_RE = re.compile(r"counter packets (\d+)")
+_KS_UNKNOWN = {"active": False, "enabled": False, "blocked": None}
 
 
 class ControlError(RuntimeError):
@@ -70,14 +70,14 @@ class SingboxControl:
     def killswitch_status(self) -> dict:
         """{installed, active (таблица загружена), enabled (автозапуск), blocked (пакетов)}."""
         if not self.killswitch_installed():
-            return {"installed": False, "active": False, "enabled": False, "blocked": None}
+            return {"installed": False, **_KS_UNKNOWN}
         try:
             res = self._cmd(["nft", "list", "table", "inet", self.cfg.killswitch_table], timeout=10)
             active = res.returncode == 0
             blocked = sum(int(n) for n in _COUNTER_RE.findall(res.stdout or "")) if active else None
             enabled = self._cmd([self.cfg.killswitch_init, "enabled"], timeout=10).returncode == 0
         except (OSError, subprocess.SubprocessError):
-            return {"installed": True, "active": False, "enabled": False, "blocked": None}
+            return {"installed": True, **_KS_UNKNOWN}
         return {"installed": True, "active": active, "enabled": enabled, "blocked": blocked}
 
     def status(self) -> dict:
@@ -86,8 +86,7 @@ class SingboxControl:
             "available": avail,
             "running": self.running() if avail else None,
             "stopped_by_admin": self.stopped_by_admin() if avail else False,
-            "killswitch": self.killswitch_status() if avail else {"installed": False, "active": False,
-                                                                   "enabled": False, "blocked": None},
+            "killswitch": self.killswitch_status() if avail else {"installed": False, **_KS_UNKNOWN},
             "error": self.last_error,
         }
 
@@ -107,10 +106,7 @@ class SingboxControl:
             res = self._cmd([self.cfg.init, "stop"])
             if res.returncode != 0:
                 raise ControlError(f"sing-box stop: {res.stderr.strip() or res.returncode}")
-            for _ in range(20):                     # до 10 с на завершение процесса
-                if not self.running():
-                    break
-                time.sleep(0.5)
+            self._wait_running(False)
         ks = self.killswitch_status()
         self._notify("sing-box остановлен из админки — " + (
             "killswitch блокирует выход LAN мимо sing-box." if ks["active"]
@@ -127,12 +123,16 @@ class SingboxControl:
             res = self._cmd([self.cfg.init, "start"])
             if res.returncode != 0:
                 raise ControlError(f"sing-box start: {res.stderr.strip() or res.returncode}")
-            for _ in range(20):                     # до 10 с на появление процесса
-                if self.running():
-                    break
-                time.sleep(0.5)
+            self._wait_running(True)
         self._notify("sing-box запущен из админки.", "singbox-start")
         return self.status()
+
+    def _wait_running(self, want: bool) -> None:
+        """До 10 с ждать, пока процесс sing-box появится (want) или завершится."""
+        for _ in range(20):
+            if self.running() == want:
+                return
+            time.sleep(0.5)
 
     def set_killswitch(self, on: bool) -> dict:
         """Включить (start + enable) или выключить (stop + disable) службу killswitch."""

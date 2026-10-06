@@ -18,6 +18,8 @@ import re
 import tempfile
 import threading
 
+from nodes_common.fileio import dumps_json
+
 from .webapp import App, HttpError
 
 _edit_lock = threading.Lock()
@@ -117,31 +119,32 @@ def _validate_groups(data):
     from nodes_config.params import load
     try:
         load(data)
-        for key in ("raw_user_nodes",):
-            if key in data and not isinstance(data[key], bool):
-                raise ValueError(f"{key}: ожидается boolean")
+        if "raw_user_nodes" in data and not isinstance(data["raw_user_nodes"], bool):
+            raise ValueError("raw_user_nodes: ожидается boolean")
         emit = data.get("emit", {})
         for key in ("nodes_tester", "global_failsafe"):
             if key in emit and not isinstance(emit[key], bool):
                 raise ValueError(f"emit.{key}: ожидается boolean")
         if any(r not in ("eu", "us", "ru", "other") for r in emit.get("ensure_regions", [])):
             raise ValueError("emit.ensure_regions: допустимы eu, us, ru, other")
-        schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schemas", "groups_params.schema.json")
-        try:
-            import jsonschema
-        except ImportError:
-            pass
-        else:
-            with open(schema_path, encoding="utf-8") as fh:
-                schema = json.load(fh)
-            jsonschema.validate(data, schema)
     except (ValueError, TypeError) as exc:
         raise HttpError(400, f"groups_params невалиден: {exc}") from exc
-    except Exception as exc:
-        # jsonschema.ValidationError does not inherit ValueError.
-        if exc.__class__.__name__ == "ValidationError":
-            raise HttpError(400, f"groups_params невалиден: {exc.message}") from exc
-        raise
+    try:
+        import jsonschema
+    except ImportError:
+        return
+    schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schemas", "groups_params.schema.json")
+    with open(schema_path, encoding="utf-8") as fh:
+        try:
+            schema = json.load(fh)
+        except ValueError as exc:
+            raise HttpError(400, f"groups_params невалиден: {exc}") from exc
+    try:
+        jsonschema.validate(data, schema)
+    except jsonschema.ValidationError as exc:
+        raise HttpError(400, f"groups_params невалиден: {exc.message}") from exc
+    except (ValueError, TypeError) as exc:
+        raise HttpError(400, f"groups_params невалиден: {exc}") from exc
 
 
 _FALLBACK_LOG = re.compile(r"группа '([^']+)': нод нет")
@@ -189,9 +192,10 @@ def preview(data, raw_path, user_nodes_path, nodes_file, samples=5) -> dict:
 def _atomic_write(path: str, text: str) -> None:
     # Симлинк сохраняется: пишем в файл, на который он указывает (os.replace по самому
     # симлинку заменил бы его обычным файлом, и nodes_fetch читал бы старую цель).
+    # mkstemp создаёт файл с правами 0600: в config.json и providers.json секреты,
+    # а пакет ставит им chmod 600 (общий atomic_write_text дал бы 0644).
     path = os.path.realpath(path)
-    d = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".nt-", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".nt-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -204,14 +208,6 @@ def _atomic_write(path: str, text: str) -> None:
         except OSError:
             pass
         raise
-
-
-def _read_json(path: str):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError) as exc:
-        raise HttpError(500, f"не удалось прочитать {path}: {exc}")
 
 
 def _document(path: str):
@@ -284,7 +280,7 @@ def register(app: App) -> None:
         data = req.json()                      # HttpError 400 при битом JSON
         if not isinstance(data, dict):
             raise HttpError(400, "config.json должен быть объектом")
-        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        text = dumps_json(data)
         _validate_config_body(app, text)
         path = _config_path(app)
         revision = _save(req, path, text)
@@ -306,8 +302,7 @@ def register(app: App) -> None:
             raise HttpError(400, "providers.json должен быть объектом")
         _validate_providers(data)
         path = _providers_path(app, _branch(app, req))
-        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-        revision = _save(req, path, text)
+        revision = _save(req, path, dumps_json(data))
         return {"ok": True, "path": path, "revision": revision,
                 "application_state": "not_applied_by_dashboard"}
 
@@ -370,6 +365,6 @@ def register(app: App) -> None:
             raise HttpError(400, "groups_params.json должен быть объектом")
         _validate_groups(data)
         path = _groups_path(app, _branch(app, req))
-        revision = _save(req, path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        revision = _save(req, path, dumps_json(data))
         return {"ok": True, "path": path, "revision": revision,
                 "application_state": "not_applied_by_dashboard"}

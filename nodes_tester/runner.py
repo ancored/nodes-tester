@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -37,7 +38,7 @@ from .traffic import TrafficCollector
 # Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, cron).
 _CLEANUP_INTERVAL = 24 * 3600
 # Пауза после пустого/сорванного прохода — чтобы не крутить цикл вплотную (пустой
-# selector, недоступный API, просроченный rotate_deadline). См. review.md P1.
+# selector, недоступный API, просроченный rotate_deadline).
 _EMPTY_PASS_RETRY = 30.0
 # Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
 # по одному прогону).
@@ -118,12 +119,7 @@ class Runner:
                 traffic_provider = None
                 lb = cfg.switching.rotation.load_balance
                 if lb.enabled:
-                    if self.storage is not None:
-                        traffic_provider = _traffic_provider_factory(
-                            self.storage, lb.window_hours * 3600.0)
-                    else:
-                        print("  [switch] load_balance включён, но storage выключен — "
-                              "балансировка по трафику недоступна")
+                    traffic_provider = _traffic_provider_factory(self.storage, lb.window_hours * 3600.0)
                 self.switcher = Switcher(cfg.switching, self.api, self.board,
                                          self._top, traffic_provider, self.storage)
                 self.switcher.on_activation = self.notifier.activation
@@ -263,11 +259,16 @@ class Runner:
         self.board.set_groups(members)
         if members and self.switcher is not None:
             self.switcher.prune_groups(set(members))
-        required = {}
+        required, strict = {}, set()
         for group in self.board.regions():
-            tests = self._groups_params([group]).required_tests
-            required[group] = {t: self._required_ttl(t) for t in tests}
+            params = self._groups_params([group])
+            required[group] = {t: self._required_ttl(t) for t in params.required_tests}
+            if params.strict_exit_ip:
+                strict.add(group)
         self.board.set_required(required)
+        self.board.set_strict(strict)
+        if self.storage is not None:
+            self.board.set_ip_info(self.storage.load_ip_info())
 
     def _required_ttl(self, test: str) -> float:
         """Срок годности результата обязательного теста (tests.<name>.ttl_hours, деф. 6 ч)."""
@@ -505,7 +506,6 @@ class Runner:
         if row.get("dry_run") or row.get("mode") not in sets or self.orchestrator is None:
             return
         name = sets[row["mode"]]
-        import json
         try:
             with open(self.orchestrator.data_dir / "raw" / f"{name}.json", encoding="utf-8") as fh:
                 sources = json.load(fh).get("sources") or []
@@ -592,7 +592,7 @@ class Runner:
     def _run_pass(self, pass_no: int) -> bool:
         """Один полный прогон. Список нод перечитывается из API sing-box.
         Возвращает True, если прогон пустой (нод нет) — вызывающий выдержит retry-паузу,
-        чтобы не крутить цикл вплотную (см. review.md P1)."""
+        чтобы не крутить цикл вплотную."""
         # Снимок состояния хранилища ДО перечисления: бан влияет на список нод (skip),
         # backoff — на пропуск в обходе, endpoints — на host-aware раскладку.
         self._backoff = {}
@@ -676,7 +676,7 @@ class Runner:
             self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
 
         self._refresh_ip_info(exit_ips)
-        # Фаза обязательных тестов групп (gemini): решает, кто вообще может быть активным.
+        # Фаза обязательных тестов групп (gemini, openai, anthropic): решает, кто вообще может быть активным.
         self._run_required_pass(node_by_raw, pass_no)
         # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
         self._run_heavy_pass(node_by_raw, pass_no)
@@ -728,6 +728,8 @@ class Runner:
         if not infos:
             infos = lookup(stale, cfg.url, cfg.timeout)
         self.storage.save_ip_info(infos)
+        if self.board is not None:
+            self.board.set_ip_info(self.storage.load_ip_info())
         print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
 
     def via_tester(self, fn, attempts: int = 3):
@@ -838,26 +840,9 @@ class Runner:
                               "total": len(targets), "node": ident.raw}
             if self._backed_off(ident.node_id):
                 continue
-            params = self._node_params(ident)
-            self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
-            with self._tester_lock:
-                self._remember(self._top)
-                try:
-                    self.api.select(self._top, ident.raw)
-                except ApiError as exc:
-                    print(f"  {ident.short()}: ОШИБКА переключения ({test_name}): {exc}")
-                    continue
-                if params.switch_delay > 0:
-                    time.sleep(params.switch_delay)
-                session = make_session(self.cfg.testing_group.connection)
-                ctx = TestContext(session=session, node=ident.raw,
-                                  default_timeout=params.request_timeout, region=region)
-                try:
-                    res = test.run(ctx).to_dict()
-                except Exception as exc:  # noqa: BLE001 — сбой теста не рушит проход
-                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-                finally:
-                    session.close()
+            res = self._run_one(test, region, ident)
+            if res is None:
+                continue
             ok = bool(res.get("ok"))
             if not res.get("inconclusive"):     # сетевой сбой не отменяет прошлый вердикт
                 self.board.set_required_result(ident.raw, test_name, ok, res.get("country") or "")
@@ -868,7 +853,7 @@ class Runner:
             if self.cfg.report.console:
                 verdict = "OK" if ok else ("INCONCLUSIVE" if res.get("inconclusive") else "FAIL")
                 print(f"  {ident.short()}: {test_name}={verdict} "
-                      f"{res.get('countries') or ''} {res.get('error') or ''}".rstrip())
+                      f"{res.get('countries') or res.get('verdicts') or ''} {res.get('error') or ''}".rstrip())
 
     def _heavy_test(self):
         """Инстанс тяжёлого download-теста (кэш). None — если тест не зарегистрирован."""
@@ -889,8 +874,8 @@ class Runner:
         fresh_after = time.time() - float(self.cfg.switching.rotation.interval)
         targets, picked = [], set(done)
         for region in self.board.regions():
-            hc = int(getattr(self._groups_params([region]), "heavy_candidates", 0) or 0)
-            if hc <= 0 or not self.switcher.rotation_due(region):
+            heavy_candidates = int(self._groups_params([region]).heavy_candidates or 0)
+            if heavy_candidates <= 0 or not self.switcher.rotation_due(region):
                 continue
             for raw in self.switcher.rotation_pool(region):
                 if raw in picked:
@@ -928,27 +913,9 @@ class Runner:
                               "total": len(targets), "node": ident.raw}
             if self._backed_off(ident.node_id):     # backoff/карантин — не качаем
                 continue
-            params = self._node_params(ident)
-            self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
-            # Лок общий с зондом монитора; host-gap-пауза и запись в БД — вне лока.
-            with self._tester_lock:
-                self._remember(self._top)
-                try:
-                    self.api.select(self._top, ident.raw)   # плоско: nodes-tester → нода
-                except ApiError as exc:
-                    print(f"  {ident.short()}: ОШИБКА переключения (heavy): {exc}")
-                    continue
-                if params.switch_delay > 0:
-                    time.sleep(params.switch_delay)
-                session = make_session(self.cfg.testing_group.connection)
-                ctx = TestContext(session=session, node=ident.raw,
-                                  default_timeout=params.request_timeout, region=region)
-                try:
-                    res = heavy.run(ctx).to_dict()
-                except Exception as exc:  # noqa: BLE001 — сбой heavy не рушит проход
-                    res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-                finally:
-                    session.close()
+            res = self._run_one(heavy, region, ident)
+            if res is None:
+                continue
             ok = bool(res.get("ok"))
             self.board.set_heavy(ident.raw, ok)     # veto-фильтр (в скоринг НЕ идёт)
             rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
@@ -958,6 +925,31 @@ class Runner:
             if self.cfg.report.console:
                 print(f"  {ident.short()}: heavy={'OK' if ok else 'VETO'} "
                       f"{res.get('speed_mbps', '-')}Mbps")
+
+    def _run_one(self, test, region: str, ident: NodeIdentity) -> "dict | None":
+        """Один тест фазы (обязательный, тяжёлый) на ноде через тестовый селектор.
+        None — переключиться на ноду не удалось. Лок общий с зондом монитора;
+        host-gap-пауза — до лока, запись в БД — у вызывающего, вне лока."""
+        params = self._node_params(ident)
+        self._respect_host_gap(self._host_of(ident), self._ep_sig(ident), params.min_host_gap)
+        with self._tester_lock:
+            self._remember(self._top)
+            try:
+                self.api.select(self._top, ident.raw)
+            except ApiError as exc:
+                print(f"  {ident.short()}: ОШИБКА переключения ({test.name}): {exc}")
+                return None
+            if params.switch_delay > 0:
+                time.sleep(params.switch_delay)
+            session = make_session(self.cfg.testing_group.connection)
+            ctx = TestContext(session=session, node=ident.raw,
+                              default_timeout=params.request_timeout, region=region)
+            try:
+                return test.run(ctx).to_dict()
+            except Exception as exc:  # noqa: BLE001 — сбой теста не рушит проход
+                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            finally:
+                session.close()
 
     def _score_and_maybe_switch(self, region: str, ident, record) -> bool:
         if self.board is None:
@@ -969,16 +961,19 @@ class Runner:
 
     # --- Пауза (в прогонах) / карантин (во времени) по провалу gate, персистентно ---
 
+    def _in_effect(self, entry: tuple, now: float) -> bool:
+        """Запись backoff (until, until_pass, streak, reason) ещё действует: карантин —
+        по времени, пауза — по сквозному номеру прогона."""
+        until, until_pass, _streak, reason = entry
+        if reason == "garbage":
+            return now < until
+        return self._pass_seq <= until_pass
+
     def _backed_off(self, crc: str) -> bool:
         if not self.cfg.cooldown.enabled or not crc:
             return False
-        ent = self._backoff.get(crc)                # (until, until_pass, streak, reason)
-        if not ent:
-            return False
-        until, until_pass, _streak, reason = ent
-        if reason == "garbage":
-            return time.time() < until              # карантин — по времени
-        return self._pass_seq <= until_pass         # пауза — по сквозному номеру прогона
+        entry = self._backoff.get(crc)
+        return bool(entry) and self._in_effect(entry, time.time())
 
     def restricted_crcs(self) -> set:
         """CRC с действующей паузой/карантином по свежему состоянию БД (для админки).
@@ -991,10 +986,10 @@ class Runner:
         """CRC с действующей паузой/карантином по снимку backoff (по умолчанию — прогона)."""
         if not self.cfg.cooldown.enabled:
             return set()
+        if backoff is None:
+            backoff = self._backoff
         now = time.time()
-        return {crc for crc, (until, until_pass, _s, reason) in (backoff if backoff is not None
-                                                                 else self._backoff).items()
-                if (now < until if reason == "garbage" else self._pass_seq <= until_pass)}
+        return {crc for crc, entry in backoff.items() if self._in_effect(entry, now)}
 
     def restrict_node(self, crc: str, on: bool, entry: "tuple | None" = None) -> None:
         """Ручной карантин/бан (on) или снятие (off) из админки: сразу убрать ноду из
@@ -1115,7 +1110,7 @@ class Runner:
         else:
             print(f"  · gate-провал {crc} → пауза #{streak}: пропуск {skip} прогон(ов)")
 
-    def _probe_node(self, region: str, leaf: str) -> tuple[bool, float, bool]:
+    def _probe_node(self, region: str, leaf: str) -> tuple[bool, float, bool, str]:
         """Внеплановый зонд активной ноды для монитора: закачка ~probe_bytes через socks.
 
         Возвращает (ok, mbps, inconclusive, error). inconclusive — туннель жив, но замер не

@@ -129,6 +129,8 @@ td { border-top: 1px solid var(--line); }
 tbody tr:first-child td { border-top: 0; }
 tbody tr:hover { background: var(--hover); }
 td.l, th.l { text-align: left; }
+/* Узкие колонки значков (тип IP, AI-тесты): по содержимому, по центру. */
+th.narrow, td.narrow { width: 1%; padding-inline: 6px; text-align: center; white-space: normal; }
 tbody tr.active, tbody tr.active:hover { background: var(--active); }
 .num { color: var(--num); }
 .good { color: var(--good); }

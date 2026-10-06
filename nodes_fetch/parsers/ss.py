@@ -14,8 +14,8 @@ from ._common import (LinkError, b64text, is_true, multiplex, parse_query, split
                       split_link, to_port)
 
 # Старые имена AEAD-шифров → имена sing-box.
-_METHOD_ALIASES = {"chacha20-poly1305": "chacha20-ietf-poly1305",
-                   "xchacha20-poly1305": "xchacha20-ietf-poly1305"}
+METHOD_ALIASES = {"chacha20-poly1305": "chacha20-ietf-poly1305",
+                  "xchacha20-poly1305": "xchacha20-ietf-poly1305"}
 _PLUGIN_ALIASES = {"simple-obfs": "obfs-local", "obfs": "obfs-local"}
 
 
@@ -57,7 +57,7 @@ def parse(text: str):
             "type": "shadowsocks",
             "server": host,
             "server_port": to_port(port),
-            "method": _METHOD_ALIASES.get(method.lower(), method),
+            "method": METHOD_ALIASES.get(method.lower(), method),
             "password": password}
     plugin = params.get("plugin")
     if plugin:

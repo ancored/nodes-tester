@@ -53,7 +53,7 @@ def parse(text: str):
         if tls is not None and not tls["server_name"] and host:
             tls["server_name"] = host
     else:
-        transport = stream_transport(p, server=link.host)
+        transport = stream_transport(p)
         if transport:
             node["transport"] = transport
 

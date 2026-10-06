@@ -20,3 +20,4 @@ from . import jitter        # noqa: F401,E402
 from . import download      # noqa: F401,E402  (единый транспорт-тест: скорость+троттлинг+hold)
 from . import reachability  # noqa: F401,E402
 from . import gemini        # noqa: F401,E402  (фаза для групп с required_tests: страна по мнению Google)
+from . import ai_access     # noqa: F401,E402  (то же: доступность OpenAI и Claude)

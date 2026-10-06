@@ -81,6 +81,7 @@ def register(app: App) -> None:
 
     # --- Форс-переключение активной ноды группы ------------------------
 
+    @app.route("POST", "/api/groups/{group}/switch", needs_token=True)
     def force_switch(app, req, group):
         r = _runner(app)
         if r.switcher is None:
@@ -112,8 +113,6 @@ def register(app: App) -> None:
             raise HttpError(409, f"Нода не кандидат группы {group}.{hint}",
                             {"code": "not_candidate", "allowed_groups": allowed})
         return {"ok": True, "group": group, "region": group, "node": node, "temporary": True}
-
-    app.route("POST", "/api/groups/{group}/switch", needs_token=True)(force_switch)
 
     # --- sing-box: остановка/запуск, killswitch -------------------------
 

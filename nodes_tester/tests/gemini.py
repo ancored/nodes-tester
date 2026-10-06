@@ -23,17 +23,12 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-from .base import BaseTest, TestContext, TestResult, register
+from .base import BROWSER_HEADERS, BaseTest, TestContext, TestResult, register
 
 DEFAULT_URL = "https://gemini.google.com/"
 # Страны, где Gemini недоступен (ISO alpha-3). Переопределяется tests.gemini.forbidden_countries.
 DEFAULT_FORBIDDEN = ["RUS", "BLR", "CHN", "HKG", "MAC", "IRN", "PRK", "CUB", "SYR"]
 _COUNTRY_RE = re.compile(r',2,1,200,"([A-Z]{3})"')
-_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-}
 
 
 def google_country(html: str) -> str | None:
@@ -54,7 +49,7 @@ class GeminiTest(BaseTest):
         countries, codes, errors = [], [], []
         for _ in range(attempts):
             try:
-                resp = ctx.session.get(url, headers=_HEADERS, timeout=timeout)
+                resp = ctx.session.get(url, headers=BROWSER_HEADERS, timeout=timeout)
                 codes.append(resp.status_code)
                 cc = google_country(resp.text) if resp.status_code == 200 else None
                 countries.append(cc)

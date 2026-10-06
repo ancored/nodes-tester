@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import requests
+
+# Заголовки обычного браузера для проверок доступности сервисов (gemini, openai,
+# anthropic): запрос выглядит как от пользователя.
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 @dataclass

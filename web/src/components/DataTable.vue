@@ -53,12 +53,12 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
     <div class="toolbar table-toolbar"><FilterBar :state="filterState" /><label v-if="showSearch">Поиск <input v-model="query" type="search" placeholder="Имя, провайдер, страна, CRC…" /></label><label v-if="showSort">Сортировка<select v-model="sortModel"><option value="">Исходный порядок</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>Показано {{ filtered.length }} из {{ total ?? rows.length }}</span></div>
     <div class="wrap">
       <table class="responsive-table">
-        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
+        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap,narrow:c.narrow}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
           <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.head ?? c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.head ?? c.title }}</template>
         </th></tr></thead>
         <tbody>
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
-            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
+            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break">{{ cellText(c,row) }}</RouterLink>
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>

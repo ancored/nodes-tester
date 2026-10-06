@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from naming import parse_group, parse_node
+from naming.regions import alpha3_to_alpha2
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -22,11 +23,6 @@ _SCORE_SELECT = (
     "score_ewma, avail, flap, samples, last_pass AS last_seen, heavy_ok, heavy_ts "
     "FROM scores"
 )
-
-
-def _scores(db_path: str) -> list[dict]:
-    """Снимок рейтинга из таблицы scores."""
-    return _query(db_path, _SCORE_SELECT)
 
 
 def node_detail(cfg, crc: str, include_config=False) -> dict:
@@ -148,7 +144,7 @@ def _collect(cfg) -> dict:
     db = cfg.storage.db_file
 
     # --- Рейтинг (таблица scores), активные сверху, далее по убыванию score ---
-    rating = _scores(db)
+    rating = _query(db, _SCORE_SELECT)
 
     def _key(r):
         try:
@@ -327,10 +323,7 @@ def _provider_quality(rating: list[dict]) -> list[dict]:
     acc: dict = {}
     for r in rating:
         prov = r.get("provider") or "?"
-        try:
-            sc = float(r.get("score") or 0)
-        except (TypeError, ValueError):
-            sc = 0.0
+        sc = _float(r.get("score"))
         for group in r.get("groups") or ["вне групп"]:
             a = acc.setdefault((prov, group), {"total": 0, "dead": 0, "sum": 0.0, "live": 0})
             a["total"] += 1
@@ -362,9 +355,42 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
-               "heavy_download", "gemini"]
+               "heavy_download", "gemini", "openai", "anthropic"]
 # Тесты отдельных фаз (для кандидатов групп): последний известный результат, вне прогона.
-_PHASE_TESTS = ("heavy_download", "gemini")
+_AI_TESTS = ("gemini", "openai", "anthropic")
+_PHASE_TESTS = ("heavy_download", *_AI_TESTS)
+
+
+def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
+    """Ячейка AI-теста: ok — галка/крест, unk — сетевой сбой (вердикт прежний),
+    cc — страна по мнению Google (alpha-2, для флага)."""
+    title = (error or "").strip()
+    unk = bool(m.get("inconclusive"))                   # сеть: вердикт прежний
+    cell = {"ok": 1 if ok else 0, "ai": 1}
+    if unk:
+        cell["unk"] = 1
+    if test == "gemini":
+        seen = [c for c in m.get("countries") or [] if c]
+        bad = [c for c in seen if c in title]          # запрещённая страна названа в ошибке
+        if bad:
+            cc3 = bad[0]
+        else:
+            cc3 = m.get("country") or (seen[0] if seen else "")
+        cell["cc"] = alpha3_to_alpha2(cc3)
+        if ok:
+            cell["v"] = cc3 or "OK"
+        else:
+            label = "Не определено" if unk else "Провал"
+            cell["v"] = label + (f" [{', '.join(sorted(set(seen)))}]" if seen else "")
+    elif ok:
+        cell["v"] = "Доступен"
+    elif unk:
+        cell["v"] = "Не определено"
+    else:
+        cell["v"] = "Недоступен"
+    if title:
+        cell["title"] = title
+    return cell
 
 
 def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
@@ -373,12 +399,9 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
         m = json.loads(metrics_json) if metrics_json else {}
     except (TypeError, ValueError):
         m = {}
+    if test in _AI_TESTS:
+        return _ai_cell(test, ok, m, error)
     if not ok:
-        if test == "gemini" and m.get("countries"):
-            seen = sorted({c for c in m["countries"] if c})
-            label = "Не определено" if m.get("inconclusive") else "Провал"   # сеть: вердикт прежний
-            return {"v": label + (f" [{', '.join(seen)}]" if seen else ""), "ok": 0,
-                    "title": (error or "").strip()}
         return {"v": "Провал", "ok": 0, "title": (error or "").strip()}
     if test == "connectivity":
         cc = m.get("country")
@@ -397,8 +420,6 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
         return {"v": f"{m.get('reached', '?')}/{m.get('total', '?')}", "ok": 1}
     if test == "heavy_download":         # veto-тест кандидатов: скорость (FAIL=veto)
         return {"v": f"{m.get('speed_mbps', '?')}", "ok": 1}
-    if test == "gemini":                 # обязательный тест групп: страна по мнению Google
-        return {"v": m.get("country") or "?", "ok": 1}
     return {"v": "ok", "ok": 1}
 
 
@@ -414,14 +435,17 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
     info = ip_info.get(m.get("exit_ip") or "")
     if not info:
         return
-    from nodes_tester.ipinfo import kind
+    from nodes_tester.ipinfo import db_country_mismatch, kind
     k = kind(info)
-    node["ip_type"] = _IP_KIND[k] + (", прокси" if info.get("proxy") else "")
+    node["ip_kind"] = k
+    node["ip_proxy"] = 1 if info.get("proxy") else 0
+    node["ip_db_cc"] = db_country_mismatch(info, m.get("country") or "")
+    node["ip_type"] = _IP_KIND[k] + (", прокси" if node["ip_proxy"] else "")
+    if node["ip_db_cc"]:
+        node["ip_type"] += f", по базе {node['ip_db_cc']}"
     node["ip_asn"] = (f"AS{info['asn']} " if info.get("asn") else "") + (info.get("as_name") or info.get("isp") or "")
-    geo = (m.get("country") or "").upper()
-    if geo and info.get("country") and geo != info["country"]:
-        node["ip_type"] += f", по базе {info['country']}"
-    node["ip_title"] = " · ".join(x for x in (m.get("exit_ip"), node["ip_asn"], info.get("org")) if x)
+    node["ip_title"] = " · ".join(x for x in (node["ip_type"], m.get("exit_ip"), node["ip_asn"],
+                                              info.get("org")) if x)
 
 
 def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
@@ -481,7 +505,7 @@ def _results(db: str) -> dict:
             if r["test"] == "connectivity" and r["ok"]:
                 _ip_type(node, r["metrics"], ip_info)
             tests_seen.add(r["test"])
-        # DL50 и gemini — последнее известное значение, вне прогона; помечаем off_pass.
+        # Тесты отдельных фаз (DL50, AI) — последнее известное значение; помечаем off_pass.
         for test in _PHASE_TESTS:
             phase = [r for r in rws if r["test"] == test]
             if not phase:
@@ -527,11 +551,7 @@ def _garbage_table(db: str, ev: dict) -> list[dict]:
     """Ноды, которые СЕЙЧАС в подписке и в паузе (backoff) / карантине (garbage).
     Удалённые из подписки сюда не попадают — они на «Кладбище» (_graveyard)."""
     now = int(time.time())
-    meta = _query(db, "SELECT value FROM meta WHERE key = 'pass_seq'")
-    try:
-        seq = int(meta[0]["value"]) if meta else 0
-    except (TypeError, ValueError):
-        seq = 0
+    seq = _pass_seq(db)
     rows = _query(db, """
         SELECT g.crc AS crc, g.since AS since, g.until AS until, g.reason AS state,
                g.streak AS streak, g.until_pass AS until_pass,
@@ -580,11 +600,7 @@ def _degradation(db: str, ev: dict) -> tuple[list, list]:
         base = {"provider": r.get("provider"), "protocol": r.get("protocol"),
                 "cc": r.get("cc"), "crc": r["crc"], "first_seen": fs,
                 "garbage_count": e.get("gcount") or 0, "fails": e.get("fails") or 0}
-        try:
-            score = float(r.get("score") or 0)
-        except (TypeError, ValueError):
-            score = 0.0
-        if score > 0 and not r.get("gstate") and not r.get("banned"):
+        if _float(r.get("score")) > 0 and not r.get("gstate") and not r.get("banned"):
             longevity.append({**base, "age": max(0, now - fs),
                               "score": r.get("score"), "active": r.get("active") or 0})
         if e.get("first_garbage"):                    # была в карантине → выпадающая
@@ -699,19 +715,24 @@ def _nodes_list(db: str) -> list[dict]:
         LEFT JOIN scores s ON s.crc = n.crc
         LEFT JOIN garbage g ON g.crc = n.crc
         ORDER BY n.present DESC, s.score DESC""")
-    out = []
-    meta = _query(db, "SELECT value FROM meta WHERE key='pass_seq'")
-    try:
-        pass_seq = int(meta[0]["value"]) if meta else 0
-    except (ValueError, TypeError):
-        pass_seq = 0
+    pass_seq = _pass_seq(db)
     for r in rows:
-        out.append({
-            "crc": r["crc"], "node": r["node"], "provider": r["provider"],
-            "protocol": r["protocol"], "country": r["country"], "label": r["label"],
-            "server": r["server"], "present": r["present"], "banned": r["banned"],
-            "score": r["score"], "region": r["region"], "active": r["active"],
-            "gstate": r["gstate"], "guntil": r["guntil"], "gstreak": r["gstreak"],
-            "passes_left": max(0, int(r.get("until_pass") or 0) - pass_seq),
-        })
-    return out
+        until_pass = r.pop("until_pass")
+        r["passes_left"] = max(0, int(until_pass or 0) - pass_seq)
+    return rows
+
+
+def _pass_seq(db: str) -> int:
+    """Сквозной номер прогона (meta.pass_seq): от него считается остаток паузы нод."""
+    meta = _query(db, "SELECT value FROM meta WHERE key = 'pass_seq'")
+    try:
+        return int(meta[0]["value"]) if meta else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _float(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0

@@ -23,7 +23,7 @@ def parse(text: str):
         del node["tls"]["server_name"]
     if (p.get("type") or "").lower() in ("h2", "http"):
         p = dict(p, host=p.get("host") or link.host, path=p.get("path") or "/")
-    transport = stream_transport(p, server=link.host)
+    transport = stream_transport(p)
     if transport:
         if transport["type"] == "ws":
             transport.setdefault("headers", {})   # пустой объект — часть отпечатка ноды

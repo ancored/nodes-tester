@@ -113,11 +113,15 @@ def load(directory) -> list[dict]:
     return out
 
 
+def _by_priority(presets: list[dict]) -> list[dict]:
+    return sorted(presets, key=lambda p: (p["meta"]["priority"], p["name"]))
+
+
 def fragments(presets: list[dict]) -> list[dict]:
     """Фрагменты для sing-box merge в нужном порядке (только включённые пресеты)."""
     enabled = [p for p in presets if p["meta"]["enabled"]]
     main, dns_rules = [], []
-    for p in sorted(enabled, key=lambda p: (p["meta"]["priority"], p["name"])):
+    for p in _by_priority(enabled):
         frag = {k: v for k, v in p["data"].items() if k != "_preset"}
         dns = dict(frag.get("dns", {}))
         dns.pop("rules", None)
@@ -181,7 +185,7 @@ def node_groups(nodes_path) -> set[str]:
 def status(presets: list[dict], groups: set[str] | None) -> list[dict]:
     """Состояние для админки: метаданные + недостающие группы (None — неизвестно)."""
     out = []
-    for p in sorted(presets, key=lambda p: (p["meta"]["priority"], p["name"])):
+    for p in _by_priority(presets):
         missing = (None if groups is None else
                    [g for g in p["meta"]["requires"]["groups"] if g not in groups])
         out.append({"name": p["name"], **p["meta"], "missing_groups": missing})
@@ -218,8 +222,7 @@ def main(argv=None) -> int:
         return 1
     if args.cmd == "fragments":
         if args.log:
-            on = [p["name"] for p in sorted(presets, key=lambda p: (p["meta"]["priority"], p["name"]))
-                  if p["meta"]["enabled"]]
+            on = [p["name"] for p in _by_priority(presets) if p["meta"]["enabled"]]
             print(f"[presets] включены: {', '.join(on) or 'нет'}", file=sys.stderr)
         for path in write_fragments(presets, args.out_dir):
             print(path)

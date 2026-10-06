@@ -101,12 +101,11 @@ def components(tests: dict, th: dict) -> dict[str, float]:
             comps["throttle"] = higher_better(ratio, th["throttle_bad"], th["throttle_good"])
         elif not dl.get("ok") and not neutral:
             comps["throttle"] = 0.0
-        if neutral:
-            pass  # сервер ответил — hold не оцениваем
-        elif dl.get("hold_ratio") is not None:
-            rel_hold = clamp01(dl["hold_ratio"])
-        elif not dl.get("ok"):
-            rel_hold = 0.0
+        if not neutral:                        # сервер ответил статусом — hold не оцениваем
+            if dl.get("hold_ratio") is not None:
+                rel_hold = clamp01(dl["hold_ratio"])
+            elif not dl.get("ok"):
+                rel_hold = 0.0
 
     reach = tests.get("reachability")
     if reach is not None:

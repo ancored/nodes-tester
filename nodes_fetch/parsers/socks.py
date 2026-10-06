@@ -15,7 +15,7 @@ def credentials(link):
         decoded = b64text(link.userinfo)
     except LinkError:
         decoded = ""
-    user, sep, password = (decoded if ":" in decoded else link.user).partition(":")
+    user, _, password = (decoded if ":" in decoded else link.user).partition(":")
     return user, password
 
 

@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import re
+
 from .data import collect, node_detail
-from .webapp import App, HttpError, Response
+from .webapp import App, HttpError
 
 # Узкий эндпоинт → какие ключи снимка collect() он отдаёт.
 _SLICES = {
@@ -27,7 +29,6 @@ def register(app: App) -> None:
     open_read = app.read_open
 
     def read_node(app, crc, include_config=False):
-        import re
         if not re.fullmatch(r"[0-9a-fA-F]{8}", crc):
             raise HttpError(400, "crc должен состоять из 8 hex-символов")
         try:

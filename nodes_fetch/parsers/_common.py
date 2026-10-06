@@ -223,8 +223,8 @@ def _extra(raw):
 def _keepalive(value):
     """h_keep_alive_period — целое (не диапазон): "15-30" → 15, "-1" → -1."""
     text = str(value).strip()
-    if "-" in text[1:]:
-        text = text.split("-")[0] if not text.startswith("-") else text
+    if "-" in text[1:] and not text.startswith("-"):     # диапазон — нижняя граница
+        text = text.split("-")[0]
     return int(float(text))
 
 
@@ -246,7 +246,8 @@ def xhttp_transport(params: dict) -> dict:
         if opts.get(src) not in (None, ""):
             transport[dst] = xhttp_range(opts[src])
     xmux = {}
-    for key, value in (opts.get("xmux") or {}).items() if isinstance(opts.get("xmux"), dict) else ():
+    raw_xmux = opts.get("xmux")
+    for key, value in (raw_xmux.items() if isinstance(raw_xmux, dict) else ()):
         key = _XMUX_KEYS.get(key, key)
         if key == "h_keep_alive_period":
             try:
@@ -260,7 +261,7 @@ def xhttp_transport(params: dict) -> dict:
     return transport
 
 
-def stream_transport(params: dict, *, server: str = ""):
+def stream_transport(params: dict):
     """Транспорт v2ray-семейства по type=… (ws, grpc, http/h2, httpupgrade, quic, xhttp)."""
     kind = (params.get("type") or "").lower()
     host = params.get("host", "")

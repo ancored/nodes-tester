@@ -60,8 +60,11 @@
         "group": "ai",
         "default_overrides": {
           "required_tests": [
-            "gemini"
-          ]
+            "gemini",
+            "openai",
+            "anthropic"
+          ],
+          "strict_exit_ip": true
         }
       }
     ]
@@ -106,6 +109,18 @@
     "gemini": {
       "attempts": 3,
       "timeout": 20,
+      "ttl_hours": 6,
+      "max_per_pass": 20
+    },
+    "openai": {
+      "attempts": 3,
+      "timeout": 15,
+      "ttl_hours": 6,
+      "max_per_pass": 20
+    },
+    "anthropic": {
+      "attempts": 3,
+      "timeout": 15,
       "ttl_hours": 6,
       "max_per_pass": 20
     },

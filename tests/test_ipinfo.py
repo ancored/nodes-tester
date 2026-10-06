@@ -60,7 +60,21 @@ class IpInfoTest(unittest.TestCase):
         rows = data._results(db)["rows"]
         self.assertEqual(rows[0]["ip_type"], "ДЦ, прокси, по базе DE")
         self.assertEqual(rows[0]["ip_asn"], "AS24940 HETZNER-AS")
-        self.assertEqual(rows[0]["ip_title"], "1.1.1.1 · AS24940 HETZNER-AS · Hetzner Online")
+        self.assertEqual(rows[0]["ip_title"],
+                         "ДЦ, прокси, по базе DE · 1.1.1.1 · AS24940 HETZNER-AS · Hetzner Online")
+        self.assertEqual((rows[0]["ip_kind"], rows[0]["ip_proxy"], rows[0]["ip_db_cc"]),
+                         ("hosting", 1, "DE"))
+
+    def test_preferred_and_country_mismatch(self):
+        self.assertTrue(ipinfo.preferred({"mobile": 1, "hosting": 1}))
+        self.assertTrue(ipinfo.preferred({"country": "NL"}))
+        self.assertFalse(ipinfo.preferred({"hosting": 1}))
+        self.assertFalse(ipinfo.preferred({"proxy": 1}))
+        self.assertFalse(ipinfo.preferred(None))
+        self.assertEqual(ipinfo.db_country_mismatch({"country": "DE"}, "nl"), "DE")
+        self.assertEqual(ipinfo.db_country_mismatch({"country": "NL"}, "nl"), "")
+        self.assertEqual(ipinfo.db_country_mismatch({"country": "DE"}, ""), "")
+        self.assertEqual(ipinfo.db_country_mismatch(None, "NL"), "")
 
 
 if __name__ == "__main__":

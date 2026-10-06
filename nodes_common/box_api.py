@@ -49,7 +49,7 @@ def _varint(value: int) -> bytes:
 
 
 def _field(num: int, value) -> bytes:
-    if isinstance(value, bool) or isinstance(value, int):
+    if isinstance(value, int):          # bool — тоже int
         return _varint(num << 3) + _varint(int(value))
     if isinstance(value, str):
         value = value.encode("utf-8")
@@ -296,10 +296,6 @@ class BoxApi:
 
     def url_test(self, tag: str) -> None:
         self.unary("URLTest", encode({1: tag}))
-
-    def clash_mode(self) -> dict:
-        m = decode(self.unary("GetClashModeStatus"))
-        return {"modes": _strs(m, 1), "current": _str(m, 2)}
 
     def subscribe_connections(self, interval: float) -> _Call:
         """Поток ConnectionEvents; interval — период UPDATE-событий, секунды."""

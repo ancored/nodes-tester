@@ -151,7 +151,7 @@ def _crypt5(payload: str, keys: dict) -> str:
         raise UnknownKey(f"crypt5: нет ключа {marker}")
     key, body = RsaKey(keys[marker]), data[4:-4]
     # В солёном варианте после nonce идёт метка (не цифра), в прежнем — сразу длина.
-    order = (True, False) if not 0x30 <= body[12] <= 0x39 else (False, True)
+    order = (False, True) if 0x30 <= body[12] <= 0x39 else (True, False)
     error = None
     for salted in order:
         try:

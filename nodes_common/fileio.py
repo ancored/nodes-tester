@@ -9,12 +9,7 @@ import contextlib
 import json
 import os
 import time
-from datetime import datetime, timezone
-
-
-def utc_now_iso():
-    """Текущее время UTC в ISO-8601 с суффиксом Z, до секунд."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+from datetime import datetime
 
 
 def parse_iso(value):

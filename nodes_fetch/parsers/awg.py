@@ -1,19 +1,17 @@
 """Парсер AmneziaWG (AWG) — файлы .conf (WireGuard-INI с AWG-полями).
 
 В отличие от остальных парсеров, вход — не share-ссылка (URL), а файл .conf.
-Экспортирует parse_file(path) -> один узел sing-box типа "wireguard" (в 1.14 —
-endpoint). Диспетчер папок (main.process_subscribes, type=="folder") вызывает
-parse_file по каждому файлу каталога; load_dir — самостоятельный обход каталога
-(на случай прямого вызова/тестов).
+parse_file(path) -> один узел sing-box типа "wireguard" (в 1.14 — endpoint);
+подписка type=folder (sources._from_folder) вызывает его по каждому файлу каталога.
 
 Ручной line-parser надёжнее configparser: base64 с '=' в значениях, экзотический
 I1 с '=' внутри байт-блоков, потенциально >1 peer. Split — по ПЕРВОМУ '='.
 
-Карта полей .conf (PascalCase) -> endpoint (snake_case) — см. AWG-PARSER-INSTRUCTION.
-Значения нормализуются: диапазон "min-max" оставляем строкой, чистое число -> int,
+Поля .conf (PascalCase) -> поля endpoint (snake_case) — таблицы ниже. Значения нормализуются: диапазон "min-max" оставляем строкой, чистое число -> int,
 ключи/I1 -> строка как есть. DNS игнорируется (централизован). i1..i5 — дословно.
 """
-import os, re
+import os
+import re
 
 
 def _val(v):
@@ -41,7 +39,6 @@ _IFACE_STR = {
 }
 
 
-
 def _addr_list(v):
     out = []
     for part in v.split(','):
@@ -56,10 +53,8 @@ def _addr_list(v):
 
 def parse_file(path):
     section = None
-    node = {'type': 'wireguard', 'peers': [{}]}
-    peer = node['peers'][0]
-    peer.setdefault('allowed_ips', ['0.0.0.0/0'])
-    peer.setdefault('persistent_keepalive_interval', 30)
+    peer = {'allowed_ips': ['0.0.0.0/0'], 'persistent_keepalive_interval': 30}
+    node = {'type': 'wireguard', 'peers': [peer]}
     with open(path, 'r', encoding='utf-8') as f:
         for raw in f:
             line = raw.strip()
@@ -110,16 +105,3 @@ def parse_file(path):
     node['_file_cc'] = stem if (len(stem) == 2 and stem.isalpha()) else ''
     node['tag'] = f"AWG | {stem.upper()}"
     return node
-
-
-def load_dir(awg_dir):
-    nodes = []
-    if not os.path.isdir(awg_dir):
-        return nodes
-    for fn in sorted(os.listdir(awg_dir)):
-        if fn.lower().endswith('.conf'):
-            try:
-                nodes.append(parse_file(os.path.join(awg_dir, fn)))
-            except Exception as e:
-                print(f"  [awg] пропущен {fn} ({e.__class__.__name__}: {e})")
-    return nodes

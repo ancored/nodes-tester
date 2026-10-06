@@ -130,10 +130,6 @@ def _check_assembly(app: App, what: str, base: dict | None = None,
                                          f"{', '.join(dups)}")
 
 
-def _check_base(app: App, data: dict) -> None:
-    _check_assembly(app, "base.json", base=data)
-
-
 def _validate(app: App, name: str, data: object) -> None:
     if not isinstance(data, dict):
         raise HttpError(422, "Корень JSON должен быть объектом")
@@ -143,7 +139,7 @@ def _validate(app: App, name: str, data: object) -> None:
         except ValueError as exc:
             raise HttpError(422, str(exc)) from exc
     if name == "base.json":
-        _check_base(app, data)
+        _check_assembly(app, "base.json", base=data)
     if name.startswith("presets/"):
         _check_assembly(app, name, override=(Path(name).stem, data))
 
@@ -183,6 +179,14 @@ def _version(app: App, name: str, ts: str) -> Path:
     return version
 
 
+def _snapshot(app: App, name: str, path: Path) -> Path:
+    """Сохранить текущую версию файла в историю; возвращает каталог истории."""
+    history = _history_dir(app, name)
+    history.mkdir(parents=True, exist_ok=True)
+    _atomic_write(history / str(time.time_ns()), path.read_bytes())
+    return history
+
+
 def _save(app: App, req, name: str, path: Path, data: dict) -> dict:
     expected = req.headers.get("If-Match")
     if not expected:
@@ -193,11 +197,7 @@ def _save(app: App, req, name: str, path: Path, data: dict) -> dict:
         if _revision(path) != expected:
             raise HttpError(409, "Файл изменился после открытия. Перечитайте его.")
         if path.is_file():
-            old = path.read_bytes()
-            history = _history_dir(app, name)
-            history.mkdir(parents=True, exist_ok=True)
-            ts = str(time.time_ns())
-            _atomic_write(history / ts, old)
+            history = _snapshot(app, name, path)
             for stale in sorted(history.iterdir(), key=lambda p: p.name, reverse=True)[20:]:
                 stale.unlink()
         _atomic_write(path, payload)
@@ -245,9 +245,7 @@ def register(app: App) -> None:
             if _revision(target) != expected:
                 raise HttpError(409, "Файл изменился после открытия. Перечитайте его.")
             if target.is_file():
-                history = _history_dir(app, name)
-                history.mkdir(parents=True, exist_ok=True)
-                _atomic_write(history / str(time.time_ns()), target.read_bytes())
+                _snapshot(app, name, target)
                 target.unlink()
         return {"ok": True}
 

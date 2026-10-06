@@ -49,11 +49,9 @@ class Switcher:
         for group, st in self.state.items():
             if st.get("active"):
                 self.board.set_active(group, st["active"])
-        if storage is not None:
-            # scores.active в БД — как в состоянии переключателя сразу после старта, а не
-            # после первого прохода (админка читает рейтинг из БД).
-            storage.set_active_crcs({parse_node(st["active"]).node_id
-                                     for st in self.state.values() if st.get("active")})
+        # scores.active в БД — как в состоянии переключателя сразу после старта, а не
+        # после первого прохода (админка читает рейтинг из БД).
+        self._sync_active_crcs()
         self._align_loaded()
 
     # --- Публичное ------------------------------------------------------
@@ -89,9 +87,7 @@ class Switcher:
             for g in gone:
                 del self.state[g]
                 self.board.set_active(g, None)
-            if self._storage is not None:
-                self._storage.set_active_crcs(
-                    {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
+            self._sync_active_crcs()
             self._persist()
             print(f"  [switch] группы исчезли из sing-box, состояние сброшено: {', '.join(gone)}")
 
@@ -198,7 +194,7 @@ class Switcher:
     def evaluate_region(self, region: str, emergency: bool = False) -> None:
         # Сохраняем state СРАЗУ после изменения: emergency/emg_stuck от монитора между
         # прогонами (в rotation_bound ожидание — часы) иначе теряются при рестарте до
-        # следующего evaluate_all (см. review.md P1).
+        # следующего evaluate_all.
         with self._lock:
             self._evaluate_region_locked(region, emergency)
             self._persist()
@@ -207,6 +203,13 @@ class Switcher:
         """Сохранить состояние регионов в БД (если storage подключён)."""
         if self._storage is not None:
             self._storage.save_switch_state(self.state)
+
+    def _sync_active_crcs(self) -> None:
+        """scores.active в БД — по текущим активным нодам групп. save_scores переписывает
+        scores лишь раз в прогон, а переключение может произойти между прогонами."""
+        if self._storage is not None:
+            self._storage.set_active_crcs(
+                {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
 
     def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
         self._evaluate_region_core(region, emergency)
@@ -311,9 +314,7 @@ class Switcher:
             self._storage.add_activation(region, "", fs, "failsafe", 0.0,
                                          parse_node(prev).node_id if prev else None)
         self._emit(region, "failsafe", fs, prev)
-        if self._storage is not None:
-            self._storage.set_active_crcs(
-                {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
+        self._sync_active_crcs()
 
     def _note_emergency_stuck(self, region: str, st: dict, detail: str) -> None:
         """Emergency без замены (ТСПУ заблокировал активную, здоровых кандидатов нет).
@@ -387,7 +388,7 @@ class Switcher:
     def _activate(self, cand: dict, region: str, st: dict, now: float, reason: str) -> bool:
         node = cand["node"]
         prev = st.get("active")             # предыдущая активная (для истории переходов)
-        if node == st.get("active") and reason not in ("init",):
+        if node == prev and reason != "init":
             return False
         try:
             proxies = self.api.all_proxies()
@@ -431,15 +432,9 @@ class Switcher:
             self._storage.add_activation(
                 region, crc, node, reason, cand.get("score"), prev_crc)
         self._emit(region, reason, node, prev)
-        if self._storage is not None:
-            # Держим scores.active в БД в синхроне с activations: save_scores переписывает
-            # scores лишь раз в прогон, а переключение может произойти между прогонами.
-            self._storage.set_active_crcs(
-                {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
+        self._sync_active_crcs()
         self.board.set_active(region, node)
-        partial = f", ЧАСТИЧНО {done}/{len(pairs)}" if done < len(pairs) else ""
-        print(f"  [switch] {region}: {reason.upper()} → {node} "
-              f"(score {cand['score']}, PUT {done}{partial})")
+        print(f"  [switch] {region}: {reason.upper()} → {node} (score {cand['score']}, PUT {done})")
         return True
 
     def _chain_pairs(self, node: str, proxies: dict, skip: set,
@@ -449,7 +444,7 @@ class Switcher:
         node → {region}-auto-out → его родители. Группы из skip (тестовые + freeze,
         напр. global-auto-out) не трогаем. ЧУЖИЕ auto-селекторы групп ({G}-auto-out для
         G != region) пропускаем: нода может входить в несколько групп (eu и ai, фолбэк),
-        но переключение группы X не должно менять выбор в группе Y (см. review.md P1).
+        но переключение группы X не должно менять выбор в группе Y.
         """
         selectors = {t: info for t, info in proxies.items()
                      if str(info.get("type", "")).lower() == "selector"}
@@ -543,8 +538,8 @@ def _foreign_group_auto(tag: str, group: str, groups: set) -> bool:
     return g in groups and g != group
 
 
-# Оси балансировки: (ключ поля кандидата, ключ агрегата в dims).
-_LB_AXES = (("provider", "provider"), ("country", "country"), ("protocol", "protocol"))
+# Оси балансировки: поле кандидата и ключ агрегата трафика в dims.
+_LB_AXES = ("provider", "country", "protocol")
 
 
 def _weighted_choice(pool: list[dict], activations: dict,
@@ -565,18 +560,18 @@ def _weighted_choice(pool: list[dict], activations: dict,
     strengths = strengths or {}
     # Число нод пула по каждому значению оси (для fair-share: провайдер со 100 нодами
     # не должен получать в 10 раз больше веса, чем провайдер с 10).
-    counts: dict[str, dict] = {axis: {} for axis, _ in _LB_AXES}
-    for axis, field in _LB_AXES:
+    counts: dict[str, dict] = {axis: {} for axis in _LB_AXES}
+    for axis in _LB_AXES:
         for c in pool:
-            v = c.get(field)
+            v = c.get(axis)
             counts[axis][v] = counts[axis].get(v, 0) + 1
     # Предрасчёт медианного масштаба байтов по каждой активной оси (для underuse).
     scales: dict[str, float] = {}
-    for axis, field in _LB_AXES:
+    for axis in _LB_AXES:
         s = strengths.get(axis, 0.0)
         if s and s > 0:
             amap = dims.get(axis) or {}
-            vals = [amap.get(c.get(field), 0) for c in pool]
+            vals = [amap.get(c.get(axis), 0) for c in pool]
             sc = statistics.median(vals) if vals else 0.0
             if sc > 0:
                 scales[axis] = sc
@@ -584,15 +579,15 @@ def _weighted_choice(pool: list[dict], activations: dict,
     for c in pool:
         acts = activations.get(c["node"], 0)
         w = max(0.01, float(c["score"])) / (1.0 + acts)
-        for axis, field in _LB_AXES:
+        for axis in _LB_AXES:
             s = strengths.get(axis, 0.0)
             if not (s and s > 0):
                 continue
-            cnt = counts[axis].get(c.get(field), 1) or 1     # 1) fair-share по числу нод
+            cnt = counts[axis].get(c.get(axis), 1) or 1      # 1) fair-share по числу нод
             w *= (1.0 / cnt) ** s
             sc = scales.get(axis)                            # 2) underuse по трафику
             if sc:
-                b = (dims.get(axis) or {}).get(c.get(field), 0)
+                b = (dims.get(axis) or {}).get(c.get(axis), 0)
                 w *= (sc / (sc + b)) ** s
         weights.append(w)
     total = sum(weights)

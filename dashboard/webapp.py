@@ -7,9 +7,8 @@
 - read-only (отдельный `python -m dashboard`): `runner is None`, доступны только read;
 - full (встроен в процесс тестера): `runner` задан → доступны и control/config.
 
-Хендлеры регистрируются в отдельных модулях (`api_read`, позже `api_control`,
-`api_config`) через `App.route(...)`. Каркас проектно ничего не знает о предметной
-области — только маршрутизация, статика, JSON и токен.
+Хендлеры регистрируются в модулях `api_*` через `App.route(...)`. Каркас ничего не
+знает о предметной области — только маршрутизация, статика, JSON и токен.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ import json
 import os
 import posixpath
 import re
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
@@ -117,7 +115,6 @@ class App:
         self.read_open = read_open
         self.static_dir = static_dir
         self._routes: list[_Route] = []
-        # Фолбэк-рендерер для '/', пока нет собранного SPA (легаси-страница).
 
     # --- Регистрация маршрутов ---------------------------------------------
 
@@ -127,9 +124,6 @@ class App:
             self._routes.append(_Route(method, pattern, fn, needs_token))
             return fn
         return deco
-
-    def add_route(self, method: str, pattern: str, fn, needs_token: bool = False):
-        self._routes.append(_Route(method, pattern, fn, needs_token))
 
     # --- Диспетчеризация ----------------------------------------------------
 
@@ -266,7 +260,3 @@ def serve_forever(app: App, host: str, port: int) -> None:
         print("\nОстановлено.")
     finally:
         httpd.server_close()
-
-
-def now_str() -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S")

@@ -91,7 +91,8 @@ _LINK_SCHEMES = set(parsers.SCHEMES) - {"http", "https"}
 
 
 def _starts_with_link(text):
-    return parsers.scheme_of(text.split(None, 1)[0] if text.split() else "") in _LINK_SCHEMES
+    words = text.split(None, 1)
+    return parsers.scheme_of(words[0] if words else "") in _LINK_SCHEMES
 
 
 def parse_links(text, ctx):

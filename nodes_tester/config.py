@@ -83,7 +83,7 @@ _DEFAULT_TESTS = ["connectivity", "latency", "jitter", "download", "reachability
 # heavy_download — veto, в score не входит). Набор без пересечения с этим → score 0.
 _SCORING_TESTS = {"latency", "jitter", "download", "reachability"}
 # Обязательные тесты групп (run.*.required_tests): отдельная фаза, в рейтинг не входят.
-REQUIRED_TESTS = {"gemini"}
+REQUIRED_TESTS = {"gemini", "openai", "anthropic"}
 
 
 @dataclass
@@ -115,12 +115,14 @@ class RunParams:
     # только нода со свежим успешным результатом; никто не прошёл — группа на failsafe.
     # Задаётся для групп через run.node_groups_specifics; гоняются отдельной фазой.
     required_tests: list[str] = field(default_factory=list)
+    # Строгий выходной IP (для ai): страна IP по базе ip-api должна совпадать со страной
+    # connectivity, иначе нода не кандидат; домашние и мобильные IP без признака прокси
+    # выбираются раньше дата-центров, прокси и IP без сведений.
+    strict_exit_ip: bool = False
 
     def merged(self, overrides: dict) -> "RunParams":
         """Копия с наложенными override'ами (мелкий мердж по известным полям)."""
-        fields = {f.name for f in dataclasses.fields(self)}
-        patch = {k: v for k, v in (overrides or {}).items() if k in fields}
-        return dataclasses.replace(self, **patch)
+        return dataclasses.replace(self, **_filtered(RunParams, overrides))
 
 
 @dataclass
@@ -153,7 +155,7 @@ class ReportConfig:
     console: bool = True
 
 
-# --- Scoring / Switching / Monitor / Storage (структура без изменений) ---
+# --- Scoring / Switching / Monitor / Storage ------------------------------
 
 _DEFAULT_THRESHOLDS = {
     "ttfb_good": 150, "ttfb_bad": 1500,
@@ -277,7 +279,7 @@ class CooldownConfig:
     (провал → снова карантин). Успешный gate снимает и паузу, и карантин.
 
     Счётчик прогонов для паузы — СКВОЗНОЙ (meta.pass_seq, не сбрасывается в полночь),
-    поэтому нет залипания из review.md P1 (там сравнивался посуточный pass_no).
+    поэтому пауза не залипает при смене суток (как было с посуточным pass_no).
     Состояние персистентно (таблица garbage), переживает рестарт.
 
     `low_score` > 0 — карантин и для живых, но слабых нод: рейтинг (сглаженный) ниже
@@ -410,10 +412,6 @@ def _filtered(cls, data: dict) -> dict:
     return {k: v for k, v in (data or {}).items() if k in known}
 
 
-def _load_box_api(data: dict) -> BoxApiConfig:
-    return BoxApiConfig(**_filtered(BoxApiConfig, _section(data, "box_api")))
-
-
 def load_config(path: str) -> Config:
     if not os.path.exists(path):
         raise FileNotFoundError(
@@ -434,7 +432,7 @@ def load_config(path: str) -> Config:
         raise ValueError("Не задано ни одной testing_groups")
 
     cfg = Config(
-        box_api=_load_box_api(data),
+        box_api=BoxApiConfig(**_filtered(BoxApiConfig, _section(data, "box_api"))),
         testing_groups=tgs,
         region_groups=RegionGroupsConfig(**_section(data, "region_groups")),
         run=_load_run(_section(data, "run")),
@@ -466,10 +464,8 @@ def _load_testing_group(t: dict) -> TestingGroupConfig:
 
 
 def _load_run(run: dict) -> RunConfig:
-    # Терпимость к неизвестным/устаревшим ключам (напр. удалённый group_pause):
-    # берём только поля RunParams, чтобы старые конфиги не роняли загрузку.
-    known = {f.name for f in dataclasses.fields(RunParams)}
-    default = RunParams(**{k: v for k, v in (run.get("default") or {}).items() if k in known})
+    # Неизвестные ключи (напр. удалённый group_pause) не роняют загрузку.
+    default = RunParams(**_filtered(RunParams, run.get("default")))
     group_overrides = {
         spec.get("testing_group_tag", ""): spec.get("default_overrides") or {}
         for spec in (run.get("testing_groups_specifics") or [])
@@ -593,7 +589,6 @@ def _validate(cfg: Config) -> None:
         raise ValueError("notify.webhook.url должен начинаться с http:// или https://")
     # Предупреждение: набор тестов без scoring-компонента даёт всем нодам score 0
     # (напр. только connectivity — он лишь gate). Тогда candidates() пуст → нет выбора.
-    excl = {r.lower() for r in cfg.region_groups.exclude}
     if not (set(cfg.run.default.tests_enabled) & _SCORING_TESTS):
         print("  [config] ВНИМАНИЕ: run.default.tests_enabled без scoring-теста "
               f"(нужен один из {sorted(_SCORING_TESTS)}) → score будет 0")
@@ -603,6 +598,7 @@ def _validate(cfg: Config) -> None:
         if unknown:
             raise ValueError(f"required_tests группы '{tag}': неизвестные тесты "
                              f"{', '.join(sorted(unknown))} (доступны: {', '.join(sorted(REQUIRED_TESTS))})")
+    excl = {r.lower() for r in cfg.region_groups.exclude}
     for tag in cfg.run.node_group_overrides:
         if tag.lower() in excl:
             continue                          # регион не тестируется — не предупреждаем

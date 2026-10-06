@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS scores (
   country TEXT, label TEXT, active INTEGER, score REAL,
   reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
   score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
-  heavy_ok TEXT, heavy_ts INTEGER, gemini_ok TEXT, gemini_ts INTEGER, gemini_cc TEXT);
+  heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT);
 CREATE TABLE IF NOT EXISTS score_history (
   ts INTEGER, crc TEXT, region TEXT, score REAL, s_run REAL, gate INTEGER);
 CREATE INDEX IF NOT EXISTS idx_score_history_ts ON score_history(ts);
@@ -93,7 +93,7 @@ _SCORE_COLS = (
     "node", "provider", "protocol", "region", "country", "label", "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
     "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
-    "gemini_ok", "gemini_ts", "gemini_cc",
+    "required", "exit_ip", "exit_cc",
 )
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
@@ -113,9 +113,9 @@ class Storage:
                                 ("nodes", "banned", "INTEGER"),
                                 ("garbage", "streak", "INTEGER"),
                                 ("garbage", "until_pass", "INTEGER"),
-                                ("scores", "gemini_ok", "TEXT"),
-                                ("scores", "gemini_ts", "INTEGER"),
-                                ("scores", "gemini_cc", "TEXT")):
+                                ("scores", "required", "TEXT"),
+                                ("scores", "exit_ip", "TEXT"),
+                                ("scores", "exit_cc", "TEXT")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:
@@ -158,7 +158,7 @@ class Storage:
             outbounds = data or []
         now = int(time.time())
         rows = []
-        for ob in outbounds or []:
+        for ob in outbounds:
             if not isinstance(ob, dict):
                 continue
             tag = ob.get("tag", "")
@@ -193,9 +193,9 @@ class Storage:
     def touch_seen(self, crcs) -> None:
         """Обновить last_seen для нод, реально присутствующих в selector в этом прогоне.
         Иначе last_seen обновляется только при смене mtime nodes.json, и cleanup() через
-        retention_days удалит активно тестируемую ноду вместе со всей историей
-        (см. review.md P0). Обновляем присутствие, а не только факт замера."""
-        seen = [c for c in {c for c in crcs if c}]
+        retention_days удалит активно тестируемую ноду вместе со всей историей.
+        Обновляем присутствие, а не только факт замера."""
+        seen = {c for c in crcs if c}
         if not seen:
             return
         now = int(time.time())
@@ -257,21 +257,22 @@ class Storage:
                 "hosting,ts) VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
             self._db.commit()
 
-    # --- Трафик --------------------------------------------------------
-
-    def add_traffic(self, ts: int, rows: list) -> None:
-        """rows: [(crc, up, down, conns, is_tester), ...]"""
-        if not rows:
-            return
+    def load_ip_info(self) -> dict:
+        """{ip: {asn, as_name, isp, org, country, mobile, proxy, hosting}} — весь кэш."""
         with self._lock:
-            self._db.executemany(
-                "INSERT INTO traffic (ts,crc,up,down,conns,is_tester) "
-                "VALUES (?,?,?,?,?,?)", [(ts, *r) for r in rows])
-            self._db.commit()
+            rows = self._db.execute("SELECT ip,asn,as_name,isp,org,country,mobile,proxy,hosting "
+                                    "FROM ip_info").fetchall()
+        return {r[0]: {"asn": r[1], "as_name": r[2] or "", "isp": r[3] or "", "org": r[4] or "",
+                       "country": r[5] or "", "mobile": _int(r[6]), "proxy": _int(r[7]),
+                       "hosting": _int(r[8])} for r in rows}
+
+    # --- Трафик --------------------------------------------------------
 
     def add_traffic_batch(self, ts: int, node_rows: list, ep_rows: list) -> None:
         """traffic + endpoints ОДНОЙ транзакцией (один commit) — чтобы частичная запись
-        не рассинхронизировала витрину и не теряла дельты (см. review.md P1)."""
+        не рассинхронизировала витрину и не теряла дельты.
+        node_rows: [(crc, up, down, conns, is_tester)], ep_rows: [(crc, source_ip, dest_host,
+        network, up, down, flows)]."""
         if not node_rows and not ep_rows:
             return
         with self._lock:
@@ -287,20 +288,6 @@ class Storage:
                       up=up+excluded.up, down=down+excluded.down,
                       flows=flows+excluded.flows, last_seen=excluded.last_seen
                 """, [(*r, ts) for r in ep_rows])
-            self._db.commit()
-
-    def upsert_endpoints(self, ts: int, rows: list) -> None:
-        """rows: [(crc, source_ip, dest_host, network, up, down, flows), ...]"""
-        if not rows:
-            return
-        with self._lock:
-            self._db.executemany("""
-                INSERT INTO endpoints (crc,source_ip,dest_host,network,up,down,flows,last_seen)
-                VALUES (?,?,?,?,?,?,?,?)
-                ON CONFLICT(crc,source_ip,dest_host,network) DO UPDATE SET
-                  up=up+excluded.up, down=down+excluded.down,
-                  flows=flows+excluded.flows, last_seen=excluded.last_seen
-            """, [(*r, ts) for r in rows])
             self._db.commit()
 
     def traffic_by_dims(self, window_seconds: float) -> dict:
@@ -465,7 +452,7 @@ class Storage:
                 "SELECT crc,node,provider,protocol,region,country,label,active,score,"
                 "reliability,consistency,throttle,jitter,latency,throughput,"
                 "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                "gemini_ok,gemini_ts,gemini_cc FROM scores"
+                "required,exit_ip,exit_cc FROM scores"
             ).fetchall()
         out: dict[str, dict] = {}
         for r in rows:
@@ -480,8 +467,7 @@ class Storage:
                 "score_ewma": _flt(r[15]), "avail": _flt(r[16]), "flap": _flt(r[17]),
                 "samples": _int(r[18]), "last_seen": _int(r[19]),
                 "heavy_ok": "" if r[20] is None else str(r[20]), "heavy_ts": _int(r[21]),
-                "gemini_ok": "" if r[22] is None else str(r[22]), "gemini_ts": _int(r[23]),
-                "gemini_cc": r[24] or "",
+                "required": _json_dict(r[22]), "exit_ip": r[23] or "", "exit_cc": r[24] or "",
             }
         return out
 
@@ -507,10 +493,10 @@ class Storage:
                 _flt(r.get("latency")), _flt(r.get("throughput")),
                 _flt(r.get("score_ewma")), _flt(r.get("avail")), _flt(r.get("flap")),
                 _int(r.get("samples")), _int(r.get("last_seen")),
-                "" if r.get("heavy_ok") in (None,) else str(r.get("heavy_ok")),
+                "" if r.get("heavy_ok") is None else str(r.get("heavy_ok")),
                 _int(r.get("heavy_ts")),
-                "" if r.get("gemini_ok") in (None,) else str(r.get("gemini_ok")),
-                _int(r.get("gemini_ts")), r.get("gemini_cc") or "",
+                json.dumps(r.get("required") or {}, ensure_ascii=False),
+                r.get("exit_ip") or "", r.get("exit_cc") or "",
             )
             prev = by_crc.get(crc)
             if prev is None or rank > prev[0]:
@@ -523,7 +509,7 @@ class Storage:
                     "INSERT INTO scores (crc,node,provider,protocol,region,country,label,"
                     "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
                     "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                    "gemini_ok,gemini_ts,gemini_cc) "
+                    "required,exit_ip,exit_cc) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
             self._db.commit()
 
@@ -626,22 +612,16 @@ class Storage:
             known = {r[0] for r in self._db.execute("SELECT crc FROM nodes")}
             added = [c for c in now_set if c not in prev and c in known]
             removed = [c for c in prev if c not in now_set]
-            for c in added:
-                self._db.execute(
-                    "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,?,?)",
-                    (ts, c, "added", "", 0))
-            for c in removed:
-                self._db.execute(
-                    "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,?,?)",
-                    (ts, c, "removed", "", 0))
+            self._db.executemany(
+                "INSERT INTO node_events (ts,crc,event,reason,streak) VALUES (?,?,?,'',0)",
+                [(ts, c, "added") for c in added] + [(ts, c, "removed") for c in removed])
             present_now = [c for c in now_set if c in known]
             if present_now:
                 ph = ",".join("?" * len(present_now))
-                self._db.execute(f"UPDATE nodes SET present = 1 WHERE crc IN ({ph})",
-                                 present_now)
+                self._db.execute(f"UPDATE nodes SET present = 1 WHERE crc IN ({ph})", present_now)
             if removed:
-                ph2 = ",".join("?" * len(removed))
-                self._db.execute(f"UPDATE nodes SET present = 0 WHERE crc IN ({ph2})", removed)
+                ph = ",".join("?" * len(removed))
+                self._db.execute(f"UPDATE nodes SET present = 0 WHERE crc IN ({ph})", removed)
             self._db.commit()
         return added, removed
 
@@ -673,7 +653,7 @@ class Storage:
                              (cutoff,))
             # 2) ВОЗРАСТНОЙ КАП сырых фактов — и у ЖИВЫХ нод тоже. Иначе results/traffic/
             #    activations/endpoints растут без предела (дашборд агрегирует всё, БД пухнет
-            #    на роутере). Храним только последние retention_days сырья (см. review.md P2).
+            #    на роутере). Храним только последние retention_days сырья.
             self._db.execute("DELETE FROM results WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM traffic WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM activations WHERE ts < ?", (cutoff,))
@@ -709,3 +689,11 @@ def _flt(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _json_dict(v) -> dict:
+    try:
+        d = json.loads(v) if v else {}
+    except (TypeError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}

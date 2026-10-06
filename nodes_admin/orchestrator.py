@@ -58,6 +58,25 @@ def _revision(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _exit_status(code: int) -> str:
+    """Код выхода конвейера → статус прогона (75 — конвейер уже занят)."""
+    if code == 75:
+        return "busy"
+    if code == 0:
+        return "ok"
+    return "error"
+
+
+def _slot_stamps(times, days) -> list[float]:
+    """Метки времени слотов расписания HH:MM в указанные дни (локальное время)."""
+    stamps = []
+    for day in days:
+        for value in times:
+            hour, minute = map(int, value.split(":"))
+            stamps.append(dt.datetime.combine(day, dt.time(hour, minute)).timestamp())
+    return stamps
+
+
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -213,7 +232,7 @@ class Orchestrator:
             code = int(Path(str(log_path) + ".exit").read_text(encoding="ascii").strip())
         except (OSError, ValueError):
             return "interrupted", None
-        return ("busy" if code == 75 else "ok" if code == 0 else "error"), code
+        return _exit_status(code), code
 
     def start_run(self, mode: str, dry_run: bool, *, trigger="manual", scheduled_for=None) -> str:
         if (mode not in RUN_MODES or type(dry_run) is not bool
@@ -250,7 +269,7 @@ class Orchestrator:
                                (process.pid, _process_start(process.pid), run_id))
                 try:
                     code = process.wait(timeout=timeout)
-                    status = "busy" if code == 75 else "ok" if code == 0 else "error"
+                    status = _exit_status(code)
                     if os.name == "posix" and not self._wait_group(process, self.kill_grace):
                         log.write(b"\n[orchestrator] process group still active after parent exit; killing descendants\n")
                         log.flush()
@@ -358,13 +377,7 @@ class Orchestrator:
 
     def _latest_due(self, times, now):
         today = dt.datetime.fromtimestamp(now).date()
-        due = []
-        for day in (today - dt.timedelta(days=1), today):
-            for value in times:
-                hour, minute = map(int, value.split(":"))
-                stamp = dt.datetime.combine(day, dt.time(hour, minute)).timestamp()
-                if stamp <= now:
-                    due.append(stamp)
+        due = [s for s in _slot_stamps(times, (today - dt.timedelta(days=1), today)) if s <= now]
         return max(due) if due else None
 
     def next_run(self, mode, now=None):
@@ -374,13 +387,7 @@ class Orchestrator:
         if not job["enabled"] or not job["times"]:
             return None
         today = dt.datetime.fromtimestamp(now).date()
-        future = []
-        for day in (today, today + dt.timedelta(days=1)):
-            for value in job["times"]:
-                hour, minute = map(int, value.split(":"))
-                stamp = dt.datetime.combine(day, dt.time(hour, minute)).timestamp()
-                if stamp > now:
-                    future.append(stamp)
+        future = [s for s in _slot_stamps(job["times"], (today, today + dt.timedelta(days=1))) if s > now]
         return min(future) if future else None
 
     def tick(self):

@@ -45,8 +45,9 @@ def _from_json(item: dict, name: str):
         transport = {"type": "http"}
         if host:
             transport["host"] = csv(host) if "," in host else host
-        if path.split("?")[0]:
-            transport["path"] = path.split("?")[0]
+        http_path = path.split("?")[0]
+        if http_path:
+            transport["path"] = http_path
         node["transport"] = transport
     elif net == "ws":
         node["transport"] = ws_transport(path, host)

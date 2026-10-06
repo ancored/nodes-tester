@@ -102,10 +102,6 @@ class TrafficCollector:
         """Жив ли поток подписки (для /api/status админки)."""
         return bool(self._threads) and self._threads[0].is_alive()
 
-    def connected(self) -> bool:
-        """Подписка сейчас установлена (иначе учёт стоит до переподключения)."""
-        return self._connected
-
     def user_bytes(self) -> dict[str, int]:
         """Накопительные байты боевого трафика (up+down) по CRC ноды."""
         with self._lock:
@@ -203,7 +199,7 @@ class TrafficCollector:
 
     def _flush(self) -> None:
         # Атомарно ЗАБИРАЕМ буферы (ставим пустые), запись — вне lock. При ошибке
-        # записи возвращаем дельты обратно в буфер, чтобы не потерять (review.md P1).
+        # записи возвращаем дельты обратно в буфер, чтобы не потерять.
         with self._lock:
             by_node, self._by_node = self._by_node, defaultdict(lambda: [0, 0, 0])
             by_ep, self._by_ep = self._by_ep, defaultdict(lambda: [0, 0, 0])
