@@ -5,9 +5,9 @@
 #   wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/install.sh | sh
 #   wget -qO- …/install.sh | sh -s -- 'https://provider.example/sub/TOKEN'
 #
-# Конфиг sing-box минимальный: без TUN, весь трафик (и проверки тестера до появления нод) —
-# напрямую, DNS — системный резолвер роутера. Трафик LAN sing-box не перехватывает, поэтому
-# установка не меняет работу сети. С подпиской скрипт сразу собирает ноды и применяет конфиг.
+# Конфиг sing-box минимальный: TUN с перехватом трафика и DNS роутера и LAN, sniff, весь трафик —
+# напрямую (единственный пресет), DNS — системный резолвер роутера. Подписки для этого не нужны;
+# с подпиской скрипт сразу собирает ноды и применяет конфиг.
 #
 #   SINGBOX_LX_VERSION=1.14.2-lx.11   версия ядра вместо последней
 
@@ -93,26 +93,51 @@ apk add nodes-tester
 
 # --- минимальная база sing-box -------------------------------------------------
 SECRET="$(tr -dc 'a-f0-9' < /dev/urandom | head -c 32)"
+LAN_IP="$(uci -q get network.lan.ipaddr | cut -d/ -f1)"
+[ -n "$LAN_IP" ] || die "не найден адрес LAN (network.lan.ipaddr)"
+LAN_NET="$(uci -q get network.lan.ipaddr)"
+case "$LAN_NET" in */*) ;; *) LAN_NET="$LAN_NET/$(uci -q get network.lan.netmask || echo 24)" ;; esac
+LAN_DEV="$(uci -q get network.lan.device || echo br-lan)"
+WAN_DEV="$(ifstatus wan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null || true)"
+# dnsmasq — системный резолвер, которым пользуется DNS-сервер local; его запросы к провайдеру
+# не должны снова попасть в TUN, иначе петля.
+DNSMASQ_UID="$(id -u dnsmasq 2>/dev/null || echo 453)"
 umask 077
-cat > "$NT_DIR/singbox/base.json" <<EOF
-{
-  "log": { "level": "warn" },
-  "dns": {
-    "servers": [ { "type": "local", "tag": "bootstrap" } ],
-    "final": "bootstrap"
-  },
-  "inbounds": [
-    { "type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080 }
-  ],
-  "outbounds": [ { "type": "direct", "tag": "direct-out" } ],
-  "route": {
-    "rules": [ { "inbound": "nodes-tester-in", "outbound": "nodes-tester" } ],
-    "default_domain_resolver": "bootstrap"
-  },
-  "services": [
-    { "type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090, "secret": "$SECRET" }
-  ]
+python3 - "$NT_DIR/singbox/base.json" "$SECRET" "$LAN_NET" "$LAN_DEV" "$WAN_DEV" "$DNSMASQ_UID" <<'EOF'
+import ipaddress, json, sys
+path, secret, lan_net, lan_dev, wan_dev, dnsmasq_uid = sys.argv[1:]
+route = {
+    "rules": [
+        {"action": "sniff"},
+        {"protocol": "dns", "action": "hijack-dns"},
+        {"ip_cidr": [str(ipaddress.ip_interface(lan_net).network)], "outbound": "direct-lan"},
+        {"inbound": "nodes-tester-in", "outbound": "nodes-tester"},
+    ],
+    "default_domain_resolver": "bootstrap",
 }
+if wan_dev:
+    route["default_interface"] = wan_dev
+else:
+    route["auto_detect_interface"] = True
+base = {
+    "log": {"level": "warn", "timestamp": True},
+    "dns": {"servers": [{"type": "local", "tag": "bootstrap"}], "final": "bootstrap"},
+    "inbounds": [
+        {"type": "tun", "tag": "tun-in", "interface_name": "tun0", "address": ["172.18.0.1/30"],
+         "auto_route": True, "auto_redirect": True, "strict_route": True,
+         "exclude_uid": [int(dnsmasq_uid)]},
+        {"type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080},
+    ],
+    "outbounds": [
+        {"type": "direct", "tag": "direct-out"},
+        {"type": "direct", "tag": "direct-lan", "bind_interface": lan_dev},
+    ],
+    "route": route,
+    "services": [{"type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090,
+                  "secret": secret}],
+}
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(base, f, ensure_ascii=False, indent=2)
 EOF
 cat > "$NT_DIR/singbox/presets/direct.json" <<'EOF'
 {
@@ -137,8 +162,6 @@ sing-box check -c "$SB_DIR/config.json"
 umask 022
 
 # --- конфиг тестера ------------------------------------------------------------
-LAN_IP="$(uci -q get network.lan.ipaddr | cut -d/ -f1)"
-[ -n "$LAN_IP" ] || die "не найден адрес LAN (network.lan.ipaddr)"
 python3 - "$NT_DIR/config.json" "$SECRET" "$LAN_IP" <<'EOF'
 import json, sys
 path, secret, host = sys.argv[1:]
@@ -152,6 +175,20 @@ EOF
 
 /etc/init.d/sing-box enable
 /etc/init.d/sing-box start
+# Связность через TUN: DNS роутера и HTTPS. Нет — sing-box останавливается, сеть как была.
+ok=0
+for _ in 1 2 3 4 5 6; do
+	sleep 5
+	if pidof sing-box >/dev/null && ip link show tun0 >/dev/null 2>&1 && nft list table inet sing-box >/dev/null 2>&1 		&& nslookup www.gstatic.com 127.0.0.1 >/dev/null 2>&1 && wget -qO /dev/null https://www.gstatic.com/generate_204; then
+		ok=1; break
+	fi
+done
+if [ "$ok" = 0 ]; then
+	/etc/init.d/sing-box stop
+	/etc/init.d/sing-box disable
+	die "через sing-box нет связности — служба остановлена и выключена; журнал: logread -e sing-box"
+fi
+log "sing-box работает, трафик идёт через TUN напрямую"
 uci set nodes-tester.tester.enabled=1
 uci commit nodes-tester
 /etc/init.d/nodes-tester enable
