@@ -40,14 +40,15 @@ nodes_fetch
 Схема всей сборки: [`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md).
 
 Правила маршрутизации и DNS можно вынести из `base.json` в пресеты — отдельные JSON-файлы
-`singbox/presets/*.json`. Пресет — фрагмент конфига sing-box (`dns.servers`, `dns.rules`,
-`route.rules`, `route.rule_set`, `outbounds`) с метаданными в ключе `_preset`:
-`title`, `description`, `enabled`, `priority`, `dns_priority` и `requires.groups`.
+`singbox/presets/*.json`. Пресет — фрагмент конфига sing-box (любые разделы) с метаданными
+в ключе `_preset`: `title`, `description`, `enabled`, `priority`, `priorities` и
+`requires.groups`.
 
-`apply-nodes.sh` склеивает через `sing-box merge` базу, `nodes.json` и включённые пресеты
-(`PRESETS_DIR`): массивы склеиваются в порядке входов, поэтому правила маршрута идут по
-`priority`, правила DNS — по `dns_priority`, внутри пресета порядок не меняется. Ключ
-`_preset` перед склейкой вырезается (`python3 -m nodes_admin.presets fragments`).
+`apply-nodes.sh` склеивает базу, `nodes.json` и включённые пресеты (`PRESETS_DIR`) своим
+склейщиком (`python3 -m nodes_admin.presets assemble`): база выше всех, пресеты — по
+`priority`, а для путей из `priorities` — по нему; внутри пресета порядок не меняется.
+Одинаковые элементы схлопываются, тот же тег с другим содержимым — ошибка. Подробности —
+[`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md#склейка).
 
 ```sh
 nodes-tester pipeline apply --dry-run
@@ -63,7 +64,7 @@ nodes-tester pipeline apply
 
 `apply-nodes.sh` выполняет следующую последовательность:
 
-1. `sing-box merge` базового конфига и `nodes.json` во временный файл.
+1. Склейка базы, `nodes.json` и включённых пресетов во временный файл (`nodes_admin.merge`).
 2. `sing-box check` тем бинарником, который установлен на роутере.
 3. Сравнение списка тегов и итогового файла.
 4. Сохранение предыдущего `config.json`.

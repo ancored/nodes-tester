@@ -6,7 +6,7 @@ CONFIG_DIR="${CONFIG_DIR:-/etc/nodes-tester}"
 SOURCE="$CONFIG_DIR/singbox/clients"
 CLIENTS_OUT="${CLIENTS_OUT:-/etc/sing-box-clients}"
 DRY_OUT="${DRY_OUT:-${DATA:-/opt/nodes-tester}/clients-dry}"
-MERGE="$(cd "$(dirname "$0")" && pwd)/merge-configs.py"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 CLIENTS_FILE="${CLIENTS_FILE:-$CONFIG_DIR/clients.list}"
 if [ -z "${CLIENTS:-}" ] && [ -f "$CLIENTS_FILE" ]; then
     CLIENTS="$(sed 's/#.*//' "$CLIENTS_FILE" | tr '\n' ' ')"
@@ -41,7 +41,7 @@ for name in $CLIENTS; do
     out="$OUT/${name}.json"
     [ -f "$base" ] || { log "нет базы, пропуск: $base"; FAILED=1; continue; }
     tmp="$(mktemp "$OUT/.${name}.XXXXXX")" || { FAILED=1; continue; }
-    if python3 "$MERGE" "$tmp" "$base" "$WHNODES"; then
+    if PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m nodes_admin.merge "$tmp" "$base" "$WHNODES"; then
         mv "$tmp" "$out"
         if [ "$DRY" = 1 ]; then
             cmp -s "$out" "$CLIENTS_OUT/${name}.json" && log "$name: как опубликованный" \
@@ -52,7 +52,7 @@ for name in $CLIENTS; do
     else
         rm -f "$tmp"
         FAILED=1
-        log "мерж не удался для '$name', прежний $out оставлен"
+        log "склейка не удалась для '$name', прежний $out оставлен"
     fi
 done
 

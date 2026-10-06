@@ -1,22 +1,22 @@
 #!/bin/sh
 #
-# apply-nodes.sh — применить nodes.json к sing-box роутера: merge base.json + nodes.json →
-# sing-box check → замена config.json → рестарт.
+# apply-nodes.sh — применить nodes.json к sing-box роутера: склейка base.json + nodes.json +
+# пресеты (nodes_admin.presets) → sing-box check → замена config.json → рестарт.
 #
 #   apply-nodes.sh [--dry-run] [--force] NODES_JSON
 #   apply-nodes.sh --health          только проверить связность работающего sing-box
 #
-#   --dry-run  всё то же (merge + check + diff), но ничего не заменяет и не перезапускает;
+#   --dry-run  всё то же (склейка + check + diff), но ничего не заменяет и не перезапускает;
 #              кандидат кладётся в $CANDIDATE для просмотра
 #   --force    перезапустить, даже если итоговый конфиг не изменился
 #
 #   BASE=...         база (по умолчанию $TARGET_DIR/base.json)
-#   PRESETS_DIR=...  каталог пресетов правил: включённые склеиваются после нод по приоритету
+#   PRESETS_DIR=...  каталог пресетов правил: включённые склеиваются после базы и нод по приоритету
 #
 # sing-box перезапускается ТОЛЬКО если итоговый config.json изменился или задан --force.
 # Новая база при том же итоговом конфиге перезапуска не требует. Изменённые .srs и
 # source-наборы sing-box перечитывает сам, без перезапуска. Невалидный конфиг
-# (merge/check упали) — работающий config.json не трогается, exit 1.
+# (склейка/check упали) — работающий config.json не трогается, exit 1.
 #
 # После рестарта — проверка РЕАЛЬНОЙ связности (до $HEALTH_WAIT с): через API-сервис sing-box
 # запускается URL-тест боевой группы $HEALTH_GROUP (адрес проверки — из настроек urltest). Не прошла (процесс не
@@ -90,28 +90,9 @@ fi
 [ -f "$BASE" ] || die "нет базы: $BASE"
 
 TMP="$(mktemp)"
-FRAGS="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$FRAGS"' EXIT
+trap 'rm -f "$TMP"' EXIT
 
-# sing-box merge склеивает входы в порядке ИМЁН ФАЙЛОВ, а не аргументов: кладём всё в
-# один каталог с упорядоченными именами. Ноды раньше базы — так было при прежних путях
-# (/etc/sing-box-subscribe/nodes.json < /etc/sing-box/base.json). Затем пресеты правил
-# (nodes_admin/presets.py): включённые фрагменты по приоритету.
-cp "$NODES" "$FRAGS/10-nodes.json" && cp "$BASE" "$FRAGS/20-base.json" \
-    || die "не удалось подготовить входы merge"
-if [ -n "$PRESETS_DIR" ] && [ -d "$PRESETS_DIR" ]; then
-    PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" \
-        python3 -m nodes_admin.presets fragments --dir "$PRESETS_DIR" --out-dir "$FRAGS" --log >/dev/null \
-        || die "пресеты правил невалидны — работающий конфиг не тронут"
-fi
-MERGE_ARGS=""
-for f in "$FRAGS"/*.json; do MERGE_ARGS="$MERGE_ARGS -c $f"; done
-
-# Пути без пробелов (mktemp) — MERGE_ARGS без кавычек намеренно.
-sing-box merge "$TMP" $MERGE_ARGS >/dev/null 2>&1 \
-    || die "sing-box merge не удался — работающий конфиг не тронут"
-PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m nodes_admin.presets check-tags --config "$TMP" \
-    || die "в итоговом конфиге повторяются теги — работающий конфиг не тронут"
+PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m nodes_admin.presets assemble     --base "$BASE" --nodes "$NODES" ${PRESETS_DIR:+--dir "$PRESETS_DIR"} --out "$TMP"     || die "склейка конфига не удалась — работающий конфиг не тронут"
 sing-box check -c "$TMP" || die "итоговый конфиг не прошёл sing-box check — работающий конфиг не тронут"
 
 # Сводка: какие теги outbounds/endpoints появятся и исчезнут.

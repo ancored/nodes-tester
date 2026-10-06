@@ -89,7 +89,7 @@ onBeforeUnmount(() => clearTimeout(timer))
             <tr v-for="item in presets" :key="item.name">
               <td class="l" data-label="Вкл."><input type="checkbox" :checked="item.enabled" :disabled="busy" :aria-label="'Включить ' + item.title" @change="toggle(item, $event.target.checked)" /></td>
               <td class="l" data-label="Пресет"><b>{{ item.title }}</b><small v-if="item.description" class="cell-note">{{ item.description }}</small></td>
-              <td data-label="Приоритет">{{ item.priority }}<small v-if="item.dns_priority !== item.priority" class="cell-note">DNS {{ item.dns_priority }}</small></td>
+              <td data-label="Приоритет">{{ item.priority }}<small v-for="(value, path) in item.priorities" :key="path" class="cell-note">{{ path }} {{ value }}</small></td>
               <td class="l" data-label="Нужны группы">
                 <template v-if="item.requires.groups.length">{{ item.requires.groups.join(', ') }}<small v-if="item.missing_groups?.length" class="cell-note bad">нет в nodes.json: {{ item.missing_groups.join(', ') }}</small></template>
                 <span v-else class="mut">—</span>

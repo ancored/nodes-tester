@@ -171,7 +171,7 @@ def _region_counts(leaf_nodes):
 
 def build(raws, params, user_nodes=(), log=print):
     """raw-конверты + нормализованные params (params.load) + user_nodes → (фрагмент, отчёт).
-    Фрагмент — {"outbounds": […], "endpoints": […]?} для `sing-box merge`."""
+    Фрагмент — {"outbounds": […], "endpoints": […]?} для склейки с базой."""
     dropped = Counter({k: 0 for k in ("type", "name", "ungrouped_protocol", "protocol",
                                        "country", "duplicate")})
     sub_nodes = raw_to_nodes(raws)

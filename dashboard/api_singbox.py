@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from nodes_admin import presets as presets_mod
+from nodes_admin.merge import MergeError, dumps
 from nodes_admin.rules import validate_rules
 
 from .webapp import App, HttpError
@@ -85,49 +86,42 @@ def _load_presets(app: App, override: tuple | None = None) -> list:
             meta = presets_mod.validate(name, data)
         except presets_mod.PresetError as exc:
             raise HttpError(422, str(exc)) from exc
-        items = [p for p in items if p["name"] != name] + [{"name": name, "meta": meta, "data": data}]
+        items = sorted([p for p in items if p["name"] != name] + [{"name": name, "meta": meta, "data": data}],
+                       key=lambda p: p["name"])
     return items
 
 
 def _check_assembly(app: App, what: str, base: dict | None = None,
                     override: tuple | None = None) -> None:
-    """sing-box merge базы, nodes.json и включённых пресетов + sing-box check."""
+    """Склейка базы, nodes.json и включённых пресетов + sing-box check."""
     nodes_file = Path(app.cfg.storage.nodes_file)
-    if not nodes_file.is_file():
-        raise HttpError(422, f"Не найден nodes.json для проверки {what}")
+    try:
+        nodes = json.loads(nodes_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise HttpError(422, f"Не найден nodes.json для проверки {what}") from exc
+    except ValueError as exc:
+        raise HttpError(422, f"nodes.json невалиден: {exc}") from exc
     if base is None:
         try:
             base = json.loads((_root(app) / "base.json").read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise HttpError(422, f"base.json недоступен для проверки {what}: {exc}") from exc
-    items = _load_presets(app, override)
+    try:
+        config, _ = presets_mod.assemble(base, nodes, _load_presets(app, override))
+    except MergeError as exc:
+        raise HttpError(422, f"Итоговый конфиг не склеивается ({what}): {exc}") from exc
     binary = getattr(app, "singbox_binary", "sing-box")
     with tempfile.TemporaryDirectory() as work:
-        # sing-box merge упорядочивает входы по именам файлов — как в apply-nodes.sh.
-        inputs, merged = Path(work) / "in", Path(work) / "merged.json"
-        inputs.mkdir()
-        (inputs / "10-nodes.json").write_bytes(nodes_file.read_bytes())
-        (inputs / "20-base.json").write_text(json.dumps(base, ensure_ascii=False), encoding="utf-8")
-        presets_mod.write_fragments(items, inputs)
-        merge = [binary, "merge", str(merged)]
-        for path in sorted(inputs.glob("*.json")):
-            merge += ["-c", str(path)]
-        for cmd in (merge, [binary, "check", "-c", str(merged)]):
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                raise HttpError(422, f"Не удалось проверить {what}: {exc}") from exc
-            if result.returncode:
-                output = (result.stderr or result.stdout).strip()[:4000]
-                raise HttpError(422, f"sing-box отклонил итоговый конфиг ({what}): {output}")
-            if cmd is merge:
-                try:
-                    dups = presets_mod.duplicate_tags(json.loads(merged.read_text(encoding="utf-8")))
-                except (OSError, ValueError) as exc:
-                    raise HttpError(422, f"Не удалось проверить {what}: {exc}") from exc
-                if dups:
-                    raise HttpError(422, f"Повторяющиеся теги в итоговом конфиге ({what}): "
-                                         f"{', '.join(dups)}")
+        merged = Path(work) / "config.json"
+        merged.write_text(dumps(config), encoding="utf-8")
+        try:
+            result = subprocess.run([binary, "check", "-c", str(merged)],
+                                    capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise HttpError(422, f"Не удалось проверить {what}: {exc}") from exc
+        if result.returncode:
+            output = (result.stderr or result.stdout).strip()[:4000]
+            raise HttpError(422, f"sing-box отклонил итоговый конфиг ({what}): {output}")
 
 
 def _validate(app: App, name: str, data: object) -> None:

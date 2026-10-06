@@ -1,29 +1,26 @@
 """Пресеты правил sing-box: отдельные JSON-файлы, склеиваемые с базой и нодами.
 
-Пресет — фрагмент конфига sing-box плюс метаданные в ключе `_preset`:
+Пресет — фрагмент конфига sing-box (любые разделы) плюс метаданные в ключе `_preset`:
 
     {
-      "_preset": {"title": "US", "description": "…", "enabled": true,
-                  "priority": 450, "dns_priority": 450, "requires": {"groups": ["us"]}},
+      "_preset": {"title": "RU", "description": "…", "enabled": true, "priority": 300,
+                  "priorities": {"dns.rules": 150}, "requires": {"groups": ["us"]}},
       "dns":   {"servers": […], "rules": […]},
-      "route": {"rules": […], "rule_set": […]},
-      "outbounds": […]
+      "route": {"rules": […], "rule_set": […]}
     }
 
-Итоговый конфиг — `sing-box merge` nodes.json, базы и включённых пресетов: массивы
-склеиваются в порядке входов, а порядок входов sing-box берёт по ИМЕНАМ ФАЙЛОВ, не по
-аргументам. Поэтому все входы кладутся в один каталог: 10-nodes.json, 20-base.json,
-30-preset-NNN.json. Каждый пресет подаётся двумя фрагментами без `_preset`:
-всё, кроме dns.rules, — по `priority`; dns.rules — по `dns_priority` (по умолчанию =
-priority). При равном приоритете порядок — по имени файла. Внутри пресета порядок правил
-не меняется. Так порядок правил маршрута и DNS задаётся независимо.
+Итоговый конфиг склеивает nodes_admin.merge: база выше всех, затем ноды, затем включённые
+пресеты по `priority` (меньше — выше, при равенстве — по имени файла). `priorities`
+переопределяет приоритет для отдельного пути: так DNS-правила пресета встают в другое место,
+чем его правила маршрута. Внутри пресета порядок элементов не меняется. Одинаковые объекты
+с тегом схлопываются, поэтому пресет сам объявляет нужные ему rule_set и DNS-серверы.
 
 `requires.groups` — группы нод ({name}-auto-out), без которых пресет ссылается на
 несуществующий outbound; окончательную проверку делает `sing-box check`.
 
 Командная строка (для apply-nodes.sh):
 
-    python3 -m nodes_admin.presets fragments --dir DIR --out-dir TMP   # пути фрагментов
+    python3 -m nodes_admin.presets assemble --base B --nodes N [--dir DIR] --out OUT
     python3 -m nodes_admin.presets list --dir DIR [--nodes nodes.json]  # состояние (JSON)
 """
 
@@ -36,11 +33,11 @@ import re
 import sys
 from pathlib import Path
 
+from nodes_admin.merge import Source, dumps, merge
+
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_TOP_KEYS = {"_preset", "dns", "route", "outbounds", "endpoints"}
-_DNS_KEYS = {"servers", "rules"}
-_ROUTE_KEYS = {"rules", "rule_set"}
 DEFAULT_PRIORITY = 500
+META_KEYS = {"title", "description", "enabled", "priority", "priorities", "requires"}
 
 
 class PresetError(ValueError):
@@ -53,36 +50,23 @@ def validate(name: str, data: object) -> dict:
         raise PresetError(f"{name}: имя файла — латиница, цифры, _ и -")
     if not isinstance(data, dict):
         raise PresetError(f"{name}: корень должен быть объектом")
-    extra = set(data) - _TOP_KEYS
-    if extra:
-        raise PresetError(f"{name}: недопустимые разделы {', '.join(sorted(extra))} "
-                          f"(разрешены dns, route, outbounds, endpoints)")
-    for key, allowed in (("dns", _DNS_KEYS), ("route", _ROUTE_KEYS)):
-        part = data.get(key, {})
-        if not isinstance(part, dict):
-            raise PresetError(f"{name}: {key} должен быть объектом")
-        bad = set(part) - allowed
-        if bad:
-            raise PresetError(f"{name}: {key}.{', '.join(sorted(bad))} — в пресете разрешены "
-                              f"только {', '.join(sorted(allowed))}")
-        for sub, value in part.items():
-            if not isinstance(value, list):
-                raise PresetError(f"{name}: {key}.{sub} должен быть массивом")
-    for key in ("outbounds", "endpoints"):
-        if key in data and not isinstance(data[key], list):
-            raise PresetError(f"{name}: {key} должен быть массивом")
     meta = data.get("_preset", {})
     if not isinstance(meta, dict):
         raise PresetError(f"{name}: _preset должен быть объектом")
+    unknown = set(meta) - META_KEYS
+    if unknown:
+        raise PresetError(f"{name}: неизвестные ключи _preset: {', '.join(sorted(unknown))}")
     out = {"title": meta.get("title") or name, "description": meta.get("description", ""),
-           "enabled": meta.get("enabled", False), "priority": meta.get("priority", DEFAULT_PRIORITY)}
-    out["dns_priority"] = meta.get("dns_priority", out["priority"])
+           "enabled": meta.get("enabled", False), "priority": meta.get("priority", DEFAULT_PRIORITY),
+           "priorities": meta.get("priorities", {})}
     requires = meta.get("requires", {})
     if not isinstance(out["enabled"], bool):
         raise PresetError(f"{name}: _preset.enabled — true/false")
-    for key in ("priority", "dns_priority"):
-        if type(out[key]) is not int:
-            raise PresetError(f"{name}: _preset.{key} — целое число")
+    if type(out["priority"]) is not int:
+        raise PresetError(f"{name}: _preset.priority — целое число")
+    if not (isinstance(out["priorities"], dict)
+            and all(isinstance(k, str) and type(v) is int for k, v in out["priorities"].items())):
+        raise PresetError(f"{name}: _preset.priorities — объект {{\"путь\": целое число}}")
     for key in ("title", "description"):
         if not isinstance(out[key], str):
             raise PresetError(f"{name}: _preset.{key} — строка")
@@ -117,59 +101,15 @@ def _by_priority(presets: list[dict]) -> list[dict]:
     return sorted(presets, key=lambda p: (p["meta"]["priority"], p["name"]))
 
 
-def fragments(presets: list[dict]) -> list[dict]:
-    """Фрагменты для sing-box merge в нужном порядке (только включённые пресеты)."""
-    enabled = [p for p in presets if p["meta"]["enabled"]]
-    main, dns_rules = [], []
-    for p in _by_priority(enabled):
-        frag = {k: v for k, v in p["data"].items() if k != "_preset"}
-        dns = dict(frag.get("dns", {}))
-        dns.pop("rules", None)
-        if dns:
-            frag["dns"] = dns
-        else:
-            frag.pop("dns", None)
-        if frag:
-            main.append(frag)
-    for p in sorted(enabled, key=lambda p: (p["meta"]["dns_priority"], p["name"])):
-        rules = p["data"].get("dns", {}).get("rules")
-        if rules:
-            dns_rules.append({"dns": {"rules": rules}})
-    return main + dns_rules
-
-
-def write_fragments(presets: list[dict], out_dir) -> list[str]:
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for i, frag in enumerate(fragments(presets)):
-        path = out_dir / f"30-preset-{i:03d}.json"
-        path.write_text(json.dumps(frag, ensure_ascii=False, indent=2), encoding="utf-8")
-        paths.append(str(path))
-    return paths
-
-
-# sing-box merge склеивает массивы как есть, одинаковые элементы не схлопываются. Дубль тега
-# outbound sing-box отвергает сам, а дубль DNS-сервера или rule_set проходит check молча.
-def duplicate_tags(config: dict) -> list[str]:
-    """Повторяющиеся теги склеенного конфига: ["dns.servers: bootstrap", …]."""
-    sections = {
-        "inbounds": config.get("inbounds", []),
-        "outbounds+endpoints": config.get("outbounds", []) + config.get("endpoints", []),
-        "dns.servers": config.get("dns", {}).get("servers", []),
-        "route.rule_set": config.get("route", {}).get("rule_set", []),
-        "services": config.get("services", []),
-    }
-    out = []
-    for section, items in sections.items():
-        seen = set()
-        for item in items:
-            tag = item.get("tag") if isinstance(item, dict) else None
-            if tag in seen and f"{section}: {tag}" not in out:
-                out.append(f"{section}: {tag}")
-            elif tag:
-                seen.add(tag)
-    return out
+def assemble(base: dict, nodes: dict, presets: list[dict]) -> tuple[dict, list[str]]:
+    """Итоговый конфиг: база, ноды и включённые пресеты; (конфиг, предупреждения)."""
+    sources = [Source("base.json", base), Source("nodes.json", nodes)]
+    for p in presets:
+        if p["meta"]["enabled"]:
+            data = {k: v for k, v in p["data"].items() if k != "_preset"}
+            sources.append(Source(f"presets/{p['name']}", data, p["meta"]["priority"],
+                                  p["meta"]["priorities"]))
+    return merge(sources)
 
 
 def node_groups(nodes_path) -> set[str]:
@@ -192,40 +132,41 @@ def status(presets: list[dict], groups: set[str] | None) -> list[dict]:
     return out
 
 
+def _read_json(path) -> dict:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("корень должен быть объектом")
+    return data
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python3 -m nodes_admin.presets")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    f = sub.add_parser("fragments", help="записать фрагменты включённых пресетов, вывести пути")
-    f.add_argument("--dir", required=True)
-    f.add_argument("--out-dir", required=True)
-    f.add_argument("--log", action="store_true", help="список включённых — в stderr")
+    a = sub.add_parser("assemble", help="склеить базу, ноды и включённые пресеты")
+    a.add_argument("--base", required=True)
+    a.add_argument("--nodes", required=True)
+    a.add_argument("--dir")
+    a.add_argument("--out", required=True)
     s = sub.add_parser("list", help="состояние пресетов (JSON)")
     s.add_argument("--dir", required=True)
     s.add_argument("--nodes")
-    t = sub.add_parser("check-tags", help="проверить склеенный конфиг на повторяющиеся теги")
-    t.add_argument("--config", required=True)
     args = ap.parse_args(argv)
-    if args.cmd == "check-tags":
-        try:
-            dups = duplicate_tags(json.loads(Path(args.config).read_text(encoding="utf-8")))
-        except (OSError, ValueError) as exc:
-            print(f"[presets] {args.config}: {exc}", file=sys.stderr)
-            return 1
-        if dups:
-            print(f"[presets] повторяющиеся теги: {', '.join(dups)}", file=sys.stderr)
-            return 1
-        return 0
     try:
-        presets = load(args.dir)
+        presets = load(args.dir) if args.dir else []
     except PresetError as exc:
         print(f"[presets] {exc}", file=sys.stderr)
         return 1
-    if args.cmd == "fragments":
-        if args.log:
-            on = [p["name"] for p in _by_priority(presets) if p["meta"]["enabled"]]
-            print(f"[presets] включены: {', '.join(on) or 'нет'}", file=sys.stderr)
-        for path in write_fragments(presets, args.out_dir):
-            print(path)
+    if args.cmd == "assemble":
+        on = [p["name"] for p in _by_priority(presets) if p["meta"]["enabled"]]
+        print(f"[presets] включены: {', '.join(on) or 'нет'}", file=sys.stderr)
+        try:
+            config, warnings = assemble(_read_json(args.base), _read_json(args.nodes), presets)
+        except (OSError, ValueError) as exc:
+            print(f"[presets] {exc}", file=sys.stderr)
+            return 1
+        for line in warnings:
+            print(f"[presets] {line}", file=sys.stderr)
+        Path(args.out).write_text(dumps(config) + "\n", encoding="utf-8")
         return 0
     groups = node_groups(args.nodes) if args.nodes and os.path.exists(args.nodes) else None
     print(json.dumps(status(presets, groups), ensure_ascii=False, indent=2))
