@@ -4,7 +4,7 @@
 
 Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
 
-Инструкция относится к [релизу `v0.3.12`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.12). Нужен sing-box 1.14 или новее.
+Инструкция относится к [релизу `v0.3.12`](https://github.com/ancored/nodes-tester/releases/tag/v0.3.12). Нужен sing-box 1.14 или новее.
 
 ## 1. Установить пакет
 
@@ -13,8 +13,8 @@
 выполняются на роутере (`ssh root@192.168.1.1`, адрес замените своим):
 
 ```sh
-wget -O /etc/apk/keys/nodes-tester.pem https://raw.githubusercontent.com/andreydyadyk/nodes-tester/master/openwrt/nodes-tester.pem
-echo "https://andreydyadyk.github.io/nodes-tester/packages.adb" >> /etc/apk/repositories.d/customfeeds.list
+wget -O /etc/apk/keys/nodes-tester.pem https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/nodes-tester.pem
+echo "https://ancored.github.io/nodes-tester/packages.adb" >> /etc/apk/repositories.d/customfeeds.list
 apk update
 apk add nodes-tester
 ```
@@ -23,7 +23,7 @@ apk add nodes-tester
 проекта: `apk` проверяет им подпись индекса и самих пакетов и откажется ставить подменённый или
 повреждённый файл. Проверьте, что скачанный ключ совпадает с ключом в репозитории.
 
-Без репозитория можно поставить файл из [релиза](https://github.com/andreydyadyk/nodes-tester/releases/latest):
+Без репозитория можно поставить файл из [релиза](https://github.com/ancored/nodes-tester/releases/latest):
 скопируйте его на роутер (`scp -O nodes-tester-<версия>.apk root@192.168.1.1:/tmp/`) и
 выполните `apk add /tmp/nodes-tester-<версия>.apk` — с установленным ключом подпись тоже
 проверяется. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного

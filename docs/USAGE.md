@@ -2,7 +2,7 @@
 
 [О проекте](../README.md) · [Первый запуск на OpenWrt](../openwrt/README.md)
 
-Руководство относится к пакету [`v0.3.12`](https://github.com/andreydyadyk/nodes-tester/releases/tag/v0.3.12). Обновление исходников на компьютере не обновляет установленный пакет.
+Руководство относится к пакету [`v0.3.12`](https://github.com/ancored/nodes-tester/releases/tag/v0.3.12). Обновление исходников на компьютере не обновляет установленный пакет.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">
@@ -223,4 +223,4 @@ DNS-правила пресета в другое место. Метаданны
 
 Перед обновлением пакета используйте `nodes-tester backup --stable`. Если нужна предыдущая версия, проверьте снимок командой `nodes-tester rollback --check`, затем выполните `nodes-tester rollback`. Порядок и состав снимка описаны в [инструкции по обновлению](../openwrt/README.md#6-обновить-пакет).
 
-В [Issues](https://github.com/andreydyadyk/nodes-tester/issues) укажите версии OpenWrt, пакета и sing-box, действие и короткую обезличенную ошибку. Удалите URL подписок, ключи, токены и приватные адреса.
+В [Issues](https://github.com/ancored/nodes-tester/issues) укажите версии OpenWrt, пакета и sing-box, действие и короткую обезличенную ошибку. Удалите URL подписок, ключи, токены и приватные адреса.

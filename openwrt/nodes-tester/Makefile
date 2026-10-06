@@ -30,7 +30,7 @@ define Package/nodes-tester
   SECTION:=net
   CATEGORY:=Network
   TITLE:=sing-box node manager: fetch, config, tester, web admin
-  URL:=https://github.com/andreydyadyk/nodes-tester
+  URL:=https://github.com/ancored/nodes-tester
   PKGARCH:=all
   # Зависимости — только в метаданных пакета (EXTRA_DEPENDS): apk ставит их из фидов
   # OpenWrt, а SDK не пересобирает их из исходников (python3-jsonschema тянет rust).

@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # publish-repo.sh — выложить подписанные .apk в репозиторий пакетов на GitHub Pages
-# (ветка gh-pages): https://andreydyadyk.github.io/nodes-tester/packages.adb
+# (ветка gh-pages): https://ancored.github.io/nodes-tester/packages.adb
 #
 #   SIGN_KEY=/path/private-key.pem openwrt/publish-repo.sh dist/nodes-tester-X.Y.Z-rN.apk [...]
 #
@@ -44,7 +44,7 @@ docker run --rm -v "nodes-tester-sdk-$SDK_TAG:/builder" -v "$KEYS:/keys:ro" -v "
 {
     echo '<!doctype html><meta charset="utf-8"><title>nodes-tester apk</title>'
     echo '<h1>nodes-tester — репозиторий пакетов OpenWrt 25.x</h1>'
-    echo '<p>Подключение: <a href="https://github.com/andreydyadyk/nodes-tester/blob/master/openwrt/README.md">openwrt/README.md</a></p><ul>'
+    echo '<p>Подключение: <a href="https://github.com/ancored/nodes-tester/blob/master/openwrt/README.md">openwrt/README.md</a></p><ul>'
     for f in "$SITE"/*.apk "$SITE/packages.adb" "$SITE/nodes-tester.pem"; do
         n="$(basename "$f")"; echo "<li><a href=\"$n\">$n</a></li>"
     done
@@ -56,4 +56,4 @@ git add -A
 git commit -q -m "Publish $(for f in "$@"; do basename "$f"; done | tr '\n' ' ')"
 git push -q origin gh-pages
 cd "$REPO"; git worktree remove --force "$WT"
-echo "опубликовано: https://andreydyadyk.github.io/nodes-tester/packages.adb"
+echo "опубликовано: https://ancored.github.io/nodes-tester/packages.adb"
