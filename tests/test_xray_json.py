@@ -92,6 +92,15 @@ class XrayJsonTest(unittest.TestCase):
                               vless_reality("b.example", "2", "p2"))])
         self.assertEqual([n["tag"] for n in nodes], ["Авто 1", "Авто 2"])
 
+    def test_name_from_narrowest_item(self):
+        a, b = vless_reality("a.example", "1"), vless_reality("b.example", "1")
+        c = vless_reality("c.example", "1")
+        nodes = parse([config("Автовыбор", a, b, c), config("NL | Прямое", a, b),
+                       config("NL | Запасное", a, c)])
+        self.assertEqual([(n["tag"], n["server"]) for n in nodes],
+                         [("NL | Прямое 1", "a.example"), ("NL | Прямое 2", "b.example"),
+                          ("NL | Запасное", "c.example")])
+
     def test_hysteria_and_shadowsocks(self):
         hy = {"tag": "proxy", "protocol": "hysteria",
               "settings": {"address": "h.example", "port": 8449, "version": 2},

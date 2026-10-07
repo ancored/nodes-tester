@@ -2,8 +2,8 @@
 
 Панели отдают её клиентам на Xray (v2rayNG, Happ): по конфигу на пункт меню, имя — remarks.
 Обычно в конфиге один outbound-прокси; у «Авто» и пунктов с резервом их несколько и они
-повторяют ноды из других пунктов. Повтор пропускается; имя ноды — пункта, где она стоит одна,
-иначе первого пункта, где встретилась.
+повторяют ноды из других пунктов. Повтор пропускается; имя ноды — самого узкого пункта, где
+она встретилась.
 
 Поля — по документации Xray (xtls.github.io, раздел outbounds и transport). Mux Xray
 (mux.cool) в sing-box не переносится. Неподдерживаемые протоколы пропускаются.
@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 from ._common import LinkError, add_reality, none_like, ws_transport, xhttp_transport
 from .ss import METHOD_ALIASES
@@ -212,25 +213,29 @@ def _proxies(config, log):
 def nodes(items, log):
     """Конфиги Xray → узлы с тегом из remarks; повторы пропускаются.
 
-    Нода, которая где-то стоит в пункте одна, получает имя этого пункта; остальные — имя
-    первого пункта, где встретились (с номером, если таких в пункте несколько)."""
+    Имя ноды — самого узкого пункта, где она есть (меньше всего нод; при равенстве — первого):
+    «Финляндия-1», а не «Авто». Нескольким нодам с одним именем добавляется номер."""
     parsed = [(str(c.get("remarks") or ""), _proxies(c, log)) for c in items]
-    own_name = {}
-    for name, found in parsed:
-        if len(found) == 1 and name:
-            own_name.setdefault(_identity(found[0]), name)
-    result, seen = [], set()
-    for name, found in parsed:
-        fresh = []
+    unique = {}                                     # ключ ноды → первое вхождение
+    best = {}                                       # ключ ноды → ((размер пункта, номер), имя)
+    for index, (name, found) in enumerate(parsed):
         for node in found:
             key = _identity(node)
-            if key not in seen:
-                seen.add(key)
-                fresh.append((key, node))
-        unnamed = [key for key, _ in fresh if key not in own_name]
-        for key, node in fresh:
-            tag = own_name.get(key) or (name if len(unnamed) == 1
-                                        else f"{name} {unnamed.index(key) + 1}")
-            result.append({"tag": tag or f"{node['type']} {node['server']}:{node['server_port']}",
-                           **node})
+            unique.setdefault(key, node)
+            rank = (len(found), index)
+            if key not in best or rank < best[key][0]:
+                best[key] = (rank, name)
+    per_name = Counter(best[key][1] for key in unique)
+    numbers = Counter()
+    result = []
+    for key, node in unique.items():
+        name = best[key][1]
+        if not name:
+            tag = f"{node['type']} {node['server']}:{node['server_port']}"
+        elif per_name[name] == 1:
+            tag = name
+        else:
+            numbers[name] += 1
+            tag = f"{name} {numbers[name]}"
+        result.append({"tag": tag, **node})
     return result
