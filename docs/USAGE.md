@@ -2,7 +2,7 @@
 
 [О проекте](../README.md) · [Первый запуск на OpenWrt](../openwrt/README.md)
 
-Руководство относится к пакету [`v0.4.2`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.2). Обновление исходников на компьютере не обновляет установленный пакет.
+Руководство относится к пакету [`v0.4.3`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.3). Обновление исходников на компьютере не обновляет установленный пакет.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">
