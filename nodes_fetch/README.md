@@ -93,12 +93,20 @@ happ-подписки отправляют HWID и описание устрой
 ## Парсеры
 
 Парсеры находятся в `nodes_fetch/parsers`: `parse_link` разбирает строку подписки,
-`FOLDER_FORMATS` — каталоги файлов (AWG), `clash.convert` — записи `proxies` Clash/mihomo.
+`FOLDER_FORMATS` — каталоги файлов (AWG), `clash.convert` — записи `proxies` Clash/mihomo,
+`xray_json` — JSON-подписка Xray.
 
 Поддерживаются VLESS, VMess, Trojan, Shadowsocks (SIP002 и прежний формат), Hysteria,
 Hysteria2, TUIC, AnyTLS, SOCKS, HTTP/HTTPS, WireGuard и AWG. Содержимое подписки
-распознаётся само: share-ссылки построчно, base64 от них, Clash YAML или JSON sing-box.
-ShadowsocksR и другие типы, которых нет в sing-box, пропускаются.
+распознаётся само: share-ссылки построчно, base64 от них, Clash YAML, JSON sing-box или
+JSON-подписка Xray. ShadowsocksR и другие типы, которых нет в sing-box, пропускаются.
+
+JSON-подписку Xray (массив полных конфигов клиента) отдают панели вроде Remnawave, когда
+User-Agent не похож на sing-box или Clash. По конфигу на пункт меню, имя ноды — `remarks`.
+Ноды, которые повторяются в нескольких пунктах («Авто», пункты с резервным сервером),
+берутся один раз с именем пункта, где нода стоит одна. Mux Xray (mux.cool) не переносится.
+Часть панелей выдаёт случайный `short_id` Reality из нескольких допустимых: от загрузки к
+загрузке у такой ноды меняется CRC, а с ним и история в тестере.
 
 Нераспознанная или битая строка пропускается с записью в журнал, подписка из-за неё не
 падает. Если в ссылке нет имени, тегом становится `тип адрес:порт`.
@@ -179,4 +187,4 @@ sing-box:
 | `happ.py` | раскрытие и загрузка happ-подписок |
 | `happ_crypto.py`, `_chacha.py` | расшифровка `happ://crypt…` (RSA, ChaCha20-Poly1305) |
 | `happ_keys.py` | источник и кэш ключей Happ |
-| `parsers/` | share-ссылки и Clash → объекты sing-box; `_common.py` — адрес, TLS, транспорты, XHTTP |
+| `parsers/` | share-ссылки, Clash и JSON Xray → объекты sing-box; `_common.py` — адрес, TLS, транспорты, XHTTP |

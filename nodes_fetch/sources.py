@@ -2,7 +2,7 @@
 
 Источник — URL, локальный файл, ссылка happ://crypt… или каталог файлов (type=folder).
 Содержимое распознаётся само: share-ссылки построчно, base64 от них, Clash/mihomo YAML
-(proxies) или JSON sing-box (outbounds). Сбой или пустота → FetchError: fetch пометит
+(proxies), JSON sing-box (outbounds) или JSON-конфиги Xray. Сбой или пустота → FetchError: fetch пометит
 подписку упавшей и подставит её прошлые ноды.
 """
 
@@ -16,7 +16,7 @@ import yaml
 
 from . import device as devicemod
 from . import happ, parsers, util
-from .parsers import clash
+from .parsers import clash, xray_json
 from .parsers._common import LinkError, b64text
 
 # В JSON-подписке sing-box служебные аутбаунды — не ноды.
@@ -152,6 +152,9 @@ def nodes_from_text(text, ctx, _depth=0):
         return []
     if _starts_with_link(text):
         return parse_links(text, ctx)
+    xray = xray_json.configs(text)
+    if xray is not None:
+        return xray_json.nodes(xray, ctx.log)
     data = _structured(text)
     if data is not None:
         if isinstance(data.get("proxies"), list):
