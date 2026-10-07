@@ -48,7 +48,7 @@ class ScopedPassTest(unittest.TestCase):
         with patch.object(r, "_test_node", side_effect=fake_test), \
                 patch.object(r, "_respect_host_gap"), \
                 patch.object(r, "_score_and_maybe_switch", return_value=True), \
-                patch.object(r, "_run_required_pass"), patch.object(r, "_run_heavy_pass"), \
+\
                 patch.object(r.switcher, "evaluate_all",
                              side_effect=lambda groups=None: self.evaluated.append(groups)):
             self.assertFalse(r._run_pass(1))

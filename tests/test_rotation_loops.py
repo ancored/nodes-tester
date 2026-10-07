@@ -99,24 +99,6 @@ class RotationLoopTest(unittest.TestCase):
         finally:
             r.storage.close()
 
-    def test_stuck_release_rate_limited(self):
-        r = make_runner(temp_dir(), cooldown={"enabled": True})
-        try:
-            r.board.set_groups({"eu": set(NODES)})
-            r.board.rows = {m: _row(m) for m in NODES}
-            later = int(time.time()) + 3600
-            for crc in ("aaaa0001", "aaaa0002"):
-                r.storage.set_backoff(crc, later, 5, "garbage")
-            r._release_group("eu")
-            self.assertTrue(r._pass_requested.is_set())
-            r._pass_requested.clear()
-            r.storage.set_backoff("aaaa0001", later, 6, "garbage")   # проверка провалена
-            r._release_group("eu")                                   # новый эпизод сразу
-            self.assertFalse(r._pass_requested.is_set())
-            self.assertGreater(r.storage.load_backoff()["aaaa0001"][0], time.time())
-        finally:
-            r.storage.close()
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS scores (
   country TEXT, label TEXT, active INTEGER, score REAL,
   reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
   score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
-  heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT);
+  heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT, reserve TEXT);
 CREATE TABLE IF NOT EXISTS score_history (
   ts INTEGER, crc TEXT, region TEXT, score REAL, s_run REAL, gate INTEGER);
 CREATE INDEX IF NOT EXISTS idx_score_history_ts ON score_history(ts);
@@ -93,7 +93,7 @@ _SCORE_COLS = (
     "node", "provider", "protocol", "region", "country", "label", "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
     "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
-    "required", "exit_ip", "exit_cc",
+    "required", "exit_ip", "exit_cc", "reserve",
 )
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
@@ -115,7 +115,8 @@ class Storage:
                                 ("garbage", "until_pass", "INTEGER"),
                                 ("scores", "required", "TEXT"),
                                 ("scores", "exit_ip", "TEXT"),
-                                ("scores", "exit_cc", "TEXT")):
+                                ("scores", "exit_cc", "TEXT"),
+                                ("scores", "reserve", "TEXT")):
             try:                               # миграция старых БД (колонка могла отсутствовать)
                 self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
             except sqlite3.OperationalError:
@@ -372,6 +373,12 @@ class Storage:
         return {r[0]: (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0), r[4] or "")
                 for r in rows}
 
+    def restricted_since(self) -> dict:
+        """{crc: с какого времени нода под паузой или в карантине (unix ts)}."""
+        with self._lock:
+            rows = self._db.execute("SELECT crc, since FROM garbage").fetchall()
+        return {r[0]: int(r[1] or 0) for r in rows}
+
     def set_backoff(self, crc: str, until, streak: int, reason: str,
                     until_pass=None) -> None:
         """Записать/обновить паузу (until_pass) или карантин (until, unix ts)."""
@@ -496,7 +503,7 @@ class Storage:
                 "" if r.get("heavy_ok") is None else str(r.get("heavy_ok")),
                 _int(r.get("heavy_ts")),
                 json.dumps(r.get("required") or {}, ensure_ascii=False),
-                r.get("exit_ip") or "", r.get("exit_cc") or "",
+                r.get("exit_ip") or "", r.get("exit_cc") or "", r.get("reserve") or "",
             )
             prev = by_crc.get(crc)
             if prev is None or rank > prev[0]:
@@ -509,8 +516,17 @@ class Storage:
                     "INSERT INTO scores (crc,node,provider,protocol,region,country,label,"
                     "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
                     "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                    "required,exit_ip,exit_cc) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+                    "required,exit_ip,exit_cc,reserve) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+            self._db.commit()
+
+    def set_reserve_marks(self, marks: dict) -> None:
+        """Флаг резерва в scores: {crc: группы через запятую}, у прочих — пусто. Резерв
+        меняется между прогонами, а save_scores переписывает scores раз в прогон."""
+        with self._lock:
+            self._db.execute("UPDATE scores SET reserve = ''")
+            self._db.executemany("UPDATE scores SET reserve = ? WHERE crc = ?",
+                                 [(groups, crc) for crc, groups in marks.items()])
             self._db.commit()
 
     def set_active_crcs(self, crcs) -> None:

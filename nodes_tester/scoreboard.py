@@ -24,15 +24,18 @@ class Scoreboard:
         self.storage = storage
         self.cfg = scoring_cfg
         self.rows: dict[str, dict] = storage.load_scores()
+        storage.set_reserve_marks({})         # резерв после старта собирается заново
         self._seen: set[str] = set()
         self._history: list[tuple] = []       # буфер точек истории за прогон
-        self._heavy_veto_secs = 0.0           # 0 = veto не истекает по времени
+        self._heavy_ttl = 0.0                 # срок годности heavy, с; 0 — бессрочно
         # Группы переключения ({name}-auto-out в sing-box) → теги нод-членов. Нода может
         # быть в нескольких группах. None — состав неизвестен: группа = регион ноды.
         self._members: dict[str, set[str]] | None = None
         self._active: dict[str, str] = {}     # группа → активная нода
         # Обязательные тесты групп: группа → {тест: срок годности результата, с}.
         self._required: dict[str, dict[str, float]] = {}
+        # Резерв групп (nodes_tester.reserve): группа → проверенные кандидаты на замену.
+        self._reserve: dict[str, list[str]] = {}
         # Группы со строгим выходным IP (run.*.strict_exit_ip) и сведения о выходных IP.
         self._strict: set[str] = set()
         self._ip_info: dict[str, dict] = {}
@@ -120,7 +123,7 @@ class Scoreboard:
             for tag in list(self.rows):
                 if tag not in self._seen:
                     del self.rows[tag]
-            self.storage.save_scores(list(self.rows.values()))
+            self.storage.save_scores(self._rows_for_save())
             if self._history:
                 self.storage.add_score_history(int(time.time()), self._history)
                 self._history = []
@@ -141,13 +144,13 @@ class Scoreboard:
             r = self.rows.get(node)
             return dict(r) if r is not None else None   # копия наружу
 
-    # --- Тяжёлый download как veto (двухуровневое тестирование) ---------
+    # --- Тяжёлый download (veto) --------------------------------------------
     # heavy_ok=="0" (нода провалила sustained heavy-закачку) исключает её из кандидатов —
     # но лишь при наличии не-vetoed альтернатив: при малом числе нод выбираем из
-    # имеющихся. Veto протухает по TTL, тогда нода снова попадёт на тяжёлую пробу.
+    # имеющихся. Результат (успех и veto) живёт heavy_ttl, потом нода проверяется снова.
 
-    def set_heavy_veto_ttl(self, seconds: float) -> None:
-        self._heavy_veto_secs = max(0.0, float(seconds or 0))
+    def set_heavy_ttl(self, seconds: float) -> None:
+        self._heavy_ttl = max(0.0, float(seconds or 0))
 
     def set_heavy(self, node: str, ok: bool) -> None:
         """Зафиксировать результат тяжёлого download для ноды (veto-фильтр)."""
@@ -157,13 +160,15 @@ class Scoreboard:
                 r["heavy_ok"] = "1" if ok else "0"
                 r["heavy_ts"] = int(time.time())
 
+    def _heavy(self, r: dict) -> str:
+        """Свежий результат heavy: "1"/"0", "" — нет или просрочен."""
+        verdict = str(r.get("heavy_ok", ""))
+        if self._heavy_ttl > 0 and time.time() - int(r.get("heavy_ts", 0) or 0) >= self._heavy_ttl:
+            return ""
+        return verdict
+
     def _vetoed(self, r: dict) -> bool:
-        if str(r.get("heavy_ok", "")) != "0":
-            return False
-        if self._heavy_veto_secs <= 0:
-            return True                       # veto без TTL — действует, пока не пере-проверят
-        age = time.time() - int(r.get("heavy_ts", 0) or 0)
-        return age < self._heavy_veto_secs    # свежий veto действует, протухший — нет
+        return self._heavy(r) == "0"
 
     def set_groups(self, members: dict[str, set[str]]) -> None:
         """Состав групп переключения по данным sing-box (группа → теги нод)."""
@@ -219,12 +224,6 @@ class Scoreboard:
         fresh = time.time() - int(res.get("ts", 0) or 0) < ttl
         return str(res.get("ok", "")) if fresh else ""
 
-    def needs_test(self, node: str, test: str, ttl: float) -> bool:
-        """Нет свежего результата обязательного теста."""
-        with self._lock:
-            r = self.rows.get(node)
-            return r is not None and self._verdict(r, test, ttl) == ""
-
     def _passed(self, r: dict, group: str) -> bool:
         return all(self._verdict(r, t, ttl) == "1" for t, ttl in self._required.get(group, {}).items())
 
@@ -272,15 +271,63 @@ class Scoreboard:
                 chosen = good or chosen
             return [dict(r) for r in chosen]               # копии наружу (монитор-поток)
 
-    def probe_pool(self, region: str) -> list[str]:
-        """Ноды, которые стоит проверять обязательными тестами: здоровые, без свежего
-        провала, по убыванию score (в строгой группе — сначала домашние и мобильные)."""
+    # --- Резерв группы (nodes_tester.reserve) -----------------------------------
+
+    def reserve_pool(self, group: str, min_score: float = 0.0) -> list[str]:
+        """Претенденты в резерв: здоровые ноды группы без свежего провала обязательных
+        тестов и heavy, без расхождения страны по базе. Порядок: в строгой группе сначала
+        домашние и мобильные IP, затем рейтинг не ниже min_score, затем по рейтингу."""
         with self._lock:
-            pool = [r for r in self._healthy(region)
-                    if not self._failed(r, region) and not self._geo_bad(r, region)]
-            if region in self._strict:                     # домашние и мобильные — раньше, порядок score внутри
-                pool.sort(key=lambda r: not preferred(self._exit_info(r)))
+            pool = [r for r in self.rows.values() if self._reserve_fit(r, group)]
+            strict = group in self._strict
+            pool.sort(key=lambda r: (strict and not preferred(self._exit_info(r)),
+                                     float(r["score"]) < min_score, -float(r["score"])))
             return [r["node"] for r in pool]
+
+    def reserve_missing(self, node: str, group: str) -> "list[str] | None":
+        """Что осталось проверить, чтобы нода годилась в резерв группы: обязательные тесты
+        без свежего результата и "heavy". None — нода не годится (нет в группе, рейтинг 0,
+        ограничена, свежий провал теста или heavy, расхождение страны по базе)."""
+        with self._lock:
+            r = self.rows.get(node)
+            if r is None or not self._reserve_fit(r, group):
+                return None
+            missing = [t for t, ttl in self._required.get(group, {}).items()
+                       if self._verdict(r, t, ttl) == ""]
+            if self._heavy(r) != "1":
+                missing.append("heavy")
+            return missing
+
+    def _reserve_fit(self, r: dict, group: str) -> bool:
+        return (self._in_group(r, group) and float(r.get("score", 0)) > 0
+                and r.get("id") not in self._restricted and not self._vetoed(r)
+                and not self._failed(r, group) and not self._geo_bad(r, group))
+
+    def reserve(self, group: str) -> list[str]:
+        with self._lock:
+            return list(self._reserve.get(group, ()))
+
+    def set_reserve(self, group: str, nodes: list[str]) -> None:
+        """Состав резерва группы; флаг reserve в scores (БД) обновляется сразу."""
+        with self._lock:
+            if list(self._reserve.get(group, ())) == list(nodes):
+                return
+            self._reserve[group] = list(nodes)
+            marks = self._reserve_marks()
+            crcs = {n: r.get("id") for n, r in self.rows.items()}
+        self.storage.set_reserve_marks({crcs[n]: g for n, g in marks.items() if crcs.get(n)})
+
+    def _reserve_marks(self) -> dict[str, str]:
+        """Нода → группы резерва через запятую."""
+        marks: dict[str, list[str]] = {}
+        for group, nodes in self._reserve.items():
+            for node in nodes:
+                marks.setdefault(node, []).append(group)
+        return {n: ",".join(sorted(gs)) for n, gs in marks.items()}
+
+    def _rows_for_save(self) -> list[dict]:
+        marks = self._reserve_marks()
+        return [{**r, "reserve": marks.get(r["node"], "")} for r in self.rows.values()]
 
     def set_restricted(self, crcs) -> None:
         """Полный набор ограниченных нод (снимок на прогон)."""
@@ -327,4 +374,4 @@ class Scoreboard:
 
     def write(self) -> None:
         with self._lock:
-            self.storage.save_scores(list(self.rows.values()))
+            self.storage.save_scores(self._rows_for_save())

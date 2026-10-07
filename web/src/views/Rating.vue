@@ -18,6 +18,7 @@ const columns = [
   { key: 'id', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
   { key: 'score', title: 'рейтинг', slot: true },
   { key: 'active', title: 'выбрана', slot: true },
+  { key: 'reserve', title: 'резерв', l: true, fmt: (v) => v || '—' },
   { key: 'reliability', title: 'надёжность', fmt: c01 },
   { key: 'consistency', title: 'стабильность', fmt: c01 },
   { key: 'throttle', title: 'троттлинг', fmt: c01 },

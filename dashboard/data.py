@@ -20,7 +20,7 @@ _connection = ContextVar("dashboard_connection", default=None)
 _SCORE_SELECT = (
     "SELECT node, provider, protocol, region, country, crc AS id, active, score, "
     "reliability, consistency, throttle, jitter, latency, throughput, "
-    "score_ewma, avail, flap, samples, last_pass AS last_seen, heavy_ok, heavy_ts "
+    "score_ewma, avail, flap, samples, last_pass AS last_seen, heavy_ok, heavy_ts, reserve "
     "FROM scores"
 )
 
@@ -588,7 +588,7 @@ def _degradation(db: str, ev: dict) -> tuple[list, list]:
         SELECT n.crc AS crc, n.provider AS provider, n.protocol AS protocol,
                n.country AS cc, n.first_seen AS first_seen,
                COALESCE(n.banned, 0) AS banned,
-               s.score AS score, s.active AS active, g.reason AS gstate
+               s.score AS score, s.active AS active, s.reserve AS reserve, g.reason AS gstate
         FROM nodes n
         LEFT JOIN scores s ON s.crc = n.crc
         LEFT JOIN garbage g ON g.crc = n.crc
@@ -602,7 +602,8 @@ def _degradation(db: str, ev: dict) -> tuple[list, list]:
                 "garbage_count": e.get("gcount") or 0, "fails": e.get("fails") or 0}
         if _float(r.get("score")) > 0 and not r.get("gstate") and not r.get("banned"):
             longevity.append({**base, "age": max(0, now - fs),
-                              "score": r.get("score"), "active": r.get("active") or 0})
+                              "score": r.get("score"), "active": r.get("active") or 0,
+                              "reserve": r.get("reserve") or ""})
         if e.get("first_garbage"):                    # была в карантине → выпадающая
             dropouts.append({**base, "first_garbage": e["first_garbage"],
                              "lifespan": max(0, int(e["first_garbage"]) - fs)})
@@ -708,7 +709,7 @@ def _nodes_list(db: str) -> list[dict]:
         SELECT n.crc AS crc, n.tag AS node, n.provider AS provider, n.protocol AS protocol,
                n.country AS country, n.label AS label, n.server AS server,
                n.present AS present, COALESCE(n.banned, 0) AS banned,
-               s.score AS score, s.region AS region, s.active AS active,
+               s.score AS score, s.region AS region, s.active AS active, s.reserve AS reserve,
                g.reason AS gstate, g.until AS guntil, g.streak AS gstreak,
                g.until_pass AS until_pass
         FROM nodes n

@@ -124,7 +124,7 @@ class StrictExitIpTest(unittest.TestCase):
     def test_strict_prefers_residential_and_mobile_drops_geo_mismatch(self):
         self.sb.set_strict({"eu"})
         self.assertEqual(self._cands(), ["HOME", "MOB"])
-        self.assertEqual(self.sb.probe_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
+        self.assertEqual(self.sb.reserve_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
 
     def test_strict_falls_back_to_hosting_proxy_and_unknown(self):
         self.sb.set_strict({"eu"})

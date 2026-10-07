@@ -85,10 +85,10 @@ HEAVY_URL = "https://speed.cloudflare.com/__down?bytes=20000000"   # 20 МБ
 
 @register
 class HeavyDownloadTest(DownloadTest):
-    """Тяжёлый sustained-download (20 МБ) — ТОЛЬКО финальный veto-фильтр кандидатов
-    в двухуровневом тестировании. В скоринг НЕ входит: гоняется отдельной фазой
-    прогона по heavy_candidates нод/регион, результат — pass/fail. Логика замера
-    та же, что у лёгкого download; отличается объёмом (url) и назначением.
+    """Тяжёлый sustained-download (20 МБ) — veto-фильтр кандидатов в резерв группы.
+    В скоринг НЕ входит: его гоняет процесс резерва (nodes_tester.reserve), результат —
+    pass/fail. Логика замера та же, что у лёгкого download; отличается объёмом (url)
+    и назначением.
 
     url/длительность настраиваются в config.tests.heavy_download (url_by_region —
     напр. фикс-файл для RU-зоны вместо cloudflare)."""

@@ -78,7 +78,7 @@ const groups = [
   {title:'План проверок',note:'Форма меняет общие параметры run.default. Переопределения регионов и групп остаются в JSON и могут иметь приоритет.',fields:[
     ['run.default.loop','Непрерывная работа','checkbox'],['run.default.rotation_bound','Привязать проходы к ротации','checkbox'],
     ['run.default.pass_pause','Пауза между проходами, с','number'],['run.default.min_host_gap','Зазор обращений к одному хосту, с','number'],
-    ['run.default.request_timeout','Тайм-аут проверки, с','number'],['run.default.heavy_candidates','Кандидатов на тяжёлую проверку в группе','number']]},
+    ['run.default.request_timeout','Тайм-аут проверки, с','number'],['run.default.reserve_size','Кандидатов в резерве группы','number']]},
   {title:'Переключение и наблюдение',note:'Включение автоматики может изменить выбор боевых селекторов после перезапуска тестера.',fields:[
     ['switching.enabled','Автоматическое переключение','checkbox'],['switching.rotation.enabled','Ротация','checkbox'],
     ['switching.rotation.interval','Интервал ротации, с','number'],['monitor.enabled','Монитор активных нод','checkbox'],

@@ -28,6 +28,7 @@ from .monitor import ProductionMonitor
 from .notify import Notifier
 from .singbox_ctl import SingboxControl
 from .proxy import make_session
+from .reserve import ReserveKeeper
 from .scoreboard import Scoreboard
 from .storage import Storage
 from .switcher import Switcher
@@ -43,8 +44,8 @@ _EMPTY_PASS_RETRY = 30.0
 # Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
 # по одному прогону).
 _LOW_SCORE_MIN_SAMPLES = 3
-# Досрочное снятие карантина при аварии без замены — не чаще раза в час на группу.
-_RELEASE_MIN_INTERVAL = 3600.0
+# Снятая для резерва из карантина нода, снова провалившая проверку, — повторно не раньше.
+_RELEASE_RETRY = 6 * 3600.0
 
 
 def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0):
@@ -70,12 +71,20 @@ class Runner:
         self.board = None
         self.switcher = None
         self.monitor = None
+        self.reserve = None
         self.orchestrator = None
         self._apply_in_progress = False
         self._apply_pause_until = 0.0
         # Сериализует доступ к tester-селектору (self._top) и socks между плановым
         # прогоном (лёгкая/тяжёлая фазы) и внеплановым зондом монитора.
         self._tester_lock = threading.Lock()
+        # Ноды последнего перечисления и анти-ТСПУ зазоры: их читает и процесс резерва,
+        # который может начать работу до первого прохода.
+        self._node_by_raw: dict = {}
+        self._endpoints: dict = {}
+        self._host_ep_last: dict = {}
+        self._released_at: dict = {}            # crc → когда снята для резерва (monotonic)
+        self._phase_tests: dict = {}            # имя → инстанс теста резерва (обязательные, heavy)
 
         # Админка (Фаза 2-3): живой лог, внеплановый прогон, статус.
         self.log = LogRing()
@@ -91,7 +100,6 @@ class Runner:
         # Прогон прерван применением конфига (конвейер перезапускает sing-box, состав нод
         # меняется) — следующий начнётся сразу после окна применения, без ожидания ротации.
         self._pass_aborted = False
-        self._released_at: dict = {}            # группа → время досрочного снятия (monotonic)
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
         self._pass_seq = 0
@@ -122,8 +130,8 @@ class Runner:
                     traffic_provider = _traffic_provider_factory(self.storage, lb.window_hours * 3600.0)
                 self.switcher = Switcher(cfg.switching, self.api, self.board,
                                          self._top, traffic_provider, self.storage)
-                self.switcher.on_activation = self.notifier.activation
-                self.switcher.on_stuck = self._release_group
+                self.switcher.on_activation = self._on_activation
+                self.reserve = ReserveKeeper(self)
                 if cfg.monitor.enabled:
                     # Монитору нужен боевой трафик по нодам — поток соединений держим
                     # и без записи в БД (storage.traffic выключен).
@@ -271,8 +279,8 @@ class Runner:
             self.board.set_ip_info(self.storage.load_ip_info())
 
     def _required_ttl(self, test: str) -> float:
-        """Срок годности результата обязательного теста (tests.<name>.ttl_hours, деф. 6 ч)."""
-        return float((self.cfg.tests.get(test) or {}).get("ttl_hours", 6)) * 3600
+        """Срок годности результата обязательного теста (tests.<name>.ttl_hours, деф. 24 ч)."""
+        return float((self.cfg.tests.get(test) or {}).get("ttl_hours", 24)) * 3600
 
     # --- Прогон --------------------------------------------------------
 
@@ -296,8 +304,8 @@ class Runner:
             if not self._base.tests_enabled:
                 raise ValueError("run.default.tests_enabled пуст — нечего тестировать")
 
-            if self.board is not None:         # TTL heavy-veto (двухуровневое тестирование)
-                self.board.set_heavy_veto_ttl(self._base.heavy_veto_hours * 3600)
+            if self.board is not None:
+                self.board.set_heavy_ttl(self._base.heavy_ttl_hours * 3600)
 
             if not self._base.loop:
                 mode = f"прогонов: {self._base.rounds}"
@@ -335,6 +343,8 @@ class Runner:
             self._last_cleanup = time.monotonic()
             if self.monitor is not None:
                 self.monitor.start()
+            if self.reserve is not None:
+                self.reserve.start()
             if self.collector is not None:
                 self.collector.start()
             self._start_orchestrator()
@@ -388,6 +398,8 @@ class Runner:
             self._wait_until = None
             if self.monitor is not None:
                 self.monitor.stop()
+            if self.reserve is not None:
+                self.reserve.stop()
             if self.collector is not None:
                 self.collector.stop()
             self._stop_dashboard()
@@ -597,7 +609,6 @@ class Runner:
         # backoff — на пропуск в обходе, endpoints — на host-aware раскладку.
         self._backoff = {}
         self._progress = {"phase": "enumerating", "processed": 0, "total": 0, "node": None}
-        self._endpoints: dict = {}
         self._banned = set()
         if self.storage is not None:
             self.storage.maybe_load_nodes(self.cfg.storage.nodes_file)
@@ -630,6 +641,9 @@ class Runner:
         # node_by_raw — все ноды: обязательные тесты (gemini) живут по своему сроку
         # годности и не должны зависеть от того, чья ротация разбудила прогон.
         node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
+        self._node_by_raw = node_by_raw
+        if self.reserve is not None:
+            self.reserve.wake()               # состав нод известен — резерв можно собирать
         due = self._due_groups() if scoped else None
         if due:
             total = len(nodes)
@@ -639,7 +653,7 @@ class Runner:
         else:
             print(f"\n===== Прогон #{pass_no}: нод {len(nodes)} =====")
 
-        self._host_ep_last: dict = {}         # host -> {sig: monotonic} (зазор, лёгкая+тяжёлая)
+        self._host_ep_last = {}               # host -> {sig: monotonic} (зазор, все тесты)
         if self.board is not None:
             self.board.set_pass(pass_no)
             self.board.begin_pass()
@@ -676,10 +690,6 @@ class Runner:
             self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
 
         self._refresh_ip_info(exit_ips)
-        # Фаза обязательных тестов групп (gemini, openai, anthropic): решает, кто вообще может быть активным.
-        self._run_required_pass(node_by_raw, pass_no)
-        # Фаза 2 (двухуровневое): тяжёлый 50МБ download-veto только для кандидатов.
-        self._run_heavy_pass(node_by_raw, pass_no)
 
         if self.board is not None:
             self.board.end_pass(pass_no)
@@ -693,6 +703,8 @@ class Runner:
                 for _r, i in nodes:
                     groups.update(self.board.node_groups(i.raw))
             self.switcher.evaluate_all(groups)
+        if self.reserve is not None:
+            self.reserve.wake(ratings_changed=True)
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
 
@@ -782,152 +794,104 @@ class Runner:
         groups = self.board.node_groups(raw)
         return not groups or bool(due.intersection(groups))
 
-    def _required_targets(self, node_by_raw: dict, done: set) -> list:
-        """[(test, region, ident)] для групп с обязательными тестами: верхние top_k
-        нод пула (здоровые, без свежего провала) и активная нода — у кого нет свежего
-        результата. Провал выбивает ноду из пула — в следующем круге её место занимает
-        следующая (как у heavy)."""
-        if self.board is None or self.switcher is None:
-            return []
-        top_k = max(1, int(self.cfg.switching.rotation.top_k or 1))
-        out, picked = [], set(done)
-        for group in self.board.regions():
-            for test, ttl in self.board.required(group).items():
-                pool = self.board.probe_pool(group)[:top_k]
-                active = self.switcher.active_node(group)
-                if active and active not in pool:
-                    pool.append(active)
-                for raw in pool:
-                    if (test, raw) in picked or not self.board.needs_test(raw, test, ttl):
-                        continue
-                    ni = node_by_raw.get(raw)
-                    if ni is not None:
-                        picked.add((test, raw))
-                        out.append((test, *ni))
-        return out
+    # --- Проверки для резерва (nodes_tester.reserve) ---------------------
 
-    def _run_required_pass(self, node_by_raw: dict, pass_no: int) -> None:
-        if self.board is None:
+    def _on_activation(self, group: str, reason: str, node: str, prev) -> None:
+        """Смена активной (или уход на failsafe): уведомление и добор резерва."""
+        self.notifier.activation(group, reason, node, prev)
+        if self.reserve is not None:
+            self.reserve.wake()
+
+    def reserve_size(self, group: str) -> int:
+        return max(0, int(self._groups_params([group]).reserve_size or 0))
+
+    def _phase_test(self, name: str):
+        """Инстанс теста по имени (кэш); None — тест не зарегистрирован."""
+        if name not in self._phase_tests:
+            cls = get_test_class(name)
+            self._phase_tests[name] = cls(self.cfg.tests.get(name) or {}) if cls else None
+        return self._phase_tests[name]
+
+    def check_node(self, raw: str, check: str) -> None:
+        """Обязательный тест группы (gemini, openai, anthropic) или "heavy" на одной ноде;
+        вердикт — в рейтинг, замер — в results. Сетевой сбой обязательного теста
+        (inconclusive) прошлый вердикт не отменяет."""
+        node = self._node_by_raw.get(raw)
+        test = self._phase_test("heavy_download" if check == "heavy" else check)
+        if node is None or test is None:
             return
-        done: set = set()
-        budget = {}
-        while True:
-            targets = self._required_targets(node_by_raw, done)
-            fresh = []
-            for test, region, ident in targets:
-                limit = int((self.cfg.tests.get(test) or {}).get("max_per_pass", 20))
-                if budget.get(test, 0) < limit:
-                    budget[test] = budget.get(test, 0) + 1
-                    fresh.append((test, region, ident))
-            if not fresh:
-                return
-            done.update((test, ident.raw) for test, _r, ident in fresh)
-            by_test: dict = {}
-            for test, region, ident in fresh:
-                by_test.setdefault(test, []).append((region, ident))
-            for test, items in by_test.items():
-                self._required_round(test, self._order_by_host(items), pass_no)
-
-    def _required_round(self, test_name: str, targets: list, pass_no: int) -> None:
-        cls = get_test_class(test_name)
-        if cls is None:
-            print(f"  [!] обязательный тест '{test_name}' не найден — пропуск")
+        region, ident = node
+        res = self._run_one(test, region, ident)
+        if res is None:
             return
-        test = cls(self.cfg.tests.get(test_name) or {})
-        print(f"\n── Обязательный тест групп · {test_name} — нод: {len(targets)} ──")
-        for index, (region, ident) in enumerate(targets):
-            self._progress = {"phase": "required_testing", "processed": index,
-                              "total": len(targets), "node": ident.raw}
-            if self._backed_off(ident.node_id):
-                continue
-            res = self._run_one(test, region, ident)
-            if res is None:
-                continue
-            ok = bool(res.get("ok"))
-            if not res.get("inconclusive"):     # сетевой сбой не отменяет прошлый вердикт
-                self.board.set_required_result(ident.raw, test_name, ok, res.get("country") or "")
-            rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
-                   "tests": {test_name: res}}
-            if self.storage is not None and self.cfg.storage.store_results:
-                self.storage.add_results(rec)
-            if self.cfg.report.console:
-                verdict = "OK" if ok else ("INCONCLUSIVE" if res.get("inconclusive") else "FAIL")
-                print(f"  {ident.short()}: {test_name}={verdict} "
-                      f"{res.get('countries') or res.get('verdicts') or ''} {res.get('error') or ''}".rstrip())
+        ok = bool(res.get("ok"))
+        if check == "heavy":
+            self.board.set_heavy(raw, ok)
+            verdict = "OK" if ok else "VETO"
+            detail = f"{res.get('speed_mbps', '-')}Mbps"
+        else:
+            if not res.get("inconclusive"):
+                self.board.set_required_result(raw, check, ok, res.get("country") or "")
+            verdict = "OK" if ok else ("INCONCLUSIVE" if res.get("inconclusive") else "FAIL")
+            detail = f"{res.get('countries') or res.get('verdicts') or ''} {res.get('error') or ''}".strip()
+        if self.storage is not None and self.cfg.storage.store_results:
+            self.storage.add_results({"round": self._current_pass, "id": ident.node_id,
+                                      "node": raw, "tests": {test.name: res}})
+        if self.cfg.report.console:
+            print(f"  [reserve] {ident.short()}: {test.name}={verdict} {detail}".rstrip())
 
-    def _heavy_test(self):
-        """Инстанс тяжёлого download-теста (кэш). None — если тест не зарегистрирован."""
-        if not hasattr(self, "_heavy_cache"):
-            cls = get_test_class("heavy_download")
-            self._heavy_cache = cls(self.cfg.tests.get("heavy_download") or {}) if cls else None
-        return self._heavy_cache
-
-    def _heavy_targets(self, node_by_raw: dict, done=frozenset()) -> list:
-        """Кандидаты на тяжёлый download: весь пул, из которого switcher выберет новую
-        активную (Switcher.rotation_pool), только в регионах, где в этом прогоне наступает
-        ротация (или активной нет). heavy_candidates > 0 включает фазу для региона.
-        Нода со свежим результатом heavy (моложе интервала ротации) не перекачивается:
-        успех ещё в силе, а свежий провал (veto) и так выбивает её из пула.
-        done — уже проверенные в этом прогоне. Возвращает [(region, ident), …] без повторов."""
-        if self.switcher is None:
-            return []
-        fresh_after = time.time() - float(self.cfg.switching.rotation.interval)
-        targets, picked = [], set(done)
-        for region in self.board.regions():
-            heavy_candidates = int(self._groups_params([region]).heavy_candidates or 0)
-            if heavy_candidates <= 0 or not self.switcher.rotation_due(region):
+    def release_for_reserve(self, group: str, skip: set) -> "str | None":
+        """Резерву группы не хватает кандидатов: снять паузу или карантин с ноды группы,
+        которая ограничена дольше всех, и сразу проверить её лёгкими тестами. Провал
+        вернёт её в карантин с прежним счётчиком. Бан не снимается; нода, снятая и
+        провалившаяся недавно (_RELEASE_RETRY), повторно не снимается.
+        Возвращает снятую ноду (годится ли она — решит рейтинг) или None — снимать некого."""
+        if not self.cfg.cooldown.enabled or self.storage is None or self.board is None:
+            return None
+        backoff = self.storage.load_backoff()
+        since = self.storage.restricted_since()
+        banned = self.storage.banned_crcs()
+        now = time.monotonic()
+        choices = []
+        for raw in self.board.group_nodes(group):
+            node = self._node_by_raw.get(raw)
+            crc = node[1].node_id if node else ""
+            entry = backoff.get(crc)
+            if (raw in skip or not entry or crc in banned
+                    or not self._in_effect(entry, time.time())
+                    or now - self._released_at.get(crc, -_RELEASE_RETRY) < _RELEASE_RETRY):
                 continue
-            for raw in self.switcher.rotation_pool(region):
-                if raw in picked:
-                    continue
-                picked.add(raw)
-                row = self.board.get(raw) or {}
-                if (str(row.get("heavy_ok", "")) != ""
-                        and int(row.get("heavy_ts") or 0) > fresh_after):
-                    continue
-                ni = node_by_raw.get(raw)
-                if ni is not None:
-                    targets.append(ni)
-        return targets
-
-    def _run_heavy_pass(self, node_by_raw: dict, pass_no: int) -> None:
-        if self.board is None:
-            return
-        heavy = self._heavy_test()
-        if heavy is None:
-            return
-        # Veto выбивает ноду из пула — её место занимает следующая, проверяем и её:
-        # круги, пока в пулах не останется непроверенных.
-        done: set = set()
-        while True:
-            targets = self._order_by_host(self._heavy_targets(node_by_raw, done))  # host-aware
-            if not targets:
-                return
-            done.update(ident.raw for _region, ident in targets)
-            self._heavy_round(heavy, targets, pass_no, first=len(done) == len(targets))
-
-    def _heavy_round(self, heavy, targets: list, pass_no: int, first: bool) -> None:
-        print(f"\n── Фаза 2 · тяжёлый download-veto{'' if first else ' (добор)'} — нод: {len(targets)} ──")
-        for index, (region, ident) in enumerate(targets):
-            self._progress = {"phase": "heavy_testing", "processed": index,
-                              "total": len(targets), "node": ident.raw}
-            if self._backed_off(ident.node_id):     # backoff/карантин — не качаем
-                continue
-            res = self._run_one(heavy, region, ident)
-            if res is None:
-                continue
-            ok = bool(res.get("ok"))
-            self.board.set_heavy(ident.raw, ok)     # veto-фильтр (в скоринг НЕ идёт)
-            rec = {"round": pass_no, "id": ident.node_id, "node": ident.raw,
-                   "tests": {heavy.name: res}}
-            if self.storage is not None and self.cfg.storage.store_results:
-                self.storage.add_results(rec)
-            if self.cfg.report.console:
-                print(f"  {ident.short()}: heavy={'OK' if ok else 'VETO'} "
-                      f"{res.get('speed_mbps', '-')}Mbps")
+            choices.append((since.get(crc, 0), raw))
+        if not choices:
+            return None
+        _since, raw = min(choices)
+        region, ident = self._node_by_raw[raw]
+        crc = ident.node_id
+        _until, _until_pass, streak, reason = backoff[crc]
+        # Запись остаётся с прежним streak: провал gate вернёт ноду в карантин.
+        if reason == "garbage":
+            self.storage.set_backoff(crc, int(time.time()), streak, reason)
+            self._backoff[crc] = (int(time.time()), 0, streak, reason)
+        else:
+            self.storage.set_backoff(crc, None, streak, reason, until_pass=0)
+            self._backoff[crc] = (0, 0, streak, reason)
+        self.board.restrict(crc, False)
+        self.storage.add_node_event(crc, "restriction_cleared", "reserve", streak)
+        self._released_at[crc] = now
+        print(f"  [reserve] {group}: кандидатов не хватает — снято ограничение с {ident.short()}")
+        params = self._node_params(ident)
+        record = self._test_node(region, ident, self._current_pass,
+                                 self._tests_for(params.tests_enabled), params)
+        if record is None:
+            return raw
+        if self.storage is not None and self.cfg.storage.store_results:
+            self.storage.add_results(record)
+        gate = self._score_and_maybe_switch(region, ident, record)
+        self._backoff_update(crc, gate, low=gate and self._low_score(raw))
+        return raw
 
     def _run_one(self, test, region: str, ident: NodeIdentity) -> "dict | None":
-        """Один тест фазы (обязательный, тяжёлый) на ноде через тестовый селектор.
+        """Один тест (обязательный, тяжёлый) на ноде через тестовый селектор.
         None — переключиться на ноду не удалось. Лок общий с зондом монитора;
         host-gap-пауза — до лока, запись в БД — у вызывающего, вне лока."""
         params = self._node_params(ident)
@@ -1006,47 +970,6 @@ class Runner:
                 active = self.switcher.active_node(group)
                 if active and parse_node(active).node_id == crc:
                     self.switcher.evaluate_region(group, emergency=True)
-
-    def _release_group(self, group: str) -> None:
-        """Авария без замены: досрочно снять паузу и карантин с нод группы и проверить
-        их ближайшим прогоном (внеплановым, только по этой группе). Запись garbage/backoff
-        остаётся с прежним streak: провал gate вернёт ноду в карантин, успех снимет запись.
-        Бан не снимается."""
-        if not self.cfg.cooldown.enabled or self.storage is None or self.board is None:
-            return
-        # Не чаще раза в час на группу: активная может то оживать, то снова падать, и
-        # каждый эпизод аварии иначе гонял бы проверку всех нод группы.
-        last = self._released_at.get(group)
-        if last is not None and time.monotonic() - last < _RELEASE_MIN_INTERVAL:
-            return
-        self._released_at[group] = time.monotonic()
-        crcs = {parse_node(n).node_id for n in self.board.group_nodes(group)}
-        crcs -= self.storage.banned_crcs()
-        now = int(time.time())
-        released = 0
-        for crc, (until, until_pass, streak, reason) in self.storage.load_backoff().items():
-            if crc not in crcs:
-                continue
-            if reason == "garbage":
-                if until <= now:
-                    continue                        # карантин уже истёк — проба и так будет
-                self.storage.set_backoff(crc, now, streak, reason)
-                self._backoff[crc] = (now, 0, streak, reason)
-            else:
-                if self._pass_seq > until_pass:
-                    continue
-                self.storage.set_backoff(crc, None, streak, reason, until_pass=0)
-                self._backoff[crc] = (0, 0, streak, reason)
-            self.storage.add_node_event(crc, "restriction_cleared", "emergency-stuck", streak)
-            released += 1
-        if not released:
-            return
-        print(f"  [switch] {group}: замены нет — досрочно снято ограничений: {released}, "
-              f"внеплановая проверка группы")
-        with self._request_lock:
-            if not self._pass_requested.is_set():   # полный прогон уже запрошен — он и проверит
-                self._scoped_next = True            # иначе — только застрявшие группы
-                self._pass_requested.set()
 
     def _low_score(self, raw: str) -> bool:
         """Живая, но слабая нода: рейтинг ниже cooldown.low_score (вкл. при > 0).

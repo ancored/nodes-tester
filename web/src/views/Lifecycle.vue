@@ -55,6 +55,7 @@ const longCols = [
   { key: 'garbage_count', title: '× в карантине' },
   { key: 'fails', title: 'пауз+карантинов', note: 'сколько раз уходила в паузу или карантин' },
   { key: 'active', title: 'act', slot: true },
+  { key: 'reserve', title: 'резерв', l: true, fmt: (v) => v || '—' },
 ]
 const dropouts = computed(() => s.data.dropouts || [])
 const dropCols = [

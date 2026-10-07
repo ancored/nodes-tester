@@ -2,9 +2,13 @@
 
 Лестница приоритетов на регион:
     1. EMERGENCY  — активная нода обнулилась (заблокирована) → немедленно
-    2. QUALITY    — кандидат стабильно лучше активной (гистерезис Δ, M циклов)
-    3. ROTATION   — вышел таймер принудительной ротации (размазать нагрузку)
+    2. ROTATION   — вышел таймер принудительной ротации (размазать нагрузку)
+    3. QUALITY    — кандидат стабильно лучше активной (гистерезис Δ, M циклов)
     4. STAY       — иначе не трогаем
+
+Замену берём из резерва группы (Scoreboard.reserve, его держит nodes_tester.reserve):
+там ноды с пройденными обязательными тестами и свежим heavy. Пустой резерв — авария
+берёт любого прошедшего кандидата, ротация и переключение по качеству ждут.
 
 Действие переключения: выбранная нода делается активной ВО ВСЕХ боевых
 selector-группах, где она прямой член (кроме тестовых nodes-tester/*-nodes-tester
@@ -40,8 +44,6 @@ class Switcher:
         self._storage = storage
         # Наблюдатель записей истории (уведомления): on_activation(group, reason, node, prev).
         self.on_activation = None
-        # Наблюдатель аварии без замены (досрочное снятие карантина): on_stuck(group).
-        self.on_stuck = None
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
         self._lock = threading.RLock()
@@ -114,17 +116,14 @@ class Switcher:
                   if g in groups and st.get("active") and st.get("rotate_deadline")]
         return min(ds) if ds else None
 
-    def rotation_pool(self, region: str) -> list[str]:
-        """Ноды, из которых ближайший evaluate_all выберет новую активную: пул ротации
-        (тот же, что в _pick_rotation), а без активной — первая по score (init)."""
+    def excluded(self, region: str) -> set[str]:
+        """Ноды, которые не берём в резерв группы: активная и avoid_recent последних."""
         with self._lock:
-            cands = self.board.candidates(region)
-            if not cands:
-                return []
             st = self.state.get(region) or {}
-            if not st.get("active"):
-                return [cands[0]["node"]]
-            return [c["node"] for c in self._rotation_pool(cands, st)]
+            out = set(st.get("recent", [])[: self.cfg.rotation.avoid_recent])
+            if st.get("active"):
+                out.add(st["active"])
+            return out
 
     def stuck(self, region: str) -> bool:
         """Группа в аварии без замены: активная заблокирована, переключаться не на что."""
@@ -253,17 +252,20 @@ class Switcher:
             emergency = True
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
+        reserve = set(self.board.reserve(region))
+        pool = [c for c in cands if c["node"] in reserve and c["node"] != active]
 
-        # 1. Инициализация — активной ноды ещё нет: берём лучшую.
+        # 1. Инициализация — активной ноды ещё нет: лучшая из резерва (резерв ещё не
+        # собран — лучший кандидат).
         if active_row is None:
-            self._activate(cands[0], region, st, now, "init")
+            self._activate((pool or cands)[0], region, st, now, "init")
             return
 
-        # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на ДРУГУЮ, но
-        # БАЛАНСИРОВАННО (не всегда топ-score → раньше 25% переключений лили на одного
-        # провайдера мимо балансировки) и уводя от провайдера упавшей ноды.
+        # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на ДРУГУЮ из резерва
+        # (пуст — на любого другого кандидата), БАЛАНСИРОВАННО и уводя от провайдера
+        # упавшей ноды.
         if emergency or active_score <= 0:
-            others = [c for c in cands if c["node"] != active]
+            others = pool or [c for c in cands if c["node"] != active]
             if others:
                 self._activate(self._pick_emergency(others, st, active),
                                region, st, now, "emergency")
@@ -272,19 +274,22 @@ class Switcher:
             return
         st.pop("emg_stuck", None)     # активная жива — вышли из залипшего emergency
 
-        # 3. Принудительная ротация по таймеру. Не вышло (единственный кандидат, сбой API)
-        # — срок перенесёт _evaluate_region_locked, а оценка продолжится по качеству.
+        # 3. Принудительная ротация по таймеру — на ноду из резерва. Не вышло (резерв
+        # пуст, сбой API) — срок перенесёт _evaluate_region_locked.
         if (self.cfg.rotation.enabled
                 and now >= st.get("rotate_deadline", 0)
                 and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
-                and len(cands) >= 2
-                and self._activate(self._pick_rotation(cands, st), region, st, now, "rotation")):
+                and pool
+                and self._activate(self._balanced_choice(pool, st), region, st, now, "rotation")):
             return
 
-        # 4. Quality-переключение с гистерезисом.
-        best = cands[0]
+        # 4. Quality-переключение с гистерезисом — на лучшую ноду резерва.
+        if not pool:
+            st["quality_count"] = 0
+            return
+        best = pool[0]
         margin = 0.0 if active_score < self.cfg.comfort_floor else self.cfg.quality_margin
-        if best["node"] != active and float(best["score"]) > active_score + margin:
+        if float(best["score"]) > active_score + margin:
             if now - st.get("last_switch", 0) < self.cfg.cooldown:
                 return  # антифлаппинг
             st["quality_count"] = st.get("quality_count", 0) + 1
@@ -331,11 +336,6 @@ class Switcher:
             self._storage.add_activation(region, crc, active or "", "emergency-stuck",
                                          0.0, active)
         self._emit(region, "emergency-stuck", active or "", active)
-        if self.on_stuck is not None:
-            try:
-                self.on_stuck(region)
-            except Exception as exc:  # noqa: BLE001 — сбой наблюдателя не мешает переключателю
-                print(f"  [switch] {region}: досрочное снятие карантина не удалось: {exc}")
 
     def _emit(self, region: str, reason: str, node: str, prev) -> None:
         if self.on_activation is not None:
@@ -344,22 +344,7 @@ class Switcher:
             except Exception as exc:  # noqa: BLE001 — уведомление не мешает переключению
                 print(f"  [switch] уведомление не отправлено: {exc}")
 
-    # --- Выбор кандидата для ротации -----------------------------------
-
-    def _pick_rotation(self, cands, st) -> dict:
-        """weighted-random из топ-K, исключая активную и последние avoid_recent."""
-        return self._balanced_choice(self._rotation_pool(cands, st), st)
-
-    def _rotation_pool(self, cands, st) -> list:
-        active = st.get("active")
-        recent = set(st.get("recent", [])[: self.cfg.rotation.avoid_recent])
-        recent.add(active)
-        filtered = [c for c in cands
-                    if c["node"] not in recent
-                    and float(c["score"]) >= self.cfg.rotation.min_score]
-        return (filtered[: self.cfg.rotation.top_k]
-                or [c for c in cands if c["node"] != active]
-                or cands)
+    # --- Выбор кандидата ----------------------------------------------
 
     def _balanced_choice(self, pool: list, st: dict) -> dict:
         """Взвешенный выбор из pool: fair-share по числу нод оси + underuse по трафику.

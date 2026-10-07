@@ -105,15 +105,14 @@ class RunParams:
     rounds: int = 1
     request_timeout: float = 10.0
     restore_selection: bool = True
-    # Двухуровневое тестирование: лёгкие тесты (tests_enabled, вкл. 10МБ download)
-    # скорят ВСЕ ноды; затем тяжёлый 50МБ download гоняется как pass/fail veto только
-    # для всего пула ротации (switching.rotation.top_k) и только в регионах, где в этом
-    # прогоне наступает ротация. > 0 включает, 0 = двухуровневость выкл.
-    heavy_candidates: int = 0
-    heavy_veto_hours: float = 6.0          # сколько держится veto, пока не пере-проверим
+    # Резерв группы: столько кандидатов на замену держит фоновый процесс (nodes_tester.
+    # reserve), прогнав на них обязательные тесты группы и тяжёлый download. Ротация,
+    # авария и переключение по качеству выбирают только из резерва. 0 = резерва нет.
+    reserve_size: int = 3
+    heavy_ttl_hours: float = 6.0           # срок годности результата тяжёлого download
     # Обязательные тесты группы (напр. ["gemini"] для ai): в группе может быть активной
     # только нода со свежим успешным результатом; никто не прошёл — группа на failsafe.
-    # Задаётся для групп через run.node_groups_specifics; гоняются отдельной фазой.
+    # Задаётся для групп через run.node_groups_specifics; гоняет процесс резерва.
     required_tests: list[str] = field(default_factory=list)
     # Строгий выходной IP (для ai): страна IP по базе ip-api должна совпадать со страной
     # connectivity, иначе нода не кандидат; домашние и мобильные IP без признака прокси
@@ -208,7 +207,6 @@ class RotationConfig:
     # свой срок (now + interval ± jitter).
     align: bool = True
     min_dwell: float = 1800.0
-    top_k: int = 5
     min_score: float = 55.0
     avoid_recent: int = 2
     load_balance: LoadBalanceConfig = field(default_factory=LoadBalanceConfig)

@@ -43,6 +43,7 @@ def make_runner(tmp: str, tags=None, **overrides):
     r = Runner(cfg)
     r._base = cfg.run.for_group(cfg.testing_group.tag)
     r._region_cache = {}
+    r._tests_cache = {}
     r._backoff = {}
     r._endpoints = {}
     r._host_ep_last = {}

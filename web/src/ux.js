@@ -27,7 +27,7 @@ export function nodeFlags(n) {
   return [n.present == null ? 'Присутствие неизвестно' : +n.present ? 'В списке тестера' : 'Нет в текущем списке',
     n.score == null ? 'Нет замеров рейтинга' : 'Рейтинг '+Number(n.score).toFixed(1),
     +n.banned ? 'Исключена вручную' : '', n.gstate === 'garbage' ? 'Карантин' : n.gstate === 'backoff' ? 'Пауза проверок' : '',
-    +n.active ? 'Выбрана переключателем' : ''].filter(Boolean)
+    +n.active ? 'Выбрана переключателем' : '', n.reserve ? 'Резерв: ' + n.reserve : ''].filter(Boolean)
 }
 export function crcOf(row) { return row.crc || row.id || /\[([0-9a-f]{8})\]/i.exec(row.node || '')?.[1] || '' }
 // Ключи строк таблицы для v-for: содержимое строки + номер повтора одинаковых строк.

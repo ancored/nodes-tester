@@ -51,8 +51,8 @@
       "rounds": 1,
       "request_timeout": 10,
       "restore_selection": true,
-      "heavy_candidates": 3,
-      "heavy_veto_hours": 6
+      "reserve_size": 3,
+      "heavy_ttl_hours": 6
     },
     "testing_groups_specifics": [],
     "node_groups_specifics": [
@@ -109,20 +109,17 @@
     "gemini": {
       "attempts": 3,
       "timeout": 20,
-      "ttl_hours": 6,
-      "max_per_pass": 20
+      "ttl_hours": 24
     },
     "openai": {
       "attempts": 3,
       "timeout": 15,
-      "ttl_hours": 6,
-      "max_per_pass": 20
+      "ttl_hours": 24
     },
     "anthropic": {
       "attempts": 3,
       "timeout": 15,
-      "ttl_hours": 6,
-      "max_per_pass": 20
+      "ttl_hours": 24
     },
     "reachability": {
       "timeout": 8,
@@ -214,7 +211,6 @@
       "jitter": 900,
       "align": true,
       "min_dwell": 1800,
-      "top_k": 5,
       "min_score": 55,
       "avoid_recent": 2,
       "load_balance": {

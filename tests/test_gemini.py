@@ -117,7 +117,7 @@ class RequiredGroupTest(unittest.TestCase):
         self.board.set_required_result(node, "gemini", ok, "NLD" if ok else "RUS")
 
     def test_requirements_from_group_overrides(self):
-        self.assertEqual(self.board.required("ai"), {"gemini": 6 * 3600})
+        self.assertEqual(self.board.required("ai"), {"gemini": 24 * 3600})
 
     def test_only_passed_are_candidates_and_failsafe_when_none(self):
         self.assertEqual(self.board.candidates("ai"), [])
@@ -142,21 +142,10 @@ class RequiredGroupTest(unittest.TestCase):
 
     def test_stale_result_needs_test(self):
         self._pass(A, True)
-        self.assertFalse(self.board.needs_test(A, "gemini", 3600))
-        self.board.rows[A]["required"]["gemini"]["ts"] = int(time.time()) - 7 * 3600    # старше 6 ч
-        self.assertTrue(self.board.needs_test(A, "gemini", 6 * 3600))
+        self.assertNotIn("gemini", self.board.reserve_missing(A, "ai"))
+        self.board.rows[A]["required"]["gemini"]["ts"] = int(time.time()) - 25 * 3600   # старше 24 ч
+        self.assertIn("gemini", self.board.reserve_missing(A, "ai"))
         self.assertEqual(self.board.candidates("ai"), [])            # просроченный — не кандидат
-
-    def test_targets_top_k_without_fresh_result_and_failed_drop_out(self):
-        self.r.cfg.switching.rotation.top_k = 2
-        node_by_raw = {n: ("eu", parse_node(n)) for n in (A, B, C)}
-        first = [ident.raw for _t, _r, ident in self.r._required_targets(node_by_raw, set())]
-        self.assertEqual(first, [A, B])
-        self._pass(A, False)                                          # провал — выбыл из пула
-        self._pass(B, True)
-        nxt = [ident.raw for _t, _r, ident in
-               self.r._required_targets(node_by_raw, {("gemini", A), ("gemini", B)})]
-        self.assertEqual(nxt, [C])
 
     def test_inconclusive_keeps_previous_verdict(self):
         self.r._originals = {}
@@ -165,13 +154,14 @@ class RequiredGroupTest(unittest.TestCase):
         ts = res["ts"] = int(time.time()) - 60
         answer = TestResult("gemini", False, {"inconclusive": True, "countries": [None, "FRA"]},
                             error="сеть")
+        self.r._node_by_raw = {A: ("eu", parse_node(A))}
         with mock.patch.object(GeminiTest, "run", return_value=answer):
-            self.r._required_round("gemini", [("eu", parse_node(A))], 1)
+            self.r.check_node(A, "gemini")
         res = self.board.rows[A]["required"]["gemini"]
         self.assertEqual((res["ok"], res["ts"]), ("1", ts))
         answer.metrics.pop("inconclusive")
         with mock.patch.object(GeminiTest, "run", return_value=answer):
-            self.r._required_round("gemini", [("eu", parse_node(A))], 1)
+            self.r.check_node(A, "gemini")
         self.assertEqual(self.board.rows[A]["required"]["gemini"]["ok"], "0")
 
 

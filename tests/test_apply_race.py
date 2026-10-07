@@ -43,7 +43,7 @@ class ApplyRaceTest(unittest.TestCase):
                 patch.object(r, "_respect_host_gap"), \
                 patch.object(r, "_score_and_maybe_switch",
                              side_effect=lambda reg, i, rec: self.scored.append(i.raw) or True), \
-                patch.object(r, "_run_required_pass"), patch.object(r, "_run_heavy_pass"), \
+\
                 patch.object(r.switcher, "evaluate_all",
                              side_effect=lambda groups=None: self.evaluated.append(groups)):
             return r._run_pass(1)
