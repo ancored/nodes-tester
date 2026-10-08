@@ -6,7 +6,7 @@ Shadowrocket-вариант: vless://base64(auto:uuid@host:port)?…&remarks=и�
 from __future__ import annotations
 
 from ._common import (LinkError, add_reality, b64text, multiplex, none_like, split_hostport,
-                      split_link, stream_transport, tls_block, ws_transport)
+                      split_link, stream_transport, tls_block, vless_flow, ws_transport)
 
 
 def _shadowrocket(link):
@@ -35,8 +35,9 @@ def parse(text: str):
     if not none_like(encoding):
         node["packet_encoding"] = encoding
     kind = (p.get("type") or "").lower()
-    if not none_like(p.get("flow")) and kind != "xhttp":
-        node["flow"] = p["flow"]
+    flow = vless_flow(p.get("flow"))
+    if flow and kind != "xhttp":
+        node["flow"] = flow
 
     security = (p.get("security") or "").lower()
     if not none_like(security) or p.get("tls") == "1" or p.get("pbk"):

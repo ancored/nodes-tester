@@ -120,6 +120,16 @@ def none_like(value) -> bool:
     return value is None or str(value).strip().lower() in ("", "none", "null")
 
 
+def vless_flow(value) -> str | None:
+    """flow для sing-box: он знает только xtls-rprx-vision, варианты Xray
+    (xtls-rprx-vision-udp443) сводятся к нему; прочее ломает загрузку всего конфига."""
+    if none_like(value):
+        return None
+    if str(value).startswith("xtls-rprx-vision"):
+        return "xtls-rprx-vision"
+    raise LinkError(f"flow {value!r} не поддерживается")
+
+
 def tls_block(params: dict, *, server_name: str = "", insecure: bool = False) -> dict:
     """tls-объект sing-box из типовых параметров ссылки (sni/peer, alpn, fp, allowInsecure)."""
     sni = params.get("sni") or params.get("peer") or server_name

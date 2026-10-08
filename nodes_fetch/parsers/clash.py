@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+from ._common import vless_flow
 from .ss import METHOD_ALIASES
 
 
@@ -114,8 +115,9 @@ def _vless(p, node):
     encoding = p.get("packet-encoding") or "xudp"
     if encoding != "none":
         node["packet_encoding"] = encoding
-    if p.get("flow"):
-        node["flow"] = p["flow"]
+    flow = vless_flow(p.get("flow"))
+    if flow:
+        node["flow"] = flow
     if p.get("encryption") and p["encryption"] != "none":
         node["encryption"] = p["encryption"]
 

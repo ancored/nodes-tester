@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from ._common import LinkError, add_reality, none_like, ws_transport, xhttp_transport
+from ._common import (LinkError, add_reality, none_like, vless_flow, ws_transport,
+                      xhttp_transport)
 from .ss import METHOD_ALIASES
 
 _SKIP_PROTOCOLS = {"freedom", "blackhole", "dns", "loopback"}
@@ -104,8 +105,9 @@ def _vless(server, node):
     user = (server.get("users") or [{}])[0]
     node["uuid"] = user.get("id", "")
     node["packet_encoding"] = "xudp"
-    if not none_like(user.get("flow")):
-        node["flow"] = user["flow"]
+    flow = vless_flow(user.get("flow"))
+    if flow:
+        node["flow"] = flow
     if not none_like(user.get("encryption")):
         node["encryption"] = user["encryption"]
 

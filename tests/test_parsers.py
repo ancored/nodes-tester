@@ -70,7 +70,9 @@ class VlessTest(unittest.TestCase):
 
     def test_flow(self):
         self.assertEqual(one("vless://u@h.com:443?security=tls&flow=xtls-rprx-vision-udp443#x")["flow"],
-                         "xtls-rprx-vision-udp443")
+                         "xtls-rprx-vision")
+        with self.assertRaises(LinkError):
+            one("vless://u@h.com:443?security=tls&flow=xtls-rprx-direct#x")
         self.assertNotIn("flow", one("vless://u@h.com:443?security=tls&flow=None#x"))
         node = one("vless://u@h.com:443?security=tls&type=xhttp&flow=xtls-rprx-vision#x")
         self.assertNotIn("flow", node)
