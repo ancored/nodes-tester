@@ -1,0 +1,21 @@
+{
+  "_preset": {
+    "title": "Роутер: всё остальное через ноды",
+    "description": "route.final → global-auto-out и DNS-сервер dns-global через ту же группу. Задайте в базе dns.final: \"dns-global\", иначе имена без правил резолвит DNS провайдера. Не включать вместе с пресетом direct: его final выше по приоритету",
+    "enabled": false,
+    "priority": 999
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "dns-global",
+        "server": "1.1.1.1",
+        "detour": "global-auto-out"
+      }
+    ]
+  },
+  "route": {
+    "final": "global-auto-out"
+  }
+}

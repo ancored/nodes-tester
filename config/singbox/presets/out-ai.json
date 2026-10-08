@@ -1,0 +1,29 @@
+{
+  "_preset": {
+    "title": "Роутер: выходы ИИ",
+    "description": "Объявляет ai-out (Claude, OpenAI и др.) и google-out (Gemini и адреса Google) как группу ai-auto-out. Если у ИИ свой выход (например, статический прокси), направьте ai-out на него",
+    "enabled": false,
+    "priority": 50,
+    "requires": {
+      "groups": [
+        "ai"
+      ]
+    }
+  },
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "ai-out",
+      "outbounds": [
+        "ai-auto-out"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "google-out",
+      "outbounds": [
+        "ai-auto-out"
+      ]
+    }
+  ]
+}

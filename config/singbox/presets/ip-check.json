@@ -1,0 +1,16 @@
+{
+  "_preset": {
+    "title": "Проверка выхода ИИ",
+    "description": "ifconfig.me → ai-out: показывает IP, который видят ИИ-сервисы. Стоит после правила недоверенного LAN, чтобы проверка не обходила модель доверия",
+    "enabled": false,
+    "priority": 130
+  },
+  "route": {
+    "rules": [
+      {
+        "domain_suffix": "ifconfig.me",
+        "outbound": "ai-out"
+      }
+    ]
+  }
+}

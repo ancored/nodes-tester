@@ -94,6 +94,78 @@ class PresetModuleTest(unittest.TestCase):
             self.assertEqual(presets.main(args), 1)
 
 
+LIBRARY = Path(__file__).resolve().parent.parent / "config" / "singbox" / "presets"
+CLIENT_PRESETS = {"client-core", "android-no-package", "client-home-lan", "mode-whitelist",
+                  "android-ai-apps", "android-browser-stun", "mode-abroad", "android-ru-apps"}
+
+
+def _selector(tag, *members):
+    return {"type": "selector", "tag": tag, "outbounds": list(members)}
+
+
+def _rule_refs(rules):
+    """Пары (поле, значение) ссылок правил на выходы, DNS-серверы и наборы правил."""
+    for rule in rules:
+        yield from _rule_refs(rule.get("rules", []))
+        for key in ("outbound", "server"):
+            if key in rule:
+                yield key, rule[key]
+        sets = rule.get("rule_set", [])
+        for tag in [sets] if isinstance(sets, str) else sets:
+            yield "rule_set", tag
+
+
+class PresetLibraryTest(unittest.TestCase):
+    """Библиотека config/singbox/presets: склеивается без конфликтов, ссылки разрешаются."""
+
+    def assemble(self, names, base, nodes):
+        library = presets.load(LIBRARY)
+        for p in library:
+            p["meta"]["enabled"] = p["name"] in names
+        config, _ = presets.assemble(base, nodes, library)
+        return config
+
+    def assert_refs_resolved(self, config):
+        defined = {
+            "outbound": {o["tag"] for o in config["outbounds"]},
+            "server": {s["tag"] for s in config["dns"]["servers"]},
+            "rule_set": {r["tag"] for r in config["route"]["rule_set"]},
+        }
+        refs = list(_rule_refs(config["route"]["rules"] + config["dns"]["rules"]))
+        refs += [("outbound", s["detour"]) for s in config["dns"]["servers"] if "detour" in s]
+        refs += [("outbound", m) for o in config["outbounds"] for m in o.get("outbounds", [])]
+        refs.append(("outbound", config["route"]["final"]))
+        missing = sorted({(kind, tag) for kind, tag in refs if tag not in defined[kind]})
+        self.assertEqual(missing, [])
+
+    def test_all_disabled(self):
+        library = presets.load(LIBRARY)
+        self.assertTrue(library)
+        self.assertEqual([p["name"] for p in library if p["meta"]["enabled"]], [])
+
+    def test_router(self):
+        names = {p["name"] for p in presets.load(LIBRARY)} - CLIENT_PRESETS - {"ai-google-smartdns"}
+        base = {"dns": {"servers": [{"type": "local", "tag": "bootstrap"}], "final": "dns-global"},
+                "outbounds": [{"type": "direct", "tag": "direct-out"}, {"type": "direct", "tag": "direct-lan"}]}
+        nodes = {"outbounds": [_selector(t) for t in
+                               ("global-auto-out", "ai-auto-out", "us-auto-out", "nodes-tester")]}
+        config = self.assemble(names, base, nodes)
+        self.assert_refs_resolved(config)
+        self.assertEqual(config["route"]["final"], "global-auto-out")
+
+    def test_client(self):
+        names = CLIENT_PRESETS | {"block-ads", "ip-check", "ai-services", "ai-google-smartdns",
+                                  "zone-us", "ru-direct", "geoip-ru"}
+        base = {"dns": {"servers": [{"type": "https", "tag": "bootstrap", "server": "9.9.9.9"}]},
+                "outbounds": [{"type": "direct", "tag": "direct-out"}] + [
+                    _selector(t, "direct-out")
+                    for t in ("global-out", "ai-out", "google-out", "us-out", "home-out")],
+                "route": {"final": "global-out"}}
+        config = self.assemble(names, base, {"outbounds": [_selector("global-auto-out")]})
+        self.assert_refs_resolved(config)
+        self.assertEqual(config["route"]["rules"][0]["package_name_regex"], [".*"])
+
+
 def _fake_run(returncode=0, stderr=""):
     """subprocess.run для API: sing-box check с заданным результатом."""
     def run(cmd, **_):

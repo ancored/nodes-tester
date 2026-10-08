@@ -1,0 +1,51 @@
+{
+  "_preset": {
+    "title": "Роутер: недоверенный LAN напрямую",
+    "description": "Устройства LAN вне доверенного сегмента (здесь 192.168.1.0/25 — статические адреса DHCP) идут напрямую, их DNS — dns-direct. Подставьте свой сегмент. Правило стоит выше правил зон, чтобы гости не получали доступ к нодам; см. SECURITY_MODEL",
+    "enabled": false,
+    "priority": 120
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "dns-direct",
+        "server": "77.88.8.8"
+      }
+    ],
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "source_ip_cidr": "192.168.1.0/25",
+            "invert": true
+          }
+        ],
+        "server": "dns-direct"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "source_ip_cidr": "192.168.1.0/25",
+            "invert": true
+          }
+        ],
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}

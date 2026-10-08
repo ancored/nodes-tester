@@ -1,0 +1,39 @@
+{
+  "_preset": {
+    "title": "Android: российские приложения напрямую",
+    "description": "Приложения из ru-app-list целиком → direct-out: все их запросы приходят с одного IP, и сравнение адресов не выдаёт VPN. DNS — dns-direct",
+    "enabled": false,
+    "priority": 300
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "dns-direct",
+        "server": "77.88.8.8"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": "ru-app-list",
+        "server": "dns-direct"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "rule_set": "ru-app-list",
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "ru-app-list",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ru-app-list.srs"
+      }
+    ]
+  }
+}

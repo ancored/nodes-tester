@@ -1,0 +1,19 @@
+{
+  "_preset": {
+    "title": "Клиент: основа",
+    "description": "sniff и перехват DNS",
+    "enabled": false,
+    "priority": 100
+  },
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ]
+  }
+}

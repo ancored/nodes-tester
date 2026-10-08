@@ -29,6 +29,9 @@ done
 [ -f "$CONFIG_DIR/clients.list" ] || cp "$EX/clients.list.example" "$CONFIG_DIR/clients.list"
 [ -f "$CONFIG_DIR/singbox/rules.json" ] || \
     cp "$EX/singbox/rules.example.json" "$CONFIG_DIR/singbox/rules.json"
+for f in "$EX"/singbox/rules/*.json; do
+	[ -f "$CONFIG_DIR/singbox/rules/${f##*/}" ] || cp "$f" "$CONFIG_DIR/singbox/rules/"
+done
 [ -f "$CONFIG_DIR/pipeline.json" ] || cp "$EX/pipeline.example.json" "$CONFIG_DIR/pipeline.json"
 
 exit 0

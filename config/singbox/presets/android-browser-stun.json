@@ -1,0 +1,21 @@
+{
+  "_preset": {
+    "title": "Android: STUN браузеров через туннель",
+    "description": "STUN из Chrome, Firefox и Samsung Internet → global-out: страница не узнает прямой IP через WebRTC. Поток WebRTC начинается со STUN, поэтому и медиа идёт тем же путём",
+    "enabled": false,
+    "priority": 225
+  },
+  "route": {
+    "rules": [
+      {
+        "protocol": "stun",
+        "package_name": [
+          "com.android.chrome",
+          "org.mozilla.firefox",
+          "com.sec.android.app.sbrowser"
+        ],
+        "outbound": "global-out"
+      }
+    ]
+  }
+}

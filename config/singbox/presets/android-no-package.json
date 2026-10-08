@@ -1,0 +1,19 @@
+{
+  "_preset": {
+    "title": "Android: соединения без пакета напрямую",
+    "description": "Первое правило: соединение, для которого Android не сообщил пакет, → direct-out. Закрывает обход per-app-proxy через tun0 (приложение вне VPN выходило бы с IP ноды). Включать после проверки на устройстве: если клиент не определяет пакеты, напрямую уйдёт всё; см. SECURITY_MODEL",
+    "enabled": false,
+    "priority": 90
+  },
+  "route": {
+    "rules": [
+      {
+        "package_name_regex": [
+          ".*"
+        ],
+        "invert": true,
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}

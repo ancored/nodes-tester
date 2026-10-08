@@ -1,0 +1,111 @@
+{
+  "_preset": {
+    "title": "ИИ: Claude, OpenAI, Grok, Perplexity",
+    "description": "Домены сервисов → ai-out, их DNS — dns-ai через тот же выход. QUIC запрещён: клиент откатывается на TCP, домен определяется по SNI",
+    "enabled": false,
+    "priority": 210
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "dns-ai",
+        "server": "1.1.1.1",
+        "detour": "ai-out"
+      }
+    ],
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "rule_set": [
+              "claude",
+              "openai"
+            ]
+          },
+          {
+            "domain_suffix": [
+              "grok.com",
+              "x.ai",
+              "perplexity.ai",
+              "pplx.ai"
+            ]
+          }
+        ],
+        "server": "dns-ai"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "type": "logical",
+            "mode": "or",
+            "rules": [
+              {
+                "rule_set": [
+                  "claude",
+                  "openai"
+                ]
+              },
+              {
+                "domain_suffix": [
+                  "grok.com",
+                  "x.ai",
+                  "perplexity.ai",
+                  "pplx.ai"
+                ]
+              }
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "rule_set": [
+              "claude",
+              "openai"
+            ]
+          },
+          {
+            "domain_suffix": [
+              "grok.com",
+              "x.ai",
+              "perplexity.ai",
+              "pplx.ai"
+            ]
+          }
+        ],
+        "outbound": "ai-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "claude",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/anthropic.srs"
+      },
+      {
+        "type": "local",
+        "tag": "openai",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/openai.srs"
+      }
+    ]
+  }
+}

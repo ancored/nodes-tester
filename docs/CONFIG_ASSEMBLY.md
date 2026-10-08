@@ -58,7 +58,88 @@ presets/*.json     ← включённые пресеты по priority (мен
 попадает. Содержимое входов проходит без изменений: например, `certificate_path` остаётся
 путём, и sing-box сам перечитывает обновлённый сертификат.
 
-Дальше:
+## Библиотека пресетов
+
+[`config/singbox/presets/`](../config/singbox/presets) — набор готовых пресетов, отправная точка
+для своих правил; в пакете они лежат в `/usr/share/nodes-tester/examples/singbox/presets/`. Все
+выключены: скопируйте нужные в `singbox/presets/`, подставьте свои значения и включите в
+«Правилах». Наборы правил, на которые они ссылаются, перечислены в
+[`rules.example.json`](../config/singbox/rules.example.json); при первой установке он становится
+`singbox/rules.json`, а примеры локальных списков `us-domains.json` и `ru-also-domains.json`
+копируются в `singbox/rules/`.
+
+### Выходы и DNS-серверы
+
+Пресеты ссылаются не на группы нод, а на выходы зон. Каждый выход объявляет отдельный пресет
+роутера или база клиента, поэтому одна и та же логика подходит и роутеру, и клиенту:
+
+| Выход | Назначение | На роутере | На клиенте |
+|---|---|---|---|
+| `ai-out` | Claude, OpenAI, Grok, Perplexity, пользователь `ai` | `out-ai` → `ai-auto-out` | роутер, пользователь `ai` |
+| `google-out` | Gemini и адреса Google | `out-ai` → `ai-auto-out` | роутер, пользователь `global` |
+| `us-out` | пользователь `us`, `us-domains` | `out-us` → `us-auto-out` | роутер, пользователь `us` |
+| `global-out` | STUN браузеров | — | роутер, пользователь `global` |
+| `home-out` | домашняя сеть и домашний IP | — | роутер, пользователь `ru-strict` |
+| `direct-out`, `direct-lan`, `global-auto-out`, `nodes-tester` | прямой выход, LAN, все ноды, тестер | база и `nodes.json` | `global-auto-out` — ноды клиентской ветки |
+
+Выход зоны — selector с одним элементом. Чтобы ИИ выходили через свой прокси, достаточно
+поменять элемент `ai-out` в `out-ai`. DNS-серверы пресеты объявляют сами, на публичных адресах:
+`dns-direct` — Яндекс DoT `77.88.8.8` (российские ответы для прямого трафика), `dns-ai`,
+`dns-google`, `dns-us`, `dns-global` — DoH через свой выход, `dns-home` — через дом, `dns-wh` —
+через ноды клиентской ветки. Замените их своими (например, профилями NextDNS) в копиях пресетов.
+
+### Порядок
+
+| Приоритет | Слой |
+|---|---|
+| 50 | выходы зон роутера |
+| 90–130 | основа, блокировки, локальная сеть, недоверенный LAN, проверка IP |
+| 150 | режим клиента, который решает всё сам («Белые списки») |
+| 200–225 | ИИ и Google, ИИ-приложения, STUN |
+| 280–310 | US, режим «Заграница», RU напрямую, пользователь `ru-strict` |
+| 400 | пользователь `global` |
+| 900–999 | `geoip` RU и BY, `route.final` |
+
+ИИ стоят выше правил по `auth_user`: сервисы ИИ и Google уходят на свои выходы для любого
+пользователя. Режим «Заграница» стоит после ИИ и US, но раньше RU-правил: российские сервисы
+идут через дом, остальное — напрямую.
+
+### Каталог
+
+| Пресет | Где | Что делает |
+|---|---|---|
+| `out-ai`, `out-us` | роутер | объявляют `ai-out`, `google-out`, `us-out` из групп `ai` и `us` |
+| `core` | роутер | `sniff`, перехват DNS, локальные адреса → `direct-lan`, тестер; домен URL-теста — через `bootstrap` |
+| `untrusted-lan` | роутер | LAN вне доверенного сегмента → `direct-out`; см. [модель безопасности](SECURITY_MODEL.md#модель-доверия) |
+| `block-ads`, `block-adult` | везде | реклама и трекеры, взрослый контент: `reject` и `NXDOMAIN` |
+| `ip-check` | везде | `ifconfig.me` → `ai-out`: какой IP видят ИИ |
+| `zone-ai` | роутер | пользователь `ai` → `ai-out`, без QUIC |
+| `ai-services` | везде | Claude, OpenAI, Grok, Perplexity → `ai-out`, без QUIC |
+| `ai-google` | везде | Gemini и адреса Google → `google-out`, без QUIC |
+| `ai-google-smartdns` | везде | Gemini через прокси SmartDNS, остальные адреса Google → `google-out`; вместо `ai-google` |
+| `zone-us` | везде | пользователь `us` и `us-domains` → `us-out` |
+| `ru-direct` | везде | российские домены, Zoom, торренты, RDP → `direct-out` |
+| `user-ru-strict`, `user-global` | роутер | пользователи `ru-strict` → `direct-out`, `global` → `global-auto-out` |
+| `geoip-ru` | везде | адреса России и Беларуси → `direct-out` |
+| `final-global` | роутер | `route.final` → `global-auto-out`, сервер `dns-global`; в базе задайте `dns.final: "dns-global"`; вместо пресета `direct` |
+| `client-core` | клиент | `sniff`, перехват DNS |
+| `android-no-package` | Android | соединения без пакета → `direct-out` (обход per-app-proxy через tun0) |
+| `client-home-lan` | клиент | домашняя сеть: дома напрямую, вне дома — через `home-out` |
+| `mode-whitelist` | клиент | `clash_mode` «Белые списки»: белый список напрямую, остальное — через ноды клиента |
+| `android-ai-apps` | Android | приложения ChatGPT, Claude, Grok, Perplexity целиком → `ai-out`, включая голос |
+| `android-browser-stun` | Android | STUN браузеров → `global-out`: WebRTC не раскрывает прямой IP |
+| `mode-abroad` | клиент | `clash_mode` «Заграница»: RU через дом, остальное напрямую |
+| `android-ru-apps` | Android | приложения из `ru-app-list` → `direct-out` |
+
+Плейсхолдеры, которые нужно заменить: доверенный сегмент `192.168.1.0/25` в `untrusted-lan`,
+SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smartdns.example.com` в
+`ai-google-smartdns`. Клиентская ветка пока собирает только базу клиента и ноды, поэтому клиентские
+пресеты переносятся в базу клиента вручную; наборы правил там описываются как `remote` с адресом
+раздачи, а не `local`.
+
+## Проверка и применение
+
+После склейки:
 
 1. `sing-box check` итогового файла; ошибка склейки или проверки — работающий конфиг не
    трогается. Админка делает ту же склейку и проверку при сохранении базы и пресетов.

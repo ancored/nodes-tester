@@ -1,7 +1,7 @@
 {
   "_preset": {
-    "title": "ИИ: Google через выход",
-    "description": "Gemini и DeepMind → google-out, их DNS — dns-google. Всё, что попало на адреса Google (geoip-google), тоже → google-out: приложения Gemini ходят и на общие адреса Google. QUIC к ним запрещён. Не включать вместе с ai-google-smartdns",
+    "title": "ИИ: Google через SmartDNS",
+    "description": "Gemini и DeepMind резолвятся через SmartDNS и идут на его прокси напрямую; всё, что попало на реальные адреса Google, → google-out, чтобы Google не увидел прямой IP. Подставьте адрес своего SmartDNS. Не включать вместе с ai-google",
     "enabled": false,
     "priority": 220
   },
@@ -9,9 +9,9 @@
     "servers": [
       {
         "type": "https",
-        "tag": "dns-google",
-        "server": "1.1.1.1",
-        "detour": "google-out"
+        "tag": "dns-smart",
+        "server": "smartdns.example.com",
+        "domain_resolver": "bootstrap"
       }
     ],
     "rules": [
@@ -20,7 +20,7 @@
           "google-dm",
           "google-gemini"
         ],
-        "server": "dns-google"
+        "server": "dns-smart"
       }
     ]
   },
@@ -45,12 +45,15 @@
         "action": "reject"
       },
       {
+        "rule_set": "geoip-google",
+        "outbound": "google-out"
+      },
+      {
         "rule_set": [
           "google-dm",
-          "google-gemini",
-          "geoip-google"
+          "google-gemini"
         ],
-        "outbound": "google-out"
+        "outbound": "direct-out"
       }
     ],
     "rule_set": [

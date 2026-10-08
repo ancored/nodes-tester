@@ -1,0 +1,33 @@
+{
+  "_preset": {
+    "title": "RU и BY адреса напрямую",
+    "description": "IP-адреса России и Беларуси (geoip) → direct-out. Последний слой: ловит то, что не опознано по домену",
+    "enabled": false,
+    "priority": 900
+  },
+  "route": {
+    "rules": [
+      {
+        "rule_set": [
+          "geoip-ru",
+          "geoip-by"
+        ],
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geoip-by",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/geoip-by.srs"
+      }
+    ]
+  }
+}

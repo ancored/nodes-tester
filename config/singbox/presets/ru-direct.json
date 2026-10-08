@@ -1,0 +1,79 @@
+{
+  "_preset": {
+    "title": "RU и тяжёлый трафик напрямую",
+    "description": "Российские домены (geosite-ru, ru-also-domains), Zoom, торренты и RDP → direct-out: российские сайты недоступны с иностранных IP, а торренты и видеосвязь нагружают ноды. DNS этих доменов — dns-direct",
+    "enabled": false,
+    "priority": 300
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "dns-direct",
+        "server": "77.88.8.8"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": [
+          "torrent_trackers",
+          "zoom",
+          "geosite-ru",
+          "ru-also-domains"
+        ],
+        "server": "dns-direct"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": [
+              "rdp",
+              "bittorrent"
+            ]
+          },
+          {
+            "rule_set": [
+              "torrent_trackers",
+              "zoom",
+              "geosite-ru",
+              "ru-also-domains"
+            ]
+          }
+        ],
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "torrent_trackers",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ruleset-domain-torrent_trackres.srs"
+      },
+      {
+        "type": "local",
+        "tag": "zoom",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/zoom.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geosite-ru",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/category-ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "ru-also-domains",
+        "format": "source",
+        "path": "/etc/sing-box/rules/ru-also-domains.json"
+      }
+    ]
+  }
+}

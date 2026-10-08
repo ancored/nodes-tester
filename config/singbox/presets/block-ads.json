@@ -1,0 +1,33 @@
+{
+  "_preset": {
+    "title": "Блокировка рекламы и трекеров",
+    "description": "Домены из oisd big: соединения → reject, DNS → NXDOMAIN",
+    "enabled": false,
+    "priority": 110
+  },
+  "dns": {
+    "rules": [
+      {
+        "rule_set": "ads-n-track",
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "rule_set": "ads-n-track",
+        "action": "reject"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "ads-n-track",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ruleset-domain-oisd_big.srs"
+      }
+    ]
+  }
+}

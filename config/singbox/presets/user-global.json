@@ -1,0 +1,16 @@
+{
+  "_preset": {
+    "title": "Роутер: пользователь global",
+    "description": "Всё от пользователя global → global-auto-out, мимо правил ниже (geoip-ru и др.): клиент сам решает, что отправить напрямую",
+    "enabled": false,
+    "priority": 400
+  },
+  "route": {
+    "rules": [
+      {
+        "auth_user": "global",
+        "outbound": "global-auto-out"
+      }
+    ]
+  }
+}

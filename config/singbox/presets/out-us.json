@@ -1,0 +1,22 @@
+{
+  "_preset": {
+    "title": "Роутер: выход US",
+    "description": "Объявляет us-out как группу us-auto-out",
+    "enabled": false,
+    "priority": 50,
+    "requires": {
+      "groups": [
+        "us"
+      ]
+    }
+  },
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "us-out",
+      "outbounds": [
+        "us-auto-out"
+      ]
+    }
+  ]
+}

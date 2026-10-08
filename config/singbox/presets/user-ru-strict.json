@@ -1,0 +1,16 @@
+{
+  "_preset": {
+    "title": "Роутер: пользователь ru-strict напрямую",
+    "description": "Всё от пользователя ru-strict → direct-out (домашний IP). Правила ИИ и Google стоят выше и действуют и для него",
+    "enabled": false,
+    "priority": 310
+  },
+  "route": {
+    "rules": [
+      {
+        "auth_user": "ru-strict",
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}

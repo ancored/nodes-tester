@@ -1,0 +1,44 @@
+{
+  "_preset": {
+    "title": "US: пользователь us и us-domains",
+    "description": "Пользователь us (auth_user) и домены из us-domains → us-out, DNS us-domains — dns-us. Стоит раньше RU-правил, чтобы в режиме «Заграница» US-сайты оставались на us-out",
+    "enabled": false,
+    "priority": 280
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "dns-us",
+        "server": "8.8.8.8",
+        "detour": "us-out"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": "us-domains",
+        "server": "dns-us"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "auth_user": "us",
+        "outbound": "us-out"
+      },
+      {
+        "rule_set": "us-domains",
+        "outbound": "us-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "us-domains",
+        "format": "source",
+        "path": "/etc/sing-box/rules/us-domains.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "_preset": {
+    "title": "Клиент: режим «Заграница»",
+    "description": "clash_mode «Заграница» — поездка в страну без блокировок: ИИ, Google и US остаются на своих выходах (пресеты выше), российские сервисы → home-out (домашний IP), всё остальное — напрямую. DNS российских доменов — через дом, прочих — dns-direct",
+    "enabled": false,
+    "priority": 290
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "dns-home",
+        "server": "77.88.8.8",
+        "detour": "home-out"
+      },
+      {
+        "type": "tls",
+        "tag": "dns-direct",
+        "server": "77.88.8.8"
+      }
+    ],
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "Заграница"
+          },
+          {
+            "rule_set": [
+              "ru-app-list",
+              "geosite-ru",
+              "ru-also-domains"
+            ]
+          }
+        ],
+        "server": "dns-home"
+      },
+      {
+        "clash_mode": "Заграница",
+        "server": "dns-direct"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "Заграница"
+          },
+          {
+            "rule_set": [
+              "ru-app-list",
+              "geoip-ru",
+              "geosite-ru",
+              "ru-also-domains"
+            ]
+          }
+        ],
+        "outbound": "home-out"
+      },
+      {
+        "clash_mode": "Заграница",
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "ru-app-list",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ru-app-list.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geosite-ru",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/category-ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "ru-also-domains",
+        "format": "source",
+        "path": "/etc/sing-box/rules/ru-also-domains.json"
+      }
+    ]
+  }
+}

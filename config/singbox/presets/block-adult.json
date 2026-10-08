@@ -1,0 +1,33 @@
+{
+  "_preset": {
+    "title": "Блокировка взрослого контента",
+    "description": "Домены из oisd nsfw: соединения → reject, DNS → NXDOMAIN",
+    "enabled": false,
+    "priority": 111
+  },
+  "dns": {
+    "rules": [
+      {
+        "rule_set": "adult",
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "rule_set": "adult",
+        "action": "reject"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "adult",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ruleset-domain-oisd_nsfw.srs"
+      }
+    ]
+  }
+}

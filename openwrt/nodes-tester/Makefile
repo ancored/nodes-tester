@@ -79,6 +79,8 @@ define Build/Prepare
 	cp $(REPO_ROOT)/LICENSE $(REPO_ROOT)/THIRD_PARTY_LICENSES $(PKG_BUILD_DIR)/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox
 	cp $(REPO_ROOT)/config/singbox/rules.example.json $(PKG_BUILD_DIR)/config/singbox/
+	mkdir -p $(PKG_BUILD_DIR)/config/singbox/rules
+	cp $(REPO_ROOT)/config/singbox/rules/*.json $(PKG_BUILD_DIR)/config/singbox/rules/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox/presets
 	cp $(REPO_ROOT)/config/singbox/presets/*.json $(PKG_BUILD_DIR)/config/singbox/presets/
 	cp $(REPO_ROOT)/config/pipeline.example.json $(PKG_BUILD_DIR)/config/
@@ -106,7 +108,8 @@ define Package/nodes-tester/install
 	$(foreach s,$(ROUTER_SCRIPTS),$(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/router/$(s) $(1)$(APP_DIR)/scripts/router/;)
 
 	# Шаблоны: из них uci-defaults создаёт рабочие конфиги при первой установке
-	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg $(1)/usr/share/nodes-tester/examples/singbox/presets
+	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg $(1)/usr/share/nodes-tester/examples/singbox/presets \
+		$(1)/usr/share/nodes-tester/examples/singbox/rules
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/providers.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/user_nodes.example.json $(1)/usr/share/nodes-tester/examples/
@@ -114,6 +117,7 @@ define Package/nodes-tester/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/clients.list.example $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules.example.json $(1)/usr/share/nodes-tester/examples/singbox/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/presets/*.json $(1)/usr/share/nodes-tester/examples/singbox/presets/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules/*.json $(1)/usr/share/nodes-tester/examples/singbox/rules/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/pipeline.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/awg/de.conf.example $(1)/usr/share/nodes-tester/examples/awg/
 

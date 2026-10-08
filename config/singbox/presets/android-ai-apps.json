@@ -1,0 +1,21 @@
+{
+  "_preset": {
+    "title": "Android: ИИ-приложения целиком",
+    "description": "Весь трафик приложений ChatGPT, Claude, Grok и Perplexity, включая голос (WebRTC) и сторонние SDK, → ai-out: сервис видит один IP. Правила по доменам такие соединения не ловят",
+    "enabled": false,
+    "priority": 205
+  },
+  "route": {
+    "rules": [
+      {
+        "package_name": [
+          "com.openai.chatgpt",
+          "com.anthropic.claude",
+          "ai.x.grok",
+          "ai.perplexity.app.android"
+        ],
+        "outbound": "ai-out"
+      }
+    ]
+  }
+}

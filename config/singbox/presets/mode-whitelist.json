@@ -1,0 +1,103 @@
+{
+  "_preset": {
+    "title": "Клиент: режим «Белые списки»",
+    "description": "clash_mode «Белые списки» — мобильный интернет РФ, где открыт только белый список: белый список → direct-out, всё остальное, включая ИИ, → global-auto-out (ноды, доступные из белого списка). RU-домены резолвятся через dns-direct, прочие — через ноды. Режим решает всё сам, поэтому стоит выше правил ИИ и зон",
+    "enabled": false,
+    "priority": 150
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "dns-direct",
+        "server": "77.88.8.8"
+      },
+      {
+        "type": "https",
+        "tag": "dns-wh",
+        "server": "1.1.1.1",
+        "detour": "global-auto-out"
+      }
+    ],
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "Белые списки"
+          },
+          {
+            "rule_set": [
+              "ru-mobile-whitelist-domains",
+              "ru-app-list",
+              "geosite-ru",
+              "ru-also-domains"
+            ]
+          }
+        ],
+        "server": "dns-direct"
+      },
+      {
+        "clash_mode": "Белые списки",
+        "server": "dns-wh"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "Белые списки"
+          },
+          {
+            "rule_set": [
+              "ru-mobile-whitelist-domains",
+              "ru-mobile-whitelist-cidr"
+            ]
+          }
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "clash_mode": "Белые списки",
+        "outbound": "global-auto-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "ru-mobile-whitelist-domains",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/russia-mobile-whitelist-domains.srs"
+      },
+      {
+        "type": "local",
+        "tag": "ru-mobile-whitelist-cidr",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/russia-mobile-whitelist-cidr.srs"
+      },
+      {
+        "type": "local",
+        "tag": "ru-app-list",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/ru-app-list.srs"
+      },
+      {
+        "type": "local",
+        "tag": "geosite-ru",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/category-ru.srs"
+      },
+      {
+        "type": "local",
+        "tag": "ru-also-domains",
+        "format": "source",
+        "path": "/etc/sing-box/rules/ru-also-domains.json"
+      }
+    ]
+  }
+}

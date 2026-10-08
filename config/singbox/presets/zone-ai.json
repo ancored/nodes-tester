@@ -1,0 +1,46 @@
+{
+  "_preset": {
+    "title": "Роутер: пользователь ai",
+    "description": "Всё от пользователя ai (auth_user) → ai-out, QUIC запрещён; DNS — dns-ai",
+    "enabled": false,
+    "priority": 200
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "dns-ai",
+        "server": "1.1.1.1",
+        "detour": "ai-out"
+      }
+    ],
+    "rules": [
+      {
+        "auth_user": "ai",
+        "server": "dns-ai"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "network": "udp",
+            "port": 443
+          },
+          {
+            "auth_user": "ai"
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "auth_user": "ai",
+        "outbound": "ai-out"
+      }
+    ]
+  }
+}

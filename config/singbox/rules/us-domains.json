@@ -1,0 +1,52 @@
+{
+  "version": 2,
+  "rules": [
+    {
+      "domain_suffix": [
+        "amazon.com",
+        "bestbuy.com",
+        "calvinklein.com",
+        "coach.com",
+        "costco.com",
+        "ebay.com",
+        "etsy.com",
+        "footlocker.com",
+        "gap.com",
+        "guess.com",
+        "hulu.com",
+        "iherb.com",
+        "katespade.com",
+        "kohls.com",
+        "levi.com",
+        "macys.com",
+        "max.com",
+        "michaelkors.com",
+        "netflix.com",
+        "newegg.com",
+        "nflxext.com",
+        "nflximg.net",
+        "nflxso.net",
+        "nflxvideo.net",
+        "nike.com",
+        "nordstrom.com",
+        "oldnavy.com",
+        "pandora.com",
+        "paramountplus.com",
+        "peacocktv.com",
+        "ralphlauren.com",
+        "sephora.com",
+        "sling.com",
+        "target.com",
+        "tommy.com",
+        "tommyhilfiger.com",
+        "tubitv.com",
+        "ulta.com",
+        "underarmour.com",
+        "victoriassecret.com",
+        "walmart.com",
+        "wayfair.com",
+        "whatsmyip.com"
+      ]
+    }
+  ]
+}

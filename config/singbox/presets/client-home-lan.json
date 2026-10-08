@@ -1,0 +1,37 @@
+{
+  "_preset": {
+    "title": "Клиент: домашняя сеть",
+    "description": "В домашнем Wi-Fi локальные адреса — напрямую; вне дома домашняя подсеть 192.168.1.0/24 → home-out (через роутер), прочие локальные адреса — напрямую. Подставьте свои SSID и подсеть",
+    "enabled": false,
+    "priority": 120
+  },
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "wifi_ssid": [
+              "Home-WiFi"
+            ]
+          },
+          {
+            "ip_is_private": true
+          }
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "ip_cidr": [
+          "192.168.1.0/24"
+        ],
+        "outbound": "home-out"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}
