@@ -6,6 +6,8 @@
 #   pipeline.sh clients [--dry-run]   WH-подписки → whnodes.json → клиентские конфиги
 #   pipeline.sh apply   [--dry-run]   база + пресеты правил → применение к текущему nodes.json
 #                                     (подписки не загружаются)
+#   pipeline.sh apply-clients [--dry-run]   базы клиентов + клиентские пресеты → клиентские
+#                                     конфиги по текущему whnodes.json (подписки не загружаются)
 #
 # router:  nodes_fetch (main) → nodes_config → /etc/sing-box-subscribe/nodes.json →
 #          update-rules.sh → apply-nodes.sh (рестарт только при изменениях)
@@ -17,7 +19,8 @@
 # Конфиги — $CFG_ROOT/config-main, $CFG_ROOT/config-wh;
 # CFG_ROOT по умолчанию = $DATA. PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
-# Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету);
+# Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету),
+# клиентские — $SINGBOX/clients/presets/*.json (склеивает build-clients.sh);
 # --dry-run проверяет редактируемую базу $SINGBOX/base.json, а не применённую копию.
 
 set -u
@@ -50,8 +53,8 @@ log() { echo "[pipeline] $*"; logger -t nodes-pipeline "$*" 2>/dev/null || true;
 
 case "$MODE" in
     router|apply) SET=main; OUT=/etc/sing-box-subscribe/nodes.json ;;
-    clients) SET=wh;   OUT=/etc/sing-box-subscribe/whnodes.json ;;
-    *) echo "использование: pipeline.sh router|clients|apply [--dry-run]" >&2; exit 2 ;;
+    clients|apply-clients) SET=wh; OUT=/etc/sing-box-subscribe/whnodes.json ;;
+    *) echo "использование: pipeline.sh router|clients|apply|apply-clients [--dry-run]" >&2; exit 2 ;;
 esac
 SINGBOX="${SINGBOX:-$CFG_ROOT/singbox}"
 export PRESETS_DIR="$SINGBOX/presets"
@@ -64,6 +67,15 @@ if [ "$MODE" = apply ]; then
     else
         "$HERE/update-rules.sh" --base-only || { log "база не скопирована"; exit 1; }
         "$HERE/apply-nodes.sh" "$OUT"
+    fi
+    exit $?
+fi
+if [ "$MODE" = apply-clients ]; then
+    [ -f "$OUT" ] || { log "нет $OUT — сначала соберите клиентов (pipeline clients)"; exit 1; }
+    if [ "$DRY" = 1 ]; then
+        "$HERE/build-clients.sh" --dry-run "$OUT"
+    else
+        "$HERE/build-clients.sh" "$OUT"
     fi
     exit $?
 fi

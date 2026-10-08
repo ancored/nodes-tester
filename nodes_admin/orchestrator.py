@@ -17,7 +17,8 @@ from pathlib import Path
 
 
 MODES = ("router", "clients")          # по расписанию
-RUN_MODES = MODES + ("apply",)         # вручную: apply — база и пресеты к текущему nodes.json
+RUN_MODES = MODES + ("apply", "apply-clients")  # вручную, без загрузки подписок: база и пресеты
+                                                # к текущему nodes.json / клиенты к whnodes.json
 APPLY_MODES = ("router", "apply")      # меняют sing-box роутера: тестер на паузе
 STATUSES = ("running", "ok", "error", "busy", "timeout", "interrupted")
 

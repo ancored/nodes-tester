@@ -9,7 +9,7 @@ const followLive = ref(true)
 const saving = ref(false), busy = ref(false), dirty = ref(false), conflicted = ref(false)
 const times = ref({ router: '', clients: '' })
 const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
-const modeLabel = { router: 'роутер', clients: 'клиенты', apply: 'база и правила' }
+const modeLabel = { router: 'роутер', clients: 'клиенты', apply: 'база и правила', 'apply-clients': 'клиентские правила' }
 let timer = null, polling = false, selection = 0, disposed = false
 
 const live = computed(() => state.value?.current)

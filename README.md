@@ -30,7 +30,7 @@ wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/
 2. Пройти [установку и первый запуск на OpenWrt](openwrt/README.md).
 3. Открыть [руководство по админке и повседневной работе](docs/USAGE.md).
 
-Актуальный релиз: [`v0.4.4-r5`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.4-r5). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет подписан ключом проекта и доступен из репозитория `apk` на GitHub Pages; подключение описано в [инструкции](openwrt/README.md).
+Актуальный релиз: [`v0.4.5`](https://github.com/ancored/nodes-tester/releases/tag/v0.4.5). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет подписан ключом проекта и доступен из репозитория `apk` на GitHub Pages; подключение описано в [инструкции](openwrt/README.md).
 
 ## Как устроено обновление
 

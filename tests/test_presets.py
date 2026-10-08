@@ -1,4 +1,4 @@
-"""Пресеты правил: проверка, склейка с базой и нодами, API админки, режим apply."""
+"""Пресеты правил: склейка с базой и нодами (роутер и клиенты), API админки, режимы apply."""
 
 import json
 import sys
@@ -92,6 +92,57 @@ class PresetModuleTest(unittest.TestCase):
         self._write("b", {"_preset": {"enabled": True}, "log": []})
         with patch("sys.stderr.write"):
             self.assertEqual(presets.main(args), 1)
+
+    def test_client_rule_sets_become_remote(self):
+        settings = presets.client_settings({"rules_url": "https://r.example:8443/s3cr3t"})
+        self.assertEqual(settings, {"rules_url": "https://r.example:8443/s3cr3t/", "update_interval": "24h"})
+        ru = _preset(300, route=[{"rule_set": "geosite-ru", "outbound": "direct-out"}])
+        ru["route"]["rule_set"] = [
+            {"type": "local", "tag": "geosite-ru", "path": "/etc/sing-box/rules/category-ru.srs"},
+            {"type": "local", "tag": "my", "path": "/etc/sing-box/rules/my.json"},
+            {"type": "remote", "tag": "ext", "url": "https://e.example/x.srs"}]
+        self._write("ru", ru)
+        remote_ru = {"type": "remote", "tag": "geosite-ru", "format": "binary",
+                     "url": "https://r.example:8443/s3cr3t/category-ru.srs", "update_interval": "24h"}
+        # База клиента уже раздаёт тот же набор: одинаковые объекты схлопываются.
+        base = {"route": {"rule_set": [dict(remote_ru)]}}
+        config, _ = presets.assemble_client(base, {"outbounds": []}, presets.load(self.dir), settings)
+        self.assertEqual(config["route"]["rule_set"], [
+            remote_ru,
+            {"type": "remote", "tag": "my", "format": "source",
+             "url": "https://r.example:8443/s3cr3t/my.json", "update_interval": "24h"},
+            {"type": "remote", "tag": "ext", "url": "https://e.example/x.srs"}])
+        with self.assertRaisesRegex(presets.PresetError, "rules_url"):
+            presets.assemble_client({}, {}, presets.load(self.dir), None)
+        ru["route"]["rule_set"] = [{"type": "local", "tag": "x", "path": "/opt/x.srs"}]
+        self._write("ru", ru)
+        with self.assertRaisesRegex(presets.PresetError, "вне /etc/sing-box/rules/"):
+            presets.assemble_client({}, {}, presets.load(self.dir), settings)
+        ru["_preset"]["enabled"] = False                       # выключенный пресет не трогаем
+        self._write("ru", ru)
+        presets.assemble_client({}, {}, presets.load(self.dir), None)
+        for bad in ({}, {"rules_url": "ftp://x"}, {"rules_url": "https://x", "extra": 1},
+                    {"rules_url": "https://x", "update_interval": ""}):
+            with self.assertRaises(presets.PresetError):
+                presets.client_settings(bad)
+
+    def test_cli_client_settings(self):
+        ru = _preset(1)
+        ru["route"] = {"rule_set": [{"type": "local", "tag": "a", "path": "/etc/sing-box/rules/a.srs"}]}
+        self._write("ru", ru)
+        base, nodes, out = self.dir / "base.j", self.dir / "nodes.j", self.dir / "out.j"
+        settings = self.dir / "settings.j"
+        base.write_text("{}", encoding="utf-8")
+        nodes.write_text('{"outbounds": []}', encoding="utf-8")
+        args = ["assemble", "--base", str(base), "--nodes", str(nodes), "--dir", str(self.dir),
+                "--client-settings", str(settings), "--out", str(out)]
+        with patch("sys.stderr.write"):
+            self.assertEqual(presets.main(args), 1)            # settings.json нет, а набор локальный
+        settings.write_text('{"rules_url": "https://h/p/"}', encoding="utf-8")
+        with patch("sys.stderr.write"):
+            self.assertEqual(presets.main(args), 0)
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["route"]["rule_set"][0]["url"],
+                         "https://h/p/a.srs")
 
 
 LIBRARY = Path(__file__).resolve().parent.parent / "config" / "singbox" / "presets"
@@ -249,6 +300,71 @@ class PresetApiTest(unittest.TestCase):
             run.assert_not_called()
         self.assertEqual(status, 422)
 
+    def _client_setup(self):
+        clients = self.config / "singbox/clients"
+        (clients / "presets").mkdir(parents=True)
+        (clients / "base_a.json").write_text('{"log": {}}', encoding="utf-8")
+        (clients / "base_b.json").write_text('{"log": {"level": "warn"}}', encoding="utf-8")
+        (self.config / "clients.list").write_text("# клиенты\na\nb  # второй\nc\n", encoding="utf-8")
+        whnodes = Path(self.temp.name) / "whnodes.json"
+        whnodes.write_text(json.dumps({"outbounds": [{"tag": "global-auto-out"}]}), encoding="utf-8")
+        return clients
+
+    def _revision(self, path):
+        return self.request("GET", "/api/singbox/files/" + path)[1]["revision"]
+
+    def test_client_presets(self):
+        clients = self._client_setup()
+        preset = _preset(300, route=[{"rule_set": "ru", "outbound": "direct-out"}], groups=["global"])
+        preset["route"]["rule_set"] = [{"type": "local", "tag": "ru", "path": "/etc/sing-box/rules/ru.srs"}]
+        url = "/api/singbox/files/clients/presets/ru.json"
+        with patch("dashboard.api_singbox.subprocess.run") as run:
+            status, body = self.request("PUT", url, preset, revision="missing")
+            run.assert_not_called()
+        self.assertEqual(status, 422)
+        self.assertIn("rules_url", body["error"])
+
+        checked = []
+
+        def run(cmd, **_):
+            checked.append(json.loads(Path(cmd[3]).read_text(encoding="utf-8")))
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        with patch("dashboard.api_singbox.subprocess.run", side_effect=run):
+            status, _ = self.request("PUT", "/api/singbox/files/clients/settings.json",
+                                     {"rules_url": "https://h:8443/s/"}, revision="missing")
+            self.assertEqual(status, 200)
+            checked.clear()
+            status, _ = self.request("PUT", url, preset, revision="missing")
+        self.assertEqual(status, 200)
+        self.assertEqual([c["log"] for c in checked], [{}, {"level": "warn"}])   # a и b; у c нет базы
+        self.assertEqual(checked[0]["route"]["rule_set"][0]["url"], "https://h:8443/s/ru.srs")
+
+        status, data = self.request("GET", "/api/singbox/presets?branch=clients")
+        self.assertEqual(status, 200)
+        self.assertEqual((data["presets"][0]["path"], data["groups"], data["clients"], data["settings"]),
+                         ("clients/presets/ru.json", ["global"], ["a", "b", "c"], True))
+        self.assertEqual(self.request("GET", "/api/singbox/presets?branch=x")[0], 400)
+        self.assertEqual(self.request("GET", "/api/singbox/presets")[1]["presets"], [])
+
+        with patch("dashboard.api_singbox.subprocess.run", side_effect=_fake_run(1, "bad base")):
+            status, body = self.request("PUT", "/api/singbox/files/clients/base_a.json", {"log": {}},
+                                        revision=self._revision("clients/base_a.json"))
+        self.assertEqual(status, 422)
+        self.assertIn("клиент a", body["error"])
+
+        self.assertEqual(self.request("DELETE", url, revision=self._revision("clients/presets/ru.json"))[0], 200)
+        self.assertFalse((clients / "presets/ru.json").exists())
+
+    def test_client_base_saved_without_whnodes(self):
+        clients = self._client_setup()
+        (Path(self.temp.name) / "whnodes.json").unlink()
+        with patch("dashboard.api_singbox.subprocess.run") as run:
+            status, _ = self.request("PUT", "/api/singbox/files/clients/base_a.json", {"log": {"x": 1}},
+                                     revision=self._revision("clients/base_a.json"))
+            run.assert_not_called()
+        self.assertEqual(status, 200)
+        self.assertIn('"x": 1', (clients / "base_a.json").read_text(encoding="utf-8"))
+
     def test_apply_mode_allowed_manually_only(self):
         status, data = self.request("POST", "/api/pipeline/run", {"mode": "apply", "dry_run": True})
         self.assertEqual(status, 202)
@@ -257,6 +373,8 @@ class PresetApiTest(unittest.TestCase):
             time.sleep(0.03)
         with self.assertRaises(ValueError):
             self.orch.start_run("apply", False, trigger="schedule")
+        with self.assertRaises(ValueError):
+            self.orch.start_run("apply-clients", False, trigger="schedule")
 
 
 if __name__ == "__main__":

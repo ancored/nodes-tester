@@ -136,9 +136,20 @@ nodes-tester pipeline clients
 
 Она использует `config-wh`, создаёт `whnodes.json` и передаёт его в `build-clients.sh`.
 Нужны собственные базовые конфиги `singbox/clients/base_<name>.json` и `clients.list`.
-Загрузите или отредактируйте клиентские базы в разделе «Файлы sing-box». Готовые конфиги
-попадают в `/etc/sing-box-clients/`; их ссылки раздаёт настроенный отдельно веб-сервер.
-Файлы из `singbox/clients/publish/` копируются как есть только при применении, не при dry-run.
+Загрузите или отредактируйте клиентские базы в разделе «Файлы sing-box». К базе
+добавляются включённые пресеты `singbox/clients/presets/*.json`; локальные наборы правил в них
+заменяются на `remote` с адресом из `singbox/clients/settings.json`. Каждый конфиг проходит
+`sing-box check`; не прошедший остаётся прежним. Готовые конфиги попадают в
+`/etc/sing-box-clients/`; их ссылки раздаёт настроенный отдельно веб-сервер.
+Файлы из `singbox/clients/publish/` проверяются и копируются как есть только при применении,
+не при dry-run.
+
+Режим `apply-clients` пересобирает клиентов по текущему `whnodes.json`, не загружая подписки:
+
+```sh
+nodes-tester pipeline apply-clients --dry-run
+nodes-tester pipeline apply-clients
+```
 
 ## Файлы
 

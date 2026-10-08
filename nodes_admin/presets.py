@@ -18,9 +18,15 @@
 `requires.groups` — группы нод ({name}-auto-out), без которых пресет ссылается на
 несуществующий outbound; окончательную проверку делает `sing-box check`.
 
-Командная строка (для apply-nodes.sh):
+Клиентская ветка склеивает так же базу клиента, whnodes.json и пресеты `clients/presets/`.
+Клиенту локальные наборы правил роутера недоступны, поэтому `local` с путём в
+/etc/sing-box/rules/ превращается в `remote` с адресом раздачи из `clients/settings.json`:
 
-    python3 -m nodes_admin.presets assemble --base B --nodes N [--dir DIR] --out OUT
+    {"rules_url": "https://<router-domain>:8443/<секретный путь>/", "update_interval": "24h"}
+
+Командная строка (для apply-nodes.sh и build-clients.sh):
+
+    python3 -m nodes_admin.presets assemble --base B --nodes N [--dir DIR] [--client-settings S] --out OUT
     python3 -m nodes_admin.presets list --dir DIR [--nodes nodes.json]  # состояние (JSON)
 """
 
@@ -38,6 +44,8 @@ from nodes_admin.merge import Source, dumps, merge
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DEFAULT_PRIORITY = 500
 META_KEYS = {"title", "description", "enabled", "priority", "priorities", "requires"}
+RULES_DIR = "/etc/sing-box/rules/"
+CLIENT_SETTINGS_KEYS = {"rules_url", "update_interval"}
 
 
 class PresetError(ValueError):
@@ -112,6 +120,51 @@ def assemble(base: dict, nodes: dict, presets: list[dict]) -> tuple[dict, list[s
     return merge(sources)
 
 
+def client_settings(data: object) -> dict:
+    """Проверить clients/settings.json; вернуть нормализованные настройки."""
+    if not isinstance(data, dict):
+        raise PresetError("clients/settings.json: корень должен быть объектом")
+    unknown = set(data) - CLIENT_SETTINGS_KEYS
+    if unknown:
+        raise PresetError(f"clients/settings.json: неизвестные ключи: {', '.join(sorted(unknown))}")
+    url = data.get("rules_url")
+    if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+        raise PresetError("clients/settings.json: rules_url — адрес раздачи наборов правил (https://…/)")
+    interval = data.get("update_interval", "24h")
+    if not isinstance(interval, str) or not interval:
+        raise PresetError("clients/settings.json: update_interval — строка вида 24h")
+    return {"rules_url": url.rstrip("/") + "/", "update_interval": interval}
+
+
+def for_client(name: str, data: dict, settings: dict | None) -> dict:
+    """Пресет для клиента: локальные наборы правил роутера → remote с адресом раздачи."""
+    rule_sets = data.get("route", {}).get("rule_set") or []
+    if not any(isinstance(rs, dict) and rs.get("type") == "local" for rs in rule_sets):
+        return data
+    if settings is None:
+        raise PresetError(f"{name}: локальные наборы правил клиенту не раздать без rules_url "
+                          f"в clients/settings.json")
+    remote = []
+    for rs in rule_sets:
+        if isinstance(rs, dict) and rs.get("type") == "local":
+            directory, _, file = str(rs.get("path", "")).rpartition("/")
+            if directory + "/" != RULES_DIR or not file:
+                raise PresetError(f"{name}: набор {rs.get('tag')} лежит вне {RULES_DIR}, клиенту его не раздать")
+            rs = {"type": "remote", "tag": rs.get("tag"),
+                  "format": rs.get("format") or ("source" if file.endswith(".json") else "binary"),
+                  "url": settings["rules_url"] + file, "update_interval": settings["update_interval"]}
+        remote.append(rs)
+    return {**data, "route": {**data["route"], "rule_set": remote}}
+
+
+def assemble_client(base: dict, nodes: dict, presets: list[dict],
+                    settings: dict | None) -> tuple[dict, list[str]]:
+    """Конфиг клиента: как assemble, но наборы правил пресетов — remote."""
+    presets = [{**p, "data": for_client(p["name"], p["data"], settings)} if p["meta"]["enabled"] else p
+               for p in presets]
+    return assemble(base, nodes, presets)
+
+
 def node_groups(nodes_path) -> set[str]:
     """Группы нод, которые есть в nodes.json: {name} для каждого {name}-auto-out."""
     try:
@@ -146,6 +199,7 @@ def main(argv=None) -> int:
     a.add_argument("--base", required=True)
     a.add_argument("--nodes", required=True)
     a.add_argument("--dir")
+    a.add_argument("--client-settings", help="clients/settings.json: сборка клиента (может не существовать)")
     a.add_argument("--out", required=True)
     s = sub.add_parser("list", help="состояние пресетов (JSON)")
     s.add_argument("--dir", required=True)
@@ -160,7 +214,13 @@ def main(argv=None) -> int:
         on = [p["name"] for p in _by_priority(presets) if p["meta"]["enabled"]]
         print(f"[presets] включены: {', '.join(on) or 'нет'}", file=sys.stderr)
         try:
-            config, warnings = assemble(_read_json(args.base), _read_json(args.nodes), presets)
+            base, nodes = _read_json(args.base), _read_json(args.nodes)
+            if args.client_settings is None:
+                config, warnings = assemble(base, nodes, presets)
+            else:
+                settings = (client_settings(_read_json(args.client_settings))
+                            if os.path.exists(args.client_settings) else None)
+                config, warnings = assemble_client(base, nodes, presets, settings)
         except (OSError, ValueError) as exc:
             print(f"[presets] {exc}", file=sys.stderr)
             return 1

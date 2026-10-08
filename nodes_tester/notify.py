@@ -215,7 +215,8 @@ class Notifier:
                                       "конфиге sing-box — нужна ручная проверка.", key="rollback-fail")
         status = row.get("status")
         if status in ("error", "timeout"):
-            label = {"router": "роутер", "clients": "клиенты", "apply": "применение правил"}
+            label = {"router": "роутер", "clients": "клиенты", "apply": "применение правил",
+                     "apply-clients": "сборка клиентов"}
             self.send("pipeline", f"Конвейер «{label.get(mode, mode)}» завершился: "
                                   f"{'тайм-аут' if status == 'timeout' else 'ошибка'}. "
                                   f"Журнал — в админке, «Конвейер».", key=f"pipeline:{mode}")

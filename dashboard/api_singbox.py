@@ -25,8 +25,10 @@ _name = r"[A-Za-z0-9_-]+"
 _file = r"[A-Za-z0-9._-]+"
 _allowed = re.compile(
     rf"(?:base\.json|rules\.json|rules/{_file}\.json|presets/{_name}\.json|"
-    rf"clients/base_{_name}\.json|clients/publish/{_file})"
+    rf"clients/base_{_name}\.json|clients/presets/{_name}\.json|clients/settings\.json|"
+    rf"clients/publish/{_file})"
 )
+PRESET_DIRS = {"router": "presets", "clients": "clients/presets"}
 
 
 def _root(app: App) -> Path:
@@ -74,10 +76,10 @@ def _document(path: Path) -> dict:
     return {"data": data, "revision": hashlib.sha256(raw).hexdigest()}
 
 
-def _load_presets(app: App, override: tuple | None = None) -> list:
+def _load_presets(app: App, override: tuple | None = None, folder: str = "presets") -> list:
     """Пресеты каталога; override = (имя, данные) подменяет/добавляет один файл."""
     try:
-        items = presets_mod.load(_root(app) / "presets")
+        items = presets_mod.load(_root(app) / folder)
     except presets_mod.PresetError as exc:
         raise HttpError(422, str(exc)) from exc
     if override is not None:
@@ -110,6 +112,69 @@ def _check_assembly(app: App, what: str, base: dict | None = None,
         config, _ = presets_mod.assemble(base, nodes, _load_presets(app, override))
     except MergeError as exc:
         raise HttpError(422, f"Итоговый конфиг не склеивается ({what}): {exc}") from exc
+    _singbox_check(app, config, what)
+
+
+def _client_names(app: App) -> list:
+    """Клиенты из clients.list рядом с config.json (как у build-clients.sh)."""
+    path = Path(app.cfg.path).resolve().parent / "clients.list"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [name for line in lines for name in line.split("#", 1)[0].split()
+            if re.fullmatch(_name, name)]
+
+
+def _whnodes(app: App) -> Path:
+    """whnodes.json клиентской ветки лежит рядом с nodes.json роутера (как в pipeline.sh)."""
+    return Path(app.cfg.storage.nodes_file).with_name("whnodes.json")
+
+
+def _client_bases(app: App, what: str) -> list:
+    """[(клиент, база)] для клиентов из clients.list; клиент без базы пропускается, как в build-clients.sh."""
+    bases = []
+    for name in _client_names(app):
+        path = _root(app) / "clients" / f"base_{name}.json"
+        if not path.is_file():
+            continue
+        try:
+            bases.append((name, json.loads(path.read_text(encoding="utf-8"))))
+        except (OSError, ValueError) as exc:
+            raise HttpError(422, f"base_{name}.json недоступен для проверки {what}: {exc}") from exc
+    return bases
+
+
+def _check_clients(app: App, what: str, *, preset: tuple | None = None,
+                   base: tuple | None = None, settings: dict | None = None) -> None:
+    """Склейка клиентов (база + whnodes.json + клиентские пресеты) + sing-box check.
+
+    preset — (имя, данные) подменяет пресет, base — (клиент, данные) проверяет одного клиента,
+    settings — новые clients/settings.json."""
+    try:
+        nodes = json.loads(_whnodes(app).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise HttpError(422, f"Не найден whnodes.json для проверки {what}: соберите клиентов "
+                             f"в «Конвейере»") from exc
+    except ValueError as exc:
+        raise HttpError(422, f"whnodes.json невалиден: {exc}") from exc
+    presets = _load_presets(app, preset, PRESET_DIRS["clients"])
+    settings_file = _root(app) / "clients" / "settings.json"
+    try:
+        if settings is None and settings_file.is_file():
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        parsed = presets_mod.client_settings(settings) if settings is not None else None
+    except ValueError as exc:
+        raise HttpError(422, str(exc)) from exc
+    for name, data in [base] if base else _client_bases(app, what):
+        try:
+            config, _ = presets_mod.assemble_client(data, nodes, presets, parsed)
+        except ValueError as exc:
+            raise HttpError(422, f"Конфиг клиента {name} не склеивается ({what}): {exc}") from exc
+        _singbox_check(app, config, f"{what}, клиент {name}")
+
+
+def _singbox_check(app: App, config: dict, what: str) -> None:
     binary = getattr(app, "singbox_binary", "sing-box")
     with tempfile.TemporaryDirectory() as work:
         merged = Path(work) / "config.json"
@@ -136,6 +201,13 @@ def _validate(app: App, name: str, data: object) -> None:
         _check_assembly(app, "base.json", base=data)
     if name.startswith("presets/"):
         _check_assembly(app, name, override=(Path(name).stem, data))
+    if name.startswith("clients/presets/"):
+        _check_clients(app, name, preset=(Path(name).stem, data))
+    if name == "clients/settings.json":
+        _check_clients(app, name, settings=data)
+    # Без whnodes.json клиентская ветка не собиралась — базу клиента проверять не с чем, как и раньше.
+    if name.startswith("clients/base_") and _whnodes(app).is_file():
+        _check_clients(app, name, base=(Path(name).stem.removeprefix("base_"), data))
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
@@ -215,22 +287,30 @@ def register(app: App) -> None:
 
     @app.route("GET", "/api/singbox/presets", needs_token=True)
     def list_presets(app, req):
+        branch = req.q("branch") or "router"
+        if branch not in PRESET_DIRS:
+            raise HttpError(400, "branch — router или clients")
+        folder = PRESET_DIRS[branch]
         try:
-            items = presets_mod.load(_root(app) / "presets")
+            items = presets_mod.load(_root(app) / folder)
         except presets_mod.PresetError as exc:
             return {"presets": [], "error": str(exc)}
-        nodes_file = Path(app.cfg.storage.nodes_file)
+        nodes_file = _whnodes(app) if branch == "clients" else Path(app.cfg.storage.nodes_file)
         groups = presets_mod.node_groups(nodes_file) if nodes_file.is_file() else None
         result = presets_mod.status(items, groups)
         for item in result:
-            item["path"] = f"presets/{item['name']}.json"
+            item["path"] = f"{folder}/{item['name']}.json"
             item["revision"] = _revision(_root(app) / item["path"])
-        return {"presets": result, "groups": sorted(groups) if groups is not None else None}
+        response = {"presets": result, "groups": sorted(groups) if groups is not None else None}
+        if branch == "clients":
+            response["clients"] = _client_names(app)
+            response["settings"] = (_root(app) / "clients" / "settings.json").is_file()
+        return response
 
     @app.route("DELETE", "/api/singbox/files/{path...}", needs_token=True)
     def delete_file(app, req, path):
         name, target = _file_path(app, path)
-        if not name.startswith("presets/"):
+        if not name.startswith(("presets/", "clients/presets/")):
             raise HttpError(400, "Удалять можно только пресеты")
         expected = req.headers.get("If-Match")
         if not expected:

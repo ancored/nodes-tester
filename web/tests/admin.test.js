@@ -12,16 +12,16 @@ const renderer = vue.createRenderer({
   parentNode: () => null, nextSibling: () => null,
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
-function mount(view, api) {
+function mount(view, api, query = {}) {
   const { descriptor } = parse(readFileSync(new URL(`../src/views/${view}.vue`, import.meta.url), 'utf8'))
   const script = compileScript(descriptor, { id: view, genDefaultAs: 'component' })
   const code = script.content.replace(/^import .+ from .+$/gm, '')
   const component = new Function('vue', 'router', 'apiModule', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'window',
     `const { computed, onBeforeUnmount, onMounted, ref, watch, toRaw } = vue;
-     const { onBeforeRouteLeave } = router;
+     const { onBeforeRouteLeave, useRoute } = router;
      const { api, auth, can } = apiModule;
      ${code}
-     return component`)(vue, { onBeforeRouteLeave() {} },
+     return component`)(vue, { onBeforeRouteLeave() {}, useRoute: () => ({ query }) },
       { api, auth: { verified: true, dirty: false }, can: () => true },
       () => 0, () => {}, () => 0, () => {}, { confirm: () => true })
   const app = renderer.createApp({ ...component, render: () => vue.h('div') })
@@ -89,7 +89,7 @@ test('preset save rejection remains visible after reloading checkbox state', asy
   const item = { path: 'presets/demo.json', title: 'Пример', enabled: false }
   const page = mount('Presets', {
     async get(url) {
-      if (url === '/singbox/presets') return { presets: [item], groups: [] }
+      if (url === '/singbox/presets?branch=router') return { presets: [item], groups: [] }
       if (url.startsWith('/pipeline/runs?')) return { runs: [] }
       return { data: { _preset: { enabled: false } }, revision: 'v1' }
     },
@@ -100,6 +100,30 @@ test('preset save rejection remains visible after reloading checkbox state', asy
     assert.equal(page.state.error, 'Проверка конфигурации не прошла')
     assert.equal(page.state.presets[0].enabled, false)
     assert.equal(page.state.busy, false)
+  } finally { page.unmount() }
+})
+
+test('clients tab lists client presets and builds clients without touching the router', async () => {
+  const item = { path: 'clients/presets/ru.json', title: 'RU', enabled: true }
+  const requests = [], posted = []
+  const page = mount('Presets', {
+    async get(url) {
+      requests.push(url)
+      if (url === '/singbox/presets?branch=clients') return { presets: [item], groups: ['global'], clients: ['a'], settings: false }
+      if (url.startsWith('/pipeline/runs?')) return { runs: [{ id: 'r', mode: 'apply', status: 'ok', started: 1 }] }
+      return { text: '', offset: 0 }
+    },
+    async post(url, data) { posted.push({ url, data }); return { run_id: 'c1' } },
+  }, { branch: 'clients' })
+  try {
+    await settle()
+    assert.deepEqual(page.state.presets, [item])
+    assert.deepEqual(page.state.clients, ['a'])
+    assert.equal(page.state.settings, false)
+    assert.equal(page.state.run, null)                  // прогон apply роутера сюда не подтягивается
+    await page.state.launch(false)
+    assert.deepEqual(posted, [{ url: '/pipeline/run', data: { mode: 'apply-clients', dry_run: false } }])
+    assert.ok(!requests.includes('/singbox/presets?branch=router'))
   } finally { page.unmount() }
 })
 

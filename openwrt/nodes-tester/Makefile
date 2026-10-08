@@ -9,8 +9,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
-PKG_VERSION:=0.4.4
-PKG_RELEASE:=5
+PKG_VERSION:=0.4.5
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=AGPL-3.0-or-later

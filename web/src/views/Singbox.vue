@@ -71,9 +71,7 @@ async function save() {
     const response = await api.put(url(path.value), data, { 'If-Match': revision.value })
     revision.value = response.revision; dirty.value = false; auth.dirty = false
     preview.value = null
-    notice.value = path.value.startsWith('presets/')
-      ? 'Пресет сохранён. Чтобы изменить работающий sing-box, откройте «Правила» и нажмите «Применить».'
-      : 'Файл сохранён. Для применения изменений запустите конвейер.'
+    notice.value = savedNotice('Пресет сохранён', 'Файл сохранён')
     await refreshList()
     versions.value = (await api.get(url(path.value) + '/history')).versions || []
   } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
@@ -94,9 +92,7 @@ async function restore(ts) {
     await api.post(url(path.value) + '/restore', { ts }, { 'If-Match': revision.value })
     dirty.value = false; auth.dirty = false
     await select(path.value)
-    notice.value = path.value.startsWith('presets/')
-      ? 'Версия восстановлена. Чтобы изменить работающий sing-box, откройте «Правила» и нажмите «Применить».'
-      : 'Версия восстановлена. Для применения изменений запустите конвейер.'
+    notice.value = savedNotice('Версия восстановлена', 'Версия восстановлена')
   } catch (e) { error.value = e.message; if (e.status === 409) conflicted.value = true }
 }
 async function upload(event) {
@@ -128,8 +124,16 @@ async function uploadLocal(event, sourcePath) {
     await refreshList()
   } catch (e) { error.value = 'Не удалось загрузить локальный источник: ' + e.message }
 }
+const isPreset = p => p.startsWith('presets/') || p.startsWith('clients/presets/')
+function savedNotice(preset, other) {
+  const what = isPreset(path.value) ? preset : other
+  if (path.value.startsWith('presets/')) return `${what}. Чтобы изменить работающий sing-box, откройте «Правила» и нажмите «Применить».`
+  if (path.value.startsWith('clients/')) return `${what}. Чтобы обновить конфиги клиентов, откройте «Правила» → «Клиенты» и нажмите «Собрать клиентов».`
+  return `${what}. Для применения изменений запустите конвейер.`
+}
 async function removePreset() {
-  if (!window.confirm(`Удалить ${path.value}? Файл сохранится в истории. Работающий sing-box изменится только после «Применить» в разделе «Правила».`)) return
+  const where = path.value.startsWith('clients/') ? 'Конфиги клиентов изменятся только после «Собрать клиентов»' : 'Работающий sing-box изменится только после «Применить»'
+  if (!window.confirm(`Удалить ${path.value}? Файл сохранится в истории. ${where} в разделе «Правила».`)) return
   try {
     await api.del(url(path.value), { 'If-Match': revision.value })
     dirty.value = false; auth.dirty = false
@@ -139,7 +143,8 @@ async function removePreset() {
 }
 // Файлы по назначению: так пресет или клиентская база находятся без прокрутки полосы кнопок.
 const FILE_GROUPS = [['Основные', p => known.includes(p)], ['Пресеты правил', p => p.startsWith('presets/')],
-  ['Источники правил', p => p.startsWith('rules/')], ['Клиентские базы', p => p.startsWith('clients/')], ['Прочее', () => true]]
+  ['Источники правил', p => p.startsWith('rules/')], ['Клиентские пресеты', p => p.startsWith('clients/presets/')],
+  ['Клиенты', p => p.startsWith('clients/')], ['Прочее', () => true]]
 const fileGroups = computed(() => {
   const all = [...new Set([...known, ...files.value.map(f => f.path), path.value])], seen = new Set()
   return FILE_GROUPS.map(([title, test]) => [title, all.filter(p => !seen.has(p) && test(p) && seen.add(p))]).filter(([, items]) => items.length)
@@ -184,7 +189,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
   </section>
   <section v-if="can('singbox_files')" class="panel">
     <h2>{{ path }}</h2>
-    <p class="help-text">Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box.</p>
+    <p class="help-text">Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box, при сохранении клиентских баз, пресетов (clients/presets/*.json) и clients/settings.json — конфиг каждого клиента.</p>
     <template v-if="path === 'rules.json'">
       <h3>Источники правил</h3>
       <p class="help-text">Назначение — имя файла в /etc/sing-box/rules/. URL скачивается при запуске; локальный JSON загружается здесь.</p>
@@ -210,7 +215,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
     <div class="actions">
       <button class="btn" :disabled="!dirty || saving || conflicted" @click="save">Сохранить файл</button>
       <button class="btn" @click="select(path)">Перечитать файл</button>
-      <button v-if="path.startsWith('presets/') && revision !== 'missing'" class="btn" :disabled="saving" @click="removePreset">Удалить пресет</button>
+      <button v-if="isPreset(path) && revision !== 'missing'" class="btn" :disabled="saving" @click="removePreset">Удалить пресет</button>
     </div>
     <h3>Предыдущие версии</h3>
     <p v-if="!versions.length">Предыдущих версий нет.</p>
