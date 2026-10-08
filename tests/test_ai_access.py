@@ -123,13 +123,47 @@ class StrictExitIpTest(unittest.TestCase):
 
     def test_strict_prefers_residential_and_mobile_drops_geo_mismatch(self):
         self.sb.set_strict({"eu"})
-        self.assertEqual(self._cands(), ["HOME", "MOB"])
+        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
+        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 1, 1, 1])
         self.assertEqual(self.sb.reserve_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
 
-    def test_strict_falls_back_to_hosting_proxy_and_unknown(self):
+    def _switcher(self, active):
+        from nodes_tester.config import SwitchingConfig
+        from nodes_tester.switcher import Switcher
+        sw = Switcher(SwitchingConfig(enabled=True), None, self.sb, "nodes-tester")
+        sw.state = {"eu": {"active": active, "last_switch": 0, "rotate_deadline": 4e9}}
+        picked = []
+        sw._activate = lambda cand, region, st, now, reason: picked.append(
+            (cand["node"], reason)) or True
+        return sw, picked
+
+    def test_emergency_on_only_residential_falls_back_to_other_ips(self):
         self.sb.set_strict({"eu"})
-        del self.sb.rows["HOME"], self.sb.rows["MOB"]
-        self.assertEqual(self._cands(), ["DC", "NOINFO", "PROXY"])
+        del self.sb.rows["MOB"]
+        sw, picked = self._switcher("HOME")
+        sw.evaluate_region("eu", emergency=True)
+        self.assertEqual(len(picked), 1)
+        self.assertIn(picked[0], [("DC", "emergency"), ("NOINFO", "emergency"),
+                                  ("PROXY", "emergency")])
+
+    def test_emergency_prefers_residential(self):
+        self.sb.set_strict({"eu"})
+        sw, picked = self._switcher("HOME")
+        sw.evaluate_region("eu", emergency=True)
+        self.assertEqual(picked, [("MOB", "emergency")])
+
+    def test_quality_moves_to_better_tier_not_to_worse(self):
+        self.sb.set_strict({"eu"})
+        self.sb.set_reserve("eu", ["HOME", "MOB", "DC"])
+        sw, picked = self._switcher("DC")
+        for _ in range(sw.cfg.confirm_cycles):
+            sw.evaluate_region("eu")
+        self.assertEqual(picked, [("HOME", "quality")])        # 50 < 90, но домашний
+        sw, picked = self._switcher("MOB")
+        self.sb.set_reserve("eu", ["DC"])
+        for _ in range(sw.cfg.confirm_cycles):
+            sw.evaluate_region("eu")
+        self.assertEqual(picked, [])                           # 90 > 40, но дата-центр
 
     def test_required_results_and_exit_ip_persist(self):
         self.sb.set_required_result("DC", "openai", True)

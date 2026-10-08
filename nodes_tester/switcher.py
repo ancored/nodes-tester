@@ -253,6 +253,7 @@ class Switcher:
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
         reserve = set(self.board.reserve(region))
+        # Кандидаты идут по ярусу выходного IP, внутри яруса — по рейтингу.
         pool = [c for c in cands if c["node"] in reserve and c["node"] != active]
 
         # 1. Инициализация — активной ноды ещё нет: лучшая из резерва (резерв ещё не
@@ -262,34 +263,37 @@ class Switcher:
             return
 
         # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на ДРУГУЮ из резерва
-        # (пуст — на любого другого кандидата), БАЛАНСИРОВАННО и уводя от провайдера
-        # упавшей ноды.
+        # (пуст — на любого другого кандидата) лучшего яруса, БАЛАНСИРОВАННО и уводя от
+        # провайдера упавшей ноды.
         if emergency or active_score <= 0:
             others = pool or [c for c in cands if c["node"] != active]
             if others:
-                self._activate(self._pick_emergency(others, st, active),
+                self._activate(self._pick_emergency(_top_tier(others), st, active),
                                region, st, now, "emergency")
             else:
                 self._note_emergency_stuck(region, st, "no-other")  # замены нет
             return
         st.pop("emg_stuck", None)     # активная жива — вышли из залипшего emergency
 
-        # 3. Принудительная ротация по таймеру — на ноду из резерва. Не вышло (резерв
-        # пуст, сбой API) — срок перенесёт _evaluate_region_locked.
+        # 3. Принудительная ротация по таймеру — на ноду резерва не худшего яруса. Не
+        # вышло (резерв пуст, сбой API) — срок перенесёт _evaluate_region_locked.
+        active_tier = self.board.tier(active, region)
+        top = _top_tier(pool)
         if (self.cfg.rotation.enabled
                 and now >= st.get("rotate_deadline", 0)
                 and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
-                and pool
-                and self._activate(self._balanced_choice(pool, st), region, st, now, "rotation")):
+                and top and top[0]["tier"] <= active_tier
+                and self._activate(self._balanced_choice(top, st), region, st, now, "rotation")):
             return
 
-        # 4. Quality-переключение с гистерезисом — на лучшую ноду резерва.
-        if not pool:
+        # 4. Quality-переключение с гистерезисом — на лучшую ноду резерва. Лучший ярус
+        # важнее рейтинга, худший не рассматривается.
+        if not pool or pool[0]["tier"] > active_tier:
             st["quality_count"] = 0
             return
         best = pool[0]
         margin = 0.0 if active_score < self.cfg.comfort_floor else self.cfg.quality_margin
-        if float(best["score"]) > active_score + margin:
+        if best["tier"] < active_tier or float(best["score"]) > active_score + margin:
             if now - st.get("last_switch", 0) < self.cfg.cooldown:
                 return  # антифлаппинг
             st["quality_count"] = st.get("quality_count", 0) + 1
@@ -521,6 +525,13 @@ def _foreign_group_auto(tag: str, group: str, groups: set) -> bool:
         return False
     g = tag[:-len("-auto-out")]
     return g in groups and g != group
+
+
+def _top_tier(cands: list[dict]) -> list[dict]:
+    """Кандидаты лучшего яруса выходного IP (в строгой группе — домашние и мобильные,
+    если они есть; иначе все)."""
+    best = min((c["tier"] for c in cands), default=0)
+    return [c for c in cands if c["tier"] == best]
 
 
 # Оси балансировки: поле кандидата и ключ агрегата трафика в dims.

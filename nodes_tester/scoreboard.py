@@ -258,18 +258,26 @@ class Scoreboard:
         non_veto = [r for r in healthy if not self._vetoed(r)]
         return sorted(non_veto or healthy, key=lambda r: float(r["score"]), reverse=True)
 
+    def _tier(self, r: dict, group: str) -> int:
+        """Ярус выходного IP: 0 — домашний или мобильный (или группа не строгая),
+        1 — дата-центр, прокси, IP без сведений."""
+        return int(group in self._strict and not preferred(self._exit_info(r)))
+
+    def tier(self, node: str, group: str) -> int:
+        with self._lock:
+            r = self.rows.get(node)
+            return self._tier(r, group) if r is not None else 1
+
     def candidates(self, region: str) -> list[dict]:
         """Кандидаты группы: здоровые ноды; если у группы есть обязательные тесты —
         только прошедшие их со свежим результатом (решающее условие, без поблажек).
-        Строгая группа: без расхождения страны по базе; дата-центры, прокси и IP без
-        сведений — только если домашних и мобильных не осталось."""
+        Строгая группа: без расхождения страны по базе; ярус выходного IP (`tier`) —
+        приоритет, а не фильтр: сначала домашние и мобильные, затем остальные."""
         with self._lock:
-            chosen = [r for r in self._healthy(region)
+            chosen = [dict(r, tier=self._tier(r, region)) for r in self._healthy(region)
                       if self._passed(r, region) and not self._geo_bad(r, region)]
-            if region in self._strict:
-                good = [r for r in chosen if preferred(self._exit_info(r))]
-                chosen = good or chosen
-            return [dict(r) for r in chosen]               # копии наружу (монитор-поток)
+            chosen.sort(key=lambda c: c["tier"])           # внутри яруса — по рейтингу
+            return chosen                                  # копии наружу (монитор-поток)
 
     # --- Резерв группы (nodes_tester.reserve) -----------------------------------
 
@@ -279,8 +287,7 @@ class Scoreboard:
         домашние и мобильные IP, затем рейтинг не ниже min_score, затем по рейтингу."""
         with self._lock:
             pool = [r for r in self.rows.values() if self._reserve_fit(r, group)]
-            strict = group in self._strict
-            pool.sort(key=lambda r: (strict and not preferred(self._exit_info(r)),
+            pool.sort(key=lambda r: (self._tier(r, group),
                                      float(r["score"]) < min_score, -float(r["score"])))
             return [r["node"] for r in pool]
 
