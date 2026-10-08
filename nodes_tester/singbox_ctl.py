@@ -59,6 +59,19 @@ class SingboxControl:
         except (OSError, subprocess.SubprocessError):
             return False
 
+    def pid(self) -> "str | None":
+        """PID процесса sing-box (меняется при перезапуске); None — не на OpenWrt,
+        не запущен или pidof недоступен."""
+        if not self.available:
+            return None
+        try:
+            res = self._cmd(["pidof", "sing-box"], timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if res.returncode != 0:
+            return None
+        return res.stdout.strip() or None
+
     def stopped_by_admin(self) -> bool:
         return os.path.exists(self.cfg.stop_flag)
 

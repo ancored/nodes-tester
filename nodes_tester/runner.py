@@ -41,6 +41,9 @@ _CLEANUP_INTERVAL = 24 * 3600
 # Пауза после пустого/сорванного прохода — чтобы не крутить цикл вплотную (пустой
 # selector, недоступный API, просроченный rotate_deadline).
 _EMPTY_PASS_RETRY = 30.0
+# Пауза после перезапуска sing-box посреди прогона: ядро поднимает наборы правил и
+# inbound-ы, прежде чем замерам можно верить.
+_BOX_SETTLE = 60.0
 # Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
 # по одному прогону).
 _LOW_SCORE_MIN_SAMPLES = 3
@@ -100,6 +103,9 @@ class Runner:
         # Прогон прерван применением конфига (конвейер перезапускает sing-box, состав нод
         # меняется) — следующий начнётся сразу после окна применения, без ожидания ротации.
         self._pass_aborted = False
+        # PID sing-box на начало прогона: провал замера после перезапуска ядра (скрипт
+        # обновления, apply по cron) — не провал ноды.
+        self._box_pid = None
         # Сквозной номер прогона (meta.pass_seq): НЕ сбрасывается в полночь, в отличие от
         # посуточного pass_no. По нему считается пауза (backoff) нод в прогонах.
         self._pass_seq = 0
@@ -626,6 +632,7 @@ class Runner:
 
         scoped, self._scoped_next = self._scoped_next, False
         self._pass_aborted = False
+        self._box_pid = self.singbox.pid()
         if self.board is not None:
             self.board.set_restricted(self._restricted_now() | self._banned)
         nodes = self._enumerate_nodes()
@@ -679,6 +686,10 @@ class Runner:
                                      self._tests_for(params.tests_enabled), params)
             if self._apply_paused():                # замер мог попасть на перезапуск sing-box
                 return self._abort_pass(scoped, node_by_raw)
+            if record is not None and self._box_interrupted(record):
+                self._apply_pause_until = time.monotonic() + _BOX_SETTLE
+                return self._abort_pass(scoped, node_by_raw,
+                                        "sing-box недоступен или перезапустился")
             if record is None:                      # ноды уже нет в селекторе
                 if self.board is not None:
                     self.board.keep(ident.raw)
@@ -708,12 +719,13 @@ class Runner:
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
 
-    def _abort_pass(self, scoped: bool, node_by_raw: dict) -> bool:
-        """Конвейер начал применять конфиг: остаток прогона по старому списку нод не
-        имеет смысла, а замеры во время перезапуска sing-box ложно проваливают gate.
-        Рейтинг сохраняем как есть, переключение не оцениваем; прогон повторится после
-        окна применения (с тем же охватом)."""
-        print("  · конвейер применяет конфиг — прогон прерван, повтор после применения")
+    def _abort_pass(self, scoped: bool, node_by_raw: dict,
+                    why: str = "конвейер применяет конфиг") -> bool:
+        """Конвейер начал применять конфиг или sing-box перезапустился: остаток прогона
+        по старому списку нод не имеет смысла, а замеры во время перезапуска ложно
+        проваливают gate. Рейтинг сохраняем как есть, переключение не оцениваем; прогон
+        повторится после паузы (с тем же охватом)."""
+        print(f"  · {why} — прогон прерван, повтор после паузы")
         if self.board is not None:
             for raw in node_by_raw:
                 self.board.keep(raw)
@@ -721,6 +733,26 @@ class Runner:
         self._scoped_next = scoped
         self._pass_aborted = True
         return False
+
+    def _box_interrupted(self, record: dict) -> bool:
+        """Замер провалился из-за sing-box, а не ноды: не удалось выбрать ноду или нет
+        связности, и при этом API не отвечает или процесс сменился с начала прогона.
+        Новый PID запоминается — следующий провал засчитывается как обычно."""
+        tests = record.get("tests") or {}
+        selected = (tests.get("_select") or {}).get("ok")
+        connected = (tests.get("connectivity") or {"ok": True}).get("ok")
+        if selected and connected:
+            return False
+        try:
+            self.api.ping()
+        except ApiError:
+            return True
+        pid = self.singbox.pid()
+        if pid is None:
+            return False
+        restarted = self._box_pid is not None and pid != self._box_pid
+        self._box_pid = pid
+        return restarted
 
     def _refresh_ip_info(self, ips) -> None:
         """Тип выходного IP для новых/устаревших exit_ip прогона (один пакетный запрос)."""
@@ -882,7 +914,7 @@ class Runner:
         params = self._node_params(ident)
         record = self._test_node(region, ident, self._current_pass,
                                  self._tests_for(params.tests_enabled), params)
-        if record is None:
+        if record is None or self._box_interrupted(record):
             return raw
         if self.storage is not None and self.cfg.storage.store_results:
             self.storage.add_results(record)

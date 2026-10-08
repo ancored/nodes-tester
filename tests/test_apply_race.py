@@ -70,6 +70,34 @@ class ApplyRaceTest(unittest.TestCase):
         self.assertTrue(r._scoped_next)
         self.assertEqual(self.tested, [])
 
+    def test_select_fails_while_api_down_aborts_without_scoring(self):
+        r = self.r
+
+        def api_down():
+            raise ApiError("Connection refused")
+
+        r.api.ping = api_down
+        self._pass(lambda raw: {"tests": {"_select": {"ok": False, "error": "refused"}}})
+        self.assertEqual(len(self.tested), 1)
+        self.assertEqual(self.scored, [])
+        self.assertTrue(r._pass_aborted)
+        self.assertTrue(r._apply_paused())     # пауза, пока ядро поднимается
+
+    def test_failure_after_singbox_restart_aborts_once(self):
+        r = self.r
+        pids = iter(["100", "200", "200"])
+        failed = {"tests": {"_select": {"ok": True}, "connectivity": {"ok": False}}}
+        with patch.object(r.singbox, "pid", side_effect=lambda: next(pids)):
+            self._pass(lambda raw: failed)     # прогон начат при PID 100, провал при 200
+            self.assertTrue(r._pass_aborted)
+            self.assertEqual(self.scored, [])
+            self.assertFalse(r._box_interrupted(failed))   # PID тот же — провал ноды
+
+    def test_failure_with_box_alive_is_scored(self):
+        self._pass(lambda raw: {"tests": {"_select": {"ok": True}, "connectivity": {"ok": False}}})
+        self.assertEqual(sorted(self.scored), sorted([A, B, U]))
+        self.assertFalse(self.r._pass_aborted)
+
     def test_node_gone_from_selector_is_skipped(self):
         self._pass(lambda raw: None if raw == A else {"tests": {}})
         self.assertNotIn(A, self.scored)

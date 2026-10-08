@@ -32,7 +32,7 @@ class FakeRouter:
         self.calls.append(args)
         out, rc = "", 0
         if args[0] == "pidof":
-            rc = 0 if self.running else 1
+            rc, out = (0, "4242\n") if self.running else (1, "")
         elif args[:4] == ["nft", "list", "table", "inet"]:
             rc, out = (0, KS_TABLE) if self.ks_loaded else (1, "")
         elif args[0] == self.init:
@@ -69,6 +69,11 @@ class SingboxControlTest(unittest.TestCase):
         self.notifier = _Notifier()
         self.t = [0.0]
         self.ctl = SingboxControl(self.cfg, self.notifier, run=self.router, clock=lambda: self.t[0])
+
+    def test_pid(self):
+        self.assertEqual(self.ctl.pid(), "4242")
+        self.router.running = False
+        self.assertIsNone(self.ctl.pid())
 
     def test_killswitch_status_from_service_table(self):
         ks = self.ctl.status()["killswitch"]
