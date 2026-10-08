@@ -17,6 +17,7 @@ import json
 import os
 import posixpath
 import re
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
@@ -206,6 +207,7 @@ class App:
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    timeout = 60                                    # простаивающий keep-alive не держит поток вечно
 
     def _dispatch(self, method: str) -> None:
         try:
@@ -245,8 +247,16 @@ class _Handler(BaseHTTPRequestHandler):
         pass                                        # без шумного access-лога
 
 
+class _Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Браузер сбрасывает простаивающее keep-alive соединение — это не ошибка.
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def make_server(app: App, host: str, port: int) -> ThreadingHTTPServer:
-    httpd = ThreadingHTTPServer((host, port), _Handler)
+    httpd = _Server((host, port), _Handler)
     httpd.app = app
     return httpd
 
