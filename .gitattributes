@@ -6,3 +6,6 @@ openwrt/** text eol=lf
 
 # Роутерные скрипты (в т.ч. merge-configs.py) — тоже только LF
 scripts/router/** text eol=lf
+
+# PowerShell-скрипты для Windows — CRLF
+*.ps1 text eol=crlf
