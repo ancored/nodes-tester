@@ -61,7 +61,7 @@ class EmergencyBalanceTest(unittest.TestCase):
         cnt = collections.Counter()
         for _ in range(300):
             pick = self.r.switcher._pick_emergency(
-                others, {"activations": {}}, "VSPACE-vless|reality-nl-out [zzzz]")
+                others, {"activations": {}}, "VSPACE-vless|reality-out [zzzz]")
             cnt[pick["provider"]] += 1
         self.assertEqual(cnt["VSPACE"], 0)                   # ушли от заблокированного провайдера
         self.assertEqual(cnt["LUNA"], 300)
@@ -71,7 +71,7 @@ class EmergencyBalanceTest(unittest.TestCase):
         others = [{"node": "VSPACE-a [1]", "score": 90, "provider": "VSPACE",
                    "country": "nl", "protocol": "vless"}]
         pick = self.r.switcher._pick_emergency(
-            others, {"activations": {}}, "VSPACE-vless|reality-nl-out [zzzz]")
+            others, {"activations": {}}, "VSPACE-vless|reality-out [zzzz]")
         self.assertEqual(pick["provider"], "VSPACE")
 
 

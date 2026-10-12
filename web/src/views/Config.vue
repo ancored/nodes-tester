@@ -132,7 +132,7 @@ const recipeGroups=[
   {title:'Создаваемые группы',fields:[['emit.nodes_tester','Создать группу nodes-tester','checkbox'],['emit.global_failsafe','Создать глобальные failsafe-группы','checkbox'],['raw_user_nodes','Сохранить пользовательские ноды без переименования','checkbox']]},
 ]
 function recipeValue(field){return value(field) ?? getPath(options.value.group_defaults,field)}
-const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'},{field:'rename.labels',label:'Метки по словам исходного имени',note:'Объект: метка → список слов. Первая совпавшая метка используется в имени ноды.'}]
+const objectFields=[{field:'filters.exclude_names',label:'Исключать исходные имена по провайдерам',note:'Объект: провайдер или * → список подстрок имени. Например: {"*": ["test"]}.'}]
 function toggleTest(test,enabled) {
   const tests=[...(value('run.default.tests_enabled') || [])]
   setPath(document.value,'run.default.tests_enabled',enabled ? [...new Set([...tests,test])] : tests.filter(t=>t!==test))

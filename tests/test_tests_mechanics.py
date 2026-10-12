@@ -58,7 +58,7 @@ class _Session:
 
 
 def _ctx(session, region="eu"):
-    return TestContext(session=session, node="x", default_timeout=5, region=region)
+    return TestContext(session=session, node="x", default_timeout=5, regions=frozenset({region}))
 
 
 class DownloadClassifyTest(unittest.TestCase):
@@ -132,8 +132,8 @@ class ConnectivityExitIpTest(unittest.TestCase):
 
 class ScoringNeutralHttpErrorTest(unittest.TestCase):
     def setUp(self):
-        from nodes_tester.config import _DEFAULT_THRESHOLDS
-        self.th = dict(_DEFAULT_THRESHOLDS)
+        from nodes_tester.config import _THRESHOLDS
+        self.th = dict(_THRESHOLDS)
 
     def test_http_error_does_not_zero_throughput(self):
         comps = scoring.components({"download": {"ok": False, "http_error": True}}, self.th)

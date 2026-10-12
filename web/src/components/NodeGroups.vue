@@ -5,15 +5,13 @@ import JsonField from './JsonField.vue'
 const props=defineProps({doc:{type:Object,required:true},branch:{type:String,default:'router'},builtin:{type:Object,default:()=>({})}})
 const emit=defineEmits(['changed','valid'])
 const CONDITIONS=[
-  ['countries','Страны (ISO-коды)'],['regions','Регионы'],['labels','Метки'],
-  ['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов'],['exclude_labels','Кроме меток'],
+  ['countries','Страны (ISO-коды)'],['regions','Регионы'],
+  ['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов'],
 ]
 const BUILTIN=['eu','us','ru','other']
 const groups=computed(()=>props.doc.groups)
 const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.regions || {})])])
-const labelList=computed(()=>Object.keys(props.doc.rename?.labels || {}))
 const regionNames=computed(()=>regionList.value.join(', '))
-const labelNames=computed(()=>labelList.value.join(', ') || 'нет')
 // Предпросмотр: оценка состава по текущему raw ветви (main.json или wh.json); после правки формы устаревает.
 const preview=ref(null), previewError=ref(''), previewBusy=ref(false)
 const byName=computed(()=>Object.fromEntries((preview.value?.groups || []).map(g=>[g.name,g])))
@@ -25,11 +23,10 @@ async function estimate(){
   catch(e){previewError.value=e.message}
   finally{previewBusy.value=false}
 }
-// Неизвестные регионы и метки — подсказка рядом с полем (сервер их тоже отклонит или не найдёт).
+// Неизвестные регионы и коды стран — подсказка рядом с полем (сервер их тоже отклонит или не найдёт).
 function unknown(g,key){
   const values=g.match?.[key] || []
   if(key.endsWith('regions'))return values.filter(v=>!regionList.value.includes(String(v).toLowerCase()))
-  if(key.endsWith('labels'))return values.filter(v=>!labelList.value.includes(v))
   return values.filter(v=>!/^[a-z]{2}$/i.test(v))
 }
 function add(){(props.doc.groups ||= []).push({name:'',enabled:true,in_global:false,fallback:true,match:{}});changed()}
@@ -62,7 +59,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
         </div>
         <div class="form-grid">
           <label v-for="[key,label] in CONDITIONS" :key="key">{{ label }}<input :value="cond(g,key)" placeholder="через запятую" @change="setCond(g,key,$event)" />
-            <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? 'Нет такого региона' : key.endsWith('labels') ? 'Нет такой метки' : 'Нужен двухбуквенный ISO-код' }}: {{ unknown(g,key).join(', ') }}</small></label>
+            <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? 'Нет такого региона' : 'Нужен двухбуквенный ISO-код' }}: {{ unknown(g,key).join(', ') }}</small></label>
         </div>
         <div v-if="preview && g.name && g.enabled !== false" class="group-preview">
           <template v-if="byName[g.name]">
@@ -78,7 +75,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           <button class="btn sm" @click="remove(i)">Удалить группу</button>
         </div>
       </div>
-      <p class="help-text">Регионы: {{ regionNames }}. Метки из переименования: {{ labelNames }}. Порядок групп — порядок в конфиге и в global-auto-out.</p>
+      <p class="help-text">Регионы: {{ regionNames }}. Порядок групп — порядок в конфиге и в global-auto-out.</p>
     </template>
     <div class="toolbar">
       <button class="btn" @click="add">Добавить группу</button>

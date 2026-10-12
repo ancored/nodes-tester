@@ -14,12 +14,12 @@ from dashboard import data
 from dashboard.api_config import preview
 from dashboard.server import build_app
 from dashboard.webapp import HttpError
-from naming import content_crc32
+from naming import node_key
 
-EU = "LUNA-trojan-nl-out [aaaa0001]"
+EU = "LUNA-trojan-out [aaaa0001.00000000]"
 US_FRAG = {"type": "trojan", "server": "1.2.3.4", "server_port": 443}
-US_CRC = content_crc32(US_FRAG)
-US = f"LUNA-trojan-us-out [{US_CRC}]"
+US_CRC = node_key(US_FRAG)
+US = f"LUNA-trojan-out [{US_CRC}]"
 
 
 def _nodes_json(path, groups):
@@ -39,7 +39,7 @@ class NodeGroupsSnapshotTest(unittest.TestCase):
         _nodes_json(path, {"eu": [EU], "us": [US], "ai": [US]})
         order, by_crc = data.node_groups(path)
         self.assertEqual(order, ["eu", "us", "ai"])            # global-* не группа
-        self.assertEqual(by_crc, {"aaaa0001": ["eu"], US_CRC: ["us", "ai"]})
+        self.assertEqual(by_crc, {"aaaa0001.00000000": ["eu"], US_CRC: ["us", "ai"]})
         self.assertEqual(data.node_groups(os.path.join(tmp, "missing.json")), ([], {}))
 
     def test_provider_quality_counts_node_in_each_group(self):
@@ -68,7 +68,7 @@ class Board:
 class GroupSwitchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.cfg = load_config(make_config(self.tmp, dashboard={"enabled": True, "token": "secret"}))
+        self.cfg = load_config(make_config(self.tmp, admin={"enabled": True, "token": "secret"}))
         self.storage = Storage(self.cfg.storage)
         fresh_nodes_json(self.tmp, [{"tag": US, **US_FRAG}])
         self.storage.load_nodes(os.path.join(self.tmp, "nodes.json"))

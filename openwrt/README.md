@@ -184,7 +184,7 @@ nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-te
 
 В шаблоне включены `switching.enabled` и `monitor.enabled`: тестер может управлять рабочими селекторами, а монитор возвращать выбранную ноду. Для первого знакомства без такого управления задайте оба поля `false`. Позже включайте их осознанно после проверки групп. `run.default.rotation_bound` связывает проходы с ротацией только при доступном переключателе; без него настройте `run.default.pass_pause`, например `3600`, чтобы проверки не повторялись непрерывно.
 
-В `run.default.tests_enabled` выбран набор тестов, включая загрузку файлов. Проверьте расходы трафика и `region_groups.exclude` (в шаблоне исключён `ru`). Полный перечень настроек есть в [шаблоне](../config/config.example.json) и [схеме](../config/config.schema.json).
+В `run.default.tests_enabled` выбран набор тестов, включая загрузку файлов. Проверьте расходы трафика. Полный перечень настроек есть в [шаблоне](../config/config.example.json) и [схеме](../config/config.schema.json).
 
 Запустите сервис:
 

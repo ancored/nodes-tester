@@ -12,6 +12,7 @@ from unittest.mock import patch
 from dashboard import api_pipeline, api_singbox
 from dashboard.webapp import App
 from nodes_admin import presets
+from tests.helpers import write_schedule
 from nodes_admin.orchestrator import Orchestrator
 
 
@@ -233,16 +234,16 @@ class PresetApiTest(unittest.TestCase):
         (self.config / "singbox/presets").mkdir(parents=True)
         (self.config / "config.json").write_text("{}", encoding="utf-8")
         (self.config / "singbox/base.json").write_text('{"log": {}}', encoding="utf-8")
-        (self.config / "pipeline.json").write_text(json.dumps({
+        write_schedule(self.config, ({
             "version": 1, "jobs": {"router": {"enabled": False, "times": []},
                                    "clients": {"enabled": False, "times": []}}, "timeout": 2}))
         nodes = root / "nodes.json"
         nodes.write_text(json.dumps({"outbounds": [{"tag": "us-auto-out"}]}), encoding="utf-8")
-        self.orch = Orchestrator(self.config, root / "data",
+        self.orch = Orchestrator(self.config / "config.json", root / "data",
                                  command=[sys.executable, "-c", "import time; time.sleep(.2)"])
         self.addCleanup(self.orch.stop)
         cfg = SimpleNamespace(path=str(self.config / "config.json"),
-                              storage=SimpleNamespace(nodes_file=str(nodes)))
+                              nodes_file=str(nodes), whnodes_file=str(nodes.with_name("whnodes.json")))
         self.app = App(cfg, runner=SimpleNamespace(orchestrator=self.orch), token="secret")
         api_pipeline.register(self.app)
         api_singbox.register(self.app)

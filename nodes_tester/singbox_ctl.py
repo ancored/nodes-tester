@@ -48,7 +48,7 @@ class SingboxControl:
 
     @property
     def available(self) -> bool:
-        return bool(self.cfg.enabled and os.path.exists(self.cfg.init))
+        return os.path.exists(self.cfg.init)
 
     def _cmd(self, args, input_text=None, timeout=60) -> subprocess.CompletedProcess:
         return self._run(args, input=input_text, capture_output=True, text=True, timeout=timeout)
@@ -108,7 +108,7 @@ class SingboxControl:
     def _require(self) -> None:
         if not self.available:
             raise ControlError("управление sing-box доступно только на OpenWrt "
-                               f"(нет {self.cfg.init} или singbox_control.enabled=false)")
+                               f"(нет {self.cfg.init})")
 
     def stop(self) -> dict:
         self._require()
@@ -174,7 +174,7 @@ class SingboxControl:
         self._stop.set()
 
     def _watch(self) -> None:
-        while not self._stop.wait(self.cfg.interval):
+        while not self._stop.wait(self.cfg.watch):
             try:
                 self._check_down()
             except Exception as exc:  # noqa: BLE001 — сторож не должен падать

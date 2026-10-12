@@ -1,12 +1,12 @@
 """SQLite-хранилище: описание нод + трафик + сырые результаты тестов.
 
-Всё связано по CRC ноды (8-hex из тега `...-out [CRC]`). CRC — стабильный
-fingerprint настроек ноды (его считает sing-box-subscribe), поэтому история
-переживает переименования тегов.
+Всё связано по ключу доступа из тега `...-out [node_crc.cred_crc]` (колонка crc):
+node_crc — CRC настроек сервера, cred_crc — CRC учётных данных (naming.crc). История
+переживает переименования тегов; новый доступ той же ноды — та же node_crc.
 
 Таблицы (описание — nodes_tester/STORAGE.md):
-  nodes(crc PK, tag, provider/protocol/country/label, type, server/port, payload JSON,
-        crc_ok, first_seen, last_seen, present)   — описание ноды + флаг присутствия
+  nodes(crc PK, node_crc, tag, provider/protocol, country (измеренная), type, server/port,
+        payload JSON, crc_ok, first_seen, last_seen, present, banned) — описание ноды
   traffic(ts, crc, up, down, conns, is_tester)                 — временной ряд объёма
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
   results(ts, pass_no, crc, test, ok, url, metrics JSON, error)
@@ -22,7 +22,7 @@ fingerprint настроек ноды (его считает sing-box-subscribe)
 поток сбора трафика. Режим WAL для параллельного чтения.
 
 Очистка (cleanup) — единая и согласованная: удаляем ноды с last_seen старше
-retention_days и КАСКАДОМ все их строки во всех таблицах (по crc). VACUUM —
+storage.retention и КАСКАДОМ все их строки во всех таблицах (по crc). VACUUM —
 отдельно (vacuum(), под cron).
 """
 
@@ -34,13 +34,18 @@ import sqlite3
 import threading
 import time
 
-from naming import content_crc32, node_payload, parse_group, parse_node
+from naming import canonical, node_key, node_payload, parse_group, parse_node
+
+# Версия схемы БД. Файл другой версии при открытии уходит в копию, история начинается
+# заново (0.5.0: сменился ключ ноды, переносить нечего).
+SCHEMA_VERSION = "2"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
-  crc TEXT PRIMARY KEY, tag TEXT, provider TEXT, protocol TEXT, country TEXT, label TEXT,
+  crc TEXT PRIMARY KEY, node_crc TEXT, tag TEXT, provider TEXT, protocol TEXT, country TEXT,
   type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
   first_seen INTEGER, last_seen INTEGER, present INTEGER, banned INTEGER);
+CREATE INDEX IF NOT EXISTS idx_nodes_node_crc ON nodes(node_crc);
 CREATE TABLE IF NOT EXISTS traffic (
   ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
 CREATE INDEX IF NOT EXISTS idx_traffic_ts ON traffic(ts);
@@ -60,13 +65,15 @@ CREATE INDEX IF NOT EXISTS idx_activations_ts ON activations(ts);
 CREATE INDEX IF NOT EXISTS idx_activations_crc ON activations(crc);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS garbage (
-  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER);
+  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER,
+  until_pass INTEGER);
 CREATE TABLE IF NOT EXISTS scores (
   crc TEXT PRIMARY KEY, node TEXT, provider TEXT, protocol TEXT, region TEXT,
-  country TEXT, label TEXT, active INTEGER, score REAL,
+  country TEXT, active INTEGER, score REAL,
   reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
   score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
-  heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT, reserve TEXT);
+  heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT, country_ts INTEGER,
+  reserve TEXT);
 CREATE TABLE IF NOT EXISTS score_history (
   ts INTEGER, crc TEXT, region TEXT, score REAL, s_run REAL, gate INTEGER);
 CREATE INDEX IF NOT EXISTS idx_score_history_ts ON score_history(ts);
@@ -90,10 +97,10 @@ CREATE TABLE IF NOT EXISTS ip_info (
 # Колонки снимка рейтинга (таблица scores). Ключ БД — crc; в памяти Scoreboard
 # ключует по raw-тегу (node), поэтому node храним отдельной колонкой.
 _SCORE_COLS = (
-    "node", "provider", "protocol", "region", "country", "label", "active", "score",
+    "node", "provider", "protocol", "region", "country", "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
     "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
-    "required", "exit_ip", "exit_cc", "reserve",
+    "required", "exit_ip", "exit_cc", "country_ts", "reserve",
 )
 
 # Типы outbound-групп, которые не являются нодами (не пишем в nodes).
@@ -104,23 +111,13 @@ _SERVICE_KEYS = {"ok", "url", "error"}
 class Storage:
     def __init__(self, cfg):
         self.cfg = cfg
-        os.makedirs(os.path.dirname(os.path.abspath(cfg.db_file)), exist_ok=True)
-        self._db = sqlite3.connect(cfg.db_file, check_same_thread=False)
+        os.makedirs(os.path.dirname(os.path.abspath(cfg.path)), exist_ok=True)
+        _set_aside_other_schema(cfg.path)
+        self._db = sqlite3.connect(cfg.path, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(_SCHEMA)
-        for tbl, col, decl in (("nodes", "label", "TEXT"),
-                                ("nodes", "present", "INTEGER"),
-                                ("nodes", "banned", "INTEGER"),
-                                ("garbage", "streak", "INTEGER"),
-                                ("garbage", "until_pass", "INTEGER"),
-                                ("scores", "required", "TEXT"),
-                                ("scores", "exit_ip", "TEXT"),
-                                ("scores", "exit_cc", "TEXT"),
-                                ("scores", "reserve", "TEXT")):
-            try:                               # миграция старых БД (колонка могла отсутствовать)
-                self._db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {decl}")
-            except sqlite3.OperationalError:
-                pass                           # колонка уже есть
+        self._db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)",
+                         (SCHEMA_VERSION,))
         self._db.commit()
         self._lock = threading.Lock()
         self._nodes_mtime = None
@@ -168,25 +165,26 @@ class Storage:
                 continue
             if str(ob.get("type", "")).lower() in _NON_NODE_TYPES:
                 continue
-            crc_ok = 1 if content_crc32(ob) == ident.node_id else 0
+            crc_ok = 1 if node_key(ob) == ident.node_id else 0
             rows.append((
-                ident.node_id, tag, ident.provider, ident.protocol, ident.country,
-                ident.label, ob.get("type", ""), ob.get("server", ""), _int(ob.get("server_port")),
-                node_payload(ob), crc_ok, now, now,   # node_payload — каноничная строка (основа CRC)
+                ident.node_id, ident.node_crc, tag, ident.provider, ident.protocol,
+                ob.get("type", ""), ob.get("server", ""), _int(ob.get("server_port")),
+                canonical(node_payload(ob)), crc_ok, now, now,
             ))
+        # Страну не трогаем: её пишет conn-тест (add_results), а не сборка.
         with self._lock:
             self._db.executemany("""
-                INSERT INTO nodes (crc,tag,provider,protocol,country,label,type,server,
+                INSERT INTO nodes (crc,node_crc,tag,provider,protocol,type,server,
                                    server_port,payload,crc_ok,first_seen,last_seen)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(crc) DO UPDATE SET
-                  tag=excluded.tag, provider=excluded.provider, protocol=excluded.protocol,
-                  country=excluded.country, label=excluded.label, type=excluded.type,
+                  node_crc=excluded.node_crc, tag=excluded.tag, provider=excluded.provider,
+                  protocol=excluded.protocol, type=excluded.type,
                   server=excluded.server, server_port=excluded.server_port,
                   payload=excluded.payload, crc_ok=excluded.crc_ok, last_seen=excluded.last_seen
             """, rows)
             self._db.commit()
-        bad = sum(1 for r in rows if not r[10])   # crc_ok
+        bad = sum(1 for r in rows if not r[9])    # crc_ok
         print(f"  [storage] нод загружено: {len(rows)}"
               + (f" (CRC не сошёлся у {bad})" if bad else ""))
         return len(rows)
@@ -225,10 +223,15 @@ class Storage:
                          json.dumps(metrics, ensure_ascii=False), res.get("error", "")))
         if not rows:
             return
+        conn = (record.get("tests") or {}).get("connectivity") or {}
+        country = (conn.get("country") or "").lower() if conn.get("ok") else ""
         with self._lock:
             self._db.executemany(
                 "INSERT INTO results (ts,pass_no,crc,test,ok,url,metrics,error) "
                 "VALUES (?,?,?,?,?,?,?,?)", rows)
+            if country:                       # страна ноды — измеренная conn-тестом
+                self._db.execute("UPDATE nodes SET country = ? WHERE node_crc = ?",
+                                 (country, crc.partition(".")[0]))
             self._db.commit()
 
     # --- Тип выходного IP (nodes_tester.ipinfo) ------------------------
@@ -456,25 +459,26 @@ class Storage:
         раньше грузил из csv (in-memory ключ — raw-тег node; crc отдаётся как 'id')."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT crc,node,provider,protocol,region,country,label,active,score,"
+                "SELECT crc,node,provider,protocol,region,country,active,score,"
                 "reliability,consistency,throttle,jitter,latency,throughput,"
                 "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                "required,exit_ip,exit_cc FROM scores"
+                "required,exit_ip,exit_cc,country_ts FROM scores"
             ).fetchall()
         out: dict[str, dict] = {}
         for r in rows:
             tag = r[1] or r[0]
             out[tag] = {
                 "node": tag, "provider": r[2] or "", "protocol": r[3] or "",
-                "region": r[4] or "", "country": r[5] or "", "label": r[6] or "",
-                "id": r[0], "active": _int(r[7]), "score": _flt(r[8]),
-                "reliability": _flt(r[9]), "consistency": _flt(r[10]),
-                "throttle": _flt(r[11]), "jitter": _flt(r[12]),
-                "latency": _flt(r[13]), "throughput": _flt(r[14]),
-                "score_ewma": _flt(r[15]), "avail": _flt(r[16]), "flap": _flt(r[17]),
-                "samples": _int(r[18]), "last_seen": _int(r[19]),
-                "heavy_ok": "" if r[20] is None else str(r[20]), "heavy_ts": _int(r[21]),
-                "required": _json_dict(r[22]), "exit_ip": r[23] or "", "exit_cc": r[24] or "",
+                "region": r[4] or "", "country": r[5] or "",
+                "id": r[0], "active": _int(r[6]), "score": _flt(r[7]),
+                "reliability": _flt(r[8]), "consistency": _flt(r[9]),
+                "throttle": _flt(r[10]), "jitter": _flt(r[11]),
+                "latency": _flt(r[12]), "throughput": _flt(r[13]),
+                "score_ewma": _flt(r[14]), "avail": _flt(r[15]), "flap": _flt(r[16]),
+                "samples": _int(r[17]), "last_seen": _int(r[18]),
+                "heavy_ok": "" if r[19] is None else str(r[19]), "heavy_ts": _int(r[20]),
+                "required": _json_dict(r[21]), "exit_ip": r[22] or "", "exit_cc": r[23] or "",
+                "country_ts": _int(r[24]) or 0,
             }
         return out
 
@@ -493,7 +497,7 @@ class Storage:
             rank = ((_int(r.get("active")) or 0), _flt(r.get("score")))
             row = (
                 crc, r.get("node", ""), r.get("provider", ""), r.get("protocol", ""),
-                r.get("region", ""), r.get("country", ""), r.get("label", ""),
+                r.get("region", ""), r.get("country", ""),
                 _int(r.get("active")), _flt(r.get("score")),
                 _flt(r.get("reliability")), _flt(r.get("consistency")),
                 _flt(r.get("throttle")), _flt(r.get("jitter")),
@@ -503,7 +507,8 @@ class Storage:
                 "" if r.get("heavy_ok") is None else str(r.get("heavy_ok")),
                 _int(r.get("heavy_ts")),
                 json.dumps(r.get("required") or {}, ensure_ascii=False),
-                r.get("exit_ip") or "", r.get("exit_cc") or "", r.get("reserve") or "",
+                r.get("exit_ip") or "", r.get("exit_cc") or "", _int(r.get("country_ts")) or 0,
+                r.get("reserve") or "",
             )
             prev = by_crc.get(crc)
             if prev is None or rank > prev[0]:
@@ -513,10 +518,10 @@ class Storage:
             self._db.execute("DELETE FROM scores")
             if packed:
                 self._db.executemany(
-                    "INSERT INTO scores (crc,node,provider,protocol,region,country,label,"
+                    "INSERT INTO scores (crc,node,provider,protocol,region,country,"
                     "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
                     "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                    "required,exit_ip,exit_cc,reserve) "
+                    "required,exit_ip,exit_cc,country_ts,reserve) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
             self._db.commit()
 
@@ -651,7 +656,7 @@ class Storage:
 
         VACUUM здесь НЕ выполняется — он отдельным процессом (vacuum(), под cron).
         """
-        cutoff = int(time.time()) - int(self.cfg.retention_days) * 86400
+        cutoff = int(time.time() - self.cfg.retention)
         with self._lock:
             # 1) устаревшие ноды → каскад по всем таблицам (по crc, без сирот)
             stale = [r[0] for r in self._db.execute(
@@ -691,6 +696,28 @@ class Storage:
         with self._lock:
             self._db.execute("PRAGMA busy_timeout = 60000")   # ждать активного писателя
             self._db.execute("VACUUM")
+
+
+def _set_aside_other_schema(path: str) -> None:
+    """БД другой версии схемы — переименовать в `<файл>.v<версия>-<время>` (история
+    начинается заново). Новый или уже текущий файл не трогаем."""
+    if not os.path.exists(path):
+        return
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        con.close()
+    version = row[0] if row else "1"
+    if version == SCHEMA_VERSION:
+        return
+    aside = f"{path}.v{version}-{time.strftime('%Y%m%d-%H%M%S')}"
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(path + suffix):
+            os.replace(path + suffix, aside + suffix)
+    print(f"  [storage] БД схемы v{version} сохранена как {aside}; история начинается заново")
 
 
 def _int(v):

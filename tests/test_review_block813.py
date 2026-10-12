@@ -9,7 +9,7 @@ from tests.helpers import make_runner, temp_dir
 
 class RegionAwareChainTest(unittest.TestCase):
     def setUp(self):
-        self.r = make_runner(temp_dir())
+        self.r = make_runner(temp_dir(), groups=[{"tag": "eu"}, {"tag": "us"}])
 
     def tearDown(self):
         self.r.storage.close()
@@ -34,7 +34,8 @@ class HistoryCapTest(unittest.TestCase):
         from nodes_tester import storage as S
 
         class Cfg:
-            db_file = os.path.join(temp_dir(), "s.db")
+            path = os.path.join(temp_dir(), "s.db")
+            retention = 30 * 86400
             retention_days = 30
         st = S.Storage(Cfg())
         p = os.path.join(temp_dir(), "n.json")
@@ -65,8 +66,8 @@ class TrafficFlushTest(unittest.TestCase):
                 raise RuntimeError("db locked")
 
         class Cfg:
-            poll_interval = 5
-            flush_interval = 60
+            poll = 5
+            flush = 60
         col = TrafficCollector(Cfg(), api=None, storage=BadStorage())
         col._by_node[("crc", 0)] = [10, 20, 1]
         with self.assertRaises(RuntimeError):

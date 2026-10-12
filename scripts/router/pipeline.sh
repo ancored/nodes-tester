@@ -9,15 +9,15 @@
 #   pipeline.sh apply-clients [--dry-run]   базы клиентов + клиентские пресеты → клиентские
 #                                     конфиги по текущему whnodes.json (подписки не загружаются)
 #
-# router:  nodes_fetch (main) → nodes_config → /etc/sing-box-subscribe/nodes.json →
+# router:  nodes_fetch (ветвь router) → nodes_config → $DATA/nodes.json →
 #          update-rules.sh → apply-nodes.sh (рестарт только при изменениях)
-# clients: nodes_fetch (wh)   → nodes_config → /etc/sing-box-subscribe/whnodes.json →
+# clients: nodes_fetch (ветвь clients) → nodes_config → $DATA/whnodes.json →
 #          build-clients.sh
 #
 # --dry-run: ничего боевого не трогает — nodes.json/whnodes.json пишутся в $DATA/*.dry.json,
 # правила не обновляются, apply-nodes/build-clients работают в --dry-run.
-# Конфиги — $CFG_ROOT/config-main, $CFG_ROOT/config-wh;
-# CFG_ROOT по умолчанию = $DATA. PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
+# Настройки — $CFG_ROOT/config.json (подписки ветви, фильтры, группы).
+# PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
 # Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету),
 # клиентские — $SINGBOX/clients/presets/*.json (склеивает build-clients.sh);
@@ -27,7 +27,7 @@ set -u
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 DATA="${DATA:-/opt/nodes-tester}"
-CFG_ROOT="${CFG_ROOT:-/etc/nodes-tester}"   # где лежат config-main/ и config-wh/
+CFG_ROOT="${CFG_ROOT:-/etc/nodes-tester}"   # где лежит config.json
 export DATA
 HERE="$PROJECT_DIR/scripts/router"
 . "$HERE/pipeline-lock.sh"
@@ -52,8 +52,8 @@ MODE="${1:-}"; DRY=0
 log() { echo "[pipeline] $*"; logger -t nodes-pipeline "$*" 2>/dev/null || true; }
 
 case "$MODE" in
-    router|apply) SET=main; OUT=/etc/sing-box-subscribe/nodes.json ;;
-    clients|apply-clients) SET=wh; OUT=/etc/sing-box-subscribe/whnodes.json ;;
+    router|apply) BRANCH=router; OUT="$DATA/nodes.json" ;;
+    clients|apply-clients) BRANCH=clients; OUT="$DATA/whnodes.json" ;;
     *) echo "использование: pipeline.sh router|clients|apply|apply-clients [--dry-run]" >&2; exit 2 ;;
 esac
 SINGBOX="${SINGBOX:-$CFG_ROOT/singbox}"
@@ -79,14 +79,14 @@ if [ "$MODE" = apply-clients ]; then
     fi
     exit $?
 fi
-CFG="$CFG_ROOT/config-$SET"
+CONFIG="$CFG_ROOT/config.json"
 [ "$DRY" = 1 ] && OUT="$DATA/$(basename "$OUT" .json).dry.json"
-[ -f "$CFG/providers.json" ] || { log "нет $CFG/providers.json"; exit 1; }
+[ -f "$CONFIG" ] || { log "нет $CONFIG"; exit 1; }
 
 cd "$PROJECT_DIR" || exit 1
 mkdir -p "$DATA/raw"
 
-python3 -m nodes_fetch -p "$CFG/providers.json" -o "$DATA/raw/$SET.json"
+python3 -m nodes_fetch -c "$CONFIG" --branch "$BRANCH" -o "$DATA/raw/$BRANCH.json"
 code=$?
 case "$code" in
     0) ;;
@@ -94,9 +94,7 @@ case "$code" in
     *) log "fetch: ошибка ($code) — конвейер остановлен, боевые файлы не тронуты"; exit 1 ;;
 esac
 
-UN=""
-[ -f "$CFG/user_nodes.json" ] && UN="--user-nodes $CFG/user_nodes.json"
-python3 -m nodes_config --raw "$DATA/raw/$SET.json" --groups "$CFG/groups_params.json" $UN -o "$OUT" \
+python3 -m nodes_config -c "$CONFIG" --branch "$BRANCH" --raw "$DATA/raw/$BRANCH.json" -o "$OUT" \
     || { log "config: ошибка — $OUT не тронут"; exit 1; }
 
 if [ "$MODE" = router ]; then

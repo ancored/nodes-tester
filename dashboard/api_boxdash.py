@@ -21,7 +21,7 @@ def _fetch(app: App, path: str) -> Response:
     rel = posixpath.normpath("/" + path).lstrip("/")
     if rel.startswith(".."):
         raise HttpError(404, "not found")
-    base = app.cfg.box_api.url.rstrip("/")
+    base = app.cfg.api.url.rstrip("/")
     try:
         with urllib.request.urlopen(f"{base}/dashboard/{rel}", timeout=10) as resp:
             return Response(200, resp.headers.get("Content-Type") or "application/octet-stream", resp.read())
@@ -34,7 +34,7 @@ def _fetch(app: App, path: str) -> Response:
 def register(app: App) -> None:
     @app.route("GET", "/api/singbox/dashboard", needs_token=True)
     def server(app, req):
-        cfg = app.cfg.box_api
+        cfg = app.cfg.api
         return {"url": cfg.url, "secret": cfg.secret or "", "path": PREFIX}
 
     @app.route("GET", PREFIX)

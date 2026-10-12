@@ -87,7 +87,7 @@ class Notifier:
             return False
         now = self.clock()
         with self._lock:
-            window = self.cfg.dedupe_minutes * 60 if ttl is None else ttl
+            window = self.cfg.dedupe if ttl is None else ttl
             if key and not force:
                 last = self._sent.get(key)
                 if last is not None and now - last < window:
@@ -245,7 +245,7 @@ class Notifier:
             expire = int(meta.get("expire") or 0)
             if expire > 0:
                 days = (expire - now) / 86400
-                if days <= self.cfg.expiry_days:
+                if days <= self.cfg.expiry_warning / 86400:
                     when = time.strftime("%d.%m", time.localtime(expire))
                     text = (f"Подписка {tag} закончилась {when}." if days <= 0 else
                             f"Подписка {tag} заканчивается {when} (осталось {max(1, int(days + 0.999))} дн.).")

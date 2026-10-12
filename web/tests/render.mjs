@@ -6,7 +6,7 @@ import { createSSRApp, h } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 
-const node = {crc:'abcd1234',node:'DEMO-vless-nl-out [abcd1234]',provider:'DEMO',country:'nl',protocol:'vless',
+const node = {crc:'abcd1234.0000beef',node:'DEMO-vless-out [abcd1234.0000beef]',provider:'DEMO',country:'nl',protocol:'vless',
   present:1,banned:0,score:null,region:'eu',can_activate:false}
 const data = {nodes:[node],source:{state:'ok',message:'Снимок SQLite'},rating:[],results:{rows:[],tests:[]},history:[],
   runner:{running:true,pass:2,day:'2026-09-27',progress:{phase:'waiting',total:1,processed:1},regions:[],request_queued:true},
@@ -22,8 +22,10 @@ try {
   for(const [view,path,expected] of [
     ['Control','/nodes','Открыть карточку'],
     ['Control','/nodes?q=not-found','Ничего не найдено'],
-    ['NodeDetail','/nodes/abcd1234','Нет замеров рейтинга'],
-    ['NodeDetail','/nodes/abcd1234?tab=Действия','disabled'],
+    ['NodeDetail','/nodes/abcd1234.0000beef','Нет замеров рейтинга'],
+    ['NodeDetail','/nodes/abcd1234.0000beef','<span class="crc-cred" title="CRC учётных данных">0000beef</span>'],
+    ['NodeDetail','/nodes/abcd1234.0000beef?tab=Действия','disabled'],
+    ['Control','/nodes','<span class="crc-node" title="CRC настроек сервера">abcd1234</span>'],
     ['Overview','/','Ожидание следующего прохода'],
     ['Results','/results','Сохранённых результатов нет'],
     ['History','/history','Последние 200 записей'],

@@ -32,7 +32,7 @@ def probe_with(results):
         calls.append(node)
         return results.pop(0)
 
-    mon = ProductionMonitor(cfg=MonitorConfig(enabled=True, fails=2), api=None,
+    mon = ProductionMonitor(cfg=MonitorConfig(fails=2), api=None,
                             switcher=sw, prober=prober, traffic=dict)
     return mon, sw, calls
 

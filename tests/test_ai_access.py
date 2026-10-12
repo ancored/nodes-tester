@@ -1,19 +1,18 @@
-"""Доступность OpenAI и Claude, строгий выходной IP группы (страна по базе, тип IP),
-ячейки AI-тестов в своде результатов."""
+"""Доступность OpenAI и Claude, проверки выходного IP группы (geo_consistent — страна по
+базе, ip_type — тип IP), ячейки AI-тестов в своде результатов."""
 
-import json
 import os
 import time
 import unittest
 from types import SimpleNamespace
 
 from dashboard import data
-from nodes_tester.config import ScoringConfig, StorageConfig, load_config
+from nodes_tester.config import BUILTIN_REGIONS, GroupConfig, RatingConfig, StorageConfig, parse_config
 from nodes_tester.scoreboard import Scoreboard
 from nodes_tester.storage import Storage
 from nodes_tester.tests import TestContext
 from nodes_tester.tests.ai_access import AnthropicTest, OpenAITest
-from tests.helpers import make_config, temp_dir
+from tests.helpers import temp_dir
 
 BLOCKED_OPENAI = {"error": {"code": "unsupported_country_region_territory",
                             "message": "Country, region, or territory not supported",
@@ -107,9 +106,9 @@ IPS = {"1.0.0.1": {"country": "NL", "hosting": 1},                 # ДЦ
 
 class StrictExitIpTest(unittest.TestCase):
     def setUp(self):
-        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
         self.addCleanup(self.storage.close)
-        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.rows = {"DC": _row("DC", 90, "1.0.0.1"), "HOME": _row("HOME", 50, "1.0.0.2"),
                         "PROXY": _row("PROXY", 80, "1.0.0.3"), "GEO": _row("GEO", 95, "1.0.0.4"),
                         "MOB": _row("MOB", 40, "1.0.0.5"), "NOINFO": _row("NOINFO", 85, "9.9.9.9")}
@@ -118,19 +117,28 @@ class StrictExitIpTest(unittest.TestCase):
     def _cands(self):
         return [c["node"] for c in self.sb.candidates("eu")]
 
+    def _strict(self):
+        """Группа как ai: страна выхода по базе совпадает (обязательно), домашний или
+        мобильный IP — в приоритете."""
+        self.sb.set_policy([GroupConfig("eu", require={"geo_consistent": {"ttl": 0}},
+                                        prefer={"ip_type": {"ttl": 0, "kinds": ["residential", "mobile"]}})],
+                           BUILTIN_REGIONS)
+
     def test_not_strict_group_unchanged(self):
         self.assertEqual(self._cands(), ["GEO", "DC", "NOINFO", "PROXY", "HOME", "MOB"])
 
     def test_strict_prefers_residential_and_mobile_drops_geo_mismatch(self):
-        self.sb.set_strict({"eu"})
-        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
-        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 1, 1, 1])
+        self._strict()
+        # GEO — страна по базе другая (провал), NOINFO — сведений нет (не кандидат, но
+        # в резерв годится: проверка ещё не провалена).
+        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "PROXY"])
+        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 1, 1])
         self.assertEqual(self.sb.reserve_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
 
     def _switcher(self, active):
-        from nodes_tester.config import SwitchingConfig
+        from nodes_tester.config import SelectionConfig
         from nodes_tester.switcher import Switcher
-        sw = Switcher(SwitchingConfig(enabled=True), None, self.sb, "nodes-tester")
+        sw = Switcher(SelectionConfig(), None, self.sb, "nodes-tester")
         sw.state = {"eu": {"active": active, "last_switch": 0, "rotate_deadline": 4e9}}
         picked = []
         sw._activate = lambda cand, region, st, now, reason: picked.append(
@@ -138,22 +146,21 @@ class StrictExitIpTest(unittest.TestCase):
         return sw, picked
 
     def test_emergency_on_only_residential_falls_back_to_other_ips(self):
-        self.sb.set_strict({"eu"})
+        self._strict()
         del self.sb.rows["MOB"]
         sw, picked = self._switcher("HOME")
         sw.evaluate_region("eu", emergency=True)
         self.assertEqual(len(picked), 1)
-        self.assertIn(picked[0], [("DC", "emergency"), ("NOINFO", "emergency"),
-                                  ("PROXY", "emergency")])
+        self.assertIn(picked[0], [("DC", "emergency"), ("PROXY", "emergency")])
 
     def test_emergency_prefers_residential(self):
-        self.sb.set_strict({"eu"})
+        self._strict()
         sw, picked = self._switcher("HOME")
         sw.evaluate_region("eu", emergency=True)
         self.assertEqual(picked, [("MOB", "emergency")])
 
     def test_quality_moves_to_better_tier_not_to_worse(self):
-        self.sb.set_strict({"eu"})
+        self._strict()
         self.sb.set_reserve("eu", ["HOME", "MOB", "DC"])
         sw, picked = self._switcher("DC")
         for _ in range(sw.cfg.confirm_cycles):
@@ -184,28 +191,21 @@ class StrictExitIpTest(unittest.TestCase):
 
 
 class ConfigTest(unittest.TestCase):
-    def test_required_tests_and_strict_flag(self):
-        tmp = temp_dir()
-        path = make_config(tmp)
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
-        raw.setdefault("run", {})["node_groups_specifics"] = [
-            {"group": "ai", "default_overrides": {"required_tests": ["gemini", "openai", "anthropic"],
-                                                  "strict_exit_ip": True}}]
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
-        cfg = load_config(path)
-        params = cfg.run.for_node_groups(cfg.run.default, ["ai"])
-        self.assertEqual(params.required_tests, ["gemini", "openai", "anthropic"])
-        self.assertTrue(params.strict_exit_ip)
-        self.assertFalse(cfg.run.default.strict_exit_ip)
+    def test_group_require_and_prefer_take_check_ttl(self):
+        cfg = parse_config({"checks": {"gemini": {"ttl": "12h"}}, "groups": [
+            {"tag": "ai", "strict": True, "require": {"gemini": {}, "openai": {"ttl": "1h"}},
+             "prefer": {"ip_type": {"kinds": ["mobile"]}}}]})
+        ai = cfg.group("ai")
+        self.assertEqual(ai.require, {"gemini": {"ttl": 43200.0}, "openai": {"ttl": 3600.0}})
+        self.assertEqual(ai.prefer["ip_type"]["kinds"], ["mobile"])
+        self.assertTrue(ai.strict)
 
 
 class ResultCellsTest(unittest.TestCase):
     def test_ai_cells(self):
         tmp = temp_dir()
         db = os.path.join(tmp, "s.db")
-        st = Storage(StorageConfig(db_file=db))
+        st = Storage(StorageConfig(path=db))
         try:
             st.add_results({"id": "abcd1234", "round": 1, "tests": {
                 "connectivity": {"ok": True, "exit_ip": "1.1.1.1", "country": "NL"}}})

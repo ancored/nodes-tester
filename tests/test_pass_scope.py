@@ -1,5 +1,5 @@
 """Экономия трафика: прогон по сроку ротации — только ноды групп с наступившей
-ротацией; карантин слабых нод (cooldown.low_score)."""
+ротацией; карантин слабых нод (selection.quarantine.low_score)."""
 
 import time
 import unittest
@@ -41,7 +41,7 @@ class ScopedPassTest(unittest.TestCase):
     def _pass(self):
         r = self.r
 
-        def fake_test(region, ident, pass_no, tests, params):
+        def fake_test(region, ident, pass_no):
             self.tested.append(ident.raw)
             return {"round": pass_no, "id": ident.node_id, "tests": {}}
 
@@ -79,7 +79,7 @@ class ScopedPassTest(unittest.TestCase):
 
 class LowScoreQuarantineTest(unittest.TestCase):
     def setUp(self):
-        self.r = make_runner(temp_dir(), cooldown={"enabled": True, "low_score": 40})
+        self.r = make_runner(temp_dir(), selection={"quarantine": {"low_score": 40}})
         self.r.board.rows = {A: _row(A, "eu", score=30), B: _row(B, "eu", score=60)}
 
     def tearDown(self):
@@ -93,7 +93,7 @@ class LowScoreQuarantineTest(unittest.TestCase):
         self.assertFalse(r._low_score(A))
         r.board.rows[A].update(samples=5, active=1)  # активная
         self.assertFalse(r._low_score(A))
-        r.cfg.cooldown.low_score = 0                 # выключено
+        r.cfg.selection.quarantine.low_score = 0     # выключено
         r.board.rows[A]["active"] = 0
         self.assertFalse(r._low_score(A))
 
@@ -102,7 +102,7 @@ class LowScoreQuarantineTest(unittest.TestCase):
         r._backoff_update("aaaa0001", gate=True, low=True)
         until, _p, streak, reason = r._backoff["aaaa0001"]
         self.assertEqual(reason, "garbage")
-        self.assertAlmostEqual((until - time.time()) / 3600, r.cfg.cooldown.garbage_hours, delta=0.1)
+        self.assertAlmostEqual(until - time.time(), r.cfg.selection.quarantine.duration, delta=360)
         self.assertTrue(r._backed_off("aaaa0001"))
         events = r.storage._db.execute(
             "SELECT event, reason FROM node_events WHERE crc='aaaa0001'").fetchall()
@@ -117,9 +117,9 @@ class AlignedRotationTest(unittest.TestCase):
     """rotation.align: сроки групп — на общей сетке слотов."""
 
     def _sw(self, state=None, **rot):
-        from nodes_tester.config import RotationConfig, SwitchingConfig
+        from nodes_tester.config import RotationConfig, SelectionConfig
         from nodes_tester.switcher import Switcher
-        cfg = SwitchingConfig(enabled=True, rotation=RotationConfig(**rot))
+        cfg = SelectionConfig(rotation=RotationConfig(**rot))
         storage = type("S", (), {"load_switch_state": lambda self: dict(state or {}),
                                  "set_active_crcs": lambda self, crcs: None})()
         return Switcher(cfg, None, _Board(), "nodes-tester", storage=storage)

@@ -52,7 +52,7 @@ class FakeRunner:
             "running": self._running, "pass": self._current_pass,
             "day": self._current_day, "switching": True, "monitor": False,
             "traffic": False, "rotation_bound": False,
-            "regions": [{"region": "eu", "active": "LUNA-vless|reality-nl-out [abcd1234]"}],
+            "regions": [{"region": "eu", "active": "LUNA-vless|reality-out [abcd1234.0000beef]"}],
             "next_rotation": None,
         }
 
@@ -61,9 +61,9 @@ class ApiControlTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
         self.cfg = load_config(make_config(self.tmp,
-                                           dashboard={"enabled": True, "token": "secret"}))
+                                           admin={"enabled": True, "token": "secret"}))
         self.storage = Storage(self.cfg.storage)
-        self.node_tag = "LUNA-vless|reality-nl-out [abcd1234]"
+        self.node_tag = "LUNA-vless|reality-out [abcd1234.0000beef]"
         fresh_nodes_json(self.tmp, [{"tag": self.node_tag, "type": "vless",
                                      "server": "1.2.3.4", "server_port": 443}])
         self.storage.load_nodes(os.path.join(self.tmp, "nodes.json"))
@@ -79,20 +79,20 @@ class ApiControlTest(unittest.TestCase):
                                json.dumps(body).encode() if body is not None else b"")
 
     def test_ban_and_unban(self):
-        self.assertEqual(self._call("POST", "/api/nodes/abcd1234/ban").status, 200)
-        self.assertIn("abcd1234", self.storage.banned_crcs())
-        self.assertEqual(self._call("POST", "/api/nodes/abcd1234/unban").status, 200)
-        self.assertNotIn("abcd1234", self.storage.banned_crcs())
-        self.assertEqual(self.runner.restricted, [("abcd1234", True), ("abcd1234", False)])
+        self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/ban").status, 200)
+        self.assertIn("abcd1234.0000beef", self.storage.banned_crcs())
+        self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/unban").status, 200)
+        self.assertNotIn("abcd1234.0000beef", self.storage.banned_crcs())
+        self.assertEqual(self.runner.restricted, [("abcd1234.0000beef", True), ("abcd1234.0000beef", False)])
 
     def test_quarantine_sets_backoff(self):
-        self.assertEqual(self._call("POST", "/api/nodes/abcd1234/quarantine").status, 200)
+        self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/quarantine").status, 200)
         backoff = self.storage.load_backoff()
-        self.assertIn("abcd1234", backoff)
-        self.assertEqual(backoff["abcd1234"][3], "garbage")
+        self.assertIn("abcd1234.0000beef", backoff)
+        self.assertEqual(backoff["abcd1234.0000beef"][3], "garbage")
         # снятие карантина
-        self.assertEqual(self._call("POST", "/api/nodes/abcd1234/unquarantine").status, 200)
-        self.assertNotIn("abcd1234", self.storage.load_backoff())
+        self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/unquarantine").status, 200)
+        self.assertNotIn("abcd1234.0000beef", self.storage.load_backoff())
 
     def test_force_switch(self):
         self.assertEqual(self._call("POST", "/api/groups/eu/switch",
@@ -132,16 +132,16 @@ class ApiControlTest(unittest.TestCase):
 
     def test_node_actions_reject_unknown_crc(self):
         self.assertEqual(self._call("POST", "/api/nodes/not-a-crc/ban").status, 400)
-        self.assertEqual(self._call("POST", "/api/nodes/deadbeef/ban").status, 404)
-        self.assertEqual(self._call("POST", "/api/nodes/deadbeef/quarantine").status, 404)
+        self.assertEqual(self._call("POST", "/api/nodes/deadbeef.00000000/ban").status, 404)
+        self.assertEqual(self._call("POST", "/api/nodes/deadbeef.00000000/quarantine").status, 404)
 
     def test_control_requires_token(self):
-        self.assertEqual(self._call("POST", "/api/nodes/abcd1234/ban",
+        self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/ban",
                                     token="WRONG").status, 401)
 
     def test_readonly_mode_returns_409(self):
         app2 = build_app(self.cfg, runner=None)
-        r = app2.handle("POST", "/api/nodes/abcd1234/ban",
+        r = app2.handle("POST", "/api/nodes/abcd1234.0000beef/ban",
                         {"X-Admin-Token": "secret"}, b"")
         self.assertEqual(r.status, 409)
         r2 = app2.handle("GET", "/api/status", {"X-Admin-Token": "secret"}, b"")

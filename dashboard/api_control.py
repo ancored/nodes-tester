@@ -10,8 +10,9 @@
 
 from __future__ import annotations
 
-import re
 import time
+
+from naming import NODE_KEY_RE
 
 from .webapp import App, HttpError
 
@@ -27,8 +28,8 @@ def _storage_node(app: App, crc: str, action: str):
     r = _runner(app)
     if r.storage is None:
         raise HttpError(409, f"storage отключён — {action} недоступен")
-    if not re.fullmatch(r"[0-9a-fA-F]{8}", crc or ""):
-        raise HttpError(400, "crc должен состоять из 8 hex-символов")
+    if not NODE_KEY_RE.fullmatch(crc or ""):
+        raise HttpError(400, "ключ ноды — node_crc.cred_crc, по 8 hex-символов")
     if not r.storage.node_exists(crc):
         raise HttpError(404, "нода с таким crc не найдена")
     return r, r.storage
@@ -42,11 +43,9 @@ def register(app: App) -> None:
     @app.route("POST", "/api/nodes/{crc}/quarantine", needs_token=True)
     def quarantine(app, req, crc):
         r, storage = _storage_node(app, crc, "карантин")
-        if not r.cfg.cooldown.enabled:
-            raise HttpError(409, "Ограничения проверок отключены в cooldown.enabled. Карантин не будет действовать.")
-        until = int(time.time() + r.cfg.cooldown.garbage_hours * 3600)
-        streak = r.cfg.cooldown.max_skip + 1
-        # Ручной карантин = мусорная нода на весь срок garbage_hours.
+        until = int(time.time() + r.cfg.selection.quarantine.duration)
+        streak = r.cfg.selection.quarantine.after_skips + 1
+        # Ручной карантин = мусорная нода на весь срок selection.quarantine.duration.
         storage.set_backoff(crc, until, streak, "garbage")
         storage.add_node_event(crc, "garbage", "manual")
         # Сразу вне кандидатов переключателя; активная — заменяется.

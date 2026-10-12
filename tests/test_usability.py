@@ -15,28 +15,22 @@ from tests.helpers import make_config, make_runner, temp_dir, fresh_nodes_json
 class SnapshotHealthTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.cfg = load_config(make_config(self.tmp, dashboard={"token": "demo"}))
+        self.cfg = load_config(make_config(self.tmp, admin={"token": "demo"}))
 
     def test_missing_database_is_not_empty_success(self):
         data = collect(self.cfg)
         self.assertEqual(data["source"]["state"], "missing")
         self.assertEqual(data["nodes"], [])
-        self.assertFalse(os.path.exists(self.cfg.storage.db_file))
+        self.assertFalse(os.path.exists(self.cfg.storage.path))
 
     def test_corrupt_database_and_missing_schema_report_error(self):
-        with open(self.cfg.storage.db_file, "wb") as fh:
+        with open(self.cfg.storage.path, "wb") as fh:
             fh.write(b"not sqlite")
         app = build_app(self.cfg)
         self.assertEqual(app.handle("GET", "/api/data", {}, b"").status, 500)
-        os.unlink(self.cfg.storage.db_file)
-        sqlite3.connect(self.cfg.storage.db_file).close()
+        os.unlink(self.cfg.storage.path)
+        sqlite3.connect(self.cfg.storage.path).close()
         self.assertEqual(app.handle("GET", "/api/data", {}, b"").status, 500)
-
-    def test_disabled_storage_does_not_read_existing_file(self):
-        with open(self.cfg.storage.db_file, "wb") as fh:
-            fh.write(b"not sqlite")
-        self.cfg.storage.enabled = False
-        self.assertEqual(collect(self.cfg)["source"]["state"], "disabled")
 
     def test_empty_database_is_known_empty_with_health_in_slices(self):
         r = make_runner(self.tmp)
@@ -57,7 +51,7 @@ class SnapshotHealthTest(unittest.TestCase):
 class AdminContractTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.runner = make_runner(self.tmp, dashboard={"token": "demo", "read_open": False})
+        self.runner = make_runner(self.tmp, admin={"token": "demo", "public_read": False})
         self.app = build_app(self.runner.cfg, runner=self.runner)
 
     def tearDown(self):
@@ -89,26 +83,19 @@ class AdminContractTest(unittest.TestCase):
     def test_revision_prevents_lost_updates_and_restart_is_visible(self):
         opened = json.loads(self.call("GET", "/api/config").body)
         changed = opened["data"]
-        changed["report"]["console"] = not changed["report"]["console"]
+        changed["admin"]["refresh"] = "15s"
         result = self.call("PUT", "/api/config", changed, **{"If-Match": opened["revision"]})
         self.assertEqual(result.status, 200)
         self.assertTrue(json.loads(result.body)["restart_required"])
         self.assertEqual(self.call("PUT", "/api/config", opened["data"], **{"If-Match":opened["revision"]}).status, 409)
         self.assertTrue(json.loads(self.call("GET", "/api/config").body)["restart_required"])
 
-    def test_subscription_save_does_not_claim_application_or_drop_custom_fields(self):
-        body = {"subscribes":[{"tag":"DEMO", "url":"https://example.invalid", "User-Agent":"curl", "custom":42}], "custom_top":True}
-        result = self.call("PUT", "/api/config/providers", body)
-        self.assertEqual(result.status, 200)
-        self.assertEqual(json.loads(result.body)["application_state"], "not_applied_by_dashboard")
-        loaded = json.loads(self.call("GET", "/api/config/providers").body)
-        self.assertEqual(loaded["data"], body)
-
-    def test_subscription_fetch_null_number_is_rejected(self):
-        body = {"subscribes":[{"tag":"DEMO","url":"https://example.invalid"}], "fetch":{"timeout":None}}
-        self.assertEqual(self.call("PUT", "/api/config/providers", body).status, 400)
-        body["fetch"] = {"proxy": None, "timeout": 30}
-        self.assertEqual(self.call("PUT", "/api/config/providers", body).status, 200)
+    def test_fetch_settings_must_have_their_types(self):
+        opened = json.loads(self.call("GET", "/api/config").body)["data"]
+        opened["pipeline"] = {"fetch": {"timeout": None}}
+        self.assertEqual(self.call("PUT", "/api/config", opened).status, 400)
+        opened["pipeline"] = {"fetch": {"proxy": "", "timeout": "30s"}}
+        self.assertEqual(self.call("PUT", "/api/config", opened).status, 200)
 
     def test_only_active_restrictions_block_manual_choice(self):
         storage = self.runner.storage
@@ -147,10 +134,9 @@ class RunnerProgressTest(unittest.TestCase):
     def test_progress_tracks_each_node_without_running_a_test(self):
         tmp = temp_dir()
         tags = ["DEMO-vless-nl-out [abcd1234]", "DEMO-vless-nl-out [abcd5678]"]
-        r = make_runner(tmp, tags=tags, scoring={"enabled":False}, switching={"enabled":False})
-        r._tests_cache = {}
+        r = make_runner(tmp, tags=tags)
         seen = []
-        def fake_test(region, ident, pass_no, tests, params):
+        def fake_test(region, ident, pass_no):
             seen.append(dict(r.status()["progress"]))
             return {"round":pass_no,"id":ident.node_id,"tests":{}}
         try:
@@ -177,9 +163,12 @@ class RunnerProgressTest(unittest.TestCase):
         finally:
             r.storage.close()
 
-    def test_no_storage_empty_pass_does_not_dereference_none(self):
-        r = make_runner(temp_dir(), storage={"enabled":False}, scoring={"enabled":False}, switching={"enabled":False})
-        self.assertTrue(r._run_pass(1))
+    def test_empty_selector_pass_is_skipped(self):
+        r = make_runner(temp_dir())
+        try:
+            self.assertTrue(r._run_pass(1))
+        finally:
+            r.storage.close()
 
 
 if __name__ == "__main__":

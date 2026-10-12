@@ -10,7 +10,7 @@ from tests.helpers import make_runner, temp_dir
 class BackoffTest(unittest.TestCase):
     def setUp(self):
         self.r = make_runner(temp_dir(),
-                             cooldown={"enabled": True, "max_skip": 8, "garbage_hours": 72})
+                             selection={"quarantine": {"after_skips": 8, "duration": "72h"}})
         self.r._pass_seq = 100
 
     def tearDown(self):

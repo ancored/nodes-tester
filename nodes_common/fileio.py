@@ -43,6 +43,25 @@ def atomic_write_text(path, text):
             os.remove(tmp)
 
 
+def atomic_write_private(path, text):
+    """Атомарная запись файла с секретами (config.json): временный файл создаётся с
+    правами 0600 (atomic_write_text дал бы 0644); симлинк сохраняется — пишем в файл,
+    на который он указывает."""
+    import tempfile
+    path = os.path.realpath(path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".nt-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 def read_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)

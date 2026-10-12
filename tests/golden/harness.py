@@ -5,12 +5,13 @@
 генерация гоняется офлайн.
 
 Набор (set) — каталог:
-    config/          копия набора конфигов (providers/groups_params/user_nodes/awg…)
+    config/          config.json набора (подписки, фильтры, группы) и файлы подписок (awg…)
     responses.json   записанные ответы: {"http": {url: {status, b64}|null}, "happ": {url: text|null}}
     golden.json      эталонный nodes.json (выход генератора на этих ответах)
 
 Команды (запуск из любого места, stdlib + зависимости nodes_fetch):
     python harness.py record --project DIR --config-dir DIR --out SET   # живая сеть → ответы
+                                    [--branch router|clients]
     python harness.py replay --project DIR --set SET [--out FILE]      # офлайн → nodes.json
     python harness.py golden --project DIR --set SET                   # replay → SET/golden.json
 
@@ -59,6 +60,13 @@ def _patched(obj, name, value):
         setattr(obj, name, old)
 
 
+def _branch(config_dir):
+    """Ветвь набора: clients, если подписки набора — клиентские, иначе router."""
+    with open(os.path.join(config_dir, "config.json"), encoding="utf-8") as f:
+        subs = json.load(f).get("subscriptions") or []
+    return "clients" if subs and all(s.get("branch") == "clients" for s in subs) else "router"
+
+
 def record(project, config_dir, out_set):
     """Живая сеть: прогнать nodes_fetch по набору и записать ответы подписок."""
     from nodes_fetch import __main__ as fetch_cli
@@ -85,7 +93,8 @@ def record(project, config_dir, out_set):
     tmp = tempfile.mkdtemp(prefix="golden-rec-")
     try:
         with _patched(http_obj, http_name, get), _patched(happ, "_fetch", fetch):
-            fetch_cli.main(["-p", os.path.join(config_dir, "providers.json"),
+            fetch_cli.main(["-c", os.path.join(config_dir, "config.json"),
+                            "--branch", _branch(config_dir),
                             "--device", os.path.join(tmp, "device.json"),
                             "-o", os.path.join(tmp, "raw.json")])
     finally:
@@ -93,8 +102,8 @@ def record(project, config_dir, out_set):
     if os.path.exists(os.path.join(out_set, "config")):
         shutil.rmtree(os.path.join(out_set, "config"))
     shutil.copytree(config_dir, os.path.join(out_set, "config"),
-                    ignore=shutil.ignore_patterns("config.json", "config.schema.json",
-                                                  "config.example.json", "__pycache__"))
+                    ignore=shutil.ignore_patterns("config.schema.json", "config.example.json",
+                                                  "__pycache__"))
     with open(os.path.join(out_set, "responses.json"), "w", encoding="utf-8") as f:
         json.dump(rec, f, ensure_ascii=False, indent=1)
     print(f"[golden] записано: http={len(rec['http'])} happ={len(rec['happ'])} → {out_set}")
@@ -140,16 +149,14 @@ def replay(project, set_dir, out_path):
     tmp = tempfile.mkdtemp(prefix="golden-")
     try:
         cfg = os.path.join(set_dir, "config")
+        config, branch = os.path.join(cfg, "config.json"), _branch(cfg)
         raw = os.path.join(tmp, "raw.json")
         with _offline(project, set_dir):
-            code = fetch_cli.main(["-p", os.path.join(cfg, "providers.json"), "-o", raw,
-                                    "--device", os.path.join(tmp, "device.json")])
+            code = fetch_cli.main(["-c", config, "--branch", branch, "-o", raw,
+                                   "--device", os.path.join(tmp, "device.json")])
         if code:
             raise RuntimeError(f"nodes_fetch вернул {code}")
-        args = ["--raw", raw, "--groups", os.path.join(cfg, "groups_params.json"), "-o", out_path]
-        if os.path.exists(os.path.join(cfg, "user_nodes.json")):
-            args += ["--user-nodes", os.path.join(cfg, "user_nodes.json")]
-        code = config_cli.main(args)
+        code = config_cli.main(["-c", config, "--branch", branch, "--raw", raw, "-o", out_path])
         if code:
             raise RuntimeError(f"nodes_config вернул {code}")
     finally:

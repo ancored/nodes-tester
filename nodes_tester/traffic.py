@@ -113,7 +113,7 @@ class TrafficCollector:
         delay = 1.0
         while not self._stop.is_set():
             try:
-                self._call = self.api.subscribe_connections(self.cfg.poll_interval)
+                self._call = self.api.subscribe_connections(self.cfg.poll)
                 for message in self._call:
                     if not self._connected:
                         self._connected, delay = True, 1.0
@@ -131,7 +131,7 @@ class TrafficCollector:
             delay = min(delay * 2, _BACKOFF_MAX)
 
     def _flush_loop(self) -> None:
-        while not self._stop.wait(self.cfg.flush_interval):
+        while not self._stop.wait(self.cfg.flush):
             try:
                 self._flush()
             except Exception as exc:  # noqa: BLE001

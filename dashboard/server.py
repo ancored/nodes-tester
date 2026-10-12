@@ -15,15 +15,15 @@ def build_app(cfg, *, runner=None, interval: int | None = None) -> App:
 
     runner=None — read-only (отдельный `python -m dashboard`);
     runner задан — full-режим (встроен в Runner): read + control/config.
-    Токен/доступ берём из cfg.dashboard.
+    Токен/доступ берём из cfg.admin.
     """
-    dash = getattr(cfg, "dashboard", None)
+    dash = getattr(cfg, "admin", None)
     app = App(
         cfg,
         runner=runner,
-        interval=interval if interval is not None else (dash.interval if dash else 10),
+        interval=interval if interval is not None else (int(dash.refresh) if dash else 10),
         token=(dash.token if dash else ""),
-        read_open=(dash.read_open if dash else True),
+        read_open=(dash.public_read if dash else True),
     )
     api_read.register(app)
     # Управление (карантин/бан/switch/статус/прогон/логи) — требует runner (409 без

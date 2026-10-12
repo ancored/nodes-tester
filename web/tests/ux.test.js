@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getPath, setPath, changedPaths, nodeFlags, crcOf, rowKeys } from '../src/ux.js'
+import { getPath, setPath, changedPaths, nodeFlags, crcOf, rowKeys, splitNodeKey, nodeJsonLines } from '../src/ux.js'
 import { nodeStatus } from '../src/status.js'
 
 test('nested form fields retain unknown config and group overrides', () => {
@@ -23,10 +23,31 @@ test('independent restrictions and presence are not lost', () => {
   assert.equal(nodeStatus({score:null}).key,'unknown')
   assert.equal(nodeStatus({score:0}).key,'zero')
 })
-test('stable CRC links work in all legacy table shapes', () => {
-  assert.equal(crcOf({crc:'1234abcd'}),'1234abcd')
-  assert.equal(crcOf({id:'1234abcd'}),'1234abcd')
-  assert.equal(crcOf({node:'DEMO-out [1234abcd]'}),'1234abcd')
+test('node key links work in all table shapes', () => {
+  assert.equal(crcOf({crc:'1234abcd.0000beef'}),'1234abcd.0000beef')
+  assert.equal(crcOf({id:'1234abcd.0000beef'}),'1234abcd.0000beef')
+  assert.equal(crcOf({node:'DEMO-vless-out [1234abcd.0000beef]'}),'1234abcd.0000beef')
+})
+test('node key splits into server and credentials parts for colouring', () => {
+  assert.deepEqual(splitNodeKey('DEMO-vless|reality-out [1234abcd.0000beef]'),
+    { head:'DEMO-vless|reality-out [', node:'1234abcd', cred:'0000beef', tail:']' })
+  assert.deepEqual(splitNodeKey('1234abcd.0000beef'), { head:'', node:'1234abcd', cred:'0000beef', tail:'' })
+  assert.equal(splitNodeKey('global-auto-out'), null)
+})
+test('node JSON lines are marked by the CRC they feed', () => {
+  const fragment = { tag:'T', type:'vless', uuid:'U', tls:{ server_name:'s', reality:{ public_key:'K', short_id:'ab' } },
+    peers:[{ address:'1.2.3.4', pre_shared_key:'P' }], domain_resolver:'bootstrap' }
+  const lines = nodeJsonLines(fragment, ['type','uuid','tls','peers'], [['uuid'],['tls','reality','short_id'],['peers',0,'pre_shared_key']])
+  const kind = text => lines.find(l => l.text.trim().startsWith(text)).kind
+  assert.equal(kind('"tag"'), '')
+  assert.equal(kind('"domain_resolver"'), '')
+  assert.equal(kind('"type"'), 'node')
+  assert.equal(kind('"uuid"'), 'cred')
+  assert.equal(kind('"public_key"'), 'node')
+  assert.equal(kind('"short_id"'), 'cred')
+  assert.equal(kind('"address"'), 'node')
+  assert.equal(kind('"pre_shared_key"'), 'cred')
+  assert.deepEqual(JSON.parse(lines.map(l => l.text).join('\n')), fragment)
 })
 test('table row keys are unique even when rows share identity-like fields', () => {
   const eu = {provider:'AWG',group:'eu',total:6}, ai = {provider:'AWG',group:'ai',total:6}, dup = {...eu}

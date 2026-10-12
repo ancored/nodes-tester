@@ -10,7 +10,7 @@
   - отказ сервера (429/5xx) = НЕ вина ноды → ok=True, метка `limited`.
 
 Один GET файла — работает и с cloudflare `__down?bytes=N`, и с фикс-файлами
-(speedtest.selectel.ru/10MB): различие только в url (`url_by_region`). Один запрос
+(speedtest.selectel.ru/10MB): различие только в url (`for_region`). Один запрос
 → 429 не провоцируется.
 """
 
@@ -29,8 +29,8 @@ class DownloadTest(BaseTest):
 
     def run(self, ctx: TestContext) -> TestResult:
         url = self.url_for(ctx)
-        duration = max(1.0, float(self.options.get("duration", 20)))       # >0 (валидация)
-        window_bytes = max(1, int(self.options.get("window_bytes", 2_000_000)))
+        duration = max(1.0, float(self.option(ctx, "duration", 20)))
+        window_bytes = max(1, int(float(self.option(ctx, "window_mb", 2)) * 1_000_000))
         connect_timeout = max(1.0, float(self.options.get("connect_timeout", 10)))
 
         r = stream_single(ctx.session, url, duration, connect_timeout)
@@ -90,7 +90,6 @@ class HeavyDownloadTest(DownloadTest):
     pass/fail. Логика замера та же, что у лёгкого download; отличается объёмом (url)
     и назначением.
 
-    url/длительность настраиваются в config.tests.heavy_download (url_by_region —
-    напр. фикс-файл для RU-зоны вместо cloudflare)."""
+    Это проверка `heavy`: url, длительность и for_region — в config.checks.heavy."""
     name = "heavy_download"
     default_url = HEAVY_URL

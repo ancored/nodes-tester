@@ -6,27 +6,27 @@ import unittest
 from nodes_tester.identity import parse_node
 from tests.helpers import make_runner, temp_dir
 
-EU = "DEMO-vless|reality-nl-out [aaaa0001]"
-EU_AI = "DEMO-vless|reality-de-out [AI] [aaaa0002]"
-US_AI = "DEMO-vless|reality-us-out [AI] [aaaa0003]"
+EU = "DEMO-vless|reality-out [aaaa0001.00000001]"
+EU_AI = "DEMO-vless|reality-out [aaaa0002.00000001]"
+US_AI = "DEMO-vless|reality-out [aaaa0003.00000001]"
+GROUPS = [{"tag": "eu"}, {"tag": "us"}, {"tag": "ai", "in_global": False}]
 
 
 def _row(node, region, score):
-    return {"node": node, "region": region, "score": score, "id": node[-9:-1], "active": 0}
+    return {"node": node, "region": region, "score": score, "id": parse_node(node).node_id, "active": 0}
 
 
 def _proxies():
+    # Состав, как раньше задавали условия стран (сборка теперь кладёт все ноды во все группы,
+    # но тестер обязан работать и с выборочным составом).
     def sel(tag, members):
-        return {"type": "selector", "all": [f"{tag}-failsafe"] + members,
-                "now": f"{tag}-failsafe"}
+        return {"type": "selector", "all": ["failsafe-out"] + members, "now": "failsafe-out"}
     return {
         EU: {"type": "vless"}, EU_AI: {"type": "vless"}, US_AI: {"type": "vless"},
         "eu-auto-out": sel("eu-auto-out", [EU, EU_AI]),
         "us-auto-out": sel("us-auto-out", [US_AI]),
         "ai-auto-out": sel("ai-auto-out", [EU_AI, US_AI]),
-        "eu-auto-out-failsafe": {"type": "urltest", "all": [EU, EU_AI]},
-        "us-auto-out-failsafe": {"type": "urltest", "all": [US_AI]},
-        "ai-auto-out-failsafe": {"type": "urltest", "all": [EU_AI, US_AI]},
+        "failsafe-out": {"type": "urltest", "all": [EU, EU_AI, US_AI]},
         "global-auto-out": {"type": "selector", "all": ["eu-auto-out", "us-auto-out"],
                             "now": "eu-auto-out"},
         "nodes-tester": {"type": "selector", "all": [EU, EU_AI, US_AI], "now": EU},
@@ -51,10 +51,9 @@ class _Api:
 
 class NodeGroupsTest(unittest.TestCase):
     def setUp(self):
-        self.r = make_runner(temp_dir())
+        self.r = make_runner(temp_dir(), groups=GROUPS)
         self.addCleanup(self.r.storage.close)
         self.r.api = _Api()
-        self.r.cfg.run.node_group_overrides = {}      # без обязательных тестов групп
         self.board = self.r.board
         self.board.rows = {n: _row(n, reg, s) for n, reg, s in
                            ((EU, "eu", 80), (EU_AI, "eu", 90), (US_AI, "us", 70))}
@@ -82,25 +81,14 @@ class NodeGroupsTest(unittest.TestCase):
         self.assertEqual(sw.active_node("ai"), EU_AI)
         crcs = {row[0] for row in self.r.storage._db.execute(
             "SELECT crc FROM scores WHERE active = 1")}
-        self.assertTrue(crcs <= {"aaaa0002"})
-
-    def test_params_union_over_groups(self):
-        self.r.cfg.run.node_group_overrides = {"ai": {"tests_enabled": ["gemini"],
-                                                      "request_timeout": 30}}
-        self.r._region_cache = {}
-        p = self.r._node_params(parse_node(EU_AI))
-        self.assertIn("gemini", p.tests_enabled)
-        self.assertIn("download", p.tests_enabled)
-        self.assertEqual(p.request_timeout, 30)
-        plain = self.r._groups_params(["eu"])
-        self.assertNotIn("gemini", plain.tests_enabled)
+        self.assertTrue(crcs <= {"aaaa0002.00000001"})
 
     def test_vanished_group_state_pruned(self):
         sw = self.r.switcher
-        sw.state["other"] = {"active": EU, "recent": [], "activations": {}}
+        sw.state["gone"] = {"active": EU, "recent": [], "activations": {}}
         self.r._refresh_groups()
-        self.assertNotIn("other", sw.state)
-        self.assertNotIn("other", sw.active_regions())
+        self.assertNotIn("gone", sw.state)
+        self.assertNotIn("gone", sw.active_regions())
 
     def test_no_groups_falls_back_to_regions(self):
         self.r.api.proxies = {"nodes-tester": {"type": "selector", "all": [EU], "now": EU}}

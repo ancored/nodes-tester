@@ -4,7 +4,7 @@ import os
 import subprocess
 import unittest
 
-from nodes_tester.config import SingboxControlConfig
+from nodes_tester.config import SingboxConfig
 from nodes_tester.singbox_ctl import ControlError, SingboxControl
 from tests.helpers import temp_dir
 
@@ -63,7 +63,7 @@ class SingboxControlTest(unittest.TestCase):
         ks = os.path.join(self.tmp, "killswitch")
         for path in (init, ks):
             open(path, "w").close()
-        self.cfg = SingboxControlConfig(init=init, killswitch_init=ks,
+        self.cfg = SingboxConfig(init=init, killswitch_init=ks,
                                         stop_flag=os.path.join(self.tmp, "run", "stopped"))
         self.router = FakeRouter(init, ks)
         self.notifier = _Notifier()

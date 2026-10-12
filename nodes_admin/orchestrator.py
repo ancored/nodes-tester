@@ -28,31 +28,49 @@ class BusyError(Exception):
 
 
 def validate_schedule(data: object) -> dict:
+    """Расписание в формате API админки: {version: 1, jobs: {router|clients: {enabled,
+    times}}, timeout (с)}. В конфиге оно живёт в разделе pipeline (at, enabled, timeout)."""
     if not isinstance(data, dict) or set(data) != {"version", "jobs", "timeout"} or type(data["version"]) is not int or data["version"] != 1:
-        raise ValueError("pipeline.json: ожидаются version=1, jobs и timeout")
+        raise ValueError("расписание: ожидаются version=1, jobs и timeout")
     timeout = data["timeout"]
     if type(timeout) is not int or not 1 <= timeout <= 86400:
-        raise ValueError("pipeline.json: timeout должен быть 1..86400 с")
+        raise ValueError("расписание: timeout должен быть 1..86400 с")
     jobs = data["jobs"]
     if not isinstance(jobs, dict) or set(jobs) != set(MODES):
-        raise ValueError("pipeline.json: нужны задания router и clients")
+        raise ValueError("расписание: нужны задания router и clients")
     for mode in MODES:
         job = jobs[mode]
         if not isinstance(job, dict) or set(job) != {"enabled", "times"}:
-            raise ValueError(f"pipeline.json: {mode} требует enabled и times")
+            raise ValueError(f"расписание: {mode} требует enabled и times")
         times = job["times"]
         if type(job["enabled"]) is not bool or not isinstance(times, list):
-            raise ValueError(f"pipeline.json: неверные enabled/times для {mode}")
+            raise ValueError(f"расписание: неверные enabled/times для {mode}")
         for value in times:
             if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
-                raise ValueError(f"pipeline.json: время {value!r} не HH:MM")
+                raise ValueError(f"расписание: время {value!r} не HH:MM")
             hour, minute = value[:2], value[3:]
             if not (hour.isascii() and minute.isascii() and hour.isdigit() and minute.isdigit()
                     and 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59):
-                raise ValueError(f"pipeline.json: время {value!r} не HH:MM")
+                raise ValueError(f"расписание: время {value!r} не HH:MM")
         if len(times) != len(set(times)):
-            raise ValueError(f"pipeline.json: повтор времени для {mode}")
+            raise ValueError(f"расписание: повтор времени для {mode}")
     return data
+
+
+def _schedule_from_config(data: dict) -> dict:
+    """Раздел pipeline config.json → расписание в формате API (с умолчаниями конфига)."""
+    from nodes_tester.config import parse_config
+    pipeline = parse_config(data).pipeline
+    return {"version": 1, "timeout": int(pipeline.timeout),
+            "jobs": {mode: {"enabled": getattr(pipeline, mode).enabled,
+                            "times": list(getattr(pipeline, mode).at)} for mode in MODES}}
+
+
+def _duration_text(seconds: int) -> str:
+    for unit, size in (("h", 3600), ("m", 60)):
+        if seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
 
 
 def _revision(raw: bytes) -> str:
@@ -139,12 +157,12 @@ def _run_alive(pid: int, start: str) -> bool:
 
 
 class Orchestrator:
-    def __init__(self, config_dir: Path, data_dir: Path, *, command=None,
+    def __init__(self, config_path: Path, data_dir: Path, *, command=None,
                  on_apply_start=None, on_apply_end=None, on_finish=None, clock=time.time,
                  kill_grace=300):
-        self.config_dir = Path(config_dir)
+        self.config_path = Path(config_path)    # config.json: расписание — раздел pipeline
+        self.config_dir = self.config_path.parent
         self.data_dir = Path(data_dir)
-        self.schedule_path = self.config_dir / "pipeline.json"
         self.db_path = self.data_dir / "pipeline.db"
         self.logs_dir = self.data_dir / "pipeline/runs"
         self.command = command or ["nodes-tester", "pipeline"]
@@ -356,25 +374,35 @@ class Orchestrator:
             Path(row["log_path"] + ".exit").unlink(missing_ok=True)
 
     def read_schedule(self):
-        raw = self.schedule_path.read_bytes()
-        return validate_schedule(json.loads(raw.decode("utf-8"))), _revision(raw)
+        """(расписание, revision config.json). Ревизия — всего файла: правка расписания
+        не затрёт параллельную правку другого раздела."""
+        raw = self.config_path.read_bytes()
+        return _schedule_from_config(json.loads(raw.decode("utf-8"))), _revision(raw)
 
     def write_schedule(self, data, revision):
+        from nodes_common.fileio import atomic_write_private, dumps_json
+        from nodes_tester.config import parse_config
         validate_schedule(data)
         with self._lock:
-            _old, current = self.read_schedule()
-            if revision != current:
+            raw = self.config_path.read_bytes()
+            if revision != _revision(raw):
                 raise ValueError("revision_conflict")
-            text = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
-            temp = self.schedule_path.with_name("." + self.schedule_path.name + ".tmp")
-            temp.write_bytes(text)
-            os.replace(temp, self.schedule_path)
+            config = json.loads(raw.decode("utf-8"))
+            pipeline = config.setdefault("pipeline", {})
+            pipeline["timeout"] = _duration_text(data["timeout"])
+            for mode in MODES:
+                job = pipeline.setdefault(mode, {})
+                job["at"] = list(data["jobs"][mode]["times"])
+                job["enabled"] = data["jobs"][mode]["enabled"]
+            parse_config(config)                     # вся остальная часть файла — без изменений
+            text = dumps_json(config)
+            atomic_write_private(str(self.config_path), text)
             # A new or edited schedule starts with future slots; restart catch-up
             # applies only to slots missed after this point.
             with self._connect() as db:
                 for mode in MODES:
                     db.execute("UPDATE schedule_state SET last_slot=? WHERE mode=?", (self.clock(), mode))
-            return _revision(text)
+            return _revision(text.encode("utf-8"))
 
     def _latest_due(self, times, now):
         today = dt.datetime.fromtimestamp(now).date()

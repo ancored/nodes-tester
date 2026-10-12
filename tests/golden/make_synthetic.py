@@ -6,7 +6,7 @@
 
 Покрытие: vless reality/grpc/xhttp/голый (отбрасывается), vmess ws tls, trojan ws без host и с
 %-паролем, hy2 (порт и диапазон портов), ss, tuic, anytls, страна не определяется (undef),
-исключённая страна (ru), labels (AI/Media), дубль ноды (dedupe), clash-yaml подписка, упавшая
+нода с выходом в RU (страну больше не фильтруем), дубль ноды (dedupe), clash-yaml подписка, упавшая
 подписка, AWG-папка (страна из имени файла), user_nodes; два режима groups_params
 (router: nodes_tester; wh: global_failsafe + raw_user_nodes + exclude_protocols).
 """
@@ -102,7 +102,6 @@ USER_NODES = [{
             "utls": {"enabled": True, "fingerprint": "chrome"},
             "reality": {"enabled": True, "public_key": PBK, "short_id": "aa"}}}]
 
-LABELS = {"AI": ["ChatGPT", "OpenAI"], "Media": ["Netflix"]}
 
 SUBS = [
     {"url": "https://sub.example/alpha", "tag": "ALPHA", "user_agent": "curl"},
@@ -122,28 +121,27 @@ RESPONSES = {
     "happ": {},
 }
 
+GROUP_OPTS = {"selector": {"interrupt_exist_connections": True},
+              "urltest": {"interval": "5m", "tolerance": 100, "idle_timeout": "5m",
+                          "interrupt_exist_connections": True}}
+
+
+def _subs(branch=None):
+    subs = SUBS + [{"tag": "Custom", "type": "inline", "outbounds": USER_NODES}]
+    return [dict(sub, branch=branch) for sub in subs] if branch else subs
+
+
 SETS = {
     "synthetic": {
-        "providers": {"subscribes": SUBS},
-        "groups_params": {
-            "selector": {"interrupt_exist_connections": True},
-            "urltest": {"interval": "5m", "tolerance": 100, "idle_timeout": "5m",
-                        "interrupt_exist_connections": True},
-            "emit": {"nodes_tester": True, "global_failsafe": False},
-            "raw_user_nodes": False,
-            "filters": {"exclude_types": ["shadowsocksr"], "exclude_countries": ["ru"]},
-            "rename": {"labels": LABELS, "domain_resolver_tag": "bootstrap"}},
+        "subscriptions": _subs(),
+        "groups": [{"tag": "eu"}, {"tag": "us"}, {"tag": "other"}],
+        "pipeline": {"router": {"exclude_types": ["shadowsocksr"], "domain_resolver": "bootstrap",
+                                **GROUP_OPTS}},
     },
     "synthetic-wh": {
-        "providers": {"subscribes": SUBS},
-        "groups_params": {
-            "selector": {"interrupt_exist_connections": True},
-            "urltest": {"interval": "5m", "tolerance": 100, "idle_timeout": "5m",
-                        "interrupt_exist_connections": True},
-            "emit": {"nodes_tester": False, "global_failsafe": True},
-            "raw_user_nodes": True,
-            "filters": {"exclude_types": ["shadowsocksr"], "exclude_protocols": ["xhttp", "wg"]},
-            "rename": {"labels": LABELS, "domain_resolver_tag": "dns-whitelist"}},
+        "subscriptions": _subs("clients"),
+        "pipeline": {"clients": {"exclude_types": ["shadowsocksr"], "exclude_protocols": ["xhttp", "wg"],
+                                 "domain_resolver": "dns-whitelist", **GROUP_OPTS}},
     },
 }
 
@@ -161,9 +159,7 @@ def main():
             shutil.rmtree(d)
         cfg = os.path.join(d, "config")
         os.makedirs(os.path.join(cfg, "awg"))
-        _dump(os.path.join(cfg, "providers.json"), spec["providers"])
-        _dump(os.path.join(cfg, "groups_params.json"), spec["groups_params"])
-        _dump(os.path.join(cfg, "user_nodes.json"), USER_NODES)
+        _dump(os.path.join(cfg, "config.json"), spec)
         with open(os.path.join(cfg, "awg", "pl.conf"), "w", encoding="utf-8", newline="\n") as f:
             f.write(AWG_CONF)
         _dump(os.path.join(d, "responses.json"), RESPONSES)

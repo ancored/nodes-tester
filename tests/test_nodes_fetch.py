@@ -197,30 +197,32 @@ class CliTest(FetchTestBase):
             code = cli.main(list(args))
         return code, out.getvalue(), err.getvalue()
 
-    def _write_providers(self, providers):
-        path = os.path.join(self.tmp.name, "providers-main.json")
+    def _write_config(self, subscriptions, **fetch_cfg):
+        """config.json с подписками и разделом pipeline.fetch."""
+        path = os.path.join(self.tmp.name, "config.json")
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(providers, f)
+            json.dump({"subscriptions": subscriptions,
+                       "pipeline": {"fetch": dict({"retries": 0}, **fetch_cfg)}}, f)
         return path
 
     def test_write_guard_dryrun(self):
-        prov = self._write_providers(_providers(min_ratio=0.9))
+        prov = self._write_config(_providers()["subscribes"], min_ratio=0.9)
         out = os.path.join(self.tmp.name, "raw", "main.json")
         self.net({"https://s.example/a": LINKS_A, "https://s.example/b": LINKS_B})
-        code, stdout, _ = self._cli("-p", prov, "-o", out, "--json")
+        code, stdout, _ = self._cli("-c", prov, "-o", out, "--json")
         self.assertEqual(code, 0)
         summary = json.loads(stdout)
         self.assertTrue(summary["written"] and summary["changed"])
         self.assertEqual(summary["nodes"], 3)
-        self.assertEqual(rawfmt.load(out)["providers"], "providers-main")
+        self.assertEqual(rawfmt.load(out)["providers"], "providers")
         before = _read(out)
 
         self.net({"https://s.example/b": LINKS_B})             # A упала, прошлых нод 3 → 1+2stale
-        code, _, _ = self._cli("-p", prov, "-o", out)
+        code, _, _ = self._cli("-c", prov, "-o", out)
         self.assertEqual(code, 0)                              # last-good удержал число нод
 
         self.net({})                                           # всё упало, но last-good свежий
-        code, _, _ = self._cli("-p", prov, "-o", out, "--dry-run", "--json")
+        code, _, _ = self._cli("-c", prov, "-o", out, "--dry-run", "--json")
         self.assertEqual(code, 0)
 
         with open(out, "w", encoding="utf-8") as f:            # прошлый raw без last_ok → guard
@@ -229,17 +231,17 @@ class CliTest(FetchTestBase):
                 s["last_ok_at"] = None
             f.write(json.dumps(raw))
         guarded = _read(out)
-        code, stdout, err = self._cli("-p", prov, "-o", out, "--json")
+        code, stdout, err = self._cli("-c", prov, "-o", out, "--json")
         self.assertEqual(code, 2)
         self.assertIn("GUARD", err)
         self.assertEqual(_read(out), guarded)   # файл не тронут
-        code, _, _ = self._cli("-p", prov, "-o", out, "--force")
+        code, _, _ = self._cli("-c", prov, "-o", out, "--force")
         self.assertEqual(code, 0)
         self.assertEqual(rawfmt.load(out)["nodes"], [])
 
-    def test_bad_providers_exit_1(self):
-        prov = self._write_providers({"subscribes": [{"tag": "A"}]})
-        code, stdout, _ = self._cli("-p", prov, "-o", os.path.join(self.tmp.name, "x.json"),
+    def test_bad_config_exit_1(self):
+        prov = self._write_config([{"tag": "A"}])
+        code, stdout, _ = self._cli("-c", prov, "-o", os.path.join(self.tmp.name, "x.json"),
                                     "--json")
         self.assertEqual(code, 1)
         self.assertFalse(json.loads(stdout)["ok"])
@@ -262,14 +264,17 @@ class SchemaContractTest(FetchTestBase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, self._schema("raw_nodes.schema.json"))
 
-    def test_providers_match_schema(self):
-        import jsonschema
-        schema = self._schema("providers.schema.json")
-        for d in ("config", os.path.join("tests", "fixtures", "golden", "synthetic", "config")):
-            path = os.path.join(_ROOT, d, "providers.json")
-            if os.path.exists(path):
-                with self.subTest(providers=d), open(path, encoding="utf-8") as f:
-                    jsonschema.validate(json.load(f), schema)
+    def test_branch_subscriptions_from_config(self):
+        from nodes_tester.config import parse_config
+        cfg = parse_config({"subscriptions": [
+            {"tag": "A", "url": "https://a"}, {"tag": "W", "url": "https://w", "branch": "clients"},
+            {"tag": "B", "url": "https://b", "branch": "both"}],
+            "pipeline": {"fetch": {"keep_stale": "12h", "timeout": "1m"}}})
+        router = fetch.providers_from_config(cfg, "router")
+        self.assertEqual([s["tag"] for s in router["subscribes"]], ["A", "B"])
+        self.assertEqual([s["tag"] for s in fetch.providers_from_config(cfg, "clients")["subscribes"]], ["W", "B"])
+        self.assertEqual((router["fetch"]["stale_max_hours"], router["fetch"]["timeout"]), (12, 60))
+        fetch.load_providers(router, log=lambda m: None)
 
 
 if __name__ == "__main__":

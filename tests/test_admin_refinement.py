@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch, Mock
 
 from dashboard.server import build_app
-from naming import content_crc32, node_payload
+from naming import canonical, node_key, split_payload
 from nodes_fetch.fetch import load_providers
 from nodes_fetch.sources import Context, fetch_subscription
 from nodes_fetch.happ import _HEADERS
@@ -15,7 +15,7 @@ from tests.helpers import temp_dir, make_runner, fresh_nodes_json
 class AdminRefinementTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.runner = make_runner(self.tmp, dashboard={"token": "demo"})
+        self.runner = make_runner(self.tmp, admin={"token": "demo"})
         self.app = build_app(self.runner.cfg, runner=self.runner)
 
     def tearDown(self):
@@ -32,7 +32,7 @@ class AdminRefinementTest(unittest.TestCase):
         self.assertEqual(opened["revision"], "missing")
         self.assertEqual(opened["data"], {})
         body = {"filters": {"exclude_countries": ["ru"], "exclude_names": {"*": ["test"]}},
-                "rename": {"labels": {"AI": ["ChatGPT"]}}, "custom": {"keep": True}}
+                "rename": {"domain_resolver_tag": "dns"}, "custom": {"keep": True}}
         saved = self.call("PUT", "/api/config/groups", body, "missing")
         self.assertEqual(saved.status, 200)
         self.assertEqual(json.loads(self.call("GET", "/api/config/groups").body)["data"], body)
@@ -44,7 +44,7 @@ class AdminRefinementTest(unittest.TestCase):
         self.assertEqual(self.call("PUT", "/api/config/groups", {"raw_user_nodes": False}).status, 200)
         for body in ({"filters": {"exclude_types": "vless"}}, {"raw_user_nodes": "false"},
                      {"emit": {"nodes_tester": "yes"}}, {"emit": {"ensure_regions": ["moon"]}},
-                     {"urltest": []}, {"rename": {"labels": {"AI": "word"}}}):
+                     {"urltest": []}, {"rename": "x"}):
             with self.subTest(body=body):
                 self.assertEqual(self.call("PUT", "/api/config/groups", body).status, 400)
         self.assertEqual(json.loads(self.call("GET", "/api/config/groups").body)["data"], {"raw_user_nodes": False})
@@ -68,8 +68,8 @@ class AdminRefinementTest(unittest.TestCase):
     def load_node(self):
         ob = {"type": "vless", "server": "example.invalid", "server_port": 443, "uuid": "demo-secret",
               "tls": {"enabled": True, "_nested": "included"}, "domain_resolver": "bootstrap", "_temporary": True}
-        crc = content_crc32(ob)
-        ob["tag"] = f"DEMO-vless-nl-out [{crc}]"
+        crc = node_key(ob)
+        ob["tag"] = f"DEMO-vless-out [{crc}]"
         path = fresh_nodes_json(self.tmp, [ob])
         self.runner.cfg.storage.nodes_file = path
         self.runner.storage.load_nodes(path)
@@ -82,7 +82,11 @@ class AdminRefinementTest(unittest.TestCase):
         ob, crc, path = self.load_node()
         data = json.loads(self.call("GET", f"/api/nodes/{crc}/details").body)
         self.assertEqual(data["fragment"], ob)
-        self.assertEqual(data["payload"], node_payload(ob))
+        settings, creds = split_payload(ob)
+        self.assertEqual(data["node_payload"], canonical(settings))
+        self.assertEqual(data["cred_payload"], canonical(creds))
+        self.assertEqual(json.loads(data["cred_payload"]), {"uuid": "demo-secret"})
+        self.assertEqual(data["cred_paths"], [["uuid"]])
         self.assertEqual(data["calculated_crc"], crc)
         self.assertNotIn("tag", data["crc_fields"])
         self.assertNotIn("domain_resolver", data["crc_fields"])
@@ -102,7 +106,7 @@ class AdminRefinementTest(unittest.TestCase):
 
     def test_node_routes_validate_crc_and_missing_node(self):
         self.assertEqual(self.call("GET", "/api/nodes/nope/details").status, 400)
-        self.assertEqual(self.call("GET", "/api/nodes/12345678/details").status, 404)
+        self.assertEqual(self.call("GET", "/api/nodes/12345678.9abcdef0/details").status, 404)
 
     def test_happ_headers_override_and_url_user_agent_is_ignored(self):
         sub = {"tag": "HAPP", "url": "happ://crypt/demo", "user_agent": "ignored",

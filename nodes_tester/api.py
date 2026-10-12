@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from nodes_common.box_api import BoxApi, BoxApiError
 
-from .config import BoxApiConfig
+from .config import ApiConfig
 
 ApiError = BoxApiError
 
@@ -16,7 +16,7 @@ _GROUP_TYPES = ("selector", "urltest", "loadbalance", "fallback")
 
 
 class ApiClient:
-    def __init__(self, cfg: BoxApiConfig):
+    def __init__(self, cfg: ApiConfig):
         self._api = BoxApi(cfg.url, cfg.secret, cfg.timeout)
         self.base_url = self._api.url
 

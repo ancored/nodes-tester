@@ -13,13 +13,11 @@ def temp_dir() -> str:
 
 
 def make_config(tmp: str, **overrides) -> str:
-    """Собрать рабочий config.json во временной папке (пути — в tmp). Возвращает путь."""
+    """Собрать рабочий config.json во временной папке (БД — в tmp). Возвращает путь.
+    Каталог данных (nodes.json) задаёт load_test_config / make_runner."""
     with open("config/config.example.json", encoding="utf-8") as fh:
         cfg = json.load(fh)
-    cfg["storage"]["db_file"] = os.path.join(tmp, "stats.db")
-    cfg["storage"]["nodes_file"] = os.path.join(tmp, "nodes.json")
-    cfg["dashboard"]["providers_file"] = os.path.join(tmp, "providers.json")
-    cfg["switching"]["rotation"]["load_balance"]["enabled"] = False
+    cfg["storage"] = {"path": os.path.join(tmp, "stats.db")}
     for k, v in overrides.items():           # мелкий мердж верхнего уровня секций
         if isinstance(v, dict) and isinstance(cfg.get(k), dict):
             cfg[k].update(v)
@@ -34,16 +32,19 @@ def make_config(tmp: str, **overrides) -> str:
     return path
 
 
+def load_test_config(tmp: str, **overrides):
+    """Config из make_config с каталогом данных tmp (nodes.json — tmp/nodes.json)."""
+    from nodes_tester.config import load_config
+    return load_config(make_config(tmp, **overrides), data_dir=tmp)
+
+
 def make_runner(tmp: str, tags=None, **overrides):
     """Runner с временными путями и фейковым API sing-box (без сети). tags — члены nodes-tester."""
-    from nodes_tester.config import load_config
     from nodes_tester.runner import Runner
 
-    cfg = load_config(make_config(tmp, **overrides))
+    cfg = load_test_config(tmp, **overrides)
     r = Runner(cfg)
-    r._base = cfg.run.for_group(cfg.testing_group.tag)
-    r._region_cache = {}
-    r._tests_cache = {}
+    r._tests_cache = []
     r._backoff = {}
     r._endpoints = {}
     r._host_ep_last = {}
@@ -79,3 +80,18 @@ def fresh_nodes_json(tmp: str, outbounds) -> str:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"outbounds": outbounds}, fh)
     return path
+
+
+def write_schedule(config_dir, schedule) -> str:
+    """config.json с разделом pipeline из расписания в формате API (jobs/times/timeout).
+    Возвращает путь к config.json — его принимает Orchestrator."""
+    from pathlib import Path
+    path = Path(config_dir) / "config.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    data["pipeline"] = {"timeout": f"{schedule['timeout']}s", **{
+        mode: {"enabled": job["enabled"], "at": job["times"]} for mode, job in schedule["jobs"].items()}}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return str(path)

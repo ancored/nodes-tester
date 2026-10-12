@@ -23,7 +23,7 @@ def _row(node, region="eu", score=70.0):
 
 class _Base(unittest.TestCase):
     def setUp(self):
-        self.r = r = make_runner(temp_dir(), cooldown={"enabled": True, "garbage_hours": 72})
+        self.r = r = make_runner(temp_dir(), selection={"quarantine": {"duration": "72h"}})
         r._pass_seq = 100
         r.board.set_groups({"eu": set(EU), "us": {U}})
         scores = {A: 95, B: 90, C: 85, D: 80, E: 75}
@@ -52,6 +52,12 @@ class _Base(unittest.TestCase):
         else:
             self.r.board.set_required_result(raw, check, ok)
 
+    def _require(self, **ttls):
+        """Обязательные проверки группы eu (вместо прежних обязательных тестов)."""
+        from nodes_tester.config import GroupConfig
+        self.r.board.set_policy([GroupConfig("eu", require={c: {"ttl": t} for c, t in ttls.items()}),
+                                 GroupConfig("us")], self.r.cfg.regions)
+
     def _fake_activate(self, cand, region, st, now, reason):
         self.activated.append((region, cand["node"], reason))
         st["active"] = cand["node"]
@@ -66,7 +72,7 @@ class KeeperTest(_Base):
         self.assertEqual(self.checks, [(B, "heavy"), (C, "heavy"), (D, "heavy")])
 
     def test_required_before_heavy_and_failure_skips(self):
-        self.r.board.set_required({"eu": {"gemini": 3600, "openai": 3600}})
+        self._require(gemini=3600, openai=3600)
         self.failing = {(B, "gemini"), (C, "heavy")}
         self.r.reserve.maintain("eu")
         self.assertEqual(self.r.board.reserve("eu"), [D, E])
@@ -107,7 +113,7 @@ class KeeperTest(_Base):
         self.assertEqual(len(self.checks), 4)                         # по разу на каждую ноду
 
     def test_failsafe_left_when_reserve_appears(self):
-        self.r.board.set_required({"eu": {"gemini": 3600}})
+        self._require(gemini=3600)
         self.r.switcher.state["eu"].update(active=None, failsafe=True)
         self.r.reserve.maintain("eu")
         self.assertEqual(self.activated[0][1:], (B, "init"))
@@ -128,7 +134,7 @@ class ReleaseTest(_Base):
         self.gate = {}
         self.light = []
 
-        def fake_test(region, ident, pass_no, tests, params):
+        def fake_test(region, ident, pass_no):
             self.light.append(ident.raw)
             return {"tests": {}}
 

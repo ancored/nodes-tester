@@ -1,272 +1,54 @@
 {
   "$schema": "config.schema.json",
-  "box_api": {
+  "api": {
     "url": "http://127.0.0.1:9090",
-    "secret": "YOUR-SING-BOX-API-SECRET",
-    "timeout": 5
+    "secret": "YOUR-SING-BOX-API-SECRET"
   },
-  "testing_groups": [
+  "subscriptions": [
+    { "tag": "PROV-A", "url": "https://sub.example.com/sub/YOUR-SUBSCRIPTION-TOKEN", "user_agent": "curl" },
+    { "tag": "PROV-HAPP", "url": "happ://crypt5/YOUR-ENCRYPTED-HAPP-LINK" },
+    { "tag": "AWG", "type": "folder", "path": "awg", "format": "awg", "ext": ".conf" },
     {
-      "tag": "main",
-      "connection": {
-        "type": "socks5",
-        "host": "127.0.0.1",
-        "port": 2080,
-        "username": null,
-        "password": null
-      },
-      "selector": {
-        "group": "nodes-tester",
-        "exclude": [
-          "DIRECT",
-          "REJECT",
-          "direct",
-          "block"
-        ]
-      }
+      "tag": "my",
+      "type": "inline",
+      "enabled": false,
+      "outbounds": [
+        {
+          "tag": "Custom-NL",
+          "type": "vless",
+          "server": "203.0.113.10",
+          "server_port": 443,
+          "uuid": "00000000-0000-4000-8000-000000000000",
+          "flow": "xtls-rprx-vision",
+          "tls": {
+            "enabled": true,
+            "server_name": "www.example.com",
+            "reality": { "enabled": true, "public_key": "YOUR-REALITY-PUBLIC-KEY", "short_id": "0123abcd" },
+            "utls": { "enabled": true, "fingerprint": "chrome" }
+          }
+        }
+      ]
     }
   ],
-  "region_groups": {
-    "enabled": true,
-    "recognition": "parse",
-    "list": [],
-    "exclude": [
-      "ru"
-    ]
-  },
-  "run": {
-    "default": {
-      "tests_enabled": [
-        "connectivity",
-        "latency",
-        "jitter",
-        "download",
-        "reachability"
-      ],
-      "loop": true,
-      "rotation_bound": true,
-      "pass_pause": 0,
-      "switch_delay": 1.0,
-      "min_host_gap": 120,
-      "rounds": 1,
-      "request_timeout": 10,
-      "restore_selection": true,
-      "reserve_size": 3,
-      "heavy_ttl_hours": 6
+  "groups": [
+    { "tag": "all" }
+  ],
+  "pipeline": {
+    "router": {
+      "enabled": false,
+      "at": ["03:00"],
+      "exclude_types": ["shadowsocksr"],
+      "selector": { "interrupt_exist_connections": true },
+      "urltest": { "interval": "5m", "tolerance": 100, "idle_timeout": "5m", "interrupt_exist_connections": true }
     },
-    "testing_groups_specifics": [],
-    "node_groups_specifics": [
-      {
-        "group": "ai",
-        "default_overrides": {
-          "required_tests": [
-            "gemini",
-            "openai",
-            "anthropic"
-          ],
-          "strict_exit_ip": true
-        }
-      }
-    ]
-  },
-  "tests": {
-    "connectivity": {
-      "service": "cloudflare",
-      "service_by_region": {
-        "ru": "curlmyip"
-      }
-    },
-    "latency": {
-      "url": "https://speed.cloudflare.com/__down?bytes=0",
-      "url_by_region": {
-        "ru": "https://speedtest.selectel.ru/0MB"
-      }
-    },
-    "jitter": {
-      "url": "https://speed.cloudflare.com/__down?bytes=0",
-      "url_by_region": {
-        "ru": "https://speedtest.selectel.ru/0MB"
-      },
-      "samples": 5,
-      "interval": 0.2
-    },
-    "download": {
-      "url": "https://speed.cloudflare.com/__down?bytes=5000000",
-      "url_by_region": {
-        "ru": "https://speedtest.selectel.ru/10MB"
-      },
-      "window_bytes": 2000000,
-      "duration": 20
-    },
-    "heavy_download": {
-      "url": "https://speed.cloudflare.com/__down?bytes=20000000",
-      "url_by_region": {
-        "ru": "https://speedtest.selectel.ru/100MB"
-      },
-      "window_bytes": 2000000,
-      "duration": 30
-    },
-    "gemini": {
-      "attempts": 3,
-      "timeout": 20,
-      "ttl_hours": 24
-    },
-    "openai": {
-      "attempts": 3,
-      "timeout": 15,
-      "ttl_hours": 24
-    },
-    "anthropic": {
-      "attempts": 3,
-      "timeout": 15,
-      "ttl_hours": 24
-    },
-    "reachability": {
-      "timeout": 8,
-      "workers": 8,
-      "urls": [
-        "https://www.google.com/generate_204",
-        "https://www.gstatic.com/generate_204",
-        "https://connectivitycheck.gstatic.com/generate_204",
-        "http://clients3.google.com/generate_204",
-        "http://cp.cloudflare.com/",
-        "https://www.cloudflare.com/cdn-cgi/trace",
-        "http://captive.apple.com/hotspot-detect.html",
-        "http://detectportal.firefox.com/success.txt",
-        "http://edge-http.microsoft.com/captiveportal/generate_204",
-        "http://www.msftconnecttest.com/connecttest.txt",
-        "https://www.youtube.com/generate_204",
-        "https://discord.com/api/v10/gateway",
-        "https://www.instagram.com/",
-        "https://x.com/",
-        "https://www.wikipedia.org/"
-      ],
-      "urls_by_region": {
-        "ru": [
-          "https://yandex.ru/",
-          "https://ozon.ru/",
-          "https://wb.ru/",
-          "https://kinopoisk.ru/",
-          "https://mail.ru/",
-          "https://vk.com/",
-          "https://gosuslugi.ru/",
-          "https://avito.ru/",
-          "https://dzen.ru/",
-          "https://rutube.ru/",
-          "https://sberbank.ru/",
-          "https://gismeteo.ru/",
-          "https://2gis.ru/",
-          "https://aliexpress.ru/",
-          "https://market.yandex.ru/"
-        ]
-      }
+    "clients": {
+      "enabled": false,
+      "exclude_types": ["shadowsocksr"],
+      "exclude_protocols": ["xhttp", "wg"]
     }
   },
-  "report": {
-    "console": true
-  },
-  "scoring": {
-    "enabled": true,
-    "alpha": 0.3,
-    "flap_lambda": 0.5,
-    "avail_floor": 0.7,
-    "avail_full": 0.9,
-    "thresholds": {
-      "ttfb_good": 150,
-      "ttfb_bad": 1500,
-      "jitter_good": 15,
-      "jitter_bad": 250,
-      "loss_gate": 50,
-      "dl_min": 2,
-      "dl_target": 25,
-      "throttle_bad": 0.3,
-      "throttle_good": 0.9,
-      "hold_min": 5,
-      "hold_target": 20,
-      "cv_good": 0.1,
-      "cv_bad": 0.8
-    },
-    "weights": {
-      "reliability": 0.35,
-      "consistency": 0.2,
-      "throttle": 0.15,
-      "jitter": 0.1,
-      "latency": 0.1,
-      "throughput": 0.1
-    }
-  },
-  "switching": {
-    "enabled": true,
-    "quality_margin": 15,
-    "confirm_cycles": 2,
-    "comfort_floor": 50,
-    "cooldown": 300,
-    "exclude_test_groups": true,
-    "freeze_groups": [
-      "global-auto-out"
-    ],
-    "rotation": {
-      "enabled": true,
-      "interval": 10800,
-      "jitter": 900,
-      "align": true,
-      "min_dwell": 1800,
-      "min_score": 55,
-      "avoid_recent": 2,
-      "load_balance": {
-        "enabled": true,
-        "window_hours": 24,
-        "provider_strength": 1.0,
-        "country_strength": 1.0,
-        "protocol_strength": 0.3
-      }
-    }
-  },
-  "monitor": {
-    "enabled": true,
-    "interval": 20,
-    "reassert_drift": true,
-    "silence_window": 300,
-    "silence_floor_mb": 0,
-    "probe_bytes": 1000000,
-    "probe_min_mbps": 1,
-    "probe_timeout": 8,
-    "fails": 2
-  },
-  "storage": {
-    "enabled": true,
-    "db_file": "./results/stats.db",
-    "nodes_file": "/etc/sing-box-subscribe/nodes.json",
-    "retention_days": 30,
-    "store_results": true,
-    "traffic": {
-      "enabled": true,
-      "poll_interval": 5,
-      "flush_interval": 60
-    }
-  },
-  "cooldown": {
-    "enabled": true,
-    "max_skip": 32,
-    "garbage_hours": 72,
-    "low_score": 0
-  },
-  "notify": {
+  "admin": {
     "enabled": false,
-    "name": "",
-    "telegram": { "token": "", "chat_id": "" },
-    "webhook": { "url": "" },
-    "events": ["switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"],
-    "switch_reasons": ["emergency", "emergency-stuck"],
-    "expiry_days": 3
-  },
-  "dashboard": {
-    "enabled": false,
-    "host": "0.0.0.0",
-    "port": 8088,
-    "interval": 10,
-    "token": "",
-    "read_open": true,
-    "providers_file": "config-main/providers.json"
+    "token": ""
   }
 }

@@ -22,7 +22,7 @@ class TestContext:
     session: requests.Session          # сессия через SOCKS5 (текущая нода)
     node: str                          # тег тестируемой ноды
     default_timeout: float             # run.request_timeout
-    region: str = ""                   # коарс-регион (eu/us/ru/other) — для выбора url
+    regions: frozenset = frozenset()   # регионы ноды по измеренной стране — для for_region
 
 
 @dataclass
@@ -50,25 +50,19 @@ class BaseTest:
 
     def __init__(self, options: dict[str, Any]):
         self.options = options or {}
-        try:
-            self.every = max(1, int(self.options.get("every", 1) or 1))
-        except (TypeError, ValueError):
-            self.every = 1
 
-    def due(self, pass_no: int) -> bool:
-        """Запускать ли тест на этом прогоне (для тяжёлых тестов раз в N)."""
-        return self.every <= 1 or ((pass_no - 1) % self.every) == 0
+    def option(self, ctx: TestContext, key: str, default=None):
+        """Параметр теста: для ноды региона из for_region — оттуда, иначе общий."""
+        for region, over in (self.options.get("for_region") or {}).items():
+            if region in ctx.regions and key in over:
+                return over[key]
+        return self.options.get(key, default)
 
     def timeout(self, ctx: TestContext) -> float:
-        return float(self.options.get("timeout", ctx.default_timeout))
+        return float(self.option(ctx, "timeout") or ctx.default_timeout)
 
     def url_for(self, ctx: TestContext) -> str:
-        """URL теста с учётом переопределения по региону.
-
-        Приоритет: url_by_region[регион] -> url -> default_url класса.
-        """
-        by_region = self.options.get("url_by_region") or {}
-        return by_region.get(ctx.region) or self.options.get("url") or self.default_url
+        return self.option(ctx, "url") or self.default_url
 
     def run(self, ctx: TestContext) -> TestResult:  # pragma: no cover
         raise NotImplementedError

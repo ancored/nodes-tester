@@ -1,4 +1,4 @@
-"""Стадия fetch: providers.json → raw_nodes.json (контракт — nodes_common.raw).
+"""Стадия fetch: подписки ветви из config.json → raw_nodes.json (контракт — nodes_common.raw).
 
 fetch — «честное зеркало» подписок: ничего не фильтрует и не переименовывает (это
 nodes_config). Его задачи — надёжно достать ноды:
@@ -54,7 +54,7 @@ def load_providers(data, log=print):
         seen.add(tag)
         kind = sources.kind_of(sub)
         if kind is None:
-            raise ProvidersError(f"подписка {tag!r}: нужен 'url', 'file' или type='folder'")
+            raise ProvidersError(f"подписка {tag!r}: нужен 'url', 'file' или type folder/inline")
         norm = dict(sub)
         norm["kind"] = kind
         norm["enabled"] = sub.get("enabled", True) is not False
@@ -185,5 +185,22 @@ def providers_name(path):
     return os.path.splitext(os.path.basename(path))[0]
 
 
-__all__ = ["load_providers", "run", "check_guard", "summary", "ProvidersError", "GuardError",
+def providers_from_config(cfg, branch):
+    """Подписки ветви (router или clients) и параметры загрузки из единого config.json
+    (nodes_tester.config.Config) → вход load_providers."""
+    from nodes_tester.config import branch_subscriptions
+    fetch = cfg.pipeline.fetch
+    subscribes = [{k: v for k, v in sub.items() if k not in ("branch", "exclude_names")}
+                  for sub in branch_subscriptions(cfg.subscriptions, branch)]
+    for sub in subscribes:
+        if sub.get("type") in ("url", "file"):
+            del sub["type"]
+    return {"subscribes": subscribes,
+            "fetch": {"timeout": fetch.timeout, "retries": fetch.retries,
+                      "proxy": fetch.proxy or None, "stale_max_hours": fetch.keep_stale / 3600,
+                      "min_ratio": fetch.min_ratio,
+                      "happ_keys_url": fetch.happ_keys_url or happkeys.DEFAULT_URL}}
+
+
+__all__ = ["load_providers", "providers_from_config", "run", "check_guard", "summary", "ProvidersError", "GuardError",
            "FETCH_DEFAULTS"]

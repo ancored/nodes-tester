@@ -40,6 +40,10 @@ def main(argv=None) -> int:
         help="показать доступные тесты и выйти",
     )
     parser.add_argument(
+        "--once", action="store_true",
+        help="один проход и выход (по умолчанию работает непрерывно)",
+    )
+    parser.add_argument(
         "--vacuum", action="store_true",
         help="выполнить VACUUM БД и выйти (тяжёлый, для cron раз в месяц)",
     )
@@ -69,7 +73,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        path = Runner(cfg).run()
+        path = Runner(cfg, rounds=1 if args.once else 0).run()
     except KeyboardInterrupt:
         print("\nПрервано пользователем.", file=sys.stderr)
         return 130

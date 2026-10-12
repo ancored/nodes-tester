@@ -12,6 +12,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from tests.helpers import write_schedule
 from nodes_admin.orchestrator import BusyError, Orchestrator
 
 
@@ -31,7 +32,7 @@ class OrchestratorTests(unittest.TestCase):
             },
             "timeout": 2,
         }
-        (self.config / "pipeline.json").write_text(json.dumps(self.schedule), encoding="utf-8")
+        write_schedule(self.config, self.schedule)
 
     @staticmethod
     def wait_done(orch, run_id):
@@ -45,7 +46,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_success_log_busy_and_apply_hooks(self):
         hooks = []
-        orch = Orchestrator(self.config, self.data,
+        orch = Orchestrator(self.config / "config.json", self.data,
                             command=[sys.executable, "-c", "import time; print('ready'); time.sleep(.3)"],
                             on_apply_start=lambda: hooks.append("start"),
                             on_apply_end=lambda: hooks.append("end"))
@@ -62,20 +63,20 @@ class OrchestratorTests(unittest.TestCase):
         orch.stop()
 
     def test_exit_75_and_timeout(self):
-        busy = Orchestrator(self.config, self.data,
+        busy = Orchestrator(self.config / "config.json", self.data,
                             command=[sys.executable, "-c", "import sys; sys.exit(75)"])
         self.assertEqual(self.wait_done(busy, busy.start_run("clients", False))["status"], "busy")
         busy.stop()
         self.schedule["timeout"] = 1
-        (self.config / "pipeline.json").write_text(json.dumps(self.schedule), encoding="utf-8")
-        slow = Orchestrator(self.config, self.data,
+        write_schedule(self.config, self.schedule)
+        slow = Orchestrator(self.config / "config.json", self.data,
                             command=[sys.executable, "-c", "import time; time.sleep(30)"])
         self.assertEqual(self.wait_done(slow, slow.start_run("clients", False))["status"], "timeout")
         slow.stop()
 
     def test_recover_dead_pid_and_schedule_once(self):
         fake_now = [time.time()]
-        orch = Orchestrator(self.config, self.data,
+        orch = Orchestrator(self.config / "config.json", self.data,
                             command=[sys.executable, "-c", "print('scheduled')"],
                             clock=lambda: fake_now[0])
         with closing(sqlite3.connect(str(orch.db_path))) as db, db:
@@ -83,7 +84,7 @@ class OrchestratorTests(unittest.TestCase):
                           VALUES ('orphan','router',0,'manual',?,'running',999999,?)""",
                        (fake_now[0], str(orch.logs_dir / "orphan.log")))
         orch.stop()
-        orch = Orchestrator(self.config, self.data,
+        orch = Orchestrator(self.config / "config.json", self.data,
                             command=[sys.executable, "-c", "print('scheduled')"],
                             clock=lambda: fake_now[0])
         self.assertEqual(orch.run("orphan")["status"], "interrupted")
@@ -101,7 +102,7 @@ class OrchestratorTests(unittest.TestCase):
         orch.stop()
 
     def test_recover_exit_file(self):
-        orch = Orchestrator(self.config, self.data)
+        orch = Orchestrator(self.config / "config.json", self.data)
         with closing(sqlite3.connect(str(orch.db_path))) as db, db:
             for code, expected in ((0, "ok"), (75, "busy"), (1, "error")):
                 run_id = f"orphan-{code}"
@@ -111,7 +112,7 @@ class OrchestratorTests(unittest.TestCase):
                               VALUES (?, 'clients', 0, 'manual', ?, 'running', 999999, ?)""",
                            (run_id, time.time(), str(log_path)))
         orch.stop()
-        recovered = Orchestrator(self.config, self.data)
+        recovered = Orchestrator(self.config / "config.json", self.data)
         for code, expected in ((0, "ok"), (75, "busy"), (1, "error")):
             row = recovered.run(f"orphan-{code}")
             self.assertEqual((row["status"], row["exit_code"]), (expected, code))
@@ -120,9 +121,9 @@ class OrchestratorTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "POSIX process groups only")
     def test_timeout_allows_term_ignoring_process_to_finish(self):
         self.schedule["timeout"] = 1
-        (self.config / "pipeline.json").write_text(json.dumps(self.schedule), encoding="utf-8")
+        write_schedule(self.config, self.schedule)
         command = [sys.executable, "-c", "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(2)"]
-        orch = Orchestrator(self.config, self.data, command=command, kill_grace=4)
+        orch = Orchestrator(self.config / "config.json", self.data, command=command, kill_grace=4)
         row = self.wait_done(orch, orch.start_run("clients", False))
         self.assertEqual(row["status"], "timeout")
         self.assertEqual(row["exit_code"], 0)
@@ -131,12 +132,12 @@ class OrchestratorTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "POSIX process groups only")
     def test_timeout_waits_for_descendant_before_ending_apply(self):
         self.schedule["timeout"] = 1
-        (self.config / "pipeline.json").write_text(json.dumps(self.schedule), encoding="utf-8")
+        write_schedule(self.config, self.schedule)
         flag = self.root / "finished"
         child = f"trap '' TERM; sleep 3; touch {shlex.quote(str(flag))}"
         command = ["sh", "-c", f"sh -c {shlex.quote(child)}; true"]
         hooks = []
-        orch = Orchestrator(self.config, self.data, command=command, kill_grace=10,
+        orch = Orchestrator(self.config / "config.json", self.data, command=command, kill_grace=10,
                             on_apply_end=lambda: hooks.append(flag.exists()))
         row = self.wait_done(orch, orch.start_run("router", False))
         self.assertEqual(row["status"], "timeout")
@@ -147,11 +148,11 @@ class OrchestratorTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "POSIX process groups only")
     def test_timeout_kills_group_after_grace(self):
         self.schedule["timeout"] = 1
-        (self.config / "pipeline.json").write_text(json.dumps(self.schedule), encoding="utf-8")
+        write_schedule(self.config, self.schedule)
         flag = self.root / "finished"
         child = f"trap '' TERM; sleep 5; touch {shlex.quote(str(flag))}"
         command = ["sh", "-c", f"sh -c {shlex.quote(child)}; true"]
-        orch = Orchestrator(self.config, self.data, command=command, kill_grace=1)
+        orch = Orchestrator(self.config / "config.json", self.data, command=command, kill_grace=1)
         row = self.wait_done(orch, orch.start_run("router", False))
         self.assertEqual(row["status"], "timeout")
         self.assertFalse(flag.exists())
@@ -163,7 +164,7 @@ class OrchestratorTests(unittest.TestCase):
         child = f"sleep 2; touch {shlex.quote(str(flag))}"
         command = ["sh", "-c", f"sh -c {shlex.quote(child)} &"]
         hooks = []
-        orch = Orchestrator(self.config, self.data, command=command, kill_grace=5,
+        orch = Orchestrator(self.config / "config.json", self.data, command=command, kill_grace=5,
                             on_apply_end=lambda: hooks.append(flag.exists()))
         row = self.wait_done(orch, orch.start_run("router", False))
         self.assertEqual(row["status"], "ok")
@@ -172,7 +173,7 @@ class OrchestratorTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "POSIX process groups only")
     def test_recover_waits_for_orphaned_group(self):
-        initial = Orchestrator(self.config, self.data)
+        initial = Orchestrator(self.config / "config.json", self.data)
         initial.stop()
         flag = self.root / "finished"
         child = f"sleep 2; touch {shlex.quote(str(flag))}"
@@ -186,7 +187,7 @@ class OrchestratorTests(unittest.TestCase):
                           VALUES ('orphan','router',0,'manual',?,'running',?,?)""",
                        (time.time(), process.pid, str(log_path)))
         hooks = []
-        recovered = Orchestrator(self.config, self.data,
+        recovered = Orchestrator(self.config / "config.json", self.data,
                                  on_apply_start=lambda: hooks.append("start"),
                                  on_apply_end=lambda: hooks.append(flag.exists()))
         self.assertEqual(recovered.run("orphan")["status"], "running")

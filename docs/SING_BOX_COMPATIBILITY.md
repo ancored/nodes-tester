@@ -89,7 +89,6 @@ providers.json
     "exclude_names": {}
   },
   "rename": {
-    "labels": {},
     "domain_resolver_tag": "bootstrap"
   },
   "selector": {

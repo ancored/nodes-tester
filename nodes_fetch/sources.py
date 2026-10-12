@@ -47,8 +47,8 @@ class Context:
 
 
 def kind_of(sub):
-    if sub.get("type") == "folder":
-        return "folder"
+    if sub.get("type") in ("folder", "inline"):
+        return sub["type"]
     if sub.get("file"):
         return "file"
     if happ.is_happ_link(sub.get("url", "")):
@@ -64,6 +64,9 @@ def fetch_subscription(sub, ctx):
     ctx.response_headers = {}
     ctx.headers = (devicemod.headers(ctx.device)
                    if kind == "url" and sub.get("send_device") and ctx.device.get("hwid") else {})
+    if kind == "inline":
+        # Свои ноды из config.json: outbound-ы как есть, имя — их tag.
+        return [dict(ob) for ob in sub.get("outbounds") or []]
     if kind == "folder":
         nodes = _from_folder(sub, ctx)
     elif kind == "file":

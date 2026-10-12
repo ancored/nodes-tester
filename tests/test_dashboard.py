@@ -50,7 +50,8 @@ class PassLabelTest(unittest.TestCase):
 
 class _Cfg:
     def __init__(self, db):
-        self.db_file = db
+        self.path = db
+        self.retention = 30 * 86400
         self.retention_days = 30
 
 

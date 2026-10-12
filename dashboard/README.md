@@ -54,7 +54,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Конфиг | `/api/config`, `/api/config/schema` | чтение и атомарная запись `config.json` |
 | Источники | `/api/config/providers` | чтение и запись файла `dashboard.providers_file` |
 | Сборка | `/api/config/groups`, `/api/config/subscription-options` | рецепт `groups_params.json`, варианты User-Agent, заголовки Happ, HWID установки и состояние подписок из raw (`sources`) |
-| Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды и точный payload CRC (details требует токен) |
+| Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды, строки для `node_crc` и `cred_crc`, пути учётных данных (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
 | Переключение | `/api/groups/{group}/switch` | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
 | Предпросмотр групп | `POST /api/config/groups/preview` | состав групп по текущему `raw/main.json` без записи |
@@ -100,8 +100,9 @@ router записывается в `/etc/sing-box-subscribe/nodes.json`, а clie
 
 JSON в карточке берётся из `storage.nodes_file`; если фрагмента там нет, доступная
 часть восстанавливается из tag и payload SQLite с пояснением об отсутствующих полях.
-Цветом выделяются поля, которые входят в `naming.node_payload`. История рейтинга
-показывает все сохранённые замеры ноды с датой и временем. График показывает последние 24 значения.
+Ключ ноды и JSON показываются двумя цветами: настройки сервера (`node_crc`) и учётные данные
+(`cred_crc`); поля вне ключа (`tag`, `domain_resolver`) без цвета. Ниже — обе строки, которые
+хешируются, и проверка ключа. История рейтинга показывает все сохранённые замеры ноды с датой и временем. График показывает последние 24 значения.
 
 ## Статика и маршрутизация
 

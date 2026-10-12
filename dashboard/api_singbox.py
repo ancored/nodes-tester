@@ -96,7 +96,7 @@ def _load_presets(app: App, override: tuple | None = None, folder: str = "preset
 def _check_assembly(app: App, what: str, base: dict | None = None,
                     override: tuple | None = None) -> None:
     """Склейка базы, nodes.json и включённых пресетов + sing-box check."""
-    nodes_file = Path(app.cfg.storage.nodes_file)
+    nodes_file = Path(app.cfg.nodes_file)
     try:
         nodes = json.loads(nodes_file.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -128,7 +128,7 @@ def _client_names(app: App) -> list:
 
 def _whnodes(app: App) -> Path:
     """whnodes.json клиентской ветки лежит рядом с nodes.json роутера (как в pipeline.sh)."""
-    return Path(app.cfg.storage.nodes_file).with_name("whnodes.json")
+    return Path(app.cfg.whnodes_file)
 
 
 def _client_bases(app: App, what: str) -> list:
@@ -295,7 +295,7 @@ def register(app: App) -> None:
             items = presets_mod.load(_root(app) / folder)
         except presets_mod.PresetError as exc:
             return {"presets": [], "error": str(exc)}
-        nodes_file = _whnodes(app) if branch == "clients" else Path(app.cfg.storage.nodes_file)
+        nodes_file = _whnodes(app) if branch == "clients" else Path(app.cfg.nodes_file)
         groups = presets_mod.node_groups(nodes_file) if nodes_file.is_file() else None
         result = presets_mod.status(items, groups)
         for item in result:

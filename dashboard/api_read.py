@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import re
+from naming import NODE_KEY_RE
 
 from .data import collect, node_detail
 from .webapp import App, HttpError
@@ -29,8 +29,8 @@ def register(app: App) -> None:
     open_read = app.read_open
 
     def read_node(app, crc, include_config=False):
-        if not re.fullmatch(r"[0-9a-fA-F]{8}", crc):
-            raise HttpError(400, "crc должен состоять из 8 hex-символов")
+        if not NODE_KEY_RE.fullmatch(crc.lower()):
+            raise HttpError(400, "ключ ноды — node_crc.cred_crc, по 8 hex-символов")
         try:
             result = node_detail(app.cfg, crc.lower(), include_config)
         except Exception as exc:

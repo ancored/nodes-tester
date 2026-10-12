@@ -5,6 +5,7 @@ import { crcOf, rowKeys, STANDARD_FILTERS } from '../ux.js'
 import { useTableFilters } from '../filters.js'
 import { flag } from '../format.js'
 import FilterBar from './FilterBar.vue'
+import NodeKey from './NodeKey.vue'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
   pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:'Нет данных в этом снимке.'},
   queryKey:{type:String,default:''}, total:{type:Number,default:null},
@@ -60,7 +61,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
             <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
-              <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break">{{ cellText(c,row) }}</RouterLink>
+              <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break"><NodeKey :text="cellText(c,row)" /></RouterLink>
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>
             </td>
           </tr>

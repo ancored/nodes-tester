@@ -28,7 +28,7 @@ class _Resp:
 class BoxDashboardTest(unittest.TestCase):
     def setUp(self):
         tmp = temp_dir()
-        self.cfg = load_config(make_config(tmp, dashboard={"enabled": True, "token": "secret"}))
+        self.cfg = load_config(make_config(tmp, admin={"enabled": True, "token": "secret"}))
         self.app = build_app(self.cfg)
 
     def test_proxies_dashboard_files(self):
@@ -36,7 +36,7 @@ class BoxDashboardTest(unittest.TestCase):
             r = self.app.handle("GET", "/sing-box-dashboard/", {}, b"")
             self.assertEqual((r.status, r.body), (200, b"<html>"))
             self.app.handle("GET", "/sing-box-dashboard/assets/a.js", {}, b"")
-        base = self.cfg.box_api.url.rstrip("/")
+        base = self.cfg.api.url.rstrip("/")
         self.assertEqual([c.args[0] for c in op.call_args_list],
                          [f"{base}/dashboard/", f"{base}/dashboard/assets/a.js"])
 
@@ -52,8 +52,8 @@ class BoxDashboardTest(unittest.TestCase):
         self.assertEqual(self.app.handle("GET", "/api/singbox/dashboard", {}, b"").status, 401)
         r = self.app.handle("GET", "/api/singbox/dashboard", {"X-Admin-Token": "secret"}, b"")
         body = json.loads(r.body)
-        self.assertEqual(body["url"], self.cfg.box_api.url)
-        self.assertEqual(body["secret"], self.cfg.box_api.secret or "")
+        self.assertEqual(body["url"], self.cfg.api.url)
+        self.assertEqual(body["secret"], self.cfg.api.secret or "")
 
 
 if __name__ == "__main__":

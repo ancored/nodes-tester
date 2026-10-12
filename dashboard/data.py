@@ -27,9 +27,9 @@ _SCORE_SELECT = (
 
 def node_detail(cfg, crc: str, include_config=False) -> dict:
     """Read one node's retained history; secrets only for the authenticated route."""
-    from naming import node_payload, content_crc32
-    db = cfg.storage.db_file
-    if not cfg.storage.enabled or not db or not os.path.exists(db):
+    from naming import canonical, credential_paths, node_key, node_payload, split_payload
+    db = cfg.storage.path
+    if not db or not os.path.exists(db):
         return {}
     # closing(): the sqlite3 context manager only commits, it does not close.
     with closing(sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True)) as con:
@@ -46,7 +46,7 @@ def node_detail(cfg, crc: str, include_config=False) -> dict:
         fragment = None
         source = "sqlite"
         try:
-            with open(cfg.storage.nodes_file, encoding="utf-8") as fh:
+            with open(cfg.nodes_file, encoding="utf-8") as fh:
                 config = json.load(fh)
             items = (config.get("outbounds", []) + config.get("endpoints", [])) if isinstance(config, dict) else config
             fragment = next((ob for ob in items if isinstance(ob, dict)
@@ -63,21 +63,25 @@ def node_detail(cfg, crc: str, include_config=False) -> dict:
             if isinstance(payload, dict):
                 fragment = {"tag": node["tag"], **payload}
         if fragment is not None:
-            canonical = node_payload(fragment)
-            result.update(fragment=fragment, payload=canonical, crc_fields=list(json.loads(canonical)),
-                          calculated_crc=content_crc32(fragment), fragment_source=source,
-                          nodes_file=cfg.storage.nodes_file)
+            # Две строки, которые хешируются: настройки сервера (node_crc) и учётные
+            # данные (cred_crc); пути учётных данных — для подсветки JSON в карточке.
+            settings, creds = split_payload(fragment)
+            result.update(fragment=fragment, node_payload=canonical(settings),
+                          cred_payload=canonical(creds), crc_fields=list(node_payload(fragment)),
+                          cred_paths=credential_paths(fragment),
+                          calculated_crc=node_key(fragment), fragment_source=source,
+                          nodes_file=cfg.nodes_file)
         return result
 
 
-_FAILSAFE_SUFFIX = "-auto-out-failsafe"
+_AUTO_SUFFIX = "-auto-out"
 
 
 def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
-    """Группы из nodes.json: порядок групп и CRC ноды → группы, куда она входит.
+    """Группы из nodes.json: порядок групп и ключ ноды → группы, куда она входит.
 
-    Состав берётся из urltest {group}-auto-out-failsafe (прямые члены — ноды).
-    Нет файла — пустой результат: группы неизвестны, а не пусты."""
+    Состав берётся из selector {group}-auto-out (члены с ключом — ноды; failsafe, block,
+    direct пропускаются). Нет файла — пустой результат: группы неизвестны, а не пусты."""
     try:
         with open(nodes_file, encoding="utf-8") as fh:
             config = json.load(fh)
@@ -86,9 +90,9 @@ def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
     order, by_crc = [], {}
     for ob in config.get("outbounds", []) if isinstance(config, dict) else []:
         tag = str(ob.get("tag", "")) if isinstance(ob, dict) else ""
-        if not tag.endswith(_FAILSAFE_SUFFIX) or tag.startswith("global-"):
+        if ob.get("type") != "selector" or not tag.endswith(_AUTO_SUFFIX) or tag.startswith("global-"):
             continue
-        group = tag[:-len(_FAILSAFE_SUFFIX)]
+        group = tag[:-len(_AUTO_SUFFIX)]
         order.append(group)
         for member in ob.get("outbounds") or []:
             crc = parse_node(str(member)).node_id
@@ -118,13 +122,12 @@ def _query(db_path: str, sql: str) -> list[dict]:
 
 def collect(cfg) -> dict:
     """One consistent read-only snapshot. Missing storage is not an empty database."""
-    db = cfg.storage.db_file
-    enabled = cfg.storage.enabled
-    if not enabled or not db or not os.path.exists(db):
+    db = cfg.storage.path
+    if not db or not os.path.exists(db):
         from types import SimpleNamespace
-        data = _collect(SimpleNamespace(storage=SimpleNamespace(db_file="", retention_days=cfg.storage.retention_days)))
-        data["source"] = {"state": "missing" if enabled else "disabled",
-                          "message": "База ещё не создана" if enabled else "Хранилище отключено"}
+        data = _collect(SimpleNamespace(storage=SimpleNamespace(path="", retention_days=cfg.storage.retention_days),
+                                        nodes_file=""))
+        data["source"] = {"state": "missing", "message": "База ещё не создана"}
         return data
     con = sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
     con.row_factory = sqlite3.Row
@@ -141,7 +144,7 @@ def collect(cfg) -> dict:
 
 
 def _collect(cfg) -> dict:
-    db = cfg.storage.db_file
+    db = cfg.storage.path
 
     # --- Рейтинг (таблица scores), активные сверху, далее по убыванию score ---
     rating = _query(db, _SCORE_SELECT)
@@ -155,7 +158,7 @@ def _collect(cfg) -> dict:
     rating.sort(key=_key, reverse=True)
 
     # --- Группы нод (nodes.json): фильтры таблиц и качество по группам ---
-    group_order, groups_of = node_groups(getattr(cfg.storage, "nodes_file", "") or "")
+    group_order, groups_of = node_groups(getattr(cfg, "nodes_file", "") or "")
     for r in rating:
         r["groups"] = groups_of.get(r.get("id"), [])
 
@@ -299,16 +302,18 @@ def _sum_by(rows: list[dict], field: str, include: set) -> list[dict]:
 
 def _switch_history(db: str) -> list[dict]:
     """История переключений (activations): последние 200; active = последняя запись региона.
-    Провайдер/протокол/cc/crc разбираем из тега ноды (как в остальных таблицах)."""
-    rows = _query(db, "SELECT ts, region, tag, crc, reason, score, prev FROM activations "
-                      "ORDER BY ts DESC, rowid DESC LIMIT 200")
+    Провайдер/протокол/crc — из тега ноды, страна — измеренная (таблица nodes)."""
+    rows = _query(db, "SELECT a.ts AS ts, a.region AS region, a.tag AS tag, a.crc AS crc, "
+                      "a.reason AS reason, a.score AS score, a.prev AS prev, n.country AS cc "
+                      "FROM activations a LEFT JOIN nodes n ON n.crc = a.crc "
+                      "ORDER BY a.ts DESC, a.rowid DESC LIMIT 200")
     latest = {r["region"]: r["mts"] for r in _query(
         db, "SELECT region, MAX(ts) AS mts FROM activations GROUP BY region")}
     for r in rows:
         ident = parse_node(r.get("tag") or "")
         r["provider"] = ident.provider
         r["protocol"] = ident.protocol
-        r["cc"] = ident.country
+        r["cc"] = r.get("cc") or ""
         r["crc"] = r.get("crc") or ident.node_id
         r["active"] = 1 if r.get("ts") == latest.get(r.get("region")) else 0
         reason = (r.get("reason") or "")
@@ -701,13 +706,13 @@ def _score_spark(db: str, points: int = 24) -> dict:
 def _nodes_list(db: str) -> list[dict]:
     """Полный список нод (таблица nodes) для раздела «Управление» админки.
 
-    Для каждой ноды — идентичность (crc/tag/provider/protocol/country/label/server),
+    Для каждой ноды — идентичность (crc/tag/provider/protocol/country/server),
     флаги present/banned, счёт рейтинга (score/region/active из scores) и текущий
     backoff/карантин (из garbage). Бан (nodes.banned) вносится админкой (api_control).
     """
     rows = _query(db, """
         SELECT n.crc AS crc, n.tag AS node, n.provider AS provider, n.protocol AS protocol,
-               n.country AS country, n.label AS label, n.server AS server,
+               n.country AS country, n.server AS server,
                n.present AS present, COALESCE(n.banned, 0) AS banned,
                s.score AS score, s.region AS region, s.active AS active, s.reserve AS reserve,
                g.reason AS gstate, g.until AS guntil, g.streak AS gstreak,

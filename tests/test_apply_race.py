@@ -33,7 +33,7 @@ class ApplyRaceTest(unittest.TestCase):
     def _pass(self, on_test=None):
         r = self.r
 
-        def fake_test(region, ident, pass_no, tests, params):
+        def fake_test(region, ident, pass_no):
             self.tested.append(ident.raw)
             if on_test:
                 return on_test(ident.raw)
@@ -114,8 +114,7 @@ class ApplyRaceTest(unittest.TestCase):
         r.api.select = select
         r._originals = {}
         from nodes_tester.identity import parse_node
-        params = r._node_params(parse_node(A))
-        self.assertIsNone(r._test_node("eu", parse_node(A), 1, [], params))
+        self.assertIsNone(r._test_node(frozenset({"eu"}), parse_node(A), 1))
 
 
 class RotationSingleCandidateTest(unittest.TestCase):

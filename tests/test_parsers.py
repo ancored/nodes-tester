@@ -13,7 +13,7 @@ import unittest
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-from naming.crc import content_crc32  # noqa: E402
+from naming.crc import node_key  # noqa: E402
 from nodes_fetch.parsers import LinkError, clash, parse_link  # noqa: E402
 from nodes_fetch.parsers._common import split_link  # noqa: E402
 
@@ -61,7 +61,7 @@ class VlessTest(unittest.TestCase):
                                        "utls": {"enabled": True, "fingerprint": "chrome"},
                                        "reality": {"enabled": True, "public_key": "K", "short_id": "ab"}})
         self.assertEqual((node["flow"], node["packet_encoding"]), ("xtls-rprx-vision", "xudp"))
-        self.assertEqual(content_crc32(node), "a5ec25c9")
+        self.assertEqual(node_key(node), "2cd0674c.21e6f7b2")
 
     def test_reality_without_fp(self):
         node = one(f"vless://{U}@h.com:443?security=reality&pbk=K&sid=None#x")
@@ -129,7 +129,7 @@ class VmessTest(unittest.TestCase):
         self.assertEqual(node["tls"], {"enabled": True, "insecure": False, "server_name": "h.com"})
         self.assertEqual(node["transport"], {"type": "ws", "path": "/p", "headers": {"Host": "h.com"}})
         self.assertEqual((node["security"], node["alter_id"], node["packet_encoding"]), ("auto", 0, "xudp"))
-        self.assertEqual(content_crc32(node), "3aa87dd7")
+        self.assertEqual(node_key(node), "564ffa5f.8ace1fc6")
 
     def test_names(self):
         self.assertEqual(one(self.link())["tag"], "ps-name")
@@ -178,7 +178,7 @@ class TrojanTest(unittest.TestCase):
         self.assertEqual(one("trojan://pw@h.com:443?type=ws&path=%2Fws#x")["transport"],
                          {"type": "ws", "path": "/ws", "headers": {}})
         node = one("trojan://pass@h.com:443?sni=h.com&type=ws&path=%2Fws&host=h.com#x")
-        self.assertEqual(content_crc32(node), "e07e6eaf")
+        self.assertEqual(node_key(node), "393ca1c1.28711eb6")
 
     def test_h2(self):
         self.assertEqual(one("trojan://pw@h.com:443?type=h2#x")["transport"],

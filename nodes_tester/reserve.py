@@ -19,6 +19,7 @@ import threading
 import time
 
 from .api import ApiError
+from .identity import parse_node
 
 # Как часто просыпаться без событий: проверить сроки тестов у членов резерва.
 _TICK = 60.0
@@ -92,11 +93,22 @@ class ReserveKeeper:
 
     def _fill(self, group: str, members: list, size: int, excluded: set) -> None:
         board = self.runner.board
-        min_score = float(self.runner.cfg.switching.rotation.min_score)
+        min_score = float(self.runner.cfg.selection.rotation.min_score)
+
+        def fits(node: str) -> bool:
+            # Доступы одного сервера падают вместе: в резерве по одному на сервер, и не
+            # тот сервер, что у активной ноды.
+            servers = {parse_node(n).node_crc for n in members}
+            active = self.runner.switcher.active_node(group)
+            if active:
+                servers.add(parse_node(active).node_crc)
+            return (node not in excluded and parse_node(node).node_crc not in servers
+                    and self._verified(node, group))
+
         for node in board.reserve_pool(group, min_score):
             if len(members) >= size:
                 return
-            if node not in members and node not in excluded and self._verified(node, group):
+            if fits(node):
                 members.append(node)
                 board.set_reserve(group, members)
         released: set = set()
@@ -105,7 +117,7 @@ class ReserveKeeper:
             if node is None:
                 break
             released.add(node)
-            if node not in excluded and self._verified(node, group):
+            if fits(node):
                 members.append(node)
                 board.set_reserve(group, members)
         if len(members) < size:

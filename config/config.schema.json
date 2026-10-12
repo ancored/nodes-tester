@@ -159,45 +159,6 @@
         }
       }
     },
-    "region_groups": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "recognition": {
-          "enum": [
-            "parse",
-            "manually"
-          ]
-        },
-        "list": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "tag": {
-                "type": "string"
-              },
-              "nodes_list": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "exclude": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
     "run": {
       "type": "object",
       "additionalProperties": false,

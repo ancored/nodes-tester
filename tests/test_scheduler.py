@@ -37,10 +37,11 @@ class SchedulerTest(unittest.TestCase):
         time.sleep = lambda s: slept.append(s)
         try:
             r = self.r
-            r._respect_host_gap("H", (443, "vless"), 120)   # первый — без сна
-            r._respect_host_gap("H", (443, "vless"), 120)   # тот же sig — без сна
+            r.cfg.tester.host_gap = 120
+            r._respect_host_gap("H", (443, "vless"))   # первый — без сна
+            r._respect_host_gap("H", (443, "vless"))   # тот же sig — без сна
             self.assertEqual(slept, [])
-            r._respect_host_gap("H", (8443, "trojan"), 120)  # другой sig на том же хосте
+            r._respect_host_gap("H", (8443, "trojan"))  # другой sig на том же хосте
             self.assertEqual(len(slept), 1)
             self.assertGreater(slept[0], 100)
         finally:
@@ -51,8 +52,9 @@ class SchedulerTest(unittest.TestCase):
         real = time.sleep
         time.sleep = lambda s: slept.append(s)
         try:
-            self.r._respect_host_gap("H", (1, "a"), 0)
-            self.r._respect_host_gap("H", (2, "b"), 0)
+            self.r.cfg.tester.host_gap = 0
+            self.r._respect_host_gap("H", (1, "a"))
+            self.r._respect_host_gap("H", (2, "b"))
             self.assertEqual(slept, [])
         finally:
             time.sleep = real

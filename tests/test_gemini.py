@@ -1,5 +1,5 @@
-"""Gemini-тест и обязательные тесты групп: страна по мнению Google, решающий отбор
-кандидатов, failsafe группы, замена активной ноды, цели отдельной фазы."""
+"""Gemini-тест и обязательные проверки групп: страна по мнению Google, решающий отбор
+кандидатов, запасной член группы, замена активной ноды, проверки резерва."""
 
 import time
 import unittest
@@ -72,18 +72,17 @@ class GeminiTestTest(unittest.TestCase):
         self.assertTrue(_run([_Resp(200, "RUS")], attempts=1, forbidden_countries=["CHN"]).ok)
 
 
-A = "DEMO-vless|reality-nl-out [aaaa0001]"
-B = "DEMO-vless|reality-fi-out [aaaa0002]"
-C = "DEMO-vless|reality-de-out [aaaa0003]"
+A = "DEMO-vless|reality-out [aaaa0001.00000001]"
+B = "DEMO-vless|reality-out [aaaa0002.00000001]"
+C = "DEMO-vless|reality-out [aaaa0003.00000001]"
 
 
 class _Api:
     def __init__(self):
-        sel = lambda tag, members: {"type": "selector", "all": [f"{tag}-failsafe"] + members,
-                                    "now": f"{tag}-failsafe"}
         self.proxies = {A: {"type": "vless"}, B: {"type": "vless"}, C: {"type": "vless"},
-                        "ai-auto-out": sel("ai-auto-out", [A, B, C]),
-                        "ai-auto-out-failsafe": {"type": "urltest", "all": [A, B, C]},
+                        "ai-auto-out": {"type": "selector", "all": ["failsafe-out", A, B, C],
+                                        "now": "failsafe-out"},
+                        "failsafe-out": {"type": "urltest", "all": [A, B, C]},
                         "nodes-tester": {"type": "selector", "all": [A, B, C], "now": A}}
         self.selected = []
 
@@ -103,11 +102,9 @@ class _Api:
 
 class RequiredGroupTest(unittest.TestCase):
     def setUp(self):
-        self.r = make_runner(temp_dir())
+        self.r = make_runner(temp_dir(), groups=[{"tag": "ai", "require": {"gemini": {}}}])
         self.addCleanup(self.r.storage.close)
         self.r.api = self.r.switcher.api = _Api()
-        self.r.cfg.run.node_group_overrides = {"ai": {"required_tests": ["gemini"]}}
-        self.r._region_cache = {}
         self.board, self.sw = self.r.board, self.r.switcher
         self.board.rows = {n: {"node": n, "region": "eu", "score": s, "id": parse_node(n).node_id,
                                "active": 0} for n, s in ((A, 90), (B, 80), (C, 70))}
@@ -116,13 +113,14 @@ class RequiredGroupTest(unittest.TestCase):
     def _pass(self, node, ok):
         self.board.set_required_result(node, "gemini", ok, "NLD" if ok else "RUS")
 
-    def test_requirements_from_group_overrides(self):
-        self.assertEqual(self.board.required("ai"), {"gemini": 24 * 3600})
+    def test_requirements_from_group_config(self):
+        self.assertEqual(self.board.requirements("ai"), ["gemini"])
+        self.assertEqual(self.board.policy("ai").require["gemini"]["ttl"], 24 * 3600)
 
     def test_only_passed_are_candidates_and_failsafe_when_none(self):
         self.assertEqual(self.board.candidates("ai"), [])
         self.sw.evaluate_all()
-        self.assertIn(("ai-auto-out", "ai-auto-out-failsafe"), self.r.api.selected)
+        self.assertIn(("ai-auto-out", "failsafe-out"), self.r.api.selected)
         self.assertIsNone(self.sw.active_node("ai"))
         self._pass(B, True)
         self._pass(A, False)

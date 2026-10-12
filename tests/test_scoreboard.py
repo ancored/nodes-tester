@@ -4,7 +4,7 @@
 import os
 import unittest
 
-from nodes_tester.config import ScoringConfig, StorageConfig
+from nodes_tester.config import RatingConfig, StorageConfig
 from nodes_tester.scoreboard import Scoreboard
 from nodes_tester.storage import Storage
 from tests.helpers import temp_dir
@@ -17,8 +17,8 @@ def _row(node, region="eu", score=70):
 
 class ScoreboardVetoTest(unittest.TestCase):
     def setUp(self):
-        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
-        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.set_heavy_ttl(3600)
         self.sb.rows = {"A": _row("A", score=80), "B": _row("B", score=60)}
 
@@ -64,8 +64,8 @@ class ActiveFlagTest(unittest.TestCase):
     """Флаг active — «активна хотя бы в одной группе», в том числе до загрузки состава групп."""
 
     def setUp(self):
-        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
-        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.rows = {"A": _row("A", region="eu"), "B": _row("B", region="eu")}
 
     def tearDown(self):
@@ -81,14 +81,14 @@ class ActiveFlagTest(unittest.TestCase):
         self.assertEqual((self.sb.rows["A"]["active"], self.sb.rows["B"]["active"]), (1, 0))
 
     def test_switcher_start_writes_active_flags_to_db(self):
-        from nodes_tester.config import SwitchingConfig
+        from nodes_tester.config import SelectionConfig
         from nodes_tester.switcher import Switcher
         self.sb.write()
         self.storage.save_switch_state({"eu": {"active": "eu-node [aaaaaaaa]"},
                                         "ai": {"active": "ai-node [bbbbbbbb]"}})
         self.storage.save_scores([dict(_row("eu-node [aaaaaaaa]"), id="aaaaaaaa"),
                                   dict(_row("ai-node [bbbbbbbb]"), id="bbbbbbbb")])
-        Switcher(SwitchingConfig(enabled=True), None, self.sb, "nodes-tester", storage=self.storage)
+        Switcher(SelectionConfig(), None, self.sb, "nodes-tester", storage=self.storage)
         rows = self.storage.load_scores()
         self.assertEqual(sorted(r["id"] for r in rows.values() if r["active"]), ["aaaaaaaa", "bbbbbbbb"])
 
@@ -97,8 +97,8 @@ class RestrictedActiveTest(unittest.TestCase):
     """Активная нода, попавшая под ограничение, заменяется немедленно (emergency)."""
 
     def setUp(self):
-        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
-        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.rows = {"A": _row("A", score=80), "B": _row("B", score=60)}
 
     def tearDown(self):
@@ -118,9 +118,9 @@ class RestrictedActiveTest(unittest.TestCase):
 
 
 def _switcher(board, state=None):
-    from nodes_tester.config import SwitchingConfig
+    from nodes_tester.config import SelectionConfig
     from nodes_tester.switcher import Switcher
-    sw = Switcher(SwitchingConfig(enabled=True), None, board, "nodes-tester")
+    sw = Switcher(SelectionConfig(), None, board, "nodes-tester")
     sw.state = state or {}
     return sw
 
@@ -129,8 +129,8 @@ class ReservePoolTest(unittest.TestCase):
     """Претенденты в резерв и недостающие проверки ноды."""
 
     def setUp(self):
-        self.storage = Storage(StorageConfig(db_file=os.path.join(temp_dir(), "s.db")))
-        self.sb = Scoreboard(self.storage, ScoringConfig())
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.set_heavy_ttl(3600)
         self.sb.rows = {n: _row(n, score=s) for n, s in (("A", 90), ("B", 80), ("C", 50), ("D", 70))}
 
@@ -145,7 +145,8 @@ class ReservePoolTest(unittest.TestCase):
 
     def test_missing_required_then_heavy(self):
         import time
-        self.sb.set_required({"eu": {"gemini": 3600, "openai": 3600}})
+        from nodes_tester.config import GroupConfig
+        self.sb.set_policy([GroupConfig("eu", require={"gemini": {"ttl": 3600}, "openai": {"ttl": 3600}})], {})
         self.assertEqual(self.sb.reserve_missing("A", "eu"), ["gemini", "openai", "heavy"])
         self.sb.set_required_result("A", "gemini", True)
         self.sb.set_heavy("A", True)
@@ -170,13 +171,13 @@ class ReservePoolTest(unittest.TestCase):
         self.sb.set_reserve("ai", ["A"])
         rows = {r["id"]: r for r in self.storage.load_scores().values()}
         import sqlite3
-        db = sqlite3.connect(self.storage.cfg.db_file)
+        db = sqlite3.connect(self.storage.cfg.path)
         marks = dict(db.execute("SELECT crc, reserve FROM scores").fetchall())
         db.close()
         self.assertEqual((marks["A"], marks["B"], marks["C"]), ("ai,eu", "eu", ""))
         self.assertEqual(len(rows), 4)
         self.sb.write()                                   # полная перезапись не теряет флаг
-        db = sqlite3.connect(self.storage.cfg.db_file)
+        db = sqlite3.connect(self.storage.cfg.path)
         self.assertEqual(db.execute("SELECT reserve FROM scores WHERE crc='A'").fetchone()[0], "ai,eu")
         db.close()
 

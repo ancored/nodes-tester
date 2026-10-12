@@ -3,7 +3,7 @@
 Проверяем: минимальный type=xhttp, packet-up с extra (число -> "N-N"),
 reality + utls, stream-one с непустым path, битый extra (парсер не падает),
 xmux вложенным объектом, а также заодно закрытые пробелы vless.py — alpn и
-encryption. Плюс контракт с naming.node_protocol / groups.UNGROUPED_PROTOCOLS:
+encryption. Плюс контракт с naming.node_protocol / build.UNGROUPED_PROTOCOLS:
 XHTTP-нода больше НЕ считается "голым" vless и не отбрасывается.
 """
 
@@ -17,7 +17,7 @@ from urllib.parse import quote
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-from nodes_config import groups  # noqa: E402
+from nodes_config import build  # noqa: E402
 from nodes_fetch.parsers import _common as tool  # noqa: E402  (xhttp_range/xhttp_transport)
 from nodes_fetch.parsers import vless, trojan  # noqa: E402
 from naming import node_protocol  # noqa: E402
@@ -62,7 +62,7 @@ class XhttpVlessTest(unittest.TestCase):
         # Протокол больше не "голый" vless -> нода не отбрасывается фильтром
         proto = node_protocol(node)
         self.assertEqual(proto, "vless|xhttp|tls")
-        self.assertNotIn(proto, groups.UNGROUPED_PROTOCOLS)
+        self.assertNotIn(proto, build.UNGROUPED_PROTOCOLS)
 
     def test_packet_up_extra(self):
         # extra: scMinPostsIntervalMs=30.0 -> "30-30", scMaxEachPostBytes "1000000" -> "1000000-1000000"

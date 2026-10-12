@@ -61,8 +61,7 @@ class ConnectivityTest(BaseTest):
     name = "connectivity"
 
     def _service(self, ctx: TestContext) -> str:
-        by_region = self.options.get("service_by_region") or {}
-        return by_region.get(ctx.region) or self.options.get("service") or DEFAULT_SERVICE
+        return self.option(ctx, "service") or DEFAULT_SERVICE
 
     def run(self, ctx: TestContext) -> TestResult:
         name = self._service(ctx)

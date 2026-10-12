@@ -26,8 +26,7 @@ class ReachabilityTest(BaseTest):
     name = "reachability"
 
     def _urls(self, ctx: TestContext) -> list[str]:
-        by_region = self.options.get("urls_by_region") or {}
-        return by_region.get(ctx.region) or self.options.get("urls") or DEFAULT_URLS
+        return self.option(ctx, "urls") or DEFAULT_URLS
 
     def run(self, ctx: TestContext) -> TestResult:
         urls = self._urls(ctx)

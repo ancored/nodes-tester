@@ -111,7 +111,7 @@ class ProductionMonitor:
                 # Нода пассивно доказала пропускную способность — жива.
                 st.update(quiet_since=now, quiet_bytes=0, strikes=0)
                 continue
-            if now - st["quiet_since"] < self.cfg.silence_window:
+            if now - st["quiet_since"] < self.cfg.silence:
                 continue  # ещё недостаточно тихо
 
             self._probe_region(region, node, st, now)

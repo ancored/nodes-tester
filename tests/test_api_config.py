@@ -1,4 +1,4 @@
-"""Редактор конфигов (Фаза 4): GET/PUT config.json с валидацией и атомарной записью."""
+"""Редактор единого config.json: GET/PUT с проверкой загрузчиком и атомарной записью."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import os
 import unittest
 
-from tests.helpers import make_config, temp_dir
+from tests.helpers import load_test_config, temp_dir
 from nodes_tester.config import load_config
 from dashboard.server import build_app
 
@@ -14,194 +14,101 @@ from dashboard.server import build_app
 class ApiConfigTest(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.cfg = load_config(make_config(self.tmp, dashboard={"token": "secret"}))
+        self.cfg = load_test_config(self.tmp, admin={"token": "secret"})
         self.app = build_app(self.cfg, runner=None)
 
-    def _call(self, method, path, token="secret", body=None):
-        headers = {"X-Admin-Token": token}
+    def _call(self, method, path, token="secret", body=None, headers=None):
+        headers = {"X-Admin-Token": token, **(headers or {})}
         return self.app.handle(method, path, headers,
                                json.dumps(body).encode() if body is not None else b"")
+
+    def _current(self):
+        return json.loads(self._call("GET", "/api/config").body)
 
     def test_get_config(self):
         r = self._call("GET", "/api/config")
         self.assertEqual(r.status, 200)
         data = json.loads(r.body)
-        self.assertIn("box_api", data["data"])
+        self.assertIn("api", data["data"])
+        self.assertIn("subscriptions", data["data"])
         self.assertTrue(data["path"].endswith("config.json"))
 
     def test_get_schema(self):
-        r = self._call("GET", "/api/config/schema")
-        # schema лежит в config/ рядом с оригиналом, а не в tmp — здесь её может не быть,
-        # поэтому допускаем 200 (найдена) либо 500 (нет) — главное, что endpoint живой.
-        self.assertIn(r.status, (200, 500))
+        # schema лежит в config/ рядом с оригиналом, а не в tmp — здесь её может не быть.
+        self.assertIn(self._call("GET", "/api/config/schema").status, (200, 500))
 
-    def test_put_invalid_rejected(self):
-        r = self._call("PUT", "/api/config", body={"box_api": {}})
-        self.assertEqual(r.status, 400)
-
-    def test_put_invalid_dashboard_types_rejected(self):
-        cur = json.loads(self._call("GET", "/api/config").body)["data"]
-        cur["dashboard"]["port"] = "not-a-port"
-        cur["dashboard"]["interval"] = -1
-        self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 400)
-
-    def test_put_missing_explicit_schema_rejected(self):
-        cur = json.loads(self._call("GET", "/api/config").body)["data"]
-        cur["$schema"] = "missing.schema.json"
-        self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 400)
-
-    def test_put_invalid_providers_rejected(self):
-        self.assertEqual(self._call("PUT", "/api/config/providers", body={}).status, 400)
-        bad = {"subscribes": "not-a-list", "save_config_path": "out.json"}
-        self.assertEqual(self._call("PUT", "/api/config/providers", body=bad).status, 400)
-
-    def test_put_duplicate_provider_tag_rejected(self):
-        sub = {"tag": "A", "url": "https://example.com/sub"}
-        body = {"subscribes": [sub, dict(sub)]}
-        self.assertEqual(self._call("PUT", "/api/config/providers", body=body).status, 400)
-
-
-    def test_put_valid_roundtrip(self):
-        cur = json.loads(self._call("GET", "/api/config").body)["data"]
+    def test_put_invalid_rejected_with_field_path(self):
+        cur = self._current()["data"]
+        cur["groups"] = [{"tag": "ai", "require": {"gemeni": {}}}]
         r = self._call("PUT", "/api/config", body=cur)
+        self.assertEqual(r.status, 400)
+        self.assertIn("groups[0].require.gemeni", json.loads(r.body)["error"])
+
+    def test_put_wrong_types_rejected(self):
+        for change in ({"admin": {"port": "not-a-port"}}, {"admin": {"refresh": -1}},
+                       {"pipeline": {"router": {"at": ["3:00"]}}}, {"tester": {"pause": 5}},
+                       {"subscriptions": [{"tag": "A", "url": "https://x"}, {"tag": "A", "url": "https://y"}]}):
+            with self.subTest(change=change):
+                cur = self._current()["data"]
+                cur.update(change)
+                self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 400)
+
+    def test_put_valid_roundtrip_and_conflict(self):
+        doc = self._current()
+        cur = doc["data"]
+        cur["subscriptions"].append({"tag": "WH", "url": "https://example.com/wh", "branch": "clients"})
+        r = self._call("PUT", "/api/config", body=cur, headers={"If-Match": doc["revision"]})
         self.assertEqual(r.status, 200)
         with open(self.cfg.path, encoding="utf-8") as fh:
-            written = json.load(fh)
-        self.assertEqual(written["box_api"]["url"], cur["box_api"]["url"])
+            self.assertEqual(json.load(fh), cur)
+        stale = self._call("PUT", "/api/config", body=cur, headers={"If-Match": doc["revision"]})
+        self.assertEqual(stale.status, 409)
 
     @unittest.skipUnless(os.name == "posix", "права файлов — только POSIX")
     def test_put_keeps_config_private(self):
         # В config.json секреты, пакет ставит ему chmod 600: сохранение из админки
         # не должно открывать файл на чтение остальным.
         os.chmod(self.cfg.path, 0o600)
-        cur = json.loads(self._call("GET", "/api/config").body)["data"]
-        self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 200)
+        self.assertEqual(self._call("PUT", "/api/config", body=self._current()["data"]).status, 200)
         self.assertEqual(os.stat(self.cfg.path).st_mode & 0o777, 0o600)
 
+    def test_write_keeps_symlink(self):
+        real = os.path.join(self.tmp, "real-config.json")
+        os.replace(self.cfg.path, real)
+        try:
+            os.symlink(real, self.cfg.path)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlink недоступен (Windows без прав)")
+        cur = self._current()["data"]
+        cur["api"]["url"] = "http://127.0.0.1:9191"
+        self.assertEqual(self._call("PUT", "/api/config", body=cur).status, 200)
+        self.assertTrue(os.path.islink(self.cfg.path))
+        with open(real, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["api"]["url"], "http://127.0.0.1:9191")
+
     def test_put_bad_json_rejected(self):
-        # невалидный JSON в теле → req.json() бросит HttpError 400
-        headers = {"X-Admin-Token": "secret"}
-        r = self.app.handle("PUT", "/api/config", headers, b"{not json")
+        r = self.app.handle("PUT", "/api/config", {"X-Admin-Token": "secret"}, b"{not json")
         self.assertEqual(r.status, 400)
 
     def test_custom_config_filename_is_the_edited_target(self):
         custom = os.path.join(self.tmp, "router-local.json")
         os.replace(self.cfg.path, custom)
-        cfg = load_config(custom)
-        app = build_app(cfg, runner=None)
+        app = build_app(load_config(custom, data_dir=self.tmp), runner=None)
         r = app.handle("GET", "/api/config", {"X-Admin-Token": "secret"}, b"")
         self.assertEqual(r.status, 200)
         self.assertEqual(json.loads(r.body)["path"], os.path.abspath(custom))
+
+    def test_subscription_options(self):
+        data = json.loads(self._call("GET", "/api/config/subscription-options").body)
+        self.assertEqual(data["branches"], ["router", "clients"])
+        self.assertIn("gemini", data["checks"])
+        self.assertIn("eu", data["builtin_regions"])
 
     def test_wrong_method_returns_405(self):
         self.assertEqual(self.app.handle("DELETE", "/api/config", {}, b"").status, 405)
 
     def test_config_requires_token(self):
         self.assertEqual(self.app.handle("GET", "/api/config", {}, b"").status, 401)
-
-
-class ProvidersFileTest(unittest.TestCase):
-    """dashboard.providers_file: редактор правит тот же файл, что читает nodes_fetch."""
-
-    V2 = {"subscribes": [{"tag": "A", "url": "https://example.com/sub"},
-                         {"tag": "AWG", "type": "folder", "path": "awg", "format": "awg"}],
-          "fetch": {"timeout": 60}}
-
-    def _app(self, providers_file):
-        self.tmp = temp_dir()
-        cfg = load_config(make_config(self.tmp, dashboard={"token": "secret",
-                                                            "providers_file": providers_file}))
-        return build_app(cfg, runner=None)
-
-    @staticmethod
-    def _call(app, method, body=None):
-        return app.handle(method, "/api/config/providers", {"X-Admin-Token": "secret"},
-                          json.dumps(body).encode() if body is not None else b"")
-
-    def test_default_is_next_to_config(self):
-        app = self._app("")
-        self.assertEqual(self._call(app, "PUT", self.V2).status, 200)
-        r = json.loads(self._call(app, "GET").body)
-        self.assertEqual(r["path"], os.path.join(self.tmp, "providers.json"))
-
-    def test_relative_path_from_config_dir_and_v2_roundtrip(self):
-        app = self._app(os.path.join("data", "config-main", "providers.json"))
-        target = os.path.join(self.tmp, "data", "config-main", "providers.json")
-        os.makedirs(os.path.dirname(target))
-        with open(target, "w", encoding="utf-8") as fh:
-            json.dump(self.V2, fh)
-        r = self._call(app, "GET")
-        self.assertEqual(r.status, 200)
-        got = json.loads(r.body)
-        self.assertEqual(got["path"], target)
-        self.assertEqual(got["data"], self.V2)
-        body = dict(self.V2, subscribes=self.V2["subscribes"][:1])   # без save_config_path
-        self.assertEqual(self._call(app, "PUT", body).status, 200)
-        with open(target, encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh), body)
-
-    def test_absolute_path(self):
-        other = temp_dir()
-        target = os.path.join(other, "providers.json")
-        app = self._app(target)
-        self.assertEqual(self._call(app, "PUT", self.V2).status, 200)
-        self.assertTrue(os.path.exists(target))
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "providers.json")))
-
-    def test_write_keeps_symlink(self):
-        app = self._app("providers.json")
-        real = os.path.join(self.tmp, "real-providers.json")
-        with open(real, "w", encoding="utf-8") as fh:
-            json.dump(self.V2, fh)
-        link = os.path.join(self.tmp, "providers.json")
-        try:
-            os.symlink(real, link)
-        except (OSError, NotImplementedError):
-            self.skipTest("symlink недоступен (Windows без прав)")
-        body = dict(self.V2, fetch={"timeout": 30})
-        self.assertEqual(self._call(app, "PUT", body).status, 200)
-        self.assertTrue(os.path.islink(link))
-        with open(real, encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh)["fetch"]["timeout"], 30)
-
-
-class BranchTest(unittest.TestCase):
-    """?set=clients: подписки и сборка клиентской ветви в config-wh рядом с config-main."""
-
-    def setUp(self):
-        self.tmp = temp_dir()
-        for d in ("config-main", "config-wh"):
-            os.makedirs(os.path.join(self.tmp, d))
-        cfg = load_config(make_config(self.tmp, dashboard={
-            "token": "secret", "providers_file": os.path.join("config-main", "providers.json")}))
-        self.app = build_app(cfg, runner=None)
-
-    def _call(self, method, path, body=None):
-        return self.app.handle(method, path, {"X-Admin-Token": "secret"},
-                               json.dumps(body).encode() if body is not None else b"")
-
-    def test_clients_files_in_config_wh(self):
-        body = {"subscribes": [{"tag": "WH", "url": "https://example.com/wh"}]}
-        self.assertEqual(self._call("PUT", "/api/config/providers?set=clients", body).status, 200)
-        target = os.path.join(self.tmp, "config-wh", "providers.json")
-        with open(target, encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh), body)
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "config-main", "providers.json")))
-        r = json.loads(self._call("GET", "/api/config/groups?set=clients").body)
-        self.assertEqual(r["path"], os.path.join(self.tmp, "config-wh", "groups_params.json"))
-        r = json.loads(self._call("GET", "/api/config/groups").body)
-        self.assertEqual(r["path"], os.path.join(self.tmp, "config-main", "groups_params.json"))
-
-    def test_unknown_branch_rejected(self):
-        self.assertEqual(self._call("GET", "/api/config/providers?set=wh").status, 400)
-
-
-class NoBranchTest(unittest.TestCase):
-    def test_clients_unavailable_without_config_main(self):
-        tmp = temp_dir()
-        app = build_app(load_config(make_config(tmp, dashboard={"token": "secret"})), runner=None)
-        r = app.handle("GET", "/api/config/providers?set=clients", {"X-Admin-Token": "secret"}, b"")
-        self.assertEqual(r.status, 404)
 
 
 if __name__ == "__main__":

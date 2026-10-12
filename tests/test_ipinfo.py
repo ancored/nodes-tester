@@ -48,7 +48,7 @@ class IpInfoTest(unittest.TestCase):
     def test_cache_and_results_column(self):
         tmp = temp_dir()
         db = os.path.join(tmp, "s.db")
-        st = Storage(StorageConfig(db_file=db))
+        st = Storage(StorageConfig(path=db))
         try:
             self.assertEqual(st.ip_info_stale(["1.1.1.1"], 3600), ["1.1.1.1"])
             st.save_ip_info(ipinfo.lookup(["1.1.1.1"], "http://x", session=_Session(ROWS[:1])))

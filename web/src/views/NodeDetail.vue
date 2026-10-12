@@ -2,10 +2,11 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSnapshot } from '../store.js'
-import { nodeFlags, testTitle } from '../ux.js'
+import { nodeFlags, nodeJsonLines, testTitle } from '../ux.js'
 import { dateTime, bytes } from '../format.js'
 import { useQuery } from '../query.js'
 import NodeActions from '../components/NodeActions.vue'
+import NodeKey from '../components/NodeKey.vue'
 import Sparkline from '../components/Sparkline.vue'
 import DataTable from '../components/DataTable.vue'
 import { api, auth, can } from '../api.js'
@@ -40,17 +41,8 @@ watch(()=>s.data.generated,async()=>{
   try {const data=await api.get('/nodes/'+selected+'/score-history');if(id===requestId && epoch===auth.epoch){history.value=data.score_history || [];historyError.value=''}}
   catch(e){if(id===requestId && epoch===auth.epoch)historyError.value=e.message}
 })
-const jsonLines=computed(()=>{
-  const fragment=detail.value?.fragment
-  if(!fragment)return []
-  // Порядок полей — как в nodes.json; поле payload выделяется целиком, вместе с вложенными строками.
-  const included=new Set(Object.keys(JSON.parse(detail.value.payload || '{}')))
-  const keys=Object.keys(fragment)
-  return [{text:'{',included:false},...keys.flatMap((key,index)=>{
-    const lines=JSON.stringify(fragment[key],null,2).split('\n')
-    return lines.map((line,i)=>({text:'  '+(i===0 ? JSON.stringify(key)+': ' : '')+line+(i===lines.length-1 && index<keys.length-1 ? ',' : ''),included:included.has(key)}))
-  }),{text:'}',included:false}]
-})
+// Порядок полей — как в nodes.json; цвет строки — чей это CRC: настроек сервера или учётных данных.
+const jsonLines=computed(()=>detail.value?.fragment ? nodeJsonLines(detail.value.fragment,detail.value.crc_fields,detail.value.cred_paths) : [])
 const historyColumns=[{key:'ts',title:'Дата / время',fmt:dateTime,l:true},{key:'score',title:'Рейтинг',fmt:v=>v == null ? '—' : Number(v).toFixed(1)}]
 const eventNames = { added:'Добавлена', removed:'Исчезла из списка', backoff:'Пауза', garbage:'Карантин', recovered:'Восстановлена', ban:'Исключена', unban:'Исключение снято', restriction_cleared:'Ограничение снято' }
 </script>
@@ -59,7 +51,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
   <p v-if="!node" class="notice">Нода не найдена в текущем снимке. Проверьте базу или обновите данные.</p>
   <template v-else>
     <section class="panel">
-      <h2 class="break">{{ node.node }}</h2>
+      <h2 class="break"><NodeKey :text="node.node" /></h2>
       <div class="chips"><span v-if="node.groups?.length" class="badge">Группы: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">Ограничение по времени до {{ dateTime(node.guntil) }}. Для паузы также учитывается номер прохода.</p>
       <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>
@@ -74,16 +66,19 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
         <div class="toolbar"><label>С даты и времени<input v-model="historyFrom" type="datetime-local" :max="historyTo || undefined" /></label><label>По дату и время<input v-model="historyTo" type="datetime-local" :min="historyFrom || undefined" /></label><button v-if="historyFrom || historyTo" class="btn" @click="clearHistoryRange">Сбросить период</button></div>
         <DataTable :rows="filteredHistory" :columns="historyColumns" :page-size="15" query-key="score_" :show-search="false" :show-sort="false" empty="За выбранный период замеров нет." />
       </details>
-      <p class="help-text">CRC связывает данные ноды между переименованиями. Нулевой рейтинг и отсутствие замеров показаны отдельно.</p>
+      <p class="help-text">Ключ ноды состоит из двух частей: <span class="crc-node">CRC настроек сервера</span> и <span class="crc-cred">CRC учётных данных</span>. Новые учётные данные от провайдера меняют только вторую часть: страна, проверки и рейтинг остаются у ноды. Нулевой рейтинг и отсутствие замеров показаны отдельно.</p>
       <details><summary>Технические сведения</summary>
         <p v-if="!can('edit_config')">Войдите с токеном администратора, чтобы посмотреть JSON ноды.</p>
         <p v-if="detailError" class="notice bad">{{ detailError }} <button class="btn" @click="loadDetails">Повторить загрузку</button></p>
         <template v-if="detail?.fragment">
-            <pre class="node-json"><code><span v-for="(line,i) in jsonLines" :key="i" class="json-line" :class="{'crc-payload':line.included}">{{ line.text }}{{ '\n' }}</span></code></pre>
-            <p class="mut"><span class="crc-legend">Цветом отмечены поля payload.</span> Служебные поля не участвуют в CRC.</p>
+            <pre class="node-json"><code><span v-for="(line,i) in jsonLines" :key="i" class="json-line" :class="line.kind ? 'crc-'+line.kind : ''">{{ line.text }}{{ '\n' }}</span></code></pre>
+            <p class="mut"><span class="crc-node">Настройки сервера</span> входят в первую часть ключа, <span class="crc-cred">учётные данные</span> — во вторую. Служебные поля не участвуют в CRC.</p>
             <p v-if="detail.fragment_source!=='nodes_file'" class="mut">Фрагмент восстановлен из SQLite; исключённые из CRC поля, кроме tag, в базе не сохраняются.</p>
-            <p>Проверка CRC: <b :class="detail.calculated_crc===crc ? 'good' : 'bad'">{{ detail.calculated_crc===crc ? '✓ OK' : '✕ Не совпадает' }}</b></p>
-            <details><summary>Строка для CRC32 — ровно то, что хешируется</summary><pre class="node-json">{{ detail.payload }}</pre></details>
+            <p>Проверка ключа: <b :class="detail.calculated_crc===crc ? 'good' : 'bad'">{{ detail.calculated_crc===crc ? '✓ OK' : '✕ Не совпадает' }}</b><span v-if="detail.calculated_crc!==crc"> — пересчитан <NodeKey :text="detail.calculated_crc" /></span></p>
+            <details><summary>Строки для CRC32 — ровно то, что хешируется</summary>
+              <p class="crc-node">Настройки сервера</p><pre class="node-json crc-node">{{ detail.node_payload }}</pre>
+              <p class="crc-cred">Учётные данные</p><pre class="node-json crc-cred">{{ detail.cred_payload }}</pre>
+            </details>
             <p class="mut break">Причина ограничения: {{ node.gstate || 'нет' }}; последовательных провалов: {{ node.gstreak || 0 }}.</p>
         </template>
         <p v-else-if="detail">JSON этой ноды не сохранён.</p>
