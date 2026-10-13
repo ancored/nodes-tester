@@ -183,17 +183,21 @@ class LifecycleGraveyardTest(unittest.TestCase):
     def test_removed_nodes_only_in_archive(self):
         from types import SimpleNamespace
         x = self.st._db.execute
-        x("INSERT INTO nodes (crc, tag, provider, first_seen) VALUES ('new', 'new', 'P', ?)", (self.now,))
-        for crc in ("ok", "gone"):
+        x("INSERT INTO nodes (crc, tag, provider, first_seen, title) VALUES ('new', 'new', 'P', ?, 'NL 1')",
+          (self.now,))
+        x("UPDATE nodes SET title = 'DE old' WHERE crc = 'gone'")
+        for crc in ("ok", "gone", "stale"):
             x("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
               (self.now, crc, "latency", 1, '{"ms": 50}'))
         self.st._db.commit()
         data = D._collect(SimpleNamespace(storage=_Cfg(self.db)))
-        crcs = {n["crc"] for n in data["nodes"]}
-        self.assertNotIn("gone", crcs)
-        self.assertIn("new", crcs)                   # собрана конвейером, тестер ещё не сверил
-        self.assertEqual([r["crc"] for r in data["results"]["rows"]], ["ok"])
-        self.assertEqual([r["crc"] for r in data["graveyard"]], ["gone"])
+        nodes = {n["crc"]: n for n in data["nodes"]}
+        self.assertNotIn("gone", nodes)
+        self.assertEqual(nodes["new"]["title"], "NL 1")   # собрана конвейером, тестер ещё не сверил
+        self.assertIsNone(nodes["ok"]["title"])
+        rows = {r["crc"]: r.get("removed") for r in data["results"]["rows"]}
+        self.assertEqual(rows, {"ok": None, "gone": 1})    # ушедшая — для карточки, ключ без ноды — нет
+        self.assertEqual([(g["crc"], g["title"]) for g in data["graveyard"]], [("gone", "DE old")])
 
     def test_client_nodes_listed_with_whitelist_only(self):
         import json

@@ -12,7 +12,12 @@ import DataTable from '../components/DataTable.vue'
 import { api, auth, can } from '../api.js'
 const s = useSnapshot(), route = useRoute(), tab = useQuery('tab','Состояние')
 const crc = computed(() => String(route.params.crc).toLowerCase())
-const node = computed(() => (s.data.nodes || []).find(n => n.crc.toLowerCase() === crc.value))
+// Ушедшая из подписок нода есть только в архиве: карточка строится по его строке.
+const node = computed(() => (s.data.nodes || []).find(n => n.crc.toLowerCase() === crc.value) || archivedNode())
+function archivedNode(){
+  const g = (s.data.graveyard || []).find(n => n.crc.toLowerCase() === crc.value)
+  return g && { ...g, node: g.tag, country: g.cc, present: 0, score: g.last }
+}
 const result = computed(() => s.data.results?.rows?.find(r => r.crc.toLowerCase() === crc.value))
 const events = computed(() => (s.data.node_events || []).filter(e => e.crc.toLowerCase() === crc.value))
 const switches = computed(() => (s.data.history || []).filter(e => e.crc?.toLowerCase() === crc.value))
@@ -62,6 +67,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
   <template v-else>
     <section class="panel">
       <h2 class="break"><NodeKey :text="node.node" /></h2>
+      <p class="break">Имя в подписке: {{ node.title || '—' }}</p>
       <div class="chips"><span v-if="node.groups?.length" class="badge">Группы: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">Ограничение по времени до {{ dateTime(node.guntil) }}. Для паузы также учитывается номер прохода.</p>
       <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>

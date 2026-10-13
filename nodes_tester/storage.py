@@ -6,7 +6,7 @@ node_crc — CRC настроек сервера, cred_crc — CRC учётны�
 
 Таблицы (описание — nodes_tester/STORAGE.md):
   nodes(crc PK, node_crc, tag, provider/protocol, country (измеренная), type, server/port,
-        payload JSON, crc_ok, first_seen, last_seen, present, banned) — описание ноды
+        payload JSON, crc_ok, first_seen, last_seen, present, banned, title) — описание ноды
   traffic(ts, crc, up, down, conns, is_tester)                 — временной ряд объёма
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
   results(ts, pass_no, crc, test, ok, url, metrics JSON, error)
@@ -35,6 +35,7 @@ import threading
 import time
 
 from naming import canonical, node_key, node_payload, parse_node
+from nodes_common.raw import titles as raw_titles
 
 # Версия схемы БД. Файл другой версии при открытии уходит в копию, история начинается
 # заново (0.5.0: сменился ключ ноды, переносить нечего).
@@ -44,7 +45,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (
   crc TEXT PRIMARY KEY, node_crc TEXT, tag TEXT, provider TEXT, protocol TEXT, country TEXT,
   type TEXT, server TEXT, server_port INTEGER, payload TEXT, crc_ok INTEGER,
-  first_seen INTEGER, last_seen INTEGER, present INTEGER, banned INTEGER);
+  first_seen INTEGER, last_seen INTEGER, present INTEGER, banned INTEGER, title TEXT);
 CREATE INDEX IF NOT EXISTS idx_nodes_node_crc ON nodes(node_crc);
 CREATE TABLE IF NOT EXISTS traffic (
   ts INTEGER, crc TEXT, up INTEGER, down INTEGER, conns INTEGER, is_tester INTEGER);
@@ -121,6 +122,7 @@ class Storage:
         self._db.commit()
         self._lock = threading.Lock()
         self._nodes_mtime = None
+        self._raw_mtime = None
 
     def close(self) -> None:
         with self._lock:
@@ -128,16 +130,27 @@ class Storage:
 
     # --- Таблица nodes -------------------------------------------------
 
-    def maybe_load_nodes(self, path: str) -> None:
-        """Перечитать описания нод, если файл появился/изменился."""
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            return
-        if mtime == self._nodes_mtime:
-            return
-        self._nodes_mtime = mtime
-        self.load_nodes(path)
+    def maybe_load_nodes(self, path: str, raw_path: str) -> None:
+        """Перечитать описания нод, если nodes.json появился или изменился, и имена нод из
+        подписок — если изменился raw (опрос подписок идёт и без сборки) или появились
+        новые строки нод."""
+        mtime = _mtime(path)
+        if mtime is not None and mtime != self._nodes_mtime:
+            self._nodes_mtime = mtime
+            self.load_nodes(path)
+            self._raw_mtime = None
+        mtime = _mtime(raw_path)
+        if mtime is not None and mtime != self._raw_mtime:
+            self._raw_mtime = mtime
+            self.load_titles(raw_path)
+
+    def load_titles(self, raw_path: str) -> None:
+        """Имя ноды в подписке (title из raw). У ушедших из подписки имя остаётся."""
+        names = raw_titles(raw_path)
+        with self._lock:
+            self._db.executemany("UPDATE nodes SET title = ? WHERE crc = ?",
+                                 [(title, crc) for crc, title in names.items()])
+            self._db.commit()
 
     def load_nodes(self, path: str) -> int:
         """Загрузить полные описания leaf-нод из nodes.json (выход subscribe)."""
@@ -698,6 +711,13 @@ class Storage:
         with self._lock:
             self._db.execute("PRAGMA busy_timeout = 60000")   # ждать активного писателя
             self._db.execute("VACUUM")
+
+
+def _mtime(path: str) -> float | None:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
 
 
 def _set_aside_other_schema(path: str) -> None:

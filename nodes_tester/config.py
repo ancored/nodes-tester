@@ -776,6 +776,10 @@ class Config:
     def whnodes_file(self) -> str:
         return os.path.join(os.path.dirname(self.nodes_file), "whnodes.json")
 
+    def raw_file(self, branch: str) -> str:
+        """raw ветви (выход опроса подписок) — в raw/ рядом с nodes.json."""
+        return os.path.join(os.path.dirname(self.nodes_file), "raw", f"{branch}.json")
+
     def group(self, tag: str) -> GroupConfig | None:
         return next((g for g in self.groups if g.tag == tag), None)
 

@@ -11,7 +11,7 @@ import DataTable from '../components/DataTable.vue'
 import IpTypeIcon from '../components/IpTypeIcon.vue'
 const s=useSnapshot()
 const tests=computed(()=>s.data.results?.tests || [])
-const rows=computed(()=>s.data.results?.rows || [])
+const rows=computed(()=>(s.data.results?.rows || []).filter(r => !r.removed))
 // AI-тесты — узкие колонки: галка, крест или «?» (сеть, вердикт прежний); у Google AI — флаг страны.
 const AI_NOTE='Google AI — страна по мнению Google (флаг) и доступность Gemini; OpenAI и Claude AI — доступность сервиса. ✓ — доступен, ✗ — нет, ? — сбой сети, действует прошлый результат. Проверяются только кандидаты групп с обязательными тестами; наведите курсор, чтобы увидеть время и причину.'
 // Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список.

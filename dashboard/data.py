@@ -12,6 +12,7 @@ from pathlib import Path
 
 from naming import parse_node
 from naming.regions import alpha3_to_alpha2
+from nodes_common.raw import titles as raw_titles
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -211,10 +212,16 @@ def _collect(cfg) -> dict:
     clients = _client_nodes(getattr(cfg, "whnodes_file", "") or "", {n["crc"] for n in nodes})
     nodes += [{**meta, "present": 1, "banned": 0, "score": None, "reserve": "", "wh_only": 1}
               for meta in clients.values()]
-    # Ушедшие из подписок ноды — только в «Архиве» (_graveyard).
+    # Ушедшие из подписок ноды — только в «Архиве» (_graveyard): их строки помечены removed,
+    # «Результаты» их не показывают, карточка ноды — показывает. Ключи, которых нет ни
+    # в базе, ни в whnodes.json (прежние клиентские ноды), не отдаём.
     shown = {n["crc"] for n in nodes}
-    results["rows"] = [r for r in results.get("rows", []) if r["crc"] in shown]
+    archived = {g["crc"] for g in graveyard}
+    known = shown | archived
+    results["rows"] = [r for r in results.get("rows", []) if r["crc"] in known]
     for r in results["rows"]:
+        if r["crc"] in archived:
+            r["removed"] = 1
         if r["crc"] in clients:
             r.update(provider=clients[r["crc"]]["provider"], protocol=clients[r["crc"]]["protocol"], wh_only=1)
     for table in (nodes, results["rows"], garbage, longevity, dropouts, rows):
@@ -659,8 +666,9 @@ def _graveyard(db: str, ev: dict, retention_days: int) -> list[dict]:
     сколько раз была в карантине и в каком состоянии ушла."""
     now = int(time.time())
     nodes = _query(db, """
-        SELECT n.crc AS crc, n.tag AS tag, n.provider AS provider, n.protocol AS protocol,
-               n.country AS cc, n.first_seen AS first_seen, n.last_seen AS last_seen,
+        SELECT n.crc AS crc, n.tag AS tag, n.title AS title, n.provider AS provider,
+               n.protocol AS protocol, n.country AS cc,
+               n.first_seen AS first_seen, n.last_seen AS last_seen,
                COALESCE(n.banned, 0) AS banned, g.reason AS gstate,
                (SELECT MAX(ts) FROM node_events e
                  WHERE e.crc = n.crc AND e.event = 'removed') AS removed_at
@@ -694,7 +702,7 @@ def _graveyard(db: str, ev: dict, retention_days: int) -> list[dict]:
             cause = "alive"                           # провайдер убрал рабочую ноду
         out.append({
             "provider": r.get("provider"), "protocol": r.get("protocol"), "cc": r.get("cc"),
-            "crc": r["crc"], "tag": r.get("tag"),
+            "crc": r["crc"], "tag": r.get("tag"), "title": r.get("title"),
             "first_seen": fs, "removed_at": removed,
             "lifespan": max(0, removed - fs),
             "purge_in": max(0, ls + retention_days * 86400 - now),
@@ -729,18 +737,21 @@ def _score_spark(db: str, points: int = 24) -> dict:
 
 
 def _client_nodes(whnodes_file: str, known: set) -> dict:
-    """Ноды whnodes.json, которых нет среди нод тестера: ключ → crc, тег, провайдер, протокол."""
+    """Ноды whnodes.json, которых нет среди нод тестера: ключ → crc, тег, провайдер, протокол,
+    имя в подписке (из raw клиентской ветви)."""
     try:
         with open(whnodes_file, encoding="utf-8") as fh:
             fragment = json.load(fh)
     except (OSError, ValueError, TypeError):
         return {}
+    names = raw_titles(os.path.join(os.path.dirname(whnodes_file), "raw", "clients.json"))
     out = {}
     for ob in fragment.get("outbounds", []) + fragment.get("endpoints", []):
         ident = parse_node(str(ob.get("tag", "")))
         if ident.node_id and ident.node_id not in known:
             out[ident.node_id] = {"crc": ident.node_id, "node": ident.raw, "provider": ident.provider,
-                                  "protocol": ident.protocol, "country": None, "server": ob.get("server")}
+                                  "protocol": ident.protocol, "country": None, "server": ob.get("server"),
+                                  "title": names.get(ident.node_id)}
     return out
 
 
@@ -754,8 +765,8 @@ def _nodes_list(db: str) -> list[dict]:
     backoff/карантин (из garbage). Бан (nodes.banned) вносится админкой (api_control).
     """
     rows = _query(db, """
-        SELECT n.crc AS crc, n.tag AS node, n.provider AS provider, n.protocol AS protocol,
-               n.country AS country, n.server AS server,
+        SELECT n.crc AS crc, n.tag AS node, n.title AS title, n.provider AS provider,
+               n.protocol AS protocol, n.country AS country, n.server AS server,
                n.present AS present, COALESCE(n.banned, 0) AS banned,
                s.score AS score, s.region AS region, s.active AS active, s.reserve AS reserve,
                g.reason AS gstate, g.until AS guntil, g.streak AS gstreak,

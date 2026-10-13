@@ -280,7 +280,7 @@ class Runner:
             print(f"Монитор активных нод: тик {m.interval:.0f}s, тишина {m.silence / 60:.0f} мин "
                   f"(<{m.silence_floor_bytes / 1_000_000:.0f} МБ) → зонд "
                   f"{m.probe_mb:g} МБ @ {m.probe_min_mbps} Мбит/с")
-            self.storage.load_nodes(self.cfg.nodes_file)
+            self.storage.maybe_load_nodes(self.cfg.nodes_file, self.cfg.raw_file("router"))
             print(f"Хранилище: {self.cfg.storage.path}"
                   + (" + сбор трафика" if self.cfg.storage.traffic.enabled else ""))
 
@@ -521,7 +521,7 @@ class Runner:
         в архив. Возвращает ключи появившихся нод."""
         if self._apply_paused():
             return set()
-        self.storage.maybe_load_nodes(self.cfg.nodes_file)
+        self.storage.maybe_load_nodes(self.cfg.nodes_file, self.cfg.raw_file("router"))
         try:
             members = {parse_node(tag).node_id for tag in self.api.list_group_members(self._top)}
         except ApiError:
@@ -570,7 +570,7 @@ class Runner:
         # Снимок состояния хранилища ДО перечисления: бан влияет на список нод (skip),
         # backoff — на пропуск в обходе, endpoints — на host-aware раскладку.
         self._progress = {"phase": "enumerating", "processed": 0, "total": 0, "node": None}
-        self.storage.maybe_load_nodes(self.cfg.nodes_file)
+        self.storage.maybe_load_nodes(self.cfg.nodes_file, self.cfg.raw_file("router"))
         self._backoff = self.storage.load_backoff()
         try:
             seq = int(self.storage.get_meta("pass_seq") or 0)

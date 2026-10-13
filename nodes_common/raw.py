@@ -22,6 +22,8 @@
 import hashlib
 import json
 
+from naming import node_key
+
 from .fileio import read_json
 
 RAW_VERSION = 1
@@ -42,6 +44,21 @@ def make_node(provider, title, outbound, cc_hint=None):
     return {"provider": provider, "title": title, "cc_hint": cc_hint or None,
             "outbound": {k: v for k, v in outbound.items()
                          if k != "tag" and not k.startswith("_")}}
+
+
+def titles(path):
+    """Ключ ноды → исходное имя в подписке из raw ветви; нет файла — пусто. Дубли доступа
+    схлопываются в первую ноду, как при сборке. У ноды с detour ключ в сборке другой
+    (detour переименован) — её имени здесь нет."""
+    try:
+        nodes = read_json(path)["nodes"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    out = {}
+    for node in nodes:
+        if node.get("title"):
+            out.setdefault(node_key(node["outbound"]), node["title"])
+    return out
 
 
 def validate(raw):
