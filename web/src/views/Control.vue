@@ -14,10 +14,10 @@ const extraFilters = [{ key:'state', title:'Состояние', get:states }]
 const stateFlags = n => nodeFlags(n).filter(f => !/^(Рейтинг|Нет замеров|Резерв)/.test(f)).join(' · ') || '—'
 const columns = [
   ...nodeColumns(),
-  { key:'title', title:'Имя в подписке', l:true, fmt:v => v || '—' },
   { key:'reserve', title:'Резерв', l:true, fmt:v => v || '—' },
   { key:'score', title:'Рейтинг',fmt:(v,n) => n.wh_only ? '—' : v == null ? 'Нет замеров' : Number(v).toFixed(1),cls:scoreClass },
   { key:'flags',title:'Состояние',l:true,fmt:(_,n) => stateFlags(n) },
+  { key:'title', title:'Имя в подписке', l:true, fmt:v => v || '—' },
 ]
 </script>
 <template>
