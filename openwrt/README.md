@@ -70,44 +70,36 @@ apk add nodes-tester
 | Где | Что настроить |
 |---|---|
 | `/etc/config/nodes-tester` | UCI: `main.config_dir`, `main.data_dir`, `tester.enabled` |
-| `/etc/nodes-tester/config.json` | Подключение тестера к sing-box, тесты, переключение, админка |
-| `/etc/nodes-tester/config-main/providers.json` | Подписки для роутера |
-| `/etc/nodes-tester/config-main/groups_params.json` | Фильтры, имена и группы создаваемых нод |
+| `/etc/nodes-tester/config.json` | Все настройки: подписки, группы и проверки, тестер, конвейер и расписание, админка ([описание полей](../docs/CONFIG.md)) |
 | `/etc/nodes-tester/singbox/` | База, правила и клиентские файлы sing-box |
-| `/etc/nodes-tester/pipeline.json` | Расписание веток и лимит времени конвейера |
+| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Собранные ноды и группы роутера и клиентов |
 | `/opt/nodes-tester/results/stats.db` | Результаты и статистика; создаются при работе |
 
 Это пути по умолчанию. Если меняете их в UCI, скорректируйте дальнейшие команды и связанные пути в JSON. `data_dir` должен быть на постоянном носителе; `/tmp` и `/var` на OpenWrt находятся в RAM. На роутере с небольшим флешем используйте подходящий USB-носитель.
 
-Установщик создаёт шаблонные конфиги и случайный `dashboard.token`. Сервис пока выключен. `singbox/` и `pipeline.json` входят в список сохраняемых при обновлении конфигов пакета; проверьте их содержимое перед первым применением. Каталог `config-wh/` нужен для отдельной клиентской ветки и для первого запуска на роутере не требуется.
+Установщик создаёт `config.json` из шаблона со случайным `admin.token`. Сервис пока выключен. `config.json` и `singbox/` входят в список сохраняемых при обновлении конфигов пакета; проверьте их содержимое перед первым применением.
 
 ## 3. Настроить подписку и собрать ноды
 
-В `config-main/providers.json` оставьте свои источники; удалите демонстрационные URL и записи, которыми не пользуетесь. Минимальный пример:
+В разделе `subscriptions` файла `config.json` оставьте свои источники; удалите демонстрационные URL и записи, которыми не пользуетесь. Минимальный пример:
 
 ```json
-{
-  "subscribes": [
-    { "tag": "EXAMPLE", "url": "https://provider.example/sub/YOUR-TOKEN" }
-  ]
-}
+"subscriptions": [
+  { "tag": "EXAMPLE", "url": "https://provider.example/sub/YOUR-TOKEN" }
+]
 ```
 
-`tag` задаёт уникальное имя провайдера в интерфейсе. Файл может содержать несколько подписок; также поддерживаются `happ://`, локальные файлы и папки AWG. Все URL и ключи остаются только на роутере.
+`tag` задаёт уникальное имя провайдера в интерфейсе. Подписок может быть несколько; также поддерживаются `happ://`, локальные файлы, папки AWG и свои outbound-ы (`"type": "inline"`). Все URL и ключи остаются только на роутере.
 
-В `groups_params.json` проверьте `rename.domain_resolver_tag`: по умолчанию это `bootstrap`, такой DNS-тег должен существовать в вашей конфигурации sing-box. Если у вас другой тег, укажите его. Фильтры задаются здесь, в `filters`. Список параметров есть в [схеме](../schemas/groups_params.schema.json).
+Проверьте `pipeline.router.domain_resolver`: по умолчанию это `bootstrap`, такой DNS-тег должен существовать в вашей конфигурации sing-box. Фильтры сборки задаются там же, в `pipeline.router`.
 
 ### Выбрать совместимое ядро
 
 Парсер сохраняет XHTTP и AmneziaWG. Эти ноды требуют `sing-box-lx`; обычный sing-box их не
-принимает. Если используется обычное ядро, добавьте в `groups_params.json`:
+принимает. Если используется обычное ядро, добавьте в `config.json`:
 
 ```json
-{
-  "filters": {
-    "exclude_protocols": ["xhttp", "wg"]
-  }
-}
+"pipeline": { "router": { "exclude_protocols": ["xhttp", "wg"] } }
 ```
 
 `wg` исключает и AWG, и обычный WireGuard. Варианты настройки и порядок проверки описаны
@@ -118,14 +110,14 @@ apk add nodes-tester
 Скачайте подписки и соберите фрагмент, пока не меняя рабочий sing-box:
 
 ```sh
-mkdir -p /opt/nodes-tester/raw /etc/sing-box-subscribe
-nodes-tester fetch -p /etc/nodes-tester/config-main/providers.json -o /opt/nodes-tester/raw/main.json --json
-nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-tester/config-main/groups_params.json -o /etc/sing-box-subscribe/nodes.json --json
+mkdir -p /opt/nodes-tester/raw
+nodes-tester fetch -c /etc/nodes-tester/config.json --branch router -o /opt/nodes-tester/raw/router.json --json
+nodes-tester config -c /etc/nodes-tester/config.json --branch router --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
 ```
 
 Проверьте отчёт обеих команд: источники, ошибки и число собранных нод. При отказе защитной проверки fetch возвращает код `2` и сохраняет предыдущий raw; это не новое успешное обновление. Не продолжайте первый запуск с пустой или неудачно загруженной подпиской.
 
-`nodes.json` содержит `outbounds` и, для соответствующих протоколов, `endpoints`. Он не является полной конфигурацией sing-box. Ноды с определённой страной получают региональные группы и плоский тестовый селектор `nodes-tester`; если нужного селектора нет, сначала разберите отчёт сборки и распознавание стран.
+`nodes.json` содержит `outbounds` и, для соответствующих протоколов, `endpoints`. Он не является полной конфигурацией sing-box. В нём селекторы групп `{tag}-auto-out` из раздела `groups` (в каждой все ноды), `global-auto-out`, запасной `failsafe-out` и плоский тестовый селектор `nodes-tester`. Строгие группы ссылаются на `block-out`, а `direct_fallback` — на `direct-out`: эти outbound-ы должны быть в базе sing-box (`{"type": "block", "tag": "block-out"}`, `{"type": "direct", "tag": "direct-out"}`).
 
 ## 4. Подключить фрагмент к sing-box
 
@@ -168,23 +160,20 @@ nodes-tester config --raw /opt/nodes-tester/raw/main.json --groups /etc/nodes-te
 
 ## 5. Настроить тестер и включить админку
 
-В `/etc/nodes-tester/config.json` измените обязательные поля:
+В `/etc/nodes-tester/config.json` проверьте обязательные поля:
 
 | Поле | Что указать |
 |---|---|
-| `box_api.url`, `box_api.secret` | Адрес и секрет API-сервиса sing-box (`services[type=api]`) |
-| `testing_groups[0].connection` | SOCKS из предыдущего шага: по примеру `127.0.0.1:2080` |
-| `testing_groups[0].selector.group` | `nodes-tester` |
-| `storage.nodes_file` | Путь к собранному фрагменту, по примеру `/etc/sing-box-subscribe/nodes.json` |
-| `dashboard.enabled` | `true` для веб-интерфейса |
-| `dashboard.host`, `dashboard.port` | Адрес интерфейса LAN роутера и порт, по примеру `8088` |
-| `dashboard.providers_file` | `config-main/providers.json`; установщик уже задаёт это значение |
+| `api.url`, `api.secret` | Адрес и секрет API-сервиса sing-box (`services[type=api]`) |
+| `tester.socks` | SOCKS из предыдущего шага, по умолчанию `socks5h://127.0.0.1:2080` |
+| `tester.selector` | `nodes-tester` (по умолчанию) |
+| `groups` | Группы sing-box и их проверки, по умолчанию одна группа `all` |
+| `admin.enabled` | `true` для веб-интерфейса |
+| `admin.listen`, `admin.port` | Адрес интерфейса LAN роутера и порт, по умолчанию `8088` |
 
-Сохраните созданный установщиком `dashboard.token`. Ограничьте доступ к порту админки локальной сетью; при `read_open: true` просмотр статистики доступен без токена. Для закрытого просмотра задайте `false`. Не открывайте порт в WAN.
+Сохраните созданный установщиком `admin.token`. Ограничьте доступ к порту админки локальной сетью; при `public_read: true` просмотр статистики доступен без токена. Для закрытого просмотра задайте `false`. Не открывайте порт в WAN.
 
-В шаблоне включены `switching.enabled` и `monitor.enabled`: тестер может управлять рабочими селекторами, а монитор возвращать выбранную ноду. Для первого знакомства без такого управления задайте оба поля `false`. Позже включайте их осознанно после проверки групп. `run.default.rotation_bound` связывает проходы с ротацией только при доступном переключателе; без него настройте `run.default.pass_pause`, например `3600`, чтобы проверки не повторялись непрерывно.
-
-В `run.default.tests_enabled` выбран набор тестов, включая загрузку файлов. Проверьте расходы трафика. Полный перечень настроек есть в [шаблоне](../config/config.example.json) и [схеме](../config/config.schema.json).
+Тестер сам выбирает активную ноду в каждой группе по её проверкам, а монитор возвращает выбор, если его сменили в обход. Плановую ротацию можно выключить: `selection.rotation.enabled: false`. Проверки скачивают тестовые файлы: проверьте расходы трафика. Полный перечень настроек — в [описании config.json](../docs/CONFIG.md).
 
 Запустите сервис:
 
@@ -195,7 +184,7 @@ uci commit nodes-tester
 logread -e nodes-tester
 ```
 
-Откройте `http://192.168.1.1:8088/` с учётом выбранных адреса и порта. Для управления введите в шапке `dashboard.token` из своего конфига. Результаты появятся по мере проверок; большой набор нод и межхостовые паузы требуют времени.
+Откройте `http://192.168.1.1:8088/` с учётом выбранных адреса и порта. Для управления введите в шапке `admin.token` из своего конфига. Результаты появятся по мере проверок; большой набор нод и межхостовые паузы требуют времени.
 
 ## 6. Обновить пакет
 

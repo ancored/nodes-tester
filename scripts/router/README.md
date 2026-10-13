@@ -17,7 +17,7 @@ nodes-tester pipeline router
 
 ```text
 nodes_fetch
-    -> raw/main.json
+    -> raw/router.json
     -> nodes_config
     -> nodes.json
     -> update-rules.sh
@@ -134,7 +134,7 @@ nodes-tester pipeline clients --dry-run
 nodes-tester pipeline clients
 ```
 
-Она использует `config-wh`, создаёт `whnodes.json` и передаёт его в `build-clients.sh`.
+Она загружает подписки ветви `clients`, создаёт `whnodes.json` и передаёт его в `build-clients.sh`.
 Нужны собственные базовые конфиги `singbox/clients/base_<name>.json` и `clients.list`.
 Загрузите или отредактируйте клиентские базы в разделе «Файлы sing-box». К базе
 добавляются включённые пресеты `singbox/clients/presets/*.json`; локальные наборы правил в них
@@ -168,7 +168,7 @@ nodes-tester pipeline apply-clients
 
 - `PROJECT_DIR`: корень установленного кода;
 - `DATA`: каталог raw и кандидатов;
-- `CFG_ROOT`: каталог `config-main` и `config-wh`;
+- `CFG_ROOT`: каталог `config.json` и `singbox/`;
 - `CONFIG_DIR`: база sing-box, правила и клиентские источники в `singbox/`;
 - `SINGBOX`: каталог исходников sing-box (по умолчанию `$CFG_ROOT/singbox`), пресеты — в `presets/`;
 - `CLIENTS_FILE`: список имён клиентских баз.
