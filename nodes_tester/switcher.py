@@ -28,13 +28,13 @@ import statistics
 import threading
 import time
 
+# Запасные члены селекторов групп (их собирает nodes_config; block-out — в базе sing-box).
+from nodes_config.groups import BLOCK, DIRECT, FAILSAFE
+
 from .api import ApiClient, ApiError
 from .identity import parse_node
 from .scoreboard import Scoreboard
 
-
-# Запасные члены селекторов групп (их собирает nodes_config; block-out — в базе sing-box).
-from nodes_config.groups import BLOCK, DIRECT, FAILSAFE
 # Селекторы, которые переключатель не трогает: global-auto-out выбирает пользователь.
 _FROZEN = {"global-auto-out"}
 
@@ -250,7 +250,7 @@ class Switcher:
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
         reserve = set(self.board.reserve(region))
-        # Кандидаты идут по ярусу выходного IP, внутри яруса — по рейтингу.
+        # Кандидаты идут по ярусу (непройденные приоритетные проверки), внутри — по рейтингу.
         pool = [c for c in cands if c["node"] in reserve and c["node"] != active]
 
         # 1. Инициализация — активной ноды ещё нет: лучшая из резерва (резерв ещё не
@@ -527,8 +527,7 @@ def _foreign_group_auto(tag: str, group: str, groups: set) -> bool:
 
 
 def _top_tier(cands: list[dict]) -> list[dict]:
-    """Кандидаты лучшего яруса выходного IP (в строгой группе — домашние и мобильные,
-    если они есть; иначе все)."""
+    """Кандидаты лучшего яруса (меньше всего непройденных приоритетных проверок)."""
     best = min((c["tier"] for c in cands), default=0)
     return [c for c in cands if c["tier"] == best]
 

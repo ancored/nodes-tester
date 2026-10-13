@@ -521,7 +521,7 @@ def _branch(obj, name: str) -> BranchConfig:
                "selector", "urltest"]
     if name == "router":
         allowed.append("rebuild")
-    d = PipelineConfig().router if name == "router" else PipelineConfig().clients
+    d = getattr(PipelineConfig(), name)
     obj = _fields(obj, path, allowed)
     at = _strings(obj, "at", path, d.at)
     for i, value in enumerate(at):

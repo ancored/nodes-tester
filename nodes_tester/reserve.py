@@ -72,7 +72,7 @@ class ReserveKeeper:
 
     def maintain_all(self) -> None:
         runner = self.runner
-        if runner.board is None or runner.switcher is None or not runner._node_by_raw:
+        if not runner._node_by_raw:
             return                            # состав нод ещё неизвестен (до первого прохода)
         for group in runner.board.regions():
             if runner._apply_paused():

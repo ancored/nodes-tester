@@ -51,7 +51,9 @@ def _subscription_states(app: App) -> dict:
     """Состояние подписок по последнему raw (raw/router.json, raw/clients.json): tag →
     {ok, count, last_ok_at, stale, error, meta}. Без оркестратора (нет каталога данных) — пусто."""
     orch = getattr(getattr(app, "runner", None), "orchestrator", None)
-    folder = os.path.join(str(orch.data_dir), "raw") if orch is not None else ""
+    if orch is None:
+        return {}
+    folder = os.path.join(str(orch.data_dir), "raw")
     out = {}
     for name in ("router.json", "clients.json"):
         try:

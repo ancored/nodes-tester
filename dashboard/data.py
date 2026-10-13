@@ -90,7 +90,7 @@ def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
     order, by_crc = [], {}
     for ob in config.get("outbounds", []) if isinstance(config, dict) else []:
         tag = str(ob.get("tag", "")) if isinstance(ob, dict) else ""
-        if ob.get("type") != "selector" or not tag.endswith(_AUTO_SUFFIX) or tag.startswith("global-"):
+        if not tag.endswith(_AUTO_SUFFIX) or tag.startswith("global-") or ob.get("type") != "selector":
             continue
         group = tag[:-len(_AUTO_SUFFIX)]
         order.append(group)

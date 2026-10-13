@@ -82,9 +82,9 @@ class Scoreboard:
         # Новый доступ известной ноды (провайдер перевыпустил учётные данные) наследует
         # её состояние от лучшего соседнего доступа; gate этого прохода — свой.
         own = self.rows.get(ident.raw)
-        prev = own or self._best_sibling(ident)
+        prev = own or self._best_sibling(ident) or {}
         prev_state = None
-        if prev is not None:
+        if prev:
             prev_state = {
                 "score_ewma": prev.get("score_ewma", s_run),
                 "flap": prev.get("flap", 0.0),
@@ -102,13 +102,13 @@ class Scoreboard:
             "active": (own.get("active", 0) if own else 0),
             "last_seen": self._pass_no,
             # veto тяжёлого download не относится к лёгкому прогону — переносим как есть
-            "heavy_ok": (prev.get("heavy_ok", "") if prev else ""),
-            "heavy_ts": (prev.get("heavy_ts", 0) if prev else 0),
+            "heavy_ok": prev.get("heavy_ok", ""),
+            "heavy_ts": prev.get("heavy_ts", 0),
             # обязательные тесты групп идут отдельной фазой — переносим как есть
-            "required": dict(prev.get("required") or {}) if prev else {},
-            "exit_ip": (prev.get("exit_ip", "") if prev else ""),
-            "exit_cc": (prev.get("exit_cc", "") if prev else ""),
-            "country_ts": (prev.get("country_ts", 0) if prev else 0),
+            "required": dict(prev.get("required") or {}),
+            "exit_ip": prev.get("exit_ip", ""),
+            "exit_cc": prev.get("exit_cc", ""),
+            "country_ts": prev.get("country_ts", 0),
         }
         if conn.get("exit_ip"):               # без ответа connectivity — прежний выход
             row["exit_ip"] = conn["exit_ip"]
@@ -305,14 +305,6 @@ class Scoreboard:
         with self._lock:
             r = self.rows.get(node)
             return r is not None and self._passed(r, group)
-
-    def verdicts(self, node: str, group: str) -> dict[str, str]:
-        """Вердикты обязательных и приоритетных проверок группы — для админки."""
-        with self._lock:
-            r = self.rows.get(node)
-            if r is None:
-                return {}
-            return {**self._checks(r, group, "prefer"), **self._checks(r, group, "require")}
 
     def _healthy(self, region: str) -> list[dict]:
         """Здоровые ноды группы (score > 0), по убыванию score. Свежий heavy-veto

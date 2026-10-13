@@ -71,7 +71,7 @@ def main(argv=None):
     ap.add_argument("-o", "--output", required=True, help="куда писать nodes.json")
     ap.add_argument("--check", action="store_true", help="собрать и сравнить, ничего не писать")
     ap.add_argument("--json", action="store_true", help="сводка JSON в stdout")
-    args = ap.parse_args(sys.argv[1:] if argv is None else list(argv))
+    args = ap.parse_args(argv)
     try:
         cfg = load_config(args.config)
         result, code = run_build(args.raw, cfg, args.branch, args.output, check=args.check), 0

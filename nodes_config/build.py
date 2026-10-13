@@ -34,7 +34,7 @@ def raw_to_nodes(raws):
 
 
 def _excluded(node, branch, exclude_names, dropped):
-    '''Причина, по которой ноду нельзя отдавать sing-box, или None.'''
+    '''True — ноду нельзя отдавать sing-box (причина считается в dropped).'''
     if node.get("type") in branch.exclude_types:
         dropped["type"] += 1
         return True
@@ -77,13 +77,11 @@ def finalize_nodes(nodes, branch, exclude_names, dropped):
     nodes = [n for n in nodes if not _excluded(n, branch, exclude_names, dropped)]
     original = [node.get('tag') for node in nodes]
     for node in nodes:
-        node['tag'] = '{}-{}-out'.format(node['_provider'], node_protocol(node))
         if node.get('type') != 'wireguard':        # у WG peer — уже IP, резолвить нечего
             node['domain_resolver'] = branch.domain_resolver
-    # ключ доступа в теге делает теги уникальными без нумерации
-    for node in nodes:
+        # ключ доступа в теге делает теги уникальными без нумерации
         node['_key'] = node_key(node)
-        node['tag'] = '{} [{}]'.format(node['tag'], node['_key'])
+        node['tag'] = '{}-{}-out [{}]'.format(node['_provider'], node_protocol(node), node['_key'])
     kept = dedupe_nodes(nodes, dropped)
     # detour указывает на ту же ноду, что до переименования; на месте отброшенного
     # дубля — оставленная нода с тем же ключом

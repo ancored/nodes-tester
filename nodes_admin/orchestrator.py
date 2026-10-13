@@ -161,7 +161,6 @@ class Orchestrator:
                  on_apply_start=None, on_apply_end=None, on_finish=None, clock=time.time,
                  kill_grace=300):
         self.config_path = Path(config_path)    # config.json: расписание — раздел pipeline
-        self.config_dir = self.config_path.parent
         self.data_dir = Path(data_dir)
         self.db_path = self.data_dir / "pipeline.db"
         self.logs_dir = self.data_dir / "pipeline/runs"
