@@ -33,7 +33,7 @@ from .identity import parse_node
 
 
 class ProductionMonitor:
-    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None):
+    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None, on_tick=None):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
@@ -44,6 +44,8 @@ class ProductionMonitor:
         # traffic() -> {crc: накопительные байты боевого трафика} (TrafficCollector.user_bytes).
         self.traffic = traffic
         self.pause_check = pause_check or (lambda: False)
+        # Доп. проверка на каждом тике вне окна применения (пересборка по деградации).
+        self.on_tick = on_tick
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Состояние по региону: тихий таймер, накопленные байты, страйки зонда.
@@ -76,6 +78,8 @@ class ProductionMonitor:
         while not self._stop.wait(self.cfg.interval):
             try:
                 self._tick()
+                if self.on_tick is not None and not self.pause_check():
+                    self.on_tick()
             except Exception as exc:  # noqa: BLE001 — монитор не должен ронять процесс
                 print(f"  [monitor] ошибка: {exc}")
 

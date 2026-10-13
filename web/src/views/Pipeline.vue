@@ -136,7 +136,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
               <td class="l" data-label="Начало">{{ new Date(row.started * 1000).toLocaleString('ru-RU') }}</td>
               <td class="l" data-label="Режим">{{ modeLabel[row.mode] || row.mode }}</td>
               <td class="l" data-label="Действие">{{ row.dry_run ? 'проверка' : 'применение' }}</td>
-              <td class="l" data-label="Запуск">{{ row.trigger === 'schedule' ? 'по расписанию' : row.trigger === 'manual' ? 'вручную' : row.trigger || '—' }}</td>
+              <td class="l" data-label="Запуск">{{ row.trigger === 'schedule' ? 'по расписанию' : row.trigger === 'manual' ? 'вручную' : row.trigger === 'rebuild' ? 'пересборка по деградации' : row.trigger || '—' }}</td>
               <td class="l" data-label="Статус"><span :class="{ good: row.status === 'ok', bad: ['error', 'timeout', 'interrupted'].includes(row.status) }">{{ statusLabel[row.status] || row.status }}</span></td>
               <td class="l" data-label="Журнал"><button class="btn sm" :aria-pressed="row.id === viewedRun" :aria-label="'Журнал прогона от ' + new Date(row.started * 1000).toLocaleString('ru-RU')" @click="showRun(row)">{{ row.id === viewedRun ? 'Открыт' : 'Открыть' }}</button></td>
             </tr>

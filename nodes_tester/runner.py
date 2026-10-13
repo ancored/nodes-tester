@@ -26,6 +26,7 @@ from .monitor import ProductionMonitor
 from .notify import Notifier
 from .singbox_ctl import SingboxControl
 from .proxy import make_session
+from .rebuild import RebuildWatch
 from .reserve import ReserveKeeper
 from .scoreboard import Scoreboard
 from .storage import Storage
@@ -128,10 +129,12 @@ class Runner:
                                  cfg.groups, traffic_provider, self.storage)
         self.switcher.on_activation = self._on_activation
         self.reserve = ReserveKeeper(self)
+        self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
+                                    self.notifier)
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
-            pause_check=self._apply_paused,
+            pause_check=self._apply_paused, on_tick=self.rebuild.check,
         )
 
     # --- Планирование --------------------------------------------------

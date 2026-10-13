@@ -255,8 +255,9 @@ class Orchestrator:
 
     def start_run(self, mode: str, dry_run: bool, *, trigger="manual", scheduled_for=None) -> str:
         if (mode not in RUN_MODES or type(dry_run) is not bool
-                or trigger not in ("manual", "schedule")
-                or (trigger == "schedule" and mode not in MODES + (FETCH,))):
+                or trigger not in ("manual", "schedule", "rebuild")
+                or (trigger == "schedule" and mode not in MODES + (FETCH,))
+                or (trigger == "rebuild" and mode != "router")):
             raise ValueError("разрешены router|clients|apply и dry_run: bool")
         with self._lock, self._connect() as db:
             if self._active(db):
@@ -429,6 +430,13 @@ class Orchestrator:
         except (OSError, ValueError):
             return 0.0
 
+    def last_started(self, modes) -> "float | None":
+        """Начало последнего настоящего (не dry-run, не busy) прогона этих режимов."""
+        marks = ",".join("?" * len(modes))
+        with self._lock, self._connect() as db:
+            return db.execute(f"SELECT MAX(started) FROM runs WHERE mode IN ({marks}) "
+                              "AND dry_run=0 AND status!='busy'", tuple(modes)).fetchone()[0]
+
     def _tick_fetch(self, now) -> None:
         """Отдельный опрос подписок: прошло every с начала прошлого опроса или сборки
         роутера (она тоже опрашивает). Конвейер занят — ждём следующего тика, без записи busy."""
@@ -438,8 +446,7 @@ class Orchestrator:
         with self._lock, self._connect() as db:
             if self._active(db):
                 return
-            last = db.execute("SELECT MAX(started) FROM runs WHERE mode IN (?, 'router') "
-                              "AND dry_run=0 AND status!='busy'", (FETCH,)).fetchone()[0]
+        last = self.last_started((FETCH, "router"))
         if last is not None and now - last < every:
             return
         try:

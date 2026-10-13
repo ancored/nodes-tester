@@ -402,6 +402,12 @@ class Scoreboard:
             else:
                 self._restricted.discard(crc)
 
+    def alive_keys(self) -> set[str]:
+        """Ключи нод с рейтингом больше нуля и без паузы, карантина и бана."""
+        with self._lock:
+            return {r["id"] for r in self.rows.values()
+                    if r.get("id") and float(r.get("score", 0)) > 0 and r["id"] not in self._restricted}
+
     def is_restricted(self, node: str) -> bool:
         with self._lock:
             r = self.rows.get(node)
