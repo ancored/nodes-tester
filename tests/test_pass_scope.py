@@ -128,6 +128,13 @@ class NodeTitlesTest(unittest.TestCase):
         st.maybe_load_nodes(self.nodes_file, self.raw)
         self.assertEqual(self._title(), "NL Amsterdam 2")
 
+    def test_title_by_server_when_credentials_changed(self):
+        ob, self.ob = self.ob, {**self.ob, "uuid": "u2"}  # опрос без сборки: новые учётные данные
+        self._raw("NL new uuid")
+        self.ob = ob
+        self.r.storage.maybe_load_nodes(self.nodes_file, self.raw)
+        self.assertEqual(self._title(), "NL new uuid")
+
     def test_title_kept_without_raw(self):
         import os
         st = self.r.storage

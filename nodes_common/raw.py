@@ -47,9 +47,10 @@ def make_node(provider, title, outbound, cc_hint=None):
 
 
 def titles(path):
-    """Ключ ноды → исходное имя в подписке из raw ветви; нет файла — пусто. Дубли доступа
-    схлопываются в первую ноду, как при сборке. У ноды с detour ключ в сборке другой
-    (detour переименован) — её имени здесь нет."""
+    """Исходные имена нод в подписке из raw ветви: по ключу доступа и по node_crc (опрос
+    подписок без сборки может принести новые учётные данные той же ноды). Нет файла — пусто.
+    При дублях — первое имя, как при сборке. У ноды с detour ключ в сборке другой (detour
+    переименован) — её имени здесь нет."""
     try:
         nodes = read_json(path)["nodes"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -57,8 +58,15 @@ def titles(path):
     out = {}
     for node in nodes:
         if node.get("title"):
-            out.setdefault(node_key(node["outbound"]), node["title"])
+            key = node_key(node["outbound"])
+            out.setdefault(key, node["title"])
+            out.setdefault(key.partition(".")[0], node["title"])
     return out
+
+
+def title_of(names, key):
+    """Имя ноды из titles(): по ключу доступа, иначе по node_crc."""
+    return names.get(key) or names.get(key.partition(".")[0])
 
 
 def validate(raw):

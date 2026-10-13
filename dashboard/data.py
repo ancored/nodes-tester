@@ -12,7 +12,7 @@ from pathlib import Path
 
 from naming import parse_node
 from naming.regions import alpha3_to_alpha2
-from nodes_common.raw import titles as raw_titles
+from nodes_common.raw import title_of, titles as raw_titles
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -751,7 +751,7 @@ def _client_nodes(whnodes_file: str, known: set) -> dict:
         if ident.node_id and ident.node_id not in known:
             out[ident.node_id] = {"crc": ident.node_id, "node": ident.raw, "provider": ident.provider,
                                   "protocol": ident.protocol, "country": None, "server": ob.get("server"),
-                                  "title": names.get(ident.node_id)}
+                                  "title": title_of(names, ident.node_id)}
     return out
 
 

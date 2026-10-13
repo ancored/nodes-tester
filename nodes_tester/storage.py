@@ -35,7 +35,7 @@ import threading
 import time
 
 from naming import canonical, node_key, node_payload, parse_node
-from nodes_common.raw import titles as raw_titles
+from nodes_common.raw import title_of, titles as raw_titles
 
 # Версия схемы БД. Файл другой версии при открытии уходит в копию, история начинается
 # заново (0.5.0: сменился ключ ноды, переносить нечего).
@@ -147,9 +147,13 @@ class Storage:
     def load_titles(self, raw_path: str) -> None:
         """Имя ноды в подписке (title из raw). У ушедших из подписки имя остаётся."""
         names = raw_titles(raw_path)
+        if not names:
+            return
         with self._lock:
+            crcs = [row[0] for row in self._db.execute("SELECT crc FROM nodes")]
             self._db.executemany("UPDATE nodes SET title = ? WHERE crc = ?",
-                                 [(title, crc) for crc, title in names.items()])
+                                 [(title_of(names, crc), crc) for crc in crcs
+                                  if title_of(names, crc)])
             self._db.commit()
 
     def load_nodes(self, path: str) -> int:
