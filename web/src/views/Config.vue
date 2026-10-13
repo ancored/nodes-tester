@@ -236,7 +236,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
             <label>Минимальная доля оставшихся нод (0–1)<input type="number" min="0" max="1" step="0.05" :value="value('pipeline.fetch.min_ratio')" @input="update('pipeline.fetch.min_ratio',$event,'number')" placeholder="0.5" /></label>
             <label>Повторов HTTP<input type="number" min="0" :value="value('pipeline.fetch.retries')" @input="update('pipeline.fetch.retries',$event,'number')" placeholder="3" /></label>
             <label>Хранить прошлые ноды при сбое<input :value="value('pipeline.fetch.keep_stale')" @input="update('pipeline.fetch.keep_stale',$event,'duration')" placeholder="48h" /></label>
-            <label>Опрашивать подписки роутера каждые (0s — только при сборке)<input :value="value('pipeline.fetch.every')" @input="update('pipeline.fetch.every',$event,'duration')" placeholder="0s" /></label>
+            <label>Опрашивать подписки роутера каждые (0s — только при сборке)<input :value="value('pipeline.fetch.every')" @input="update('pipeline.fetch.every',$event,'duration')" placeholder="3h" /></label>
             <label>Прокси загрузки<input :value="value('pipeline.fetch.proxy')" @input="update('pipeline.fetch.proxy',$event)" placeholder="socks5://127.0.0.1:2080" /></label>
           </div><p class="help-text">При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале <RouterLink to="/pipeline">«Конвейера»</RouterLink>.</p></section>
         </template>

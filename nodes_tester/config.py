@@ -481,7 +481,7 @@ def _monitor(obj) -> MonitorConfig:
 @dataclass
 class FetchConfig:
     """Загрузка подписок (nodes_fetch)."""
-    every: float = 0.0                # 0 — опрос только в составе сборки
+    every: float = 3 * 3600.0         # отдельный опрос подписок роутера; 0 — только в сборке
     timeout: float = 120.0
     retries: int = 3
     proxy: str = ""
