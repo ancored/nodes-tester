@@ -181,5 +181,25 @@ class LifecycleGraveyardTest(unittest.TestCase):
         self.assertEqual(data["traffic_tester_range"]["start"], self.now + 1)
 
 
+    def test_client_nodes_listed_with_whitelist_only(self):
+        import json
+        import os
+        from types import SimpleNamespace
+        wh = os.path.join(os.path.dirname(self.db), "whnodes.json")
+        with open(wh, "w", encoding="utf-8") as fh:
+            json.dump({"outbounds": [{"type": "selector", "tag": "global-auto-out"},
+                                     {"type": "vless", "tag": "WH-SNI-vless|reality-out [bbbb0002.00000002]",
+                                      "server": "192.0.2.1"}]}, fh)
+        self.st._db.execute("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
+                            (self.now, "bbbb0002.00000002", "whitelist", 1, '{"ip_ok": true, "ips": ["192.0.2.1"]}'))
+        self.st._db.commit()
+        data = D._collect(SimpleNamespace(storage=_Cfg(self.db), whnodes_file=wh))
+        node = next(n for n in data["nodes"] if n["crc"] == "bbbb0002.00000002")
+        self.assertEqual((node["provider"], node["protocol"], node["wh_only"], node["score"]),
+                         ("WH-SNI", "vless|reality", 1, None))
+        row = next(r for r in data["results"]["rows"] if r["crc"] == "bbbb0002.00000002")
+        self.assertEqual((row["provider"], row["wh_only"], row["cells"]["whitelist"]["ok"]), ("WH-SNI", 1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

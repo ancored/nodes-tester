@@ -121,5 +121,23 @@ class RunnerWhitelistTest(unittest.TestCase):
         self.assertIsNone(r._whitelist)
 
 
+    def test_client_branch_nodes_checked_too(self):
+        router, client = "P-vless-out [aaaa0001.00000001]", "W-vless-out [bbbb0002.00000002]"
+        tmp = temp_dir()
+        r = make_runner(tmp, tags=[router])
+        self.addCleanup(r.storage.close)
+        del r._refresh_whitelist
+        for path, tag, ip in ((r.cfg.nodes_file, router, "198.51.100.7"), (r.cfg.whnodes_file, client, "192.0.2.1")):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"outbounds": [{"type": "shadowsocks", "tag": tag, "server": ip}]}, fh)
+        r.board.rows = {router: {"node": router, "id": "aaaa0001.00000001", "score": 50}}
+        r._whitelist = whitelist.WhitelistCheck(r.cfg.checks["whitelist"], "/nonexistent",
+                                                get=lambda url, timeout: Resp(IP_TEXT if url.endswith("ip.txt") else SNI_TEXT))
+        r._refresh_whitelist(r._enumerate_nodes())
+        last = r.storage.last_result_ts("whitelist")
+        self.assertEqual(set(last), {"aaaa0001.00000001", "bbbb0002.00000002"})
+        self.assertNotIn(client, r.board.rows)                 # клиентская нода — не в рейтинге
+
+
 if __name__ == "__main__":
     unittest.main()

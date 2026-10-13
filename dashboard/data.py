@@ -207,6 +207,13 @@ def _collect(cfg) -> dict:
     attrition = _attrition(db)
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
+    # Ноды клиентской ветви, которых нет у роутера: тестер их не ведёт, только белые списки.
+    clients = _client_nodes(getattr(cfg, "whnodes_file", "") or "", {n["crc"] for n in nodes})
+    nodes += [{**meta, "present": 1, "banned": 0, "score": None, "reserve": "", "wh_only": 1}
+              for meta in clients.values()]
+    for r in results.get("rows", []):
+        if r["crc"] in clients:
+            r.update(provider=clients[r["crc"]]["provider"], protocol=clients[r["crc"]]["protocol"], wh_only=1)
     for table in (nodes, results.get("rows", []), garbage, longevity, dropouts, rows):
         for r in table:
             r["groups"] = groups_of.get(r.get("crc"), [])
@@ -716,6 +723,22 @@ def _score_spark(db: str, points: int = 24) -> dict:
     for r in _query(db, "SELECT crc, score FROM score_history ORDER BY crc, ts"):
         out.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
     return {c: v[-points:] for c, v in out.items()}
+
+
+def _client_nodes(whnodes_file: str, known: set) -> dict:
+    """Ноды whnodes.json, которых нет среди нод тестера: ключ → crc, тег, провайдер, протокол."""
+    try:
+        with open(whnodes_file, encoding="utf-8") as fh:
+            fragment = json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return {}
+    out = {}
+    for ob in fragment.get("outbounds", []) + fragment.get("endpoints", []):
+        ident = parse_node(str(ob.get("tag", "")))
+        if ident.node_id and ident.node_id not in known:
+            out[ident.node_id] = {"crc": ident.node_id, "node": ident.raw, "provider": ident.provider,
+                                  "protocol": ident.protocol, "country": None, "server": ob.get("server")}
+    return out
 
 
 def _nodes_list(db: str) -> list[dict]:

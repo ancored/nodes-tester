@@ -234,6 +234,13 @@ class Storage:
                                  (country, crc.partition(".")[0]))
             self._db.commit()
 
+    def last_result_ts(self, test: str) -> dict:
+        """Ключ ноды → время последнего результата теста (свежесть локальных проверок)."""
+        with self._lock:
+            rows = self._db.execute("SELECT crc, MAX(ts) FROM results WHERE test = ? GROUP BY crc",
+                                    (test,)).fetchall()
+        return {crc: ts for crc, ts in rows}
+
     # --- Тип выходного IP (nodes_tester.ipinfo) ------------------------
 
     def ip_info_stale(self, ips, ttl_seconds: float) -> list:

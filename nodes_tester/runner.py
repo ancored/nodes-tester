@@ -66,6 +66,17 @@ def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0)
     return provider
 
 
+def _leaf_outbounds(path: str) -> dict:
+    """Тег → outbound нод фрагмента (nodes.json, whnodes.json); нет файла — пусто."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            fragment = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return {ob.get("tag"): ob for ob in fragment.get("outbounds", []) + fragment.get("endpoints", [])
+            if parse_node(str(ob.get("tag", ""))).node_id}
+
+
 class Runner:
     def __init__(self, cfg: Config, rounds: int = 0):
         self.cfg = cfg
@@ -658,35 +669,36 @@ class Runner:
         print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
 
     def _refresh_whitelist(self, nodes) -> None:
-        """Проверка «белый список» для нод прохода без свежего результата (локальная: списки и
-        адрес сервера, трафик через ноду не идёт). Неудача проверки прежний вердикт не отменяет."""
+        """Проверка «белый список» без свежего результата: ноды прохода и ноды клиентской ветви
+        (whnodes.json), которых нет у роутера, — их тестер больше ничем не проверяет. Проверка
+        локальная (списки и адрес сервера), трафик через ноду не идёт; неудача прежний вердикт
+        не отменяет."""
         params = self.cfg.checks["whitelist"]
         now = time.time()
-        stale = [(r, i) for r, i in nodes
-                 if now - (self.board.result_ts(i.raw, "whitelist") or 0) >= params["ttl"]]
-        if not stale:
+        last = self.storage.last_result_ts("whitelist")
+        router = _leaf_outbounds(self.cfg.nodes_file)
+        todo = [(ident.raw, ident.node_id, router[ident.raw], True) for _regions, ident in nodes
+                if ident.raw in router]
+        known = {ident.node_id for _r, ident in nodes} | {parse_node(t).node_id for t in router}
+        for tag, ob in _leaf_outbounds(self.cfg.whnodes_file).items():
+            key = parse_node(tag).node_id
+            if key and key not in known:
+                todo.append((tag, key, ob, False))
+        todo = [t for t in todo if now - (last.get(t[1]) or 0) >= params["ttl"]]
+        if not todo:
             return
-        try:
-            with open(self.cfg.nodes_file, encoding="utf-8") as fh:
-                fragment = json.load(fh)
-        except (OSError, ValueError) as exc:
-            print(f"  [whitelist] {self.cfg.nodes_file} не прочитан: {exc}")
-            return
-        outbounds = {ob.get("tag"): ob for ob in fragment.get("outbounds", []) + fragment.get("endpoints", [])}
         if self._whitelist is None:
             self._whitelist = WhitelistCheck(params, self.cfg.singbox.config)
         passed = checked = 0
-        for _regions, ident in stale:
-            ob = outbounds.get(ident.raw)
-            if ob is None:
-                continue
+        for tag, key, ob, on_router in todo:
             res = self._whitelist.run(ob)
             if res.get("inconclusive"):
-                print(f"  [whitelist] {ident.short()}: {res['error']}")
+                print(f"  [whitelist] {tag}: {res['error']}")
                 continue
-            self.board.set_required_result(ident.raw, "whitelist", res["ok"])
-            self.storage.add_results({"round": self._current_pass, "id": ident.node_id,
-                                      "node": ident.raw, "tests": {"whitelist": res}})
+            if on_router:
+                self.board.set_required_result(tag, "whitelist", res["ok"])
+            self.storage.add_results({"round": self._current_pass, "id": key, "node": tag,
+                                      "tests": {"whitelist": res}})
             checked += 1
             passed += res["ok"]
         if checked:

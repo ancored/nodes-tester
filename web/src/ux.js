@@ -30,6 +30,7 @@ export function changedPaths(a,b,prefix = '') {
   return [prefix]
 }
 export function nodeFlags(n) {
+  if (n.wh_only) return ['Только белые списки']      // клиентская ветвь: тестер ноду не ведёт
   return [n.present == null ? 'Присутствие неизвестно' : +n.present ? 'В списке тестера' : 'Нет в текущем списке',
     n.score == null ? 'Нет замеров рейтинга' : 'Рейтинг '+Number(n.score).toFixed(1),
     +n.banned ? 'Исключена вручную' : '', n.gstate === 'garbage' ? 'Карантин' : n.gstate === 'backoff' ? 'Пауза проверок' : '',

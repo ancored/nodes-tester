@@ -312,12 +312,6 @@ class Scoreboard:
             ts = ((r.get("required") or {}).get(check) or {}).get("ts")
         return int(ts) if ts else None
 
-    def result_ts(self, node: str, check: str) -> "int | None":
-        """Время последнего результата проверки ноды (None — не было)."""
-        with self._lock:
-            r = self.rows.get(node)
-            return self._check_ts(r, check) if r is not None else None
-
     def check_report(self, node: str, group: str) -> list[dict]:
         """Проверки группы для ноды (админка): обязательные и желательные — вердикт
         "1"/"0"/"" и время результата."""
