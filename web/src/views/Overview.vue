@@ -2,15 +2,18 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useSnapshot } from '../store.js'
 import { api, auth } from '../api.js'
-import { PHASES } from '../ux.js'
+import { PHASES, checkNames } from '../ux.js'
 import { bytes, dateTime } from '../format.js'
 const s=useSnapshot(), nodes=computed(()=>s.data.nodes || []), runner=computed(()=>s.data.runner)
 // sing-box: остановка/запуск и killswitch (только встроенная админка на OpenWrt).
 const box=ref(null), boxBusy=ref(false), boxError=ref('')
 const boxAvailable=computed(()=>!!auth.capabilities.singbox_control)
 async function loadBox(){ if(!boxAvailable.value) return; try{ box.value=await api.get('/singbox/control'); boxError.value='' }catch(e){ boxError.value=e.message } }
+// Группы из config.json и их живое состояние (активная нода или запасной выход, кандидаты, резерв).
+const groups=ref([]), groupsError=ref('')
+async function loadGroups(){ try{ groups.value=(await api.get('/groups')).groups; groupsError.value='' }catch(e){ groupsError.value=e.message } }
 let boxTimer
-onMounted(()=>{ loadBox(); boxTimer=setInterval(loadBox,10000) })
+onMounted(()=>{ loadBox(); loadGroups(); boxTimer=setInterval(()=>{ loadBox(); loadGroups() },10000) })
 onUnmounted(()=>clearInterval(boxTimer))
 watch(boxAvailable,v=>{ if(v) loadBox() })
 async function boxAction(kind){
@@ -100,10 +103,21 @@ const kpis=computed(()=>[
     <a href="https://github.com/ancored/nodes-tester/blob/master/openwrt/README.md" target="_blank" rel="noopener noreferrer">Первый запуск на OpenWrt по SSH</a>
   </section>
   <section class="panel">
-    <h2>Активные ноды по группам</h2>
-    <p v-if="!runner">Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.</p>
-    <p v-else-if="!runner.regions?.length">{{ runner.switching ? 'Переключатель пока не выбрал ноды групп.' : 'Автоматическое переключение отключено.' }}</p>
-    <p v-for="r in runner?.regions || []" :key="r.region" class="break"><b>{{ r.region }}</b> · {{ r.active || 'Нода не выбрана' }}</p>
-    <p class="help-text">Показано состояние переключателя. Боевые селекторы sing-box здесь отдельно не проверяются.</p>
+    <h2>Группы</h2>
+    <p v-if="groupsError" class="notice bad">{{ groupsError }}</p>
+    <p v-else-if="!runner">Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.</p>
+    <div v-for="g in groups" :key="g.tag" class="group-state">
+      <p><b>{{ g.tag }}</b> <span class="mut">· {{ g.strict ? 'строгая' : 'нестрогая' }}{{ g.direct_fallback ? ', можно direct-out' : '' }}{{ g.in_global ? '' : ', вне global-auto-out' }}</span></p>
+      <template v-if="g.live">
+        <p class="break"><template v-if="g.active">Активна: <RouterLink :to="'/nodes/'+g.active.slice(g.active.lastIndexOf('[')+1,-1)">{{ g.active }}</RouterLink></template><span v-else-if="g.fallback" :class="g.fallback==='failsafe-out' ? '' : 'bad'">Кандидатов нет — группа на {{ g.fallback }}</span><template v-else>Нода не выбрана</template></p>
+        <p class="mut">Нод {{ g.members }} · кандидатов {{ g.candidates }} · резерв {{ g.reserve.length }}<template v-if="g.require.length"> · обязательные: {{ checkNames(g.require) }}</template><template v-if="g.prefer.length"> · желательные: {{ checkNames(g.prefer) }}</template></p>
+      </template>
+    </div>
+    <p class="help-text">Показано состояние переключателя. Боевые селекторы sing-box здесь отдельно не проверяются. Группы и их проверки настраиваются в <RouterLink to="/subscriptions">«Подписках и сборке»</RouterLink>.</p>
   </section>
 </template>
+
+<style scoped>
+.group-state { border-top: 1px solid var(--line); padding: 6px 0; }
+.group-state p { margin: 2px 0; }
+</style>

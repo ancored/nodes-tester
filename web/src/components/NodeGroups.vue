@@ -1,10 +1,19 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { api } from '../api.js'
+import { CHECK_NAMES } from '../ux.js'
 import JsonField from './JsonField.vue'
 const props=defineProps({doc:{type:Object,required:true},checks:{type:Array,default:()=>[]},ipKinds:{type:Array,default:()=>[]},builtin:{type:Object,default:()=>({})}})
 const emit=defineEmits(['changed','valid'])
-const CHECK_NAMES={country:'Страна выхода',ip_type:'Тип выходного IP',geo_consistent:'Страна IP совпадает по базам',
-  gemini:'Google AI',openai:'OpenAI',anthropic:'Claude AI',heavy:'Тяжёлая загрузка',whitelist:'Белые списки'}
+// Живое состояние групп работающего тестера (по сохранённому конфигу, не по черновику формы).
+const live=ref({})
+onMounted(async()=>{ try{ live.value=Object.fromEntries((await api.get('/groups')).groups.filter(g=>g.live).map(g=>[g.tag,g])) }catch{ live.value={} } })
+function liveText(g){
+  const st=live.value[g.tag]
+  if(!st) return ''
+  const now=st.active ? 'активна '+st.active : st.fallback ? 'кандидатов нет — на '+st.fallback : 'нода не выбрана'
+  return `Сейчас: ${now} · кандидатов ${st.candidates} из ${st.members} · резерв ${st.reserve.length}`
+}
 const KIND_NAMES={residential:'домашний',mobile:'мобильный',hosting:'дата-центр',proxy:'прокси'}
 const COUNTRY_FIELDS=[['countries','Страны (ISO-коды)'],['regions','Регионы'],['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов']]
 const BUILTIN=['eu','us','ru','other']
@@ -55,6 +64,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
     <template v-if="groups">
       <div v-for="(g,i) in groups" :key="i" class="panel">
         <h3>{{ g.tag || 'Новая группа' }}<span v-if="g.tag" class="mut"> · {{ g.tag }}-auto-out · {{ fallbackText(g) }}</span></h3>
+        <p v-if="liveText(g)" class="mut break">{{ liveText(g) }}<template v-if="live[g.tag].top.length"> · первые кандидаты: {{ live[g.tag].top.map(c=>c.node+' ('+c.score+')').join(', ') }}</template></p>
         <div class="form-grid">
           <label>Тег группы (латиница в нижнем регистре, цифры, _)<input :value="g.tag" @input="g.tag=$event.target.value.trim();changed()" /></label>
           <label>Кандидатов в резерве<input type="number" min="0" :value="g.reserve" placeholder="Как в настройках" @input="setReserve(g,$event)" /></label>

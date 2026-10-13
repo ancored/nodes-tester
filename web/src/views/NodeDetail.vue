@@ -2,8 +2,8 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSnapshot } from '../store.js'
-import { nodeFlags, nodeJsonLines, testTitle } from '../ux.js'
-import { dateTime, bytes } from '../format.js'
+import { nodeFlags, nodeJsonLines, testTitle, CHECK_NAMES, verdictMark, verdictClass } from '../ux.js'
+import { dateTime, bytes, dur } from '../format.js'
 import { useQuery } from '../query.js'
 import NodeActions from '../components/NodeActions.vue'
 import NodeKey from '../components/NodeKey.vue'
@@ -25,6 +25,16 @@ const filteredHistory=computed(()=>history.value.filter(item=>{
   return item.ts >= from && item.ts < to
 }))
 function clearHistoryRange(){historyFrom.value='';historyTo.value=''}
+// Проверки групп для ноды: входит ли, кандидат ли, вердикты с возрастом результата.
+const nodeGroups=ref(null), nodeGroupsError=ref('')
+async function loadNodeGroups(){
+  const selected=crc.value
+  try{ const data=await api.get('/nodes/'+selected+'/groups'); if(selected===crc.value){ nodeGroups.value=data; nodeGroupsError.value='' } }
+  catch(e){ nodeGroupsError.value=e.message }
+}
+watch([crc,tab],()=>{ if(tab.value==='Группы') loadNodeGroups() },{immediate:true})
+function groupStatus(g){ return g.active ? 'активна' : g.reserve ? 'в резерве' : g.candidate ? 'кандидат' : g.member ? 'не кандидат' : 'не входит' }
+function age(ts){ return ts ? dur(Date.now()/1000-ts)+' назад' : 'нет результата' }
 let requestId=0
 async function loadDetails() {
   const id=++requestId, epoch=auth.epoch, selected=crc.value
@@ -57,7 +67,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
       <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>
       <p class="help-text">Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.</p>
     </section>
-    <nav class="chips" aria-label="Карточка ноды"><button v-for="v in ['Состояние','Результаты','Трафик','События','Действия']" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ v }}</button></nav>
+    <nav class="chips" aria-label="Карточка ноды"><button v-for="v in ['Состояние','Группы','Результаты','Трафик','События','Действия']" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ v }}</button></nav>
     <section v-if="tab === 'Состояние'" class="panel">
       <h2>Изменение рейтинга</h2><Sparkline :vals="s.data.score_spark?.[crc] || []" />
       <p class="help-text">График показывает последние 24 значения. Все сохранённые замеры доступны в таблице ниже.</p>
@@ -99,6 +109,29 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
       <p v-for="(e,i) in events" :key="e.ts+':'+i">{{ dateTime(e.ts) }} · {{ eventNames[e.event] || e.event }} · {{ e.reason === 'manual' ? 'вручную администратором' : e.reason || 'автоматически' }}</p><p v-if="!events.length">В доступном окне событий нет.</p>
       <h2>Переключения</h2><p v-for="(e,i) in switches" :key="e.ts+':'+i">{{ dateTime(e.ts) }} · {{ e.region }} · {{ e.reason }}</p><p v-if="!switches.length">В последних 200 переключениях записей нет.</p>
     </section>
+    <section v-if="tab === 'Группы'" class="panel">
+      <h2>Проверки групп</h2>
+      <p v-if="nodeGroupsError" class="notice bad">{{ nodeGroupsError }}</p>
+      <p v-else-if="!nodeGroups">Загрузка…</p>
+      <p v-else-if="!nodeGroups.live">Нет подключённого тестера: состояние групп недоступно.</p>
+      <p v-else-if="!nodeGroups.groups.length">Тестер ещё не знает эту ноду: она появится после прохода.</p>
+      <table v-else class="node-checks">
+        <thead><tr><th class="l">Группа</th><th class="l">Состояние</th><th class="l">Проверки: ✓ пройдена, ✗ провалена, ? нет свежего результата</th></tr></thead>
+        <tbody><tr v-for="g in nodeGroups.groups" :key="g.group">
+          <td class="l"><b>{{ g.group }}</b></td>
+          <td class="l" :class="g.active || g.candidate ? 'good' : 'mut'">{{ groupStatus(g) }}</td>
+          <td class="l"><span v-if="!g.checks.length" class="mut">проверок нет — подходит любая работающая нода</span>
+            <span v-for="c in g.checks" :key="c.check" class="check-chip" :title="age(c.ts)"><b :class="verdictClass(c.verdict)">{{ verdictMark(c.verdict) }}</b> {{ CHECK_NAMES[c.check] || c.check }}<span class="mut">{{ c.part === 'prefer' ? ' (желательная)' : '' }} · {{ age(c.ts) }}</span></span></td>
+        </tr></tbody>
+      </table>
+      <p class="help-text">Нода становится активной в группе, только если все обязательные проверки свежие и пройдены; желательные поднимают её в очереди. Возраст — когда получен результат.</p>
+    </section>
     <section v-if="tab === 'Действия'" class="panel"><NodeActions :node="node" /></section>
   </template>
 </template>
+
+<style scoped>
+.node-checks { width: 100%; border-collapse: collapse; }
+.node-checks td, .node-checks th { padding: 6px 8px 6px 0; vertical-align: top; border-top: 1px solid var(--line); }
+.check-chip { display: inline-block; margin: 0 12px 4px 0; white-space: nowrap; }
+</style>

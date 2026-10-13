@@ -51,6 +51,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Данные | `/api/data`, `/api/rating`, `/api/results` и другие срезы | чтение SQLite и состояния |
 | Конфиг | `/api/config`, `/api/config/sections`, `/api/config/schema` | чтение и атомарная запись `config.json` (подписки, группы, тестер, конвейер — один файл): весь файл по ревизии или только изменённые разделы |
 | Варианты формы | `/api/config/subscription-options` | варианты User-Agent, заголовки Happ, HWID установки, имена проверок и типов IP, встроенные регионы, состояние подписок из raw (`sources`) |
+| Группы | `/api/groups`, `/api/nodes/{crc}/groups` | состояние групп (активная нода или запасной выход, кандидаты, резерв); проверки групп для ноды с временем результатов |
 | Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды, строки для `node_crc` и `cred_crc`, пути учётных данных (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
 | Переключение | `/api/groups/{group}/switch` | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
