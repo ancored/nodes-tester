@@ -67,7 +67,7 @@ const cols = [
   { key: 'last', title: 'в конце', fmt: (v) => fixed(v, 1), cls: scoreClass, strong: true },
   { key: 'garbage_count', title: '× в карантине' },
   { key: 'cause', title: 'как ушла', l: true, slot: true },
-  { key: 'purge_in', title: 'сотрётся через', fmt: dur, cls: () => 'mut', note: 'через столько запись удалится из БД (retention_days)' },
+  { key: 'purge_in', title: 'сотрётся через', fmt: dur, cls: () => 'mut', note: 'через столько запись удалится из БД (storage.retention)' },
 ]
 </script>
 

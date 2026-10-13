@@ -11,14 +11,15 @@
 
 | Что | Где лежит | Кто обрабатывает | Результат |
 |---|---|---|---|
-| Подписки | `config-main/providers.json` | `nodes_fetch` — загрузка подписок | `raw/main.json` — сырые ноды |
-| Рецепт сборки нод | `config-main/groups_params.json`, `user_nodes.json` | `nodes_config` — фильтры, имена, группы | `/etc/sing-box-subscribe/nodes.json` — ноды и группы `{group}-auto-out`, `{group}-auto-out-failsafe`, `global-auto-out`, `nodes-tester` |
+| Подписки | `config.json`, раздел `subscriptions` | `nodes_fetch` — загрузка подписок | `raw/router.json` — сырые ноды |
+| Сборка нод | `config.json`, разделы `pipeline.router` и `groups` | `nodes_config` — фильтры, имена, группы | `/opt/nodes-tester/nodes.json` — ноды и группы `{group}-auto-out`, `failsafe-out`, `global-auto-out`, `nodes-tester` |
 | База | `singbox/base.json` | `nodes_admin.rules` — копирует | `/etc/sing-box/base.json` |
 | Источники наборов правил | `singbox/rules.json` | `nodes_admin.rules` — загрузка правил | `/etc/sing-box/rules/*` |
 | Пресеты правил | `singbox/presets/*.json` | `nodes_admin.presets` — проверяет `_preset`, отбирает включённые | включённые пресеты с приоритетами |
 
 `singbox/` — каталог `/etc/nodes-tester/singbox/` пакетной установки; эти файлы правятся в
-админке («Файлы sing-box», «Правила»). `config-main/` — «Подписки и сборка».
+админке («Файлы sing-box», «Правила»). `config.json` — «Подписки и сборка» и «Настройки», описание полей —
+[CONFIG.md](CONFIG.md).
 
 База содержит то, что нужно всегда: inbound'ы, общие DNS-серверы, `final`, API-сервис.
 Правила маршрутизации и DNS, а также DNS-серверы и наборы правил, нужные только им, лежат
@@ -190,7 +191,7 @@ SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smart
 читает группы и выбирает в них ноды, получает поток соединений для учёта трафика. Тесты
 идут через отдельный inbound `nodes-tester-in` и плоский selector `nodes-tester`.
 
-Клиентская ветка (`pipeline clients`) устроена отдельно: `config-wh/` → `whnodes.json`,
+Клиентская ветка (`pipeline clients`) устроена отдельно: подписки с `"branch": "clients"` → `whnodes.json`,
 склейка с `singbox/clients/base_<имя>.json` и клиентскими пресетами тем же склейщиком
 (`python3 -m nodes_admin.presets assemble --client-settings …`) → `/etc/sing-box-clients/`.
 Роутерный sing-box она не трогает.

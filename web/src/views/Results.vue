@@ -26,7 +26,7 @@ const columns=computed(()=>[
 </script>
 <template>
   <p class="hint">Множитель скорости показывает троттлинг. Время обычных тестов указано в колонке «Проход»; «—» — тест не измерялся. Тяжёлая загрузка может относиться к другому проходу — значок ↻. Нажмите на провал, чтобы увидеть подробности.</p>
-  <DataTable :rows="rows" :columns="columns" empty="Сохранённых результатов нет. Проверьте журнал и настройку storage.store_results.">
+  <DataTable :rows="rows" :columns="columns" empty="Сохранённых результатов нет. Проверьте журнал тестера.">
     <template #cell-protocol="{row}"><span class="proto"><span v-for="p in String(row.protocol || '—').split('|')" :key="p">{{ p }}</span></span></template>
     <template #cell-ts="{row}"><template v-if="row.ts">{{ day(row.ts) }}<br>{{ time(row.ts) }}</template><template v-else>—</template></template>
     <template #cell-ip_type="{row}"><span v-if="row.ip_kind" class="ip-type" :title="row.ip_title || null"><span><IpTypeIcon :kind="row.ip_kind" /><IpTypeIcon v-if="row.ip_proxy" kind="proxy" /></span><span v-if="row.ip_db_cc" class="bad">{{ flag(row.ip_db_cc) }}</span></span><span v-else class="mut">—</span></template>

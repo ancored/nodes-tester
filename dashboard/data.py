@@ -10,7 +10,7 @@ from contextlib import closing
 from contextvars import ContextVar
 from pathlib import Path
 
-from naming import parse_group, parse_node
+from naming import parse_node
 from naming.regions import alpha3_to_alpha2
 
 _connection = ContextVar("dashboard_connection", default=None)
@@ -184,8 +184,8 @@ def _collect(cfg) -> dict:
     tester_down = tester_rows[0]["down"] if tester_rows else 0
     cutoff = int(time.time()) - 86400
     tester_download_24h = _test_downloads(db, cutoff)
-    traffic_providers = _sum_by(rows, "provider", {"leaf", "unspecified"})
-    traffic_countries = _sum_by(rows, "cc", {"leaf", "unspecified"})
+    traffic_providers = _sum_by(rows, "provider", {"leaf"})
+    traffic_countries = _sum_by(rows, "cc", {"leaf"})
     traffic_protocols = _sum_by(rows, "protocol", {"leaf"})   # протокол известен у leaf-нод
     traffic_nodes = _top_nodes(rows, limit=10)
 
@@ -265,7 +265,7 @@ def _test_downloads(db: str, cutoff: int) -> dict:
 
 
 def _classify_traffic(r: dict) -> dict:
-    """Классифицировать строку трафика: leaf / direct / unspecified / other."""
+    """Классифицировать строку трафика: leaf / direct / other."""
     up, down = r.get("up") or 0, r.get("down") or 0
     crc = r.get("crc")
     row = {"crc": crc, "up": up, "down": down, "total": up + down}
@@ -275,12 +275,7 @@ def _classify_traffic(r: dict) -> dict:
     elif crc in ("direct", "direct-out"):
         row.update(kind="direct", provider="direct", protocol=None, cc=None, node="direct-out")
     else:
-        pg = parse_group(crc or "")                   # трафик через *-failsafe urltest
-        if pg:
-            row.update(kind="unspecified", provider=pg[0], protocol=None,
-                       cc="undef", node="unspecified")
-        else:
-            row.update(kind="other", provider=crc, protocol=None, cc=None, node=crc)
+        row.update(kind="other", provider=crc, protocol=None, cc=None, node=crc)
     return row
 
 

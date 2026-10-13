@@ -5,7 +5,7 @@
 
 `orchestrator.py` запускает allowlist-команду `nodes-tester pipeline router|clients`, хранит
 историю в `pipeline.db` и журналы в `pipeline/runs/` каталога данных. По умолчанию задания
-в `pipeline.json` выключены. После рестарта пропущенный запуск выполняется один раз;
+в `config.json` (`pipeline.router`, `pipeline.clients`) выключены. После рестарта пропущенный запуск выполняется один раз;
 новое расписание, включённое в админке, начинает действовать с будущего слота.
 
 `rules.py` берёт список URL и локальных источников из `singbox/rules.json` каталога

@@ -35,8 +35,8 @@ watch(() => auth.verified, v => { if (v) provisionBoxDashboard().catch(() => {})
       <main class="main">
         <form v-if="showLogin && !auth.verified" class="panel login" @submit.prevent="enter">
           <h2>Доступ администратора</h2>
-          <p>Токен находится в <code>dashboard.token</code> вашего config.json на роутере. Это не секрет API sing-box. Передавайте его только через доверенную сеть или HTTPS.</p>
-          <p v-if="auth.capabilities.auth_configured === false" class="notice">На сервере токен не настроен. Задайте dashboard.token через SSH и перезапустите админку.</p>
+          <p>Токен находится в <code>admin.token</code> вашего config.json на роутере. Это не секрет API sing-box. Передавайте его только через доверенную сеть или HTTPS.</p>
+          <p v-if="auth.capabilities.auth_configured === false" class="notice">На сервере токен не настроен. Задайте admin.token через SSH и перезапустите админку.</p>
           <label>Токен <input v-model="token" type="password" autocomplete="off" required /></label>
           <label class="check"><input v-model="remember" type="checkbox" /> Запомнить на этом устройстве (localStorage)</label>
           <button class="btn" :disabled="auth.checking">Проверить и войти</button>
@@ -45,7 +45,7 @@ watch(() => auth.verified, v => { if (v) provisionBoxDashboard().catch(() => {})
         <p v-if="!auth.verified && !showLogin" class="hint">Режим просмотра. Для настроек и действий войдите с токеном администратора.</p>
         <p v-if="auth.capabilities.mode === 'standalone'" class="hint">Админка запущена отдельно. Настройки доступны после входа; управление тестером, журнал и живые селекторы недоступны.</p>
         <p v-if="s.error" class="notice bad" role="alert">{{ s.error }}<template v-if="s.ready">. Показан устаревший снимок, полученный {{ new Date(s.received).toLocaleString('ru-RU') }}.</template></p>
-        <p v-if="s.data.source && s.data.source.state !== 'ok'" class="notice">{{ s.data.source.message }}. Проверьте storage.enabled и путь к базе в настройках. Пустые списки не подтверждают отсутствие нод.</p>
+        <p v-if="s.data.source && s.data.source.state !== 'ok'" class="notice">{{ s.data.source.message }}. Проверьте путь к базе (storage.path) в настройках. Пустые списки не подтверждают отсутствие нод.</p>
         <nav v-if="isNodes" class="chips subnav" aria-label="Сведения о нодах">
           <RouterLink v-for="item in nodeSections" :key="item.path" class="chip" :to="item.path">{{ item.name }}</RouterLink>
         </nav>

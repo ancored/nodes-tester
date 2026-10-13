@@ -25,7 +25,6 @@ def capabilities(app: App) -> dict:
                                 and r.singbox.available),
         "notify": bool(r is not None and getattr(r, "notifier", None) is not None and app.token),
         "quarantine_hours": app.cfg.selection.quarantine.duration / 3600,
-        "cooldown_enabled": True,
         "version": __version__, "source_url": f"{SOURCE_URL}/tree/v{__version__}",
     }
 

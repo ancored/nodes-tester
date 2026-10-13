@@ -46,7 +46,7 @@ sing-box 1.14. Нужна версия 1.14 или новее с включён�
 Конвейер разделён на стадии:
 
 ```text
-providers.json
+config.json (subscriptions)
     -> nodes_fetch
     -> raw_nodes.json
     -> nodes_config
@@ -55,7 +55,7 @@ providers.json
 ```
 
 `nodes_fetch` сохраняет всё, что смог разобрать. Он не знает, какое ядро установлено на
-роутере, и не применяет фильтры `groups_params.json`. Благодаря этому один raw-файл можно
+роутере, и не применяет фильтры сборки. Благодаря этому один raw-файл можно
 использовать для разных целей.
 
 Совместимость с целевым ядром задаёт `nodes_config`. Он вычисляет дескриптор протокола:
@@ -63,61 +63,31 @@ providers.json
 - XHTTP содержит токен `xhttp`, например `vless|xhttp|tls`;
 - WireGuard и AmneziaWG содержат токен `wg`.
 
-Затем `filters.exclude_protocols` удаляет ноды с указанными токенами до переименования,
-группировки и записи `nodes.json`.
+Затем `exclude_protocols` ветви (`pipeline.router` или `pipeline.clients` в `config.json`)
+удаляет ноды с указанными токенами до переименования, группировки и записи `nodes.json`.
 
 ## Обычный sing-box: безопасная настройка
 
-В `config-main/groups_params.json` добавьте:
+В `config.json` добавьте фильтр ветви:
 
 ```json
-{
-  "filters": {
-    "exclude_protocols": ["xhttp", "wg"]
-  }
-}
-```
-
-Остальные секции `groups_params.json` можно оставить рядом. Например:
-
-```json
-{
-  "filters": {
-    "exclude_types": ["hysteria"],
-    "exclude_protocols": ["xhttp", "wg"],
-    "exclude_countries": [],
-    "exclude_names": {}
-  },
-  "rename": {
-    "domain_resolver_tag": "bootstrap"
-  },
-  "selector": {
-    "interrupt_exist_connections": true
-  },
-  "urltest": {
-    "interval": "5m",
-    "tolerance": 100,
-    "idle_timeout": "5m",
-    "interrupt_exist_connections": true
-  },
-  "emit": {
-    "nodes_tester": true,
-    "global_failsafe": false
-  }
+"pipeline": {
+  "router": { "exclude_protocols": ["xhttp", "wg"] },
+  "clients": { "exclude_protocols": ["xhttp", "wg"] }
 }
 ```
 
 Токен `wg` исключает все WireGuard endpoints, включая обычный WireGuard. Если обычный
-WireGuard нужен, а AWG нет, уберите из `providers.json` источник папки с
+WireGuard нужен, а AWG нет, уберите из `subscriptions` источник папки с
 `type: "folder", format: "awg"`. Тогда AWG не попадёт в raw.
 После этого решите отдельно, поддерживает ли ваша версия ядра обычные WireGuard endpoints.
 
-Фильтр задаётся только в `groups_params.json`: `nodes_fetch` фильтров не применяет.
+Фильтр задаётся только в разделе `pipeline`: `nodes_fetch` фильтров не применяет.
 
 ## sing-box-lx: оставить XHTTP и AWG
 
-Если установлен `sing-box-lx`, не добавляйте `xhttp` и `wg` в
-`filters.exclude_protocols`. Для AWG добавьте в `providers.json` источник папки:
+Если установлен `sing-box-lx`, не добавляйте `xhttp` и `wg` в `exclude_protocols`. Для AWG
+добавьте в `subscriptions` источник папки:
 
 ```json
 {
@@ -129,8 +99,8 @@ WireGuard нужен, а AWG нет, уберите из `providers.json` ист
 }
 ```
 
-Каждый `.conf` становится отдельным endpoint. Имя файла из двух букв используется как
-подсказка страны: `de.conf` даёт `de`, `fi.conf` даёт `fi`. DNS из файла не переносится,
+Каждый `.conf` становится отдельным endpoint. Страну ноды измеряет тестер, имя файла на
+неё не влияет. DNS из файла не переносится,
 потому что DNS настраивается централизованно в sing-box.
 
 XHTTP извлекается из VLESS и Trojan share-ссылок с `type=xhttp`. Параметры транспорта и
@@ -159,9 +129,8 @@ nodes-tester pipeline router --dry-run
 Для ручного запуска можно отдельно проверить сборку:
 
 ```sh
-python3 -m nodes_fetch -p config/providers.json -o data/raw/main.json --json
-python3 -m nodes_config --raw data/raw/main.json \
-  --groups config/groups_params.json \
+python3 -m nodes_fetch -c config/config.json --branch router -o data/raw/router.json --json
+python3 -m nodes_config -c config/config.json --branch router --raw data/raw/router.json \
   -o data/nodes.json --check --json
 ```
 

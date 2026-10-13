@@ -12,8 +12,8 @@ const s = useSnapshot()
 // Агрегаты считаются из строк трафика (traffic_rows), поэтому общие фильтры
 // таблицы — страна, группа, протокол, провайдер — применяются к любому измерению.
 const MEASURES = {
-  'провайдеры': { dim: 'provider', title: 'провайдер', kinds: ['leaf', 'unspecified'] },
-  'страны': { dim: 'cc', title: 'страна', kinds: ['leaf', 'unspecified'] },
+  'провайдеры': { dim: 'provider', title: 'провайдер', kinds: ['leaf'] },
+  'страны': { dim: 'cc', title: 'страна', kinds: ['leaf'] },
   'протоколы': { dim: 'protocol', title: 'протокол', kinds: ['leaf'] },
   'ноды': { dim: 'node', title: 'нода', kinds: ['leaf', 'direct'] },
 }

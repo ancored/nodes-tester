@@ -37,12 +37,11 @@ async function execute() {
   <div class="node-actions">
     <div class="actions">
       <button class="btn sm" :disabled="busy || !can('node_actions')" @click="prepare(+node.banned ? 'unban' : 'ban')">{{ +node.banned ? 'Снять исключение' : 'Исключить' }}</button>
-      <button class="btn sm" :disabled="busy || !can('node_actions') || (!node.gstate && !auth.capabilities.cooldown_enabled)" @click="prepare(node.gstate ? 'unquarantine' : 'quarantine')">{{ node.gstate ? 'Снять ограничение' : 'В карантин' }}</button>
+      <button class="btn sm" :disabled="busy || !can('node_actions')" @click="prepare(node.gstate ? 'unquarantine' : 'quarantine')">{{ node.gstate ? 'Снять ограничение' : 'В карантин' }}</button>
       <label v-if="groups.length > 1" class="inline-select">Группа<select v-model="group"><option v-for="g in groups" :key="g">{{ g }}</option></select></label>
       <button class="btn sm" :disabled="busy || !can('switch') || !groups.length" @click="prepare('activate')">{{ groups.length === 1 ? `Выбрать в группе ${groups[0]}` : 'Выбрать в группе' }}</button>
     </div>
     <p class="mut" v-if="!groups.length">Ручной выбор недоступен: нода не кандидат ни одной группы (нужны положительный рейтинг, пройденные обязательные тесты группы и отсутствие ограничений).</p>
-    <p class="mut" v-if="!auth.capabilities.cooldown_enabled">Карантин отключён настройкой cooldown.enabled.</p>
     <p v-if="message" role="status">{{ message }}</p>
     <dialog ref="dialog" @cancel="proposal = null" @close="proposal = null">
       <template v-if="proposal">

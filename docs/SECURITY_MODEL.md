@@ -202,7 +202,7 @@ chmod +x /etc/init.d/killswitch
 - **Дедлок при переключении вложенного selector** с `interrupt_exist_connections: true`
   ([Leadaxe/sing-box-lx#20](https://github.com/Leadaxe/sing-box-lx/issues/20)): все новые соединения и
   DNS зависали до рестарта. Исправлено в `v1.14.0-lx.38`. На более старых сборках ставьте
-  `interrupt_exist_connections: false` в `groups_params.json`.
+  `interrupt_exist_connections: false` в `pipeline.router.selector` файла `config.json`.
 - **Паника naive-inbound на UDP-over-TCP поверх HTTP/2** (`Write called after Handler finished`) роняла
   весь процесс ([SagerNet/sing-box#4249](https://github.com/SagerNet/sing-box/issues/4249)). Исправлено
   в [SagerNet/sing-box#4287](https://github.com/SagerNet/sing-box/pull/4287), есть в `1.14.1-lx.8` и

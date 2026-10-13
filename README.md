@@ -35,11 +35,11 @@ wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/
 ## Как устроено обновление
 
 ```text
-Подписки роутера → загрузка → raw/main.json → сборка → nodes.json
+Подписки роутера → загрузка → raw/router.json → сборка → nodes.json
                                                + база и правила sing-box
                                                → проверка → применение → проверка связности
 
-WH-подписки → загрузка → whnodes.json + клиентские базы
+Подписки клиентов → загрузка → whnodes.json + клиентские базы
                                   → /etc/sing-box-clients/ → веб-сервер → клиентские ссылки
 ```
 
@@ -53,7 +53,7 @@ WH-подписки → загрузка → whnodes.json + клиентские
   нужен `sing-box-lx`; с обычным ядром их следует исключить на стадии `nodes_config`.
   См. [совместимость с ядрами sing-box](docs/SING_BOX_COMPATIBILITY.md).
 - Сохранение подписок, применение новых нод и проверка текущих нод запускаются отдельно. Сохранение в админке не обновляет sing-box.
-- Проверки создают сетевой трафик и скачивают тестовые файлы. Автоматическое переключение может менять рабочие селекторы; в шаблоне оно включено. Для знакомства с системой его можно отключить.
+- Проверки создают сетевой трафик и скачивают тестовые файлы. Тестер сам выбирает активную ноду в каждой группе sing-box по проверкам группы (страна выхода, тип IP, доступ к AI-сервисам); страна измеряется, а не берётся из названия у провайдера. Плановую ротацию можно выключить.
 - Админка встроена в тестер. После установки сервис и веб-интерфейс выключены, пока вы их не настроите и не включите.
 - Рабочие конфиги содержат секреты. Не публикуйте URL подписок, токены, базу статистики или полный диагностический вывод. Не выставляйте админку напрямую в интернет.
 
@@ -65,24 +65,24 @@ WH-подписки → загрузка → whnodes.json + клиентские
 | Компонент | Описание |
 |---|---|
 | [`nodes_fetch`](nodes_fetch/README.md) | источники, парсеры, last-good и формат `raw_nodes.json` |
-| [`nodes_config`](nodes_config/README.md) | фильтры, имена, CRC, группы и `nodes.json` |
+| [`nodes_config`](nodes_config/README.md) | фильтры, имена, ключи нод, группы и `nodes.json` |
 | [`nodes_tester`](nodes_tester/README.md) | проверки, рейтинг, переключение, монитор и SQLite |
 | [`nodes_admin`](nodes_admin/README.md) | конвейер, расписание и обновление правил |
 | [`dashboard`](dashboard/README.md) | режимы HTTP-сервера, API, доступ и работа с файлами |
 | [`web`](web/README.md) | исходники Vue, сборка и правила интерфейса |
 | [`nodes_common`](nodes_common/README.md) | контракт raw, атомарная запись и блокировки |
-| [`naming`](naming/README.md) | идентичность, протоколы, страны, регионы и CRC |
+| [`naming`](naming/README.md) | ключ ноды и протоколы |
 | [`scripts/router`](scripts/router/README.md) | применение, проверка, откат и клиентский конвейер |
 
-Отдельно: [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.md),
+Отдельно: [config.json](docs/CONFIG.md), [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.md),
 [повседневная работа](docs/USAGE.md), [модель безопасности роутера](docs/SECURITY_MODEL.md)
 и [пакет OpenWrt](openwrt/README.md).
 
 ## Если устанавливаете из исходников
 
-Нужен Python 3.8 или новее. Из корня репозитория выполните `python3 -m pip install -r requirements.txt`, создайте рабочие конфиги из [шаблонов](config/), подключите sing-box по той же схеме, что в инструкции OpenWrt, и запускайте `python3 -m nodes_tester -c config/config.json`. Вместо пакетной команды `nodes-tester fetch/config` используются `python3 -m nodes_fetch` и `python3 -m nodes_config`.
+Нужен Python 3.8 или новее. Из корня репозитория выполните `python3 -m pip install -r requirements.txt`, создайте `config/config.json` по [шаблону](config/config.example.json), подключите sing-box по той же схеме, что в инструкции OpenWrt, и запускайте `python3 -m nodes_tester -c config/config.json`. Вместо пакетной команды `nodes-tester fetch/config` используются `python3 -m nodes_fetch` и `python3 -m nodes_config`.
 
-Готовая веб-статика включена в репозиторий; Node.js для запуска не нужен. OpenWrt-пакет собирается [скриптом SDK](openwrt/build.sh). Параметры команд показывает `--help`, а настройки описаны в [схемах](schemas/) и [шаблоне конфига](config/config.example.json).
+Готовая веб-статика включена в репозиторий; Node.js для запуска не нужен. OpenWrt-пакет собирается [скриптом SDK](openwrt/build.sh). Параметры команд показывает `--help`, все настройки описаны в [CONFIG.md](docs/CONFIG.md).
 
 ## Лицензия
 

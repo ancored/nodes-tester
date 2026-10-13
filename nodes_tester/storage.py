@@ -34,7 +34,7 @@ import sqlite3
 import threading
 import time
 
-from naming import canonical, node_key, node_payload, parse_group, parse_node
+from naming import canonical, node_key, node_payload, parse_node
 
 # Версия схемы БД. Файл другой версии при открытии уходит в копию, история начинается
 # заново (0.5.0: сменился ключ ноды, переносить нечего).
@@ -298,10 +298,8 @@ class Storage:
         """Боевой трафик (up+down) за окно, агрегированный по осям балансировки:
         {'provider':{...}, 'country':{...}, 'protocol':{...}}.
 
-        Leaf-трафик берём из JOIN nodes (есть provider/country/protocol).
-        Failsafe/unspecified-трафик (ключ = тег группы, не в nodes) добираем в
-        провайдера через parse_group; страны/протокола в имени группы нет — там
-        мелкий недоучёт по этим осям (приемлемо). is_tester=0 — тестовый не считаем.
+        Трафик нод берём из JOIN nodes (есть provider/country/protocol); трафик групп
+        и direct ни к одной оси не относится. is_tester=0 — тестовый не считаем.
         """
         since = int(time.time()) - int(window_seconds)
         prov: dict = {}
@@ -320,15 +318,6 @@ class Storage:
                     cc[c] = cc.get(c, 0) + b
                 if pr:
                     proto[pr] = proto.get(pr, 0) + b
-            # не-нодовые ключи (failsafe-группы) → провайдер через parse_group
-            for crc, b in self._db.execute(
-                "SELECT t.crc, SUM(t.up+t.down) FROM traffic t "
-                "LEFT JOIN nodes n ON n.crc = t.crc "
-                "WHERE t.is_tester = 0 AND t.ts >= ? AND n.crc IS NULL "
-                "GROUP BY t.crc", (since,)).fetchall():
-                pg = parse_group(crc or "")
-                if pg:
-                    prov[pg[0]] = prov.get(pg[0], 0) + int(b or 0)
         return {"provider": prov, "country": cc, "protocol": proto}
 
     # --- Мета (сквозные значения между рестартами) ---------------------
