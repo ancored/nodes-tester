@@ -27,43 +27,13 @@ class AdminRefinementTest(unittest.TestCase):
             headers["If-Match"] = revision
         return self.app.handle(method, path, headers, json.dumps(body).encode() if body is not None else b"")
 
-    def test_missing_recipe_roundtrip_preserves_unknown_and_detects_conflict(self):
-        opened = json.loads(self.call("GET", "/api/config/groups").body)
-        self.assertEqual(opened["revision"], "missing")
-        self.assertEqual(opened["data"], {})
-        body = {"filters": {"exclude_countries": ["ru"], "exclude_names": {"*": ["test"]}},
-                "rename": {"domain_resolver_tag": "dns"}, "custom": {"keep": True}}
-        saved = self.call("PUT", "/api/config/groups", body, "missing")
-        self.assertEqual(saved.status, 200)
-        self.assertEqual(json.loads(self.call("GET", "/api/config/groups").body)["data"], body)
-        self.assertEqual(self.call("PUT", "/api/config/groups", {}, "missing").status, 409)
-        with open(opened["path"], encoding="utf-8") as fh:
-            self.assertEqual(json.load(fh), body)
-
-    def test_invalid_recipe_does_not_replace_file(self):
-        self.assertEqual(self.call("PUT", "/api/config/groups", {"raw_user_nodes": False}).status, 200)
-        for body in ({"filters": {"exclude_types": "vless"}}, {"raw_user_nodes": "false"},
-                     {"emit": {"nodes_tester": "yes"}}, {"emit": {"ensure_regions": ["moon"]}},
-                     {"urltest": []}, {"rename": "x"}):
-            with self.subTest(body=body):
-                self.assertEqual(self.call("PUT", "/api/config/groups", body).status, 400)
-        self.assertEqual(json.loads(self.call("GET", "/api/config/groups").body)["data"], {"raw_user_nodes": False})
-
-    def test_recipe_target_follows_providers_or_explicit_path(self):
-        self.runner.cfg.dashboard.providers_file = "stream/providers.json"
-        opened = json.loads(self.call("GET", "/api/config/groups").body)
-        self.assertEqual(opened["path"], os.path.join(self.tmp, "stream", "groups_params.json"))
-        self.runner.cfg.dashboard.groups_file = "recipe.json"
-        opened = json.loads(self.call("GET", "/api/config/groups").body)
-        self.assertEqual(opened["path"], os.path.join(self.tmp, "recipe.json"))
-
-    def test_recipe_and_options_require_token_and_defaults_match_loader(self):
-        for endpoint in ("groups", "subscription-options"):
-            self.assertEqual(self.call("GET", "/api/config/"+endpoint, token="").status, 401)
+    def test_config_and_options_require_token(self):
+        for endpoint in ("/api/config", "/api/config/subscription-options"):
+            self.assertEqual(self.call("GET", endpoint, token="").status, 401)
         data = json.loads(self.call("GET", "/api/config/subscription-options").body)
         self.assertEqual(data["happ_headers"], _HEADERS)
         self.assertEqual([o["value"] for o in data["user_agents"]], ["", "curl", "clashmeta"])
-        self.assertEqual(data["group_defaults"]["emit"]["ensure_regions"], ["eu", "us", "other"])
+        self.assertEqual(data["branches"], ["router", "clients"])
 
     def load_node(self):
         ob = {"type": "vless", "server": "example.invalid", "server_port": 443, "uuid": "demo-secret",

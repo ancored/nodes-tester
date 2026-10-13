@@ -131,7 +131,7 @@ class BuildTest(unittest.TestCase):
         frag, rep = _build(pipeline={"router": {"exclude_types": ["shadowsocksr"],
                                                 "exclude_protocols": ["reality"]}})
         self.assertEqual(_leaves(frag), [])
-        self.assertEqual(rep["dropped"]["protocol"], 4)
+        self.assertEqual(rep["dropped"]["protocol"], 3)      # promo отброшена раньше по имени
         failsafe = next(o for o in frag["outbounds"] if o["tag"] == "failsafe-out")
         self.assertEqual(failsafe["outbounds"], ["direct-out"])      # urltest не бывает пустым
 

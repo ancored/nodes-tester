@@ -93,8 +93,8 @@ class RotationLoopTest(unittest.TestCase):
                     patch.object(r, "_wait_interruptible", side_effect=wait):
                 r._wait_for_rotation()
             spent = clock["now"] - 1_000_000.0
-            self.assertGreaterEqual(spent, r.cfg.switching.rotation.interval)
-            self.assertLess(spent, r.cfg.switching.rotation.interval + 60)
+            self.assertGreaterEqual(spent, r.cfg.selection.rotation.interval)
+            self.assertLess(spent, r.cfg.selection.rotation.interval + 60)
             self.assertTrue(r._scoped_next)
         finally:
             r.storage.close()

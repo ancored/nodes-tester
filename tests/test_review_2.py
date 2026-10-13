@@ -15,8 +15,7 @@ from tests.helpers import fresh_nodes_json, make_runner, temp_dir
 class RunnerLifecycleRegressionTest(unittest.TestCase):
     def test_request_during_last_non_loop_pass_schedules_another(self):
         runner = make_runner(temp_dir())
-        runner._base.loop = False
-        runner._base.rounds = 1
+        runner.rounds = 1
         self.assertFalse(runner._should_continue(1))
         runner.request_pass()
         self.assertTrue(runner._should_continue(1))
@@ -24,10 +23,10 @@ class RunnerLifecycleRegressionTest(unittest.TestCase):
     def test_invalid_initial_config_restores_process_state(self):
         tmp = temp_dir()
         runner = make_runner(tmp)
-        runner.cfg.run.default.tests_enabled = []
+        runner.api.ping = lambda: (_ for _ in ()).throw(ValueError("ping"))
         stdout, stderr = sys.stdout, sys.stderr
         try:
-            with self.assertRaisesRegex(ValueError, "tests_enabled"):
+            with self.assertRaisesRegex(ValueError, "ping"):
                 runner.run()
             self.assertIs(sys.stdout, stdout)
             self.assertIs(sys.stderr, stderr)
