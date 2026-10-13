@@ -83,6 +83,13 @@ class ConfigSchemaTest(unittest.TestCase):
         bad = {"groups": [{"tag": "ai", "require": {"gemeni": {}}}], "selection": {"cooldown": 300}}
         self.assertEqual(len(list(validator.iter_errors(bad))), 2)
 
+    def test_documented_examples_load(self):
+        with open(os.path.join(_ROOT, "docs", "CONFIG.md"), encoding="utf-8") as fh:
+            blocks = re.findall(r"```json\n(\{.*?)\n```", fh.read(), re.S)
+        self.assertGreaterEqual(len(blocks), 2)          # минимальный и полный пример
+        for block in blocks:
+            parse_config(json.loads(block))
+
 
 if __name__ == "__main__":
     unittest.main()
