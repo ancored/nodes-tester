@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
 import { dateDM, dur, timeHMS, scoreClass, fixed, pct } from '../format.js'
 import DataTable from '../components/DataTable.vue'
+import { nodeColumns } from '../ux.js'
 import StatusLegend from '../components/StatusLegend.vue'
 import { STATUS } from '../status.js'
 
@@ -28,10 +29,7 @@ const garbageRows = computed(() => s.data.garbage || [])
 const stateLabel = (r) => (r.state === 'garbage' ? STATUS.quarantine.label : STATUS.pause.label)
 const garbageFilters = [{ key: 'state', title: 'Статус', get: stateLabel }]
 const garbCols = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'protocol', title: 'протокол', l: true },
-  { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
-  { key: 'cc', title: 'cc', l: true },
+  ...nodeColumns({ country: 'cc' }),
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'state', title: 'статус', slot: true },
   { key: 'streak', title: 'провалов подряд' },
@@ -44,10 +42,7 @@ const garbCols = [
 // --- Долгожители / выпадающие ---
 const longevity = computed(() => s.data.longevity || [])
 const longCols = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'protocol', title: 'протокол', l: true },
-  { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
-  { key: 'cc', title: 'cc', l: true },
+  ...nodeColumns({ country: 'cc' }),
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'age', title: 'возраст', fmt: dur, cls: () => 'num' },
   { key: 'score', title: 'score', fmt: score1, cls: scoreClass, strong: true },
@@ -58,10 +53,7 @@ const longCols = [
 ]
 const dropouts = computed(() => s.data.dropouts || [])
 const dropCols = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'protocol', title: 'протокол', l: true },
-  { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
-  { key: 'cc', title: 'cc', l: true },
+  ...nodeColumns({ country: 'cc' }),
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'first_garbage', title: '1-й карантин', fmt: dateDM, cls: () => 'num' },
   { key: 'lifespan', title: 'до 1-го карантина', fmt: dur, cls: () => 'num' },

@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { testTitle } from '../ux.js'
+import { testTitle, nodeColumns } from '../ux.js'
 import { flag } from '../format.js'
 // Компактное время: ячейки тестов должны помещаться в ширину страницы.
 const short = ts => ts ? new Date(ts*1000).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—'
@@ -16,20 +16,20 @@ const rows=computed(()=>s.data.results?.rows || [])
 const AI_NOTE='Google AI — страна по мнению Google (флаг) и доступность Gemini; OpenAI и Claude AI — доступность сервиса. ✓ — доступен, ✗ — нет, ? — сбой сети, действует прошлый результат. Проверяются только кандидаты групп с обязательными тестами; наведите курсор, чтобы увидеть время и причину.'
 // Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список.
 const AI={gemini:1,openai:1,anthropic:1,connectivity:1,whitelist:1}
+// Короткие заголовки, чтобы таблица помещалась; полное название — в пояснениях и сортировке.
+const HEADS={connectivity:'Связь',whitelist:'Белый список',reachability:'Сайты',download:'Скорость, Мбит/с'}
 const NOTES={gemini:AI_NOTE,whitelist:'Пропустит ли ноду режим белых списков мобильного интернета: IP сервера в IP-списке и SNI в списке доменов (без TLS — достаточно IP). Проверяется локально раз в сутки; наведите курсор, чтобы увидеть адреса и SNI.'}
 const aiMark = c => c.unk ? '?' : c.ok ? '✓' : '✗'
 const aiTitle = c => [c.v, c.title, short(c.ts) + (c.off_pass ? ' · другой проход' : '')].filter(Boolean).join('\n')
 const columns=computed(()=>[
-  {key:'provider',title:'Провайдер',l:true},{key:'protocol',title:'Протокол',slot:true,l:true},
-  {key:'crc',title:'Нода',l:true,nowrap:true},{key:'country',title:'Страна',head:'',l:true},{key:'ts',title:'Проход',slot:true,l:true,nowrap:true},
+  ...nodeColumns(),{key:'ts',title:'Проход',slot:true,l:true,nowrap:true},
   {key:'ip_type',title:'Тип IP',head:'IP',slot:true,narrow:true,note:'Выходной IP по базе ip-api.com: здание — дата-центр, телефон — мобильная сеть, дом — домашний; маска — IP известен как VPN/прокси; флаг ниже — база относит IP к другой стране, чем показал тест соединения. Красное хуже для AI-сервисов. Наведите курсор: IP и сеть (ASN).'},
-  ...tests.value.map(t=>t in AI ? {key:t,title:testTitle(t),slot:true,narrow:true,note:NOTES[t] || null} : {key:t,title:testTitle(t),slot:true,l:true}),
+  ...tests.value.map(t=>t in AI ? {key:t,title:testTitle(t),head:HEADS[t],slot:true,narrow:true,note:NOTES[t] || null} : {key:t,title:testTitle(t),head:HEADS[t],slot:true,l:true}),
 ])
 </script>
 <template>
   <p class="hint">Множитель скорости показывает троттлинг. Время обычных тестов указано в колонке «Проход»; «—» — тест не измерялся. Тяжёлая загрузка может относиться к другому проходу — значок ↻. Нажмите на провал, чтобы увидеть подробности.</p>
   <DataTable :rows="rows" :columns="columns" empty="Сохранённых результатов нет. Проверьте журнал тестера.">
-    <template #cell-protocol="{row}"><span class="proto"><span v-for="p in String(row.protocol || '—').split('|')" :key="p">{{ p }}</span></span></template>
     <template #cell-ts="{row}"><template v-if="row.ts">{{ day(row.ts) }}<br>{{ time(row.ts) }}</template><template v-else>—</template></template>
     <template #cell-ip_type="{row}"><span v-if="row.ip_kind" class="ip-type" :title="row.ip_title || null"><span><IpTypeIcon :kind="row.ip_kind" /><IpTypeIcon v-if="row.ip_proxy" kind="proxy" /></span><span v-if="row.ip_db_cc" class="bad">{{ flag(row.ip_db_cc) }}</span></span><span v-else class="mut">—</span></template>
     <template v-for="test in tests" :key="test" #[`cell-${test}`]="{row}">
@@ -45,7 +45,6 @@ const columns=computed(()=>[
   </DataTable>
 </template>
 <style scoped>
-.proto { display: inline-flex; flex-direction: column; font-size: 12px; line-height: 1.25; white-space: nowrap; }
 .ip-type, .ai-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.2; }
 .ip-type > span:first-child { display: inline-flex; gap: 2px; }
 </style>

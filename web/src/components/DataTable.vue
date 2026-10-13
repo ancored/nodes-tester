@@ -45,6 +45,8 @@ const page = computed({
 const slice = computed(()=>filtered.value.slice(page.value*props.pageSize,(page.value+1)*props.pageSize))
 // Колонки страны (country, cc) — флагом, код — во всплывающей подсказке.
 const isCountry = c => !c.fmt && !c.slot && ['country','cc'].includes(c.key)
+// Протокол — части дескриптора столбиком (vless / grpc / reality), как в «Результатах».
+const isProtocol = c => !c.fmt && !c.slot && c.key === 'protocol'
 function cellText(c,r) { return c.fmt ? c.fmt(r[c.key],r) : isCountry(c) ? flag(r[c.key]) : r[c.key] ?? '—' }
 const keys = computed(() => rowKeys(props.rows))
 function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value === '-'+c.key ? '' : c.key) }
@@ -61,7 +63,8 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
             <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
-              <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break"><NodeKey :text="cellText(c,row)" /></RouterLink>
+              <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break"><NodeKey :text="cellText(c,row)" stacked /></RouterLink>
+              <span v-else-if="isProtocol(c)" class="proto"><span v-for="p in String(row[c.key] || '—').split('|')" :key="p">{{ p }}</span></span>
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>
             </td>
           </tr>

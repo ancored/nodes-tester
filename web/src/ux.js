@@ -81,6 +81,12 @@ export function rowKeys(rows) {
   return keys
 }
 // Стандартные фильтры таблиц (DataTable): поля строк снимка /api/data.
+// Первые столбцы таблиц нод — одинаково везде (образец — «Результаты»): провайдер, протокол
+// столбиком, ключ в две строки (ссылка на карточку), флаг страны. crc и country — имена полей строки.
+export function nodeColumns({ crc = 'crc', country = 'country' } = {}) {
+  return [{ key: 'provider', title: 'Провайдер', l: true }, { key: 'protocol', title: 'Протокол', l: true },
+    { key: crc, title: 'Нода', l: true, nowrap: true }, { key: country, title: 'Страна', head: '', l: true, narrow: true }]
+}
 export const STANDARD_FILTERS = [
   { key: 'country', title: 'Страна', get: r => (r.country ?? r.cc)?.toUpperCase?.() },
   { key: 'reserve', title: 'Резерв', get: r => String(r.reserve || '').split(',').filter(Boolean) },

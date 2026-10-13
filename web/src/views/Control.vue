@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { nodeFlags } from '../ux.js'
+import { nodeFlags, nodeColumns } from '../ux.js'
 import { scoreClass } from '../format.js'
 import DataTable from '../components/DataTable.vue'
 const s = useSnapshot()
@@ -13,8 +13,7 @@ const extraFilters = [{ key:'state', title:'Состояние', get:states }]
 // Рейтинг и резерв — в своих столбцах, в «Состоянии» их не повторяем.
 const stateFlags = n => nodeFlags(n).filter(f => !/^(Рейтинг|Нет замеров|Резерв)/.test(f)).join(' · ') || '—'
 const columns = [
-  { key:'provider', title:'Провайдер', l:true }, { key:'protocol', title:'Протокол', l:true },
-  { key:'crc', title:'Нода', l:true, nowrap:true }, { key:'country', title:'Страна', head:'', l:true },
+  ...nodeColumns(),
   { key:'reserve', title:'Резерв', l:true, fmt:v => v || '—' },
   { key:'score', title:'Рейтинг',fmt:v => v == null ? 'Нет замеров' : Number(v).toFixed(1),cls:scoreClass },
   { key:'flags',title:'Состояние',l:true,fmt:(_,n) => stateFlags(n) },

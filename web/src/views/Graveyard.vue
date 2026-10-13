@@ -4,6 +4,7 @@ import { useSnapshot } from '../store.js'
 import { dateDM, dur, scoreClass, fixed } from '../format.js'
 import { CAUSES } from '../status.js'
 import DataTable from '../components/DataTable.vue'
+import { nodeColumns } from '../ux.js'
 import Sparkline from '../components/Sparkline.vue'
 
 const s = useSnapshot()
@@ -54,10 +55,7 @@ const provCols = [
 ]
 
 const cols = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'protocol', title: 'протокол', l: true },
-  { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut', cellTitle: (r) => r.tag || '' },
-  { key: 'cc', title: 'cc', l: true },
+  ...nodeColumns({ country: 'cc' }),
   { key: 'first_seen', title: 'появилась', fmt: dateDM, cls: () => 'num' },
   { key: 'removed_at', title: 'удалена', fmt: dateDM, cls: () => 'num' },
   { key: 'lifespan', title: 'прожила', fmt: dur, cls: () => 'num', strong: true },
