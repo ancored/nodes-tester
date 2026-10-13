@@ -21,8 +21,8 @@ class Board:
     def candidates(self, group):
         return self.candidates_list
 
-    def alive_keys(self):
-        return set()                     # все ноды конфига мертвы
+    def dead_keys(self):
+        return {"11111111.22222222"}     # единственная нода конфига измерена и мертва
 
 
 class Orch:

@@ -110,7 +110,7 @@ class RebuildWatch:
             print(f"  [rebuild] сравнение с опросом не удалось: {exc}")
             return ""
         added, gone = fresh - current, current - fresh
-        dead = current - self.board.alive_keys()
+        dead = current & self.board.dead_keys()
         share = len(gone & dead) / len(dead) if dead else 0.0
         result = ""
         if added and share >= rules["gone_share"]:
