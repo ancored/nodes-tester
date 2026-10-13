@@ -214,7 +214,7 @@ class CliTest(FetchTestBase):
         summary = json.loads(stdout)
         self.assertTrue(summary["written"] and summary["changed"])
         self.assertEqual(summary["nodes"], 3)
-        self.assertEqual(rawfmt.load(out)["providers"], "providers")
+        self.assertEqual(rawfmt.load(out)["providers"], "router")
         before = _read(out)
 
         self.net({"https://s.example/b": LINKS_B})             # A упала, прошлых нод 3 → 1+2stale

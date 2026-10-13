@@ -68,7 +68,7 @@ def main(argv=None):
         return report({"ok": False, "error": str(exc)}, 1)
 
     base_dir = os.path.dirname(os.path.abspath(args.config))
-    name = "providers"
+    name = args.branch          # поле providers в raw: из какой ветви подписки
 
     def do_run():
         previous = _load_previous(args.output)

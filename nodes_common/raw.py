@@ -3,16 +3,17 @@
     {
       "version": 1,
       "generated_at": "2026-09-23T12:00:00Z",
-      "providers": "providers-main",
+      "providers": "router",
       "nodes_hash": "sha256:…",
       "sources": [ {provider, kind, ok, count, fetched_at, last_ok_at, stale, error} ],
       "nodes":   [ {provider, title, cc_hint, outbound} ]
     }
 
 - outbound — sing-box outbound/endpoint как выдал парсер, БЕЗ tag и без '_'-полей;
-  исходное имя ноды из подписки — в title (его используют rename/labels, на него же
+  исходное имя ноды из подписки — в title (по нему работает exclude_names, на него же
   ссылаются detour соседних нод той же подписки);
-- cc_hint — подсказка страны, когда её нет в названии (AWG: из имени файла), иначе null;
+- cc_hint — подсказка страны из источника (AWG: имя файла), иначе null; сборка и тестер
+  её не используют — страну измеряет тестер;
 - порядок nodes = порядок подписок (по первому появлению провайдера) + порядок в подписке;
 - nodes_hash — sha256 каноничного JSON секции nodes: меняется только при смене нод.
 Схема для IDE/админки — schemas/raw_nodes.schema.json.
