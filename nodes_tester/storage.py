@@ -234,6 +234,12 @@ class Storage:
                                  (country, crc.partition(".")[0]))
             self._db.commit()
 
+    def node_countries(self) -> dict:
+        """Ключ ноды → измеренная страна (nodes.country пишет conn-тест)."""
+        with self._lock:
+            rows = self._db.execute("SELECT crc, country FROM nodes WHERE country != ''").fetchall()
+        return dict(rows)
+
     def last_result_ts(self, test: str) -> dict:
         """Ключ ноды → время последнего результата теста (свежесть локальных проверок)."""
         with self._lock:

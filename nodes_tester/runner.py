@@ -159,6 +159,9 @@ class Runner:
         out = []
         banned_n = 0
         self._present_crcs: set[str] = set()
+        # Страна из базы: после рестарта тестера в рейтинге её ещё нет, а российская нода
+        # не должна получить зарубежный набор тестов.
+        stored = self.storage.node_countries()
         for leaf in self.api.list_group_members(top):
             ident = parse_node(leaf)
             if not ident.node_id:              # без ключа — не нода (direct, block, группа)
@@ -169,7 +172,7 @@ class Runner:
             if ident.node_id in self._banned:  # ручной бан из админки — не тестируем
                 banned_n += 1
                 continue
-            country = self.board.country(ident)
+            country = self.board.country(ident) or stored.get(ident.node_id, "")
             out.append((frozenset(region_of(country, self.cfg.regions)), ident))
         if banned_n:
             print(f"  · пропущено забаненных нод (бан из админки): {banned_n}")
@@ -1066,6 +1069,11 @@ class Runner:
                     results[test.name] = res
                     if test.name == "connectivity" and not res.get("ok"):
                         break                      # нет связности → не гоняем остальное (трафик)
+                    if test.name == "connectivity" and not ctx.regions and res.get("country"):
+                        # Страна ещё не была известна: остальные тесты — по только что
+                        # измеренной (российская нода — российским набором с первого раза).
+                        ctx.regions = frozenset(region_of(res["country"], self.cfg.regions))
+                        base["regions"] = sorted(ctx.regions)
             finally:
                 session.close()                    # session закрываем всегда
 
