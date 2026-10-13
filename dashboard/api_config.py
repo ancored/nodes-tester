@@ -42,6 +42,20 @@ def _restart_tester(app: App) -> str:
     return ""
 
 
+def _save(app: App, path: str, data: dict) -> dict:
+    """Проверить загрузчиком тестера, записать атомарно с правами 0600, перезапустить тестер.
+    Вызывается под _edit_lock."""
+    from nodes_tester.config import ConfigError, parse_config
+    try:
+        parse_config(data)
+    except ConfigError as exc:
+        raise HttpError(400, f"конфиг невалиден: {exc}") from exc
+    atomic_write_private(path, dumps_json(data))
+    note = _restart_tester(app)
+    return {"ok": True, "path": path, "revision": _revision(path), "restart_required": True,
+            "restarting": not note, "restart_note": note}
+
+
 def _revision(path):
     try:
         with open(path, "rb") as fh:
@@ -114,24 +128,39 @@ def register(app: App) -> None:
 
     @app.route("PUT", "/api/config", needs_token=True)
     def put_config(app, req):
-        from nodes_tester.config import ConfigError, parse_config
+        """Весь файл (расширенный JSON-редактор); If-Match — ревизия открытого файла."""
         data = req.json()                      # HttpError 400 при битом JSON
         if not isinstance(data, dict):
             raise HttpError(400, "config.json должен быть объектом")
-        try:
-            parse_config(data)
-        except ConfigError as exc:
-            raise HttpError(400, f"конфиг невалиден: {exc}") from exc
         path = _config_path(app)
         with _edit_lock:
             expected = req.headers.get("If-Match")
             if expected and expected != _revision(path):
                 raise HttpError(409, "Файл изменился после открытия. Перечитайте его перед сохранением.")
-            atomic_write_private(path, dumps_json(data))
-            revision = _revision(path)
-        note = _restart_tester(app)
-        return {"ok": True, "path": path, "revision": revision, "restart_required": True,
-                "restarting": not note, "restart_note": note}
+            return _save(app, path, data)
+
+    @app.route("POST", "/api/config/sections", needs_token=True)
+    def put_sections(app, req):
+        """Только изменённые разделы верхнего уровня (форма): {"base": {раздел: как было
+        открыто}, "set": {раздел: новое значение}}; null — раздела нет. Конфликт — только если
+        по SSH или в другом окне изменили те же разделы: подписки и группы правятся параллельно."""
+        body = req.json()
+        base, new = body.get("base"), body.get("set")
+        if not isinstance(base, dict) or not isinstance(new, dict) or not new:
+            raise HttpError(400, "нужны объекты base и set")
+        path = _config_path(app)
+        with _edit_lock:
+            data = _document(path)["data"]
+            changed = [key for key in new if data.get(key) != base.get(key)]
+            if changed:
+                raise HttpError(409, f"Раздел {changed[0]} изменился после открытия. Перечитайте файл "
+                                     f"перед сохранением.")
+            for key, value in new.items():
+                if value is None:
+                    data.pop(key, None)
+                else:
+                    data[key] = value
+            return _save(app, path, data)
 
     @app.route("GET", "/api/config/subscription-options", needs_token=True)
     def subscription_options(app, req):

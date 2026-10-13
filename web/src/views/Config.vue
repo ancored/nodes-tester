@@ -71,10 +71,17 @@ async function save() {
   busy.value=true; error.value=''; const epoch=auth.epoch
   const data=JSON.parse(JSON.stringify(candidate.value))
   try {
-    const result=await api.put(endpoint,data,{'If-Match':revision.value})
+    // Форма сохраняет только изменённые разделы: правка подписок не конфликтует с правкой групп в
+    // другом окне. Расширенный JSON — весь файл по ревизии.
+    const sections=[...new Set(changed.value.map(p=>p.split('.')[0]))]
+    const result=advanced.value ? await api.put(endpoint,data,{'If-Match':revision.value})
+      : await api.post('/config/sections',{base:Object.fromEntries(sections.map(k=>[k,original.value[k] ?? null])),
+                                            set:Object.fromEntries(sections.map(k=>[k,data[k] ?? null]))})
     if(epoch !== auth.epoch) return
-    document.value=data; original.value=JSON.parse(JSON.stringify(data)); text.value=JSON.stringify(data,null,2)
-    revision.value=result.revision; restart.value=!!result.restart_required; preview.value=false
+    const saved=advanced.value ? {data,revision:result.revision} : await api.get(endpoint)
+    if(epoch !== auth.epoch) return
+    document.value=saved.data; original.value=JSON.parse(JSON.stringify(saved.data)); text.value=JSON.stringify(saved.data,null,2)
+    revision.value=saved.revision; restart.value=!!result.restart_required; preview.value=false
     const sb=subscriptions.value ? ' Загрузка подписок, сборка и применение к sing-box не запускались.' : ''
     message.value=result.restarting ? 'config.json сохранён. Тестер перезапускается…'+sb : 'config.json сохранён; '+(result.restart_note || 'перезапустите тестер')+'.'+sb
     if(result.restarting) waitRestart(epoch,sb)

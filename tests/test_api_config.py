@@ -65,6 +65,31 @@ class ApiConfigTest(unittest.TestCase):
         stale = self._call("PUT", "/api/config", body=cur, headers={"If-Match": doc["revision"]})
         self.assertEqual(stale.status, 409)
 
+    def test_sections_merge_parallel_edits(self):
+        opened = self._current()["data"]
+        mine = {"base": {"groups": opened.get("groups")}, "set": {"groups": [{"tag": "eu"}]}}
+        # в другом окне за это время поменяли подписки — не конфликт: разделы разные
+        other = dict(opened, subscriptions=opened["subscriptions"] + [{"tag": "NEW", "url": "https://n"}])
+        self.assertEqual(self._call("PUT", "/api/config", body=other).status, 200)
+        r = self._call("POST", "/api/config/sections", body=mine)
+        self.assertEqual(r.status, 200)
+        with open(self.cfg.path, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        self.assertEqual(saved["groups"], [{"tag": "eu"}])
+        self.assertEqual(saved["subscriptions"][-1]["tag"], "NEW")
+        # тот же раздел изменён после открытия — конфликт, файл не тронут
+        stale = {"base": {"groups": opened.get("groups")}, "set": {"groups": [{"tag": "us"}]}}
+        self.assertEqual(self._call("POST", "/api/config/sections", body=stale).status, 409)
+        # null убирает раздел; ошибка загрузчика — 400 с путём поля
+        drop = {"base": {"groups": [{"tag": "eu"}]}, "set": {"groups": None}}
+        self.assertEqual(self._call("POST", "/api/config/sections", body=drop).status, 200)
+        with open(self.cfg.path, encoding="utf-8") as fh:
+            self.assertNotIn("groups", json.load(fh))
+        bad = {"base": {"groups": None}, "set": {"groups": [{"tag": "Bad"}]}}
+        r = self._call("POST", "/api/config/sections", body=bad)
+        self.assertEqual(r.status, 400)
+        self.assertIn("groups[0].tag", json.loads(r.body)["error"])
+
     def test_put_restarts_embedded_tester_unless_pipeline_runs(self):
         init = os.path.join(self.tmp, "nodes-tester.init")
         open(init, "w").close()
