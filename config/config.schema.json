@@ -1,75 +1,95 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://nodes-tester/config.schema.json",
-  "title": "nodes-tester config",
+  "$id": "https://github.com/ancored/nodes-tester/config.schema.json",
+  "title": "nodes-tester config.json",
+  "description": "Единый конфиг nodes-tester. Описание полей — docs/CONFIG.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "testing_groups",
-    "box_api"
-  ],
   "definitions": {
-    "runParams": {
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+      "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+    },
+    "groupCheck": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Проверка в группе: ttl — свой срок годности; у country и ip_type — условия.",
       "properties": {
-        "tests_enabled": {
+        "ttl": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+        },
+        "countries": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "country: допустимые страны, ISO-коды."
         },
-        "loop": {
-          "type": "boolean"
-        },
-        "rotation_bound": {
-          "type": "boolean",
-          "description": "Прогон только к сроку ротации (не непрерывно); emergency ловит монитор. Действует при loop + switching.rotation.enabled."
-        },
-        "pass_pause": {
-          "type": "number"
-        },
-        "switch_delay": {
-          "type": "number"
-        },
-        "min_host_gap": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Анти-ТСПУ: минимум секунд между обращениями к одному хосту с разным портом/протоколом. Тот же порт/протокол ожидания не вызывает."
-        },
-        "rounds": {
-          "type": "integer"
-        },
-        "request_timeout": {
-          "type": "number"
-        },
-        "restore_selection": {
-          "type": "boolean"
-        },
-        "reserve_size": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Резерв группы: сколько кандидатов на замену держать проверенными (обязательные тесты группы и тяжёлый download). Ротация, авария и переключение по качеству выбирают только из резерва. 0 = резерва нет."
-        },
-        "required_tests": {
+        "regions": {
           "type": "array",
-          "description": "обязательные тесты группы (их гоняет процесс резерва): активной может быть только нода со свежим успешным результатом, иначе группа на failsafe",
+          "items": {
+            "type": "string"
+          },
+          "description": "country: допустимые регионы."
+        },
+        "exclude_countries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "country: недопустимые страны."
+        },
+        "exclude_regions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "country: недопустимые регионы."
+        },
+        "kinds": {
+          "type": "array",
           "items": {
             "enum": [
-              "gemini",
-              "openai",
-              "anthropic"
+              "residential",
+              "mobile",
+              "hosting",
+              "proxy"
             ]
-          }
+          },
+          "description": "ip_type: допустимые типы IP."
+        }
+      }
+    },
+    "groupChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "country": {
+          "$ref": "#/definitions/groupCheck"
         },
-        "strict_exit_ip": {
-          "type": "boolean",
-          "description": "Строгий выходной IP: страна IP по базе ip-api должна совпадать со страной connectivity, иначе нода не кандидат; домашние и мобильные IP без признака прокси выбираются раньше дата-центров, прокси и IP без сведений."
+        "ip_type": {
+          "$ref": "#/definitions/groupCheck"
         },
-        "heavy_ttl_hours": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Срок годности результата тяжёлого download (успеха и провала), часов."
+        "geo_consistent": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "gemini": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "openai": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "anthropic": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "heavy": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "whitelist": {
+          "$ref": "#/definitions/groupCheck"
         }
       }
     }
@@ -78,452 +98,1450 @@
     "$schema": {
       "type": "string"
     },
-    "box_api": {
+    "api": {
       "type": "object",
-      "description": "API-сервис sing-box 1.14 (services[].type = \"api\")",
       "additionalProperties": false,
       "properties": {
         "url": {
-          "type": "string"
+          "type": "string",
+          "description": "Адрес API-сервиса sing-box.",
+          "default": "http://127.0.0.1:9090"
         },
         "secret": {
-          "type": "string"
+          "type": "string",
+          "description": "Секрет API-сервиса sing-box."
         },
         "timeout": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Тайм-аут запроса.",
+          "default": "5s"
         }
-      }
+      },
+      "description": "API-сервис sing-box (services[].type = api)."
     },
-    "testing_groups": {
+    "subscriptions": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "selector"
-        ],
         "properties": {
           "tag": {
-            "type": "string"
+            "type": "string",
+            "description": "Имя провайдера: входит в теги нод, уникально."
           },
-          "connection": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Использовать подписку.",
+            "default": true
+          },
+          "branch": {
+            "enum": [
+              "router",
+              "clients",
+              "both"
+            ],
+            "default": "router",
+            "description": "Ветвь сборки: router — nodes.json роутера, clients — whnodes.json клиентов, both — обе."
+          },
+          "type": {
+            "enum": [
+              "url",
+              "file",
+              "folder",
+              "inline"
+            ],
+            "default": "url",
+            "description": "Источник: url (или happ://crypt…), file, folder (каталог AWG), inline (свои outbound-ы)."
+          },
+          "url": {
+            "type": "string",
+            "description": "URL подписки, share-ссылка или happ://crypt…"
+          },
+          "file": {
+            "type": "string",
+            "description": "Локальный файл подписки (относительно config.json)."
+          },
+          "path": {
+            "type": "string",
+            "description": "folder: каталог с конфигами (относительно config.json)."
+          },
+          "format": {
+            "type": "string",
+            "description": "folder: формат файлов, например awg."
+          },
+          "ext": {
+            "type": "string",
+            "description": "folder: расширение файлов, например .conf."
+          },
+          "user_agent": {
+            "type": "string",
+            "description": "User-Agent HTTP-загрузки: пусто — Safari, curl, clashmeta или свой."
+          },
+          "happ_headers": {
             "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "type": {
-                "enum": [
-                  "socks5"
-                ]
-              },
-              "host": {
-                "type": "string"
-              },
-              "port": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 65535
-              },
-              "username": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "password": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "happ://: заголовки поверх набора Happ по умолчанию."
+          },
+          "send_device": {
+            "type": "boolean",
+            "description": "url: отправлять HWID и описание устройства.",
+            "default": false
+          },
+          "exclude_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Не брать ноды, в имени которых есть подстрока."
+          },
+          "outbounds": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "inline: outbound-ы sing-box."
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      },
+      "description": "Источники нод."
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "service": {
+              "type": "string",
+              "description": "Сервис определения выходного IP и страны (адрес и разбор ответа встроены).",
+              "default": "cloudflare"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "10s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля теста для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
               }
             }
           },
-          "selector": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "group"
-            ],
-            "properties": {
-              "group": {
+          "description": "Соединение через ноду; заодно измеряет страну выхода."
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Адрес замера TTFB."
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "10s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля теста для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Задержка до первого байта."
+        },
+        "jitter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Адрес замера."
+            },
+            "samples": {
+              "type": "integer",
+              "description": "Число замеров.",
+              "default": 5,
+              "minimum": 1
+            },
+            "interval": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Пауза между замерами.",
+              "default": "200ms"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "10s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля теста для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Разброс задержки и потери."
+        },
+        "download": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Адрес закачки."
+            },
+            "duration": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Предел длительности закачки.",
+              "default": "20s"
+            },
+            "window_mb": {
+              "type": "number",
+              "description": "Окно для оценки троттлинга, МБ.",
+              "default": 2,
+              "minimum": 0
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "10s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля теста для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Скорость и троттлинг."
+        },
+        "reachability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "urls": {
+              "type": "array",
+              "items": {
                 "type": "string"
               },
-              "exclude": {
-                "type": "array",
-                "items": {
-                  "type": "string"
+              "description": "Адреса проверки доступности."
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "8s"
+            },
+            "workers": {
+              "type": "integer",
+              "description": "Параллельных запросов.",
+              "default": 8,
+              "minimum": 1
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля теста для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Доступность набора сайтов."
+        },
+        "for_region": {
+          "type": "object",
+          "description": "Поля тестов для нод с выходом в регионе: регион → тест → поля.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "Замеры рейтинга при каждом проходе ноды."
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "country": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Страна выхода по замеру соединения."
+        },
+        "ip_type": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности сведений.",
+              "default": "24h"
+            },
+            "url": {
+              "type": "string",
+              "description": "Адрес batch-запроса ip-api.",
+              "default": "http://ip-api.com/batch"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут запроса.",
+              "default": "10s"
+            },
+            "via_tester": {
+              "type": "boolean",
+              "description": "Запрашивать через SOCKS тестера на лучшей ноде, иначе напрямую.",
+              "default": true
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Тип выходного IP по ip-api: домашний, мобильный, дата-центр, прокси."
+        },
+        "geo_consistent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Страна IP по базе совпадает с измеренной."
+        },
+        "gemini": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "attempts": {
+              "type": "integer",
+              "description": "Попыток.",
+              "default": 3,
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут попытки.",
+              "default": "20s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Доступ к Google AI (Gemini)."
+        },
+        "openai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "attempts": {
+              "type": "integer",
+              "description": "Попыток.",
+              "default": 3,
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут попытки.",
+              "default": "15s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Доступ к OpenAI."
+        },
+        "anthropic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "attempts": {
+              "type": "integer",
+              "description": "Попыток.",
+              "default": 3,
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут попытки.",
+              "default": "15s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Доступ к Claude."
+        },
+        "heavy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "6h"
+            },
+            "url": {
+              "type": "string",
+              "description": "Адрес тяжёлой закачки."
+            },
+            "duration": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Предел длительности.",
+              "default": "30s"
+            },
+            "window_mb": {
+              "type": "number",
+              "description": "Окно оценки, МБ.",
+              "default": 2,
+              "minimum": 0
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Тяжёлая закачка кандидатов резерва."
+        },
+        "whitelist": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "24h"
+            },
+            "cidr": {
+              "type": "string",
+              "description": "Набор адресов белого списка.",
+              "default": "russia-mobile-whitelist-cidr.srs"
+            },
+            "domains": {
+              "type": "string",
+              "description": "Набор доменов белого списка.",
+              "default": "russia-mobile-whitelist-domains.srs"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Вхождение сервера ноды в белые списки (пока не выполняется)."
+        }
+      },
+      "description": "Проверки с вердиктом и сроком годности; значения по умолчанию для групп."
+    },
+    "regions": {
+      "type": "object",
+      "description": "Регион → список стран. Встроенные eu, us, ru, other можно переопределить.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2}$"
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Группы sing-box {tag}-auto-out и их политика. По умолчанию — одна группа all.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Тег группы: латиница в нижнем регистре, цифры, _.",
+            "pattern": "^[a-z0-9][a-z0-9_]*$"
+          },
+          "strict": {
+            "type": "boolean",
+            "description": "Без кандидата — block-out, а не failsafe-out.",
+            "default": false
+          },
+          "direct_fallback": {
+            "type": "boolean",
+            "description": "Добавить direct-out; у строгой группы — запасной выход вместо block-out.",
+            "default": false
+          },
+          "in_global": {
+            "type": "boolean",
+            "description": "Входит в global-auto-out.",
+            "default": true
+          },
+          "reserve": {
+            "type": "integer",
+            "description": "Кандидатов в резерве (по умолчанию selection.reserve).",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "require": {
+            "$ref": "#/definitions/groupChecks",
+            "description": "Обязательные проверки: без свежего успеха нода не кандидат."
+          },
+          "prefer": {
+            "$ref": "#/definitions/groupChecks",
+            "description": "Желательные проверки: успехи поднимают ноду в очереди."
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      }
+    },
+    "rating": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "type": "number",
+          "description": "Сглаживание EWMA рейтинга.",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "flap_lambda": {
+          "type": "number",
+          "description": "Штраф за флапы.",
+          "default": 0.5,
+          "minimum": 0
+        },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "floor": {
+              "type": "number",
+              "description": "Доступность, ниже которой рейтинг 0.",
+              "default": 0.7,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "full": {
+              "type": "number",
+              "description": "Доступность полного рейтинга.",
+              "default": 0.9,
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "latency": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "good": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+                },
+                "bad": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+                }
+              },
+              "description": "TTFB: хорошо и плохо (\"150ms\", \"1.5s\")."
+            },
+            "jitter": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "good": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+                },
+                "bad": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Длительность: \"250ms\", \"5s\", \"1h30m\", \"30d\"."
+                }
+              },
+              "description": "Джиттер: хорошо и плохо (\"15ms\", \"250ms\")."
+            },
+            "loss_gate_percent": {
+              "type": "number",
+              "description": "Потери, при которых нода не проходит gate, %.",
+              "default": 50,
+              "minimum": 0,
+              "maximum": 100
+            },
+            "download_mbps": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "description": "Минимум, Мбит/с.",
+                  "default": 2
+                },
+                "target": {
+                  "type": "number",
+                  "description": "Цель, Мбит/с.",
+                  "default": 25
+                }
+              }
+            },
+            "throttle": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "bad": {
+                  "type": "number",
+                  "description": "Плохо.",
+                  "default": 0.3
+                },
+                "good": {
+                  "type": "number",
+                  "description": "Хорошо.",
+                  "default": 0.9
+                }
+              }
+            },
+            "variation": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "good": {
+                  "type": "number",
+                  "description": "Хорошо.",
+                  "default": 0.1
+                },
+                "bad": {
+                  "type": "number",
+                  "description": "Плохо.",
+                  "default": 0.8
                 }
               }
             }
           }
-        }
-      }
-    },
-    "run": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "default": {
-          "$ref": "#/definitions/runParams"
-        },
-        "testing_groups_specifics": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "testing_group_tag": {
-                "type": "string"
-              },
-              "default_overrides": {
-                "$ref": "#/definitions/runParams"
-              }
-            }
-          }
-        },
-        "node_groups_specifics": {
-          "type": "array",
-          "description": "переопределения тестов по группам нод ({group}-auto-out); у ноды в нескольких группах наборы тестов объединяются",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "group": {
-                "type": "string"
-              },
-              "default_overrides": {
-                "$ref": "#/definitions/runParams"
-              }
-            }
-          }
-        }
-      }
-    },
-    "tests": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object"
-      }
-    },
-    "report": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "console": {
-          "type": "boolean"
-        }
-      }
-    },
-    "scoring": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "alpha": {
-          "type": "number"
-        },
-        "flap_lambda": {
-          "type": "number"
-        },
-        "avail_floor": {
-          "type": "number"
-        },
-        "avail_full": {
-          "type": "number"
-        },
-        "thresholds": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "number"
-          }
         },
         "weights": {
           "type": "object",
-          "additionalProperties": {
-            "type": "number"
+          "additionalProperties": false,
+          "properties": {
+            "reliability": {
+              "type": "number",
+              "description": "Вес reliability.",
+              "default": 0.35,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "consistency": {
+              "type": "number",
+              "description": "Вес consistency.",
+              "default": 0.2,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "throttle": {
+              "type": "number",
+              "description": "Вес throttle.",
+              "default": 0.15,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "jitter": {
+              "type": "number",
+              "description": "Вес jitter.",
+              "default": 0.1,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "latency": {
+              "type": "number",
+              "description": "Вес latency.",
+              "default": 0.1,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "throughput": {
+              "type": "number",
+              "description": "Вес throughput.",
+              "default": 0.1,
+              "minimum": 0,
+              "maximum": 1
+            }
           }
         }
-      }
+      },
+      "description": "Рейтинг нод."
     },
-    "switching": {
+    "selection": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
+        "reserve": {
+          "type": "integer",
+          "description": "Кандидатов в резерве группы.",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 20
         },
         "quality_margin": {
-          "type": "number"
+          "type": "number",
+          "description": "Насколько кандидат должен быть лучше для замены по качеству.",
+          "default": 15,
+          "minimum": 0
         },
         "confirm_cycles": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Сколько проходов подряд подтверждать замену по качеству.",
+          "default": 2,
+          "minimum": 1
         },
         "comfort_floor": {
-          "type": "number"
+          "type": "number",
+          "description": "Рейтинг, выше которого активную ноду не меняют по качеству.",
+          "default": 50,
+          "minimum": 0,
+          "maximum": 100
         },
         "cooldown": {
-          "type": "number"
-        },
-        "exclude_test_groups": {
-          "type": "boolean"
-        },
-        "freeze_groups": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Пауза между переключениями группы.",
+          "default": "5m"
         },
         "rotation": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "enabled": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Плановая ротация.",
+              "default": true
             },
             "interval": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Интервал ротации.",
+              "default": "3h"
             },
             "jitter": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Случайный сдвиг срока.",
+              "default": "15m"
             },
             "align": {
               "type": "boolean",
-              "description": "Общие сроки ротации для всех групп (сетка с шагом interval, jitter общий на слот): один прогон тестера обслуживает все группы. false — у каждой группы свой срок."
+              "description": "Сроки всех групп на общей сетке.",
+              "default": true
             },
             "min_dwell": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Минимальное время на ноде.",
+              "default": "30m"
             },
             "min_score": {
-              "type": "number"
+              "type": "number",
+              "description": "Минимальный рейтинг кандидата ротации.",
+              "default": 55,
+              "minimum": 0,
+              "maximum": 100
             },
             "avoid_recent": {
-              "type": "integer"
+              "type": "integer",
+              "description": "Не возвращаться к последним N нодам.",
+              "default": 2,
+              "minimum": 0
             },
-            "load_balance": {
+            "balance": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "enabled": {
-                  "type": "boolean"
+                "window": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Окно учёта трафика.",
+                  "default": "24h"
                 },
-                "window_hours": {
-                  "type": "number"
+                "provider": {
+                  "type": "number",
+                  "description": "Сила оси провайдера.",
+                  "default": 1.0,
+                  "minimum": 0,
+                  "maximum": 1
                 },
-                "provider_strength": {
-                  "type": "number"
+                "country": {
+                  "type": "number",
+                  "description": "Сила оси страны.",
+                  "default": 1.0,
+                  "minimum": 0,
+                  "maximum": 1
                 },
-                "country_strength": {
-                  "type": "number"
-                },
-                "protocol_strength": {
-                  "type": "number"
+                "protocol": {
+                  "type": "number",
+                  "description": "Сила оси протокола.",
+                  "default": 0.3,
+                  "minimum": 0,
+                  "maximum": 1
                 }
-              }
+              },
+              "description": "Балансировка по трафику; присутствие раздела включает её."
+            }
+          }
+        },
+        "quarantine": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "after_skips": {
+              "type": "integer",
+              "description": "Карантин, когда пропуск дорос до N проходов.",
+              "default": 32,
+              "minimum": 1
+            },
+            "duration": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Длительность карантина.",
+              "default": "72h"
+            },
+            "low_score": {
+              "type": "number",
+              "description": "Карантин и для слабых нод с рейтингом ниже (0 — нет).",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 100
             }
           }
         }
-      }
+      },
+      "description": "Выбор активной ноды: резерв, ротация, пауза и карантин."
+    },
+    "tester": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "socks": {
+          "type": "string",
+          "description": "SOCKS inbound тестера в sing-box.",
+          "default": "socks5h://127.0.0.1:2080",
+          "pattern": "^socks5h?://([^@/]+@)?[^:/]+:[0-9]+$"
+        },
+        "selector": {
+          "type": "string",
+          "description": "Селектор тестера в sing-box.",
+          "default": "nodes-tester"
+        },
+        "follow_rotation": {
+          "type": "boolean",
+          "description": "Проход к сроку ротации; false — проходы подряд с паузой pause.",
+          "default": true
+        },
+        "pause": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Пауза между проходами.",
+          "default": "0s"
+        },
+        "switch_delay": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Пауза после переключения селектора тестера.",
+          "default": "1s"
+        },
+        "request_timeout": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Тайм-аут запроса теста.",
+          "default": "10s"
+        },
+        "host_gap": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Не чаще к одному хосту с другим портом или протоколом.",
+          "default": "2m"
+        }
+      },
+      "description": "Как тестер ходит через sing-box."
     },
     "monitor": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
         "interval": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Тик монитора.",
+          "default": "20s"
         },
         "reassert_drift": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Вернуть выбор селекторов, если его сменили в обход.",
+          "default": true
         },
-        "silence_window": {
-          "type": "number"
+        "silence": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Тишина дольше — внеплановый зонд.",
+          "default": "5m"
         },
         "silence_floor_mb": {
-          "type": "number"
+          "type": "number",
+          "description": "МБ за окно, считающиеся трафиком; 0 — авто.",
+          "default": 0,
+          "minimum": 0
         },
-        "probe_bytes": {
-          "type": "integer"
-        },
-        "probe_min_mbps": {
-          "type": "number"
-        },
-        "probe_timeout": {
-          "type": "number"
-        },
-        "probe_url": {
-          "type": "string"
+        "probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Адрес зонда; пусто — speed.cloudflare.com.",
+              "default": ""
+            },
+            "size_mb": {
+              "type": "number",
+              "description": "Объём зонда, МБ.",
+              "default": 1,
+              "minimum": 0.01
+            },
+            "min_mbps": {
+              "type": "number",
+              "description": "Минимальная скорость, Мбит/с.",
+              "default": 1,
+              "minimum": 0
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут зонда.",
+              "default": "8s"
+            }
+          }
         },
         "fails": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Провалов подряд до аварии.",
+          "default": 2,
+          "minimum": 1
         }
-      }
+      },
+      "description": "Надзор за активными нодами."
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Предел длительности запуска конвейера.",
+          "default": "30m"
+        },
+        "fetch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "every": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Отдельный опрос подписок (0s — только в составе сборки).",
+              "default": "0s"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут загрузки подписки.",
+              "default": "2m"
+            },
+            "retries": {
+              "type": "integer",
+              "description": "Повторов HTTP.",
+              "default": 3,
+              "minimum": 0,
+              "maximum": 10
+            },
+            "proxy": {
+              "type": "string",
+              "description": "Прокси загрузки (например, socks5://127.0.0.1:2080).",
+              "default": ""
+            },
+            "keep_stale": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Держать прошлые ноды упавшей подписки.",
+              "default": "48h"
+            },
+            "min_ratio": {
+              "type": "number",
+              "description": "Нод стало меньше этой доли — raw не перезаписывается.",
+              "default": 0.5,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "happ_keys_url": {
+              "type": "string",
+              "description": "Источник ключей happ://crypt…; пусто — по умолчанию.",
+              "default": ""
+            }
+          },
+          "description": "Загрузка подписок."
+        },
+        "router": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Сборка по расписанию at.",
+              "default": true
+            },
+            "at": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "description": "Время запуска, ЧЧ:ММ."
+            },
+            "exclude_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Не брать outbound-ы этих типов (например, shadowsocksr)."
+            },
+            "exclude_protocols": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Не брать протоколы и транспорты (reality, xhttp, wg…)."
+            },
+            "domain_resolver": {
+              "type": "string",
+              "description": "Тег DNS-сервера для резолва адресов нод.",
+              "default": "bootstrap"
+            },
+            "selector": {
+              "type": "object",
+              "description": "Поля selector-ов групп sing-box (например, interrupt_exist_connections)."
+            },
+            "urltest": {
+              "type": "object",
+              "description": "Поля urltest failsafe-out (url, interval, tolerance, idle_timeout…)."
+            },
+            "rebuild": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "degraded_for": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Группа без кандидатов дольше — повод пересобрать.",
+                  "default": "15m"
+                },
+                "few_candidates_for": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Кандидатов меньше резерва дольше — повод пересобрать.",
+                  "default": "1h"
+                },
+                "gone_share": {
+                  "type": "number",
+                  "description": "Доля ушедших из подписок среди мёртвых нод.",
+                  "default": 0.3,
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "min_interval": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                  "description": "Не чаще.",
+                  "default": "6h"
+                }
+              },
+              "description": "Пересборка по деградации (зарезервировано)."
+            }
+          },
+          "description": "Сборка nodes.json для sing-box роутера."
+        },
+        "clients": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Сборка по расписанию at.",
+              "default": true
+            },
+            "at": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "description": "Время запуска, ЧЧ:ММ."
+            },
+            "exclude_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Не брать outbound-ы этих типов (например, shadowsocksr)."
+            },
+            "exclude_protocols": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Не брать протоколы и транспорты (reality, xhttp, wg…)."
+            },
+            "domain_resolver": {
+              "type": "string",
+              "description": "Тег DNS-сервера для резолва адресов нод.",
+              "default": "bootstrap"
+            },
+            "selector": {
+              "type": "object",
+              "description": "Поля selector-ов групп sing-box (например, interrupt_exist_connections)."
+            },
+            "urltest": {
+              "type": "object",
+              "description": "Поля urltest failsafe-out (url, interval, tolerance, idle_timeout…)."
+            }
+          },
+          "description": "Сборка whnodes.json для клиентских конфигов."
+        }
+      },
+      "description": "Конвейер: загрузка подписок, сборка, расписание."
     },
     "storage": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
+        "path": {
+          "type": "string",
+          "description": "Файл SQLite; относительный — от каталога данных.",
+          "default": "results/stats.db"
         },
-        "db_file": {
-          "type": "string"
-        },
-        "nodes_file": {
-          "type": "string"
-        },
-        "retention_days": {
-          "type": "integer"
-        },
-        "store_results": {
-          "type": "boolean"
+        "retention": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Хранить историю.",
+          "default": "30d"
         },
         "traffic": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "enabled": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Собирать пользовательский трафик.",
+              "default": true
             },
-            "poll_interval": {
-              "type": "number"
+            "poll": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Опрос счётчиков.",
+              "default": "5s"
             },
-            "flush_interval": {
-              "type": "number"
+            "flush": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Запись в БД.",
+              "default": "1m"
             }
           }
         }
-      }
+      },
+      "description": "База данных."
     },
-    "cooldown": {
+    "admin": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Встроенная веб-админка.",
+          "default": true
         },
-        "max_skip": {
+        "listen": {
+          "type": "string",
+          "description": "Адрес прослушивания (в LAN, наружу не выставлять).",
+          "default": "0.0.0.0"
+        },
+        "port": {
           "type": "integer",
+          "description": "Порт.",
+          "default": 8088,
           "minimum": 1,
-          "description": "Потолок паузы в прогонах: после n-го подряд провала gate нода пропускает 2^(n-1) прогонов; когда пропуск дорастает до max_skip — карантин на garbage_hours."
+          "maximum": 65535
         },
-        "garbage_hours": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Длительность карантина в часах (после неё — одна проба; провал → снова карантин). Переживает рестарт."
+        "token": {
+          "type": "string",
+          "description": "Токен администратора; пусто — правка выключена.",
+          "default": ""
         },
-        "low_score": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Карантин слабых нод: рейтинг ниже порога → карантин на garbage_hours (кроме активных и новых, < 3 замеров). 0 — выключено."
+        "public_read": {
+          "type": "boolean",
+          "description": "Просмотр без токена.",
+          "default": true
+        },
+        "refresh": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Обновление данных в браузере.",
+          "default": "10s"
         }
-      }
-    },
-    "singbox_control": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Остановка/запуск sing-box из админки и управление службой killswitch роутера (только OpenWrt).",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "init": { "type": "string", "description": "init-скрипт sing-box." },
-        "stop_flag": { "type": "string", "description": "Флаг «остановлен из админки» (tmpfs); пока он есть, apply-nodes.sh не применяет конфиг." },
-        "killswitch_init": { "type": "string", "description": "init-скрипт службы killswitch роутера." },
-        "killswitch_table": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Таблица inet, которую загружает служба killswitch (для показа состояния)." },
-        "interval": { "type": "number", "exclusiveMinimum": 0 },
-        "down_alert": { "type": "number", "minimum": 0 }
-      }
-    },
-    "ip_info": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Тип выходного IP нод (ASN, дата-центр, мобильная сеть, прокси) по exit_ip из connectivity; запрос с роутера, кэш ttl_days.",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "url": { "type": "string", "description": "Пакетный эндпоинт ip-api.com (бесплатно — только http)." },
-        "via_tester": { "type": "boolean", "description": "Запрос через SOCKS тестера (на лучшей здоровой ноде): DNS-фильтры часто блокируют ip-api.com. При неудаче — напрямую." },
-        "ttl_days": { "type": "number", "minimum": 0 },
-        "timeout": { "type": "number", "exclusiveMinimum": 0 }
-      }
+      },
+      "description": "Веб-админка."
     },
     "notify": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Уведомления в Telegram и/или webhook. Без получателей и при enabled=false не отправляется ничего.",
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "name": { "type": "string", "description": "Подпись роутера в начале сообщения." },
-        "telegram": {
-          "type": "object", "additionalProperties": false,
-          "properties": {
-            "token": { "type": "string", "description": "Токен бота от @BotFather." },
-            "chat_id": { "type": ["string", "integer"], "description": "Получатель: свой id или id группы." }
-          }
-        },
-        "webhook": {
-          "type": "object", "additionalProperties": false,
-          "properties": { "url": { "type": "string", "description": "POST JSON {event, text, ts}." } }
-        },
-        "proxy": { "type": "string", "description": "Прокси для отправки, напр. socks5h://host:port; пусто — напрямую." },
-        "via_tester": { "type": "boolean", "description": "Если напрямую не отправилось — повторить через SOCKS тестера на лучшей здоровой ноде (Telegram с роутера часто режется провайдером)." },
-        "events": {
-          "type": "array", "uniqueItems": true,
-          "items": { "enum": ["switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"] }
-        },
-        "switch_reasons": {
-          "type": "array", "uniqueItems": true,
-          "items": { "enum": ["init", "rotation", "quality", "emergency", "emergency-stuck", "manual"] },
-          "description": "О каких переключениях нод сообщать (событие switch)."
-        },
-        "expiry_days": { "type": "number", "minimum": 0 },
-        "dedupe_minutes": { "type": "number", "minimum": 0 },
-        "max_per_hour": { "type": "integer", "minimum": 1 },
-        "timeout": { "type": "number", "exclusiveMinimum": 0 }
-      }
-    },
-    "dashboard": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Веб-админка/дашборд. enabled — встраивать ли сервер в процесс тестера (тогда доступны write/control-эндпоинты). Отдельный `python -m dashboard` работает независимо (read-only).",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Встраивать HTTP-сервер админки в процесс тестера (доступ к живым Runner/Switcher для управления)."
+          "description": "Отправлять уведомления.",
+          "default": true
         },
-        "host": {
+        "name": {
           "type": "string",
-          "description": "Адрес привязки сокета. Держите LAN-адрес; не выставляйте наружу."
+          "description": "Подпись роутера в начале сообщения.",
+          "default": ""
         },
-        "port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+        "telegram": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "token": {
+              "type": "string",
+              "description": "Токен бота."
+            },
+            "chat_id": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "description": "chat_id получателя."
+            }
+          }
         },
-        "interval": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Период авто-обновления UI, сек."
+        "webhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "POST JSON {event, text, ts}.",
+              "pattern": "^https?://"
+            }
+          }
         },
-        "token": {
+        "proxy": {
           "type": "string",
-          "description": "Shared-токен для write/control (заголовок X-Admin-Token). Пусто = write/control отключены."
+          "description": "Прокси отправки.",
+          "default": ""
         },
-        "read_open": {
+        "via_tester": {
           "type": "boolean",
-          "description": "Разрешить просмотр (read-эндпоинты) без токена."
+          "description": "Не прошло напрямую — повторить через SOCKS тестера.",
+          "default": true
         },
-        "groups_file": {
-          "type": "string",
-          "description": "Файл рецепта сборки для редактора. Относительный путь от config.json; пусто = groups_params.json рядом с dashboard.providers_file."
+        "events": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "switch",
+              "failsafe",
+              "rollback",
+              "pipeline",
+              "subscription",
+              "expiry",
+              "singbox"
+            ]
+          },
+          "description": "События."
         },
-        "providers_file": {
+        "switch_reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "init",
+              "rotation",
+              "quality",
+              "emergency",
+              "emergency-stuck",
+              "manual"
+            ]
+          },
+          "description": "Причины переключений, о которых сообщать.",
+          "default": [
+            "emergency",
+            "emergency-stuck"
+          ]
+        },
+        "expiry_warning": {
           "type": "string",
-          "description": "Подписки для редактора админки — тот же файл, что читает nodes_fetch (напр. config-main/providers.json). Относительный путь — от папки config.json; пусто = providers.json рядом с config.json."
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Предупреждать о конце подписки за.",
+          "default": "3d"
+        },
+        "dedupe": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Не повторять одинаковое сообщение чаще.",
+          "default": "1h"
+        },
+        "max_per_hour": {
+          "type": "integer",
+          "description": "Предел сообщений в час.",
+          "default": 20,
+          "minimum": 1
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Тайм-аут отправки.",
+          "default": "10s"
         }
-      }
+      },
+      "description": "Уведомления Telegram и webhook."
+    },
+    "singbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "init": {
+          "type": "string",
+          "description": "init-скрипт sing-box.",
+          "default": "/etc/init.d/sing-box"
+        },
+        "killswitch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "init": {
+              "type": "string",
+              "description": "init-скрипт kill switch.",
+              "default": "/etc/init.d/killswitch"
+            },
+            "table": {
+              "type": "string",
+              "description": "Таблица nftables inet.",
+              "default": "killswitch"
+            }
+          }
+        },
+        "watch": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Период сторожа.",
+          "default": "5s"
+        },
+        "down_alert": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Уведомить, если sing-box лежит дольше.",
+          "default": "1m"
+        }
+      },
+      "description": "Остановка sing-box и kill switch из админки."
     }
   }
 }
