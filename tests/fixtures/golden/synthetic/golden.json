@@ -399,7 +399,8 @@
         "BETA-trojan|tls-out [a33a9ffd.4aab053c]",
         "BETA-vmess|ws|tls-out [f3bf51fa.f2a4fc94]",
         "AWG-wg-out [cdb48317.4975cbc2]",
-        "Custom-vless|reality-out [35f8dcd4.6e35fde7]"
+        "Custom-vless|reality-out [35f8dcd4.6e35fde7]",
+        "failsafe-out"
       ],
       "interrupt_exist_connections": true
     },

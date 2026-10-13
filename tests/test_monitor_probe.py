@@ -37,6 +37,87 @@ def probe_with(results):
     return mon, sw, calls
 
 
+class FailsafeWatchTest(unittest.TestCase):
+    """failsafe-out групп без кандидатов наблюдается как нода: тишина — зонд, провалы — direct-out."""
+
+    def setUp(self):
+        self.sw = FakeSwitcher()
+        self.sw.fallback = {"eu": "failsafe-out", "ai": "block-out"}
+        self.sw.fallback_regions = lambda: list(self.sw.fallback.items())
+        self.verdicts = []
+
+        def verdict(region, alive):
+            self.verdicts.append((region, alive))
+            self.sw.fallback[region] = "failsafe-out" if alive else "direct-out"
+        self.sw.failsafe_verdict = verdict
+        self.results, self.calls = [], []
+
+        def prober(region, node):
+            self.calls.append(node)
+            return self.results.pop(0)
+        self.mon = ProductionMonitor(cfg=MonitorConfig(fails=2, silence=300), api=None,
+                                     switcher=self.sw, prober=prober, traffic=dict)
+        self.proxies = {"failsafe-out": {"now": "P-vless-out [aaaa0001.00000001]"}}
+
+    def _tick(self, now, traffic=None):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.mon._watch_failsafe(self.proxies, traffic or {}, now)
+
+    def test_dead_failsafe_goes_direct_and_returns(self):
+        self._tick(0)                                   # начало тишины
+        self.results += [BREAK, BREAK]
+        self._tick(301)                                 # зонд + повтор: страйк 1
+        self.assertEqual(self.calls, ["failsafe-out", "failsafe-out"])
+        self.assertEqual(self.verdicts, [])
+        self.results += [BREAK, BREAK]
+        self._tick(602)                                 # страйк 2 — мёртв
+        self.assertEqual(self.verdicts, [("eu", False)])  # block-out группы не трогаем
+        self.results += [GOOD]
+        self._tick(903)                                 # на direct-out — зонд дальше, ожил
+        self.assertEqual(self.verdicts, [("eu", False), ("eu", True)])
+
+    def test_traffic_through_failsafe_leaf_means_alive(self):
+        self._tick(0)
+        self._tick(301, {"aaaa0001.00000001": 10 ** 9})
+        self.assertEqual(self.calls, [])
+        self.sw.fallback = {"ai": "block-out"}          # зондировать нечего
+        self._tick(10 ** 4)
+        self.assertEqual(self.calls, [])
+        self.assertIsNone(self.mon._failsafe)
+
+
+class FailsafeVerdictTest(unittest.TestCase):
+    """Вердикт зонда меняет запасной член только у нестрогой группы с direct_fallback."""
+
+    def _switcher(self, **group):
+        from nodes_tester.config import GroupConfig, SelectionConfig
+        from nodes_tester.switcher import Switcher
+        selected = []
+        api = type("Api", (), {"select": lambda s, sel, member: selected.append((sel, member))})()
+        sw = Switcher(SelectionConfig(), api, None, "nodes-tester", [GroupConfig("eu", **group)])
+        sw.state = {"eu": {"active": None, "failsafe": True, "fallback": "failsafe-out"}}
+        return sw, selected
+
+    def test_direct_and_back(self):
+        sw, selected = self._switcher(direct_fallback=True)
+        events = []
+        sw.on_activation = lambda g, reason, node, prev: events.append((reason, node, prev))
+        with contextlib.redirect_stdout(io.StringIO()):
+            sw.failsafe_verdict("eu", alive=False)
+            sw.failsafe_verdict("eu", alive=False)          # уже на direct — ничего
+            sw.failsafe_verdict("eu", alive=True)
+        self.assertEqual(selected, [("eu-auto-out", "direct-out"), ("eu-auto-out", "failsafe-out")])
+        self.assertEqual(events, [("failsafe", "direct-out", "failsafe-out"),
+                                  ("failsafe", "failsafe-out", "direct-out")])
+
+    def test_without_direct_fallback_or_strict_nothing_changes(self):
+        for group in ({}, {"strict": True, "direct_fallback": True}):
+            with self.subTest(group=group):
+                sw, selected = self._switcher(**group)
+                sw.failsafe_verdict("eu", alive=False)
+                self.assertEqual(selected, [])
+
+
 class MonitorProbeRetryTest(unittest.TestCase):
     def _probe(self, mon, st):
         out = io.StringIO()

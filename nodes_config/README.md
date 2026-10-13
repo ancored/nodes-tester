@@ -102,7 +102,8 @@ selector `{tag}-auto-out`, в котором **все** ноды; какую а�
 - `block-out` и `direct-out` берутся из базового конфига sing-box (`base.json`), например
   `{"type": "block", "tag": "block-out"}`.
 - `global-auto-out` — selector групп с `in_global`.
-- `nodes-tester` — плоский selector всех нод для тестера.
+- `nodes-tester` — плоский selector всех нод для тестера и `failsafe-out`: через него монитор
+  зондирует запасной выход групп.
 
 Поля `selector` и `urltest` ветви добавляются ко всем selector-ам и к `failsafe-out`.
 

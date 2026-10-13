@@ -292,7 +292,9 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 `prefer`, затем — по рейтингу.
 
 Нет кандидатов: нестрогая группа переключается на общий `failsafe-out` (urltest по всем нодам), строгая —
-на `block-out`, а при `direct_fallback` — на `direct-out`. `block-out` берётся из `base.json` sing-box
+на `block-out`, а при `direct_fallback` — на `direct-out`. `failsafe-out` монитор наблюдает как ноду:
+провал зонда `monitor.fails` раз подряд — нестрогая группа с `direct_fallback` уходит на `direct-out`, а
+когда `failsafe-out` снова отвечает, возвращается на него. `block-out` берётся из `base.json` sing-box
 (`{"type": "block", "tag": "block-out"}`). Без раздела `groups` создаётся одна группа `all`.
 
 ## rating

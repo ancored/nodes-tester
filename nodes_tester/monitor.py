@@ -28,6 +28,8 @@ from __future__ import annotations
 import threading
 import time
 
+from nodes_config.groups import DIRECT, FAILSAFE
+
 from .api import ApiError
 from .identity import parse_node
 
@@ -52,6 +54,8 @@ class ProductionMonitor:
         self._state: dict[str, dict] = {}
         # Счётчики traffic() на прошлом тике — для дельты между тиками.
         self._last_bytes: dict[str, int] | None = None
+        # Наблюдение за failsafe-out (общее для групп без кандидатов); None — не нужно.
+        self._failsafe: dict | None = None
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -119,6 +123,49 @@ class ProductionMonitor:
                 continue  # ещё недостаточно тихо
 
             self._probe_region(region, node, st, now)
+
+        self._watch_failsafe(proxies, node_bytes, now)
+
+    def _watch_failsafe(self, proxies: dict, node_bytes: dict, now: float) -> None:
+        """failsafe-out групп без кандидатов наблюдается как нода: трафик через выбранную им
+        ноду — жив, тишина дольше silence — один зонд через тестовый селектор на все группы.
+        Провал fails раз подряд — группы с direct_fallback уходят на direct-out; ответ —
+        возвращаются на failsafe-out."""
+        groups = {r: t for r, t in self.sw.fallback_regions() if t in (FAILSAFE, DIRECT)}
+        if not groups or FAILSAFE not in proxies:
+            self._failsafe = None
+            return
+        st = self._failsafe = self._failsafe or {"quiet_since": now, "quiet_bytes": 0, "strikes": 0}
+        if FAILSAFE in groups.values():
+            leaf = proxies[FAILSAFE].get("now") or ""
+            st["quiet_bytes"] += node_bytes.get(parse_node(leaf).node_id or leaf, 0)
+            if st["quiet_bytes"] >= self.cfg.silence_floor_bytes:
+                st.update(quiet_since=now, quiet_bytes=0, strikes=0)
+                return
+        if now - st["quiet_since"] < self.cfg.silence:
+            return
+        st.update(quiet_since=now, quiet_bytes=0)
+        region = next(iter(groups))
+        try:
+            ok, mbps, inconclusive, error = self.prober(region, FAILSAFE)
+            if not ok and not inconclusive:          # одиночный обрыв — повтор, как у ноды
+                ok, mbps, inconclusive, error = self.prober(region, FAILSAFE)
+        except ApiError:
+            return
+        if inconclusive or (ok and mbps >= self.cfg.probe_min_mbps):
+            st["strikes"] = 0
+            for region, target in groups.items():
+                if target == DIRECT:
+                    self.sw.failsafe_verdict(region, alive=True)
+            return
+        st["strikes"] += 1
+        print(f"  [monitor] зонд failsafe-out провален ({error or f'{mbps:.2f} Мбит/с'}) "
+              f"{st['strikes']}/{self.cfg.fails}")
+        if st["strikes"] >= self.cfg.fails:
+            st["strikes"] = 0
+            for region, target in groups.items():
+                if target == FAILSAFE:
+                    self.sw.failsafe_verdict(region, alive=False)
 
     def _probe_region(self, region: str, node: str, st: dict, now: float) -> None:
         """Внеплановый зонд активной ноды: ~1 МБ через socks. Провал → страйк/emergency."""

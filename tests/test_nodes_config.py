@@ -91,7 +91,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(by_tag["ai-auto-out"]["default"], "block-out")
         self.assertEqual(by_tag["us-auto-out"]["outbounds"][:2], ["failsafe-out", "direct-out"])
         self.assertEqual(by_tag["global-auto-out"]["outbounds"], ["eu-auto-out", "us-auto-out"])
-        self.assertEqual(by_tag["nodes-tester"]["outbounds"], nodes)
+        self.assertEqual(by_tag["nodes-tester"]["outbounds"], nodes + ["failsafe-out"])   # зонд монитора
         self.assertEqual(by_tag["failsafe-out"]["outbounds"], nodes)
 
     def test_strict_with_direct_fallback_defaults_to_direct(self):

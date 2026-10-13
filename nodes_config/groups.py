@@ -10,7 +10,7 @@
   `direct_fallback: true` добавляет `direct-out` — крайний случай; у строгой группы он
   же стоит по умолчанию вместо block.
 `global-auto-out` — selector групп с `in_global`; `nodes-tester` — плоский selector всех
-нод для тестера.
+нод для тестера и `failsafe-out`: через него монитор зондирует запасной выход групп.
 
 Клиенты (whnodes.json): selector `global-auto-out` со всеми нодами и urltest
 `failsafe-out` по умолчанию — клиентские конфиги ссылаются только на global-auto-out.
@@ -45,9 +45,11 @@ def router_groups(nodes, groups, selector=None, urltest=None):
     top = []
     if in_global:
         top.append(_selector('global-auto-out', in_global, in_global[0], selector))
+    failsafe = any(not g.strict for g in groups)
     if nodes:
-        out.append(_selector('nodes-tester', list(nodes), nodes[0], selector))
-    if any(not g.strict for g in groups):
+        out.append(_selector('nodes-tester', list(nodes) + ([FAILSAFE] if failsafe else []),
+                             nodes[0], selector))
+    if failsafe:
         # urltest без членов sing-box не принимает: без нод проверять нечего — direct.
         out.append(_urltest(FAILSAFE, list(nodes) or [DIRECT], urltest))
     return top + out

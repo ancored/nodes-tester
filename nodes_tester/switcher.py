@@ -105,6 +105,37 @@ class Switcher:
         with self._lock:
             return [r for r, st in self.state.items() if st.get("active")]
 
+    def fallback_regions(self) -> list[tuple[str, str]]:
+        """Группы на запасном выходе (кандидатов нет): (группа, выбранный запасной член)."""
+        with self._lock:
+            return [(r, st.get("fallback") or self.fallback(r)) for r, st in self.state.items()
+                    if st.get("failsafe") and not st.get("active")]
+
+    def failsafe_verdict(self, region: str, alive: bool) -> None:
+        """Зонд failsafe-out нестрогой группы с direct_fallback: мёртв — группа на direct-out,
+        ожил — обратно на failsafe-out. У прочих групп запасной выход не меняется."""
+        g = self._groups.get(region)
+        if g is None or g.strict or not g.direct_fallback:
+            return
+        with self._lock:
+            st = self.state.get(region)
+            if not st or not st.get("failsafe") or st.get("active"):
+                return
+            target = FAILSAFE if alive else DIRECT
+            if (st.get("fallback") or FAILSAFE) == target:
+                return
+            try:
+                self.api.select(f"{region}-auto-out", target)
+            except ApiError as exc:
+                print(f"  [switch] {region}: не удалось переключить на {target}: {exc}")
+                return
+            prev = st.get("fallback") or FAILSAFE
+            st["fallback"] = target
+            self._persist()
+        print(f"  [switch] {region}: " + ("failsafe-out снова отвечает — группа на failsafe-out" if alive
+                                          else "failsafe-out не отвечает — группа на direct-out"))
+        self._emit(region, "failsafe", target, prev)
+
     def active_node(self, region: str) -> "str | None":
         with self._lock:
             st = self.state.get(region)
@@ -321,6 +352,7 @@ class Switcher:
         prev = st.get("active")
         st["active"] = None
         st["failsafe"] = True
+        st["fallback"] = target
         self.board.set_active(region, None)
         checks = self.board.requirements(region)
         print(f"  [switch] {region}: кандидатов нет"
@@ -415,6 +447,7 @@ class Switcher:
         st["quality_count"] = 0
         st.pop("emg_stuck", None)           # переключились — эпизод emergency закрыт
         st.pop("failsafe", None)
+        st.pop("fallback", None)
         st["rotate_deadline"] = self._next_deadline(now)
         recent = [node] + [n for n in st.get("recent", []) if n != node]
         st["recent"] = recent[:10]
