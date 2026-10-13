@@ -18,7 +18,7 @@ NT_RAW=https://raw.githubusercontent.com/ancored/nodes-tester/master
 NT_FEED=https://ancored.github.io/nodes-tester/packages.adb
 SB_DIR=/etc/sing-box
 NT_DIR=/etc/nodes-tester
-NODES=/etc/sing-box-subscribe/nodes.json
+NODES=/opt/nodes-tester/nodes.json        # data_dir пакета по умолчанию
 SUB_URL="${1:-}"
 
 log() { echo "[install] $*"; }
@@ -131,6 +131,8 @@ base = {
     "outbounds": [
         {"type": "direct", "tag": "direct-out"},
         {"type": "direct", "tag": "direct-lan", "bind_interface": lan_dev},
+        # строгая группа без подходящей ноды переключается сюда
+        {"type": "block", "tag": "block-out"},
     ],
     "route": route,
     "services": [{"type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090,
@@ -162,15 +164,19 @@ sing-box check -c "$SB_DIR/config.json"
 umask 022
 
 # --- конфиг тестера ------------------------------------------------------------
-python3 - "$NT_DIR/config.json" "$SECRET" "$LAN_IP" <<'EOF'
-import json, sys
-path, secret, host = sys.argv[1:]
+# Подписки из примера — заглушки: оставляем только переданную в аргументе.
+python3 - "$NT_DIR/config.json" "$SECRET" "$LAN_IP" "$SUB_URL" <<'EOF'
+import json, os, sys
+path, secret, host, sub_url = sys.argv[1:]
 with open(path, encoding="utf-8") as f:
     cfg = json.load(f)
-cfg["box_api"]["secret"] = secret
-cfg["dashboard"].update(enabled=True, host=host)
-with open(path, "w", encoding="utf-8") as f:
+cfg["api"]["secret"] = secret
+cfg["admin"].update(enabled=True, listen=host)
+cfg["subscriptions"] = [{"tag": "SUB", "url": sub_url}] if sub_url else []
+with open(path + ".tmp", "w", encoding="utf-8") as f:
     json.dump(cfg, f, ensure_ascii=False, indent=2)
+os.chmod(path + ".tmp", 0o600)
+os.replace(path + ".tmp", path)
 EOF
 
 /etc/init.d/sing-box enable
@@ -195,16 +201,11 @@ uci commit nodes-tester
 /etc/init.d/nodes-tester start
 
 if [ -n "$SUB_URL" ]; then
-	python3 - "$NT_DIR/config-main/providers.json" "$SUB_URL" <<'EOF'
-import json, sys
-with open(sys.argv[1], "w", encoding="utf-8") as f:
-    json.dump({"subscribes": [{"tag": "SUB", "url": sys.argv[2]}]}, f, indent=2)
-EOF
 	log "сборка нод из подписки"
 	nodes-tester pipeline router || log "конвейер не прошёл — подписку проверьте в админке"
 fi
 
-TOKEN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dashboard"]["token"])' "$NT_DIR/config.json")"
+TOKEN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["admin"]["token"])' "$NT_DIR/config.json")"
 log "готово"
 echo "  админка: http://$LAN_IP:8088/"
 echo "  токен:   $TOKEN"

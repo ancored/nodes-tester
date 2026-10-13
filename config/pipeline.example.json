@@ -1,8 +1,0 @@
-{
-  "version": 1,
-  "jobs": {
-    "router": {"enabled": false, "times": ["03:00"]},
-    "clients": {"enabled": false, "times": []}
-  },
-  "timeout": 1800
-}

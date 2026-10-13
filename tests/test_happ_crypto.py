@@ -132,7 +132,7 @@ class HappKeysTest(unittest.TestCase):
             happ_keys.parse("<html>not found</html>")
 
     def test_default_path_next_to_device(self):
-        path = happ_keys.default_path(os.path.join("etc", "nodes-tester", "config-main", "providers.json"))
+        path = happ_keys.default_path(os.path.join("etc", "nodes-tester", "config.json"))
         self.assertEqual(path, os.path.abspath(os.path.join("etc", "nodes-tester", "happ-keys.json")))
 
     def test_download_and_refresh_policy(self):

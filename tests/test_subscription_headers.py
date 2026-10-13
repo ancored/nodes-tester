@@ -44,11 +44,9 @@ class DeviceTest(unittest.TestCase):
         self.assertEqual(len(first), 16)
         self.assertEqual(device.load(path, log=lambda m: None)["hwid"], first)
 
-    def test_default_path_shared_by_sets(self):
-        main = os.path.join(self.tmp, "config-main", "providers.json")
-        wh = os.path.join(self.tmp, "config-wh", "providers.json")
-        self.assertEqual(device.default_path(main), device.default_path(wh))
-        self.assertEqual(device.default_path(main), os.path.join(self.tmp, "device.json"))
+    def test_default_path_next_to_config(self):
+        config = os.path.join(self.tmp, "config.json")
+        self.assertEqual(device.default_path(config), os.path.join(self.tmp, "device.json"))
 
 
 def _resp(status, body=LINK, headers=None):

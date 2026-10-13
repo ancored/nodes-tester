@@ -106,7 +106,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить не
     <h2>Конвейер обновления</h2>
     <p class="help-text">Режим «Роутер» загружает подписки, собирает ноды и правила, затем применяет конфигурацию к роутеру. Режим «Клиенты» собирает отдельные клиентские конфигурации. Проверка создаёт промежуточные файлы и может скачивать подписки, но не применяет их.</p>
     <p v-if="!auth.verified" class="notice">Войдите с токеном администратора, чтобы видеть журнал и управлять конвейером.</p>
-    <p v-else-if="!can('pipeline')" class="notice">Управление недоступно: нужен работающий тестер с pipeline.json и команда nodes-tester в PATH.</p>
+    <p v-else-if="!can('pipeline')" class="notice">Управление недоступно: нужен работающий тестер с токеном админки и команда nodes-tester в PATH.</p>
     <template v-if="can('pipeline')">
       <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
       <p v-if="pollError" class="notice bad" role="alert">{{ pollError }}. Опрос повторится автоматически.</p>

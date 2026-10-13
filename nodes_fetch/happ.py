@@ -17,7 +17,7 @@ from . import happ_crypto, happ_keys
 from .device import DEVICE_HEADERS
 
 # Заголовки мобильного Happ. X-Hwid — из device.json установки; X-Real-Ip фиксированный.
-# Любой заголовок переопределяется в providers.json (happ_headers подписки).
+# Любой заголовок переопределяется в config.json (happ_headers подписки).
 _HEADERS = {
     "User-Agent": "Happ/3.13.0",
     **DEVICE_HEADERS,

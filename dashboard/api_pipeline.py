@@ -10,7 +10,7 @@ from .webapp import App, HttpError, Response
 def _orchestrator(app):
     orchestrator = getattr(app.runner, "orchestrator", None)
     if orchestrator is None:
-        raise HttpError(409, "Конвейер недоступен: включите токен и pipeline.json в тестере")
+        raise HttpError(409, "Конвейер недоступен: включите токен админки в config.json")
     return orchestrator
 
 

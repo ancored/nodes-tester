@@ -1,7 +1,7 @@
 """Ключи расшифровки ссылок happ://crypt…: загрузка из внешнего источника и кэш.
 
 Ключи принадлежат приложению Happ и в nodes-tester не входят. Источник задаётся в
-providers.json (fetch.happ_keys_url) — URL или локальный путь; по умолчанию —
+config.json (pipeline.fetch.happ_keys_url) — URL или локальный путь; по умолчанию —
 src/keys.rs проекта hpwnr. Понимаются два вида: исходник keys.rs (константы PKCS1_KEYS
 и CRYPT5_PKCS8) и JSON {"crypt": [4 ключа], "crypt5": {маркер: ключ}}.
 
@@ -31,9 +31,9 @@ class KeysError(RuntimeError):
     """Ключи не получены или не распознаны."""
 
 
-def default_path(providers_path: str) -> str:
+def default_path(config_path: str) -> str:
     """happ-keys.json — там же, где device.json."""
-    return os.path.join(os.path.dirname(_device_path(providers_path)), FILE_NAME)
+    return os.path.join(os.path.dirname(_device_path(config_path)), FILE_NAME)
 
 
 def _block(text: str, name: str) -> str:

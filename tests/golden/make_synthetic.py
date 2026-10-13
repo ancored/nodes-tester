@@ -7,8 +7,8 @@
 Покрытие: vless reality/grpc/xhttp/голый (отбрасывается), vmess ws tls, trojan ws без host и с
 %-паролем, hy2 (порт и диапазон портов), ss, tuic, anytls, страна не определяется (undef),
 нода с выходом в RU (страну больше не фильтруем), дубль ноды (dedupe), clash-yaml подписка, упавшая
-подписка, AWG-папка (страна из имени файла), user_nodes; два режима groups_params
-(router: nodes_tester; wh: global_failsafe + raw_user_nodes + exclude_protocols).
+подписка, AWG-папка, inline-подписка со своими нодами; две ветви config.json
+(router: группы eu/us/other; clients: exclude_protocols и одна global-auto-out).
 """
 
 import base64

@@ -1,7 +1,8 @@
 """Идентичность устройства для панелей подписок (Marzban, Remnawave, Marzneshin…).
 
 Панели с лимитом устройств считают устройством каждый новый `X-Hwid`. Свой HWID у каждой
-установки хранится в `device.json` — один на роутер, общий для config-main и config-wh:
+установки хранится в `device.json` рядом с config.json — один на роутер, общий для ветвей
+router и clients:
 
     {"hwid": "k3j9…"}
 
@@ -30,13 +31,9 @@ DEVICE_HEADERS = {
 }
 
 
-def default_path(providers_path: str) -> str:
-    """device.json рядом с providers.json; для раскладки config-main/, config-wh/ —
-    на уровень выше, чтобы основной и клиентский наборы шли с одним HWID."""
-    folder = os.path.dirname(os.path.abspath(providers_path))
-    if os.path.basename(folder).startswith("config-"):
-        folder = os.path.dirname(folder)
-    return os.path.join(folder, FILE_NAME)
+def default_path(config_path: str) -> str:
+    """device.json рядом с config.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), FILE_NAME)
 
 
 def new_hwid() -> str:

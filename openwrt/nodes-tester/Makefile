@@ -34,15 +34,15 @@ define Package/nodes-tester
   URL:=https://github.com/ancored/nodes-tester
   PKGARCH:=all
   # Зависимости — только в метаданных пакета (EXTRA_DEPENDS): apk ставит их из фидов
-  # OpenWrt, а SDK не пересобирает их из исходников (python3-jsonschema тянет rust).
+  # OpenWrt, а SDK не пересобирает их из исходников.
   EXTRA_DEPENDS:=python3-light (>=3.8), python3-sqlite3 (>=3.8), python3-urllib (>=3.8), \
 	python3-email (>=3.8), python3-openssl (>=3.8), python3-requests (>=2.31), \
-	python3-yaml (>=6.0), python3-jsonschema (>=4.0)
+	python3-yaml (>=6.0)
 endef
 
 define Package/nodes-tester/description
   Manages sing-box proxy nodes on the router: downloads provider subscriptions
-  (nodes_fetch), builds outbounds and region groups (nodes_config), continuously
+  (nodes_fetch), builds outbounds and selector groups (nodes_config), continuously
   tests every node through the running sing-box and switches production selectors
   (nodes_tester), web admin (dashboard) and the cron pipeline scripts.
 endef
@@ -51,10 +51,7 @@ define Package/nodes-tester/conffiles
 /etc/config/nodes-tester
 /etc/nodes-tester/config.json
 /etc/nodes-tester/clients.list
-/etc/nodes-tester/config-main/
-/etc/nodes-tester/config-wh/
 /etc/nodes-tester/singbox/
-/etc/nodes-tester/pipeline.json
 endef
 
 # PySocks нет в фидах OpenWrt: берём два модуля из sdist с PyPI (BSD-3-Clause)
@@ -72,8 +69,7 @@ define Build/Prepare
 	$(foreach s,$(ROUTER_SCRIPTS),cp -a $(REPO_ROOT)/scripts/router/$(s) $(PKG_BUILD_DIR)/scripts/router/;)
 	# только шаблоны и схема: рабочие конфиги с секретами в config/ в пакет не попадают
 	mkdir -p $(PKG_BUILD_DIR)/config/awg
-	$(foreach f,config.example.json config.schema.json providers.example.json \
-		user_nodes.example.json groups_params.json awg/de.conf.example,\
+	$(foreach f,config.example.json config.schema.json awg/de.conf.example,\
 		cp $(REPO_ROOT)/config/$(f) $(PKG_BUILD_DIR)/config/$(f);)
 	cp $(REPO_ROOT)/scripts/router/clients.list.example $(PKG_BUILD_DIR)/config/
 	cp $(REPO_ROOT)/LICENSE $(REPO_ROOT)/THIRD_PARTY_LICENSES $(PKG_BUILD_DIR)/
@@ -83,10 +79,6 @@ define Build/Prepare
 	cp $(REPO_ROOT)/config/singbox/rules/*.json $(PKG_BUILD_DIR)/config/singbox/rules/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox/presets
 	cp $(REPO_ROOT)/config/singbox/presets/*.json $(PKG_BUILD_DIR)/config/singbox/presets/
-	cp $(REPO_ROOT)/config/pipeline.example.json $(PKG_BUILD_DIR)/config/
-	mkdir -p $(PKG_BUILD_DIR)/schemas
-	cp $(REPO_ROOT)/schemas/pipeline.schema.json $(REPO_ROOT)/schemas/groups_params.schema.json \
-		$(PKG_BUILD_DIR)/schemas/
 	find $(PKG_BUILD_DIR) -name __pycache__ -type d -prune -exec rm -rf {} +
 	$(TAR) -xzf $(DL_DIR)/$(PYSOCKS_FILE) -C $(PKG_BUILD_DIR) \
 		PySocks-$(PYSOCKS_VERSION)/socks.py PySocks-$(PYSOCKS_VERSION)/sockshandler.py \
@@ -97,9 +89,7 @@ define Build/Compile
 endef
 
 define Package/nodes-tester/install
-	$(INSTALL_DIR) $(1)$(APP_DIR)/scripts/router $(1)$(APP_DIR)/schemas
-	# админка проверяет groups_params по схеме из каталога кода
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/schemas/groups_params.schema.json $(1)$(APP_DIR)/schemas/
+	$(INSTALL_DIR) $(1)$(APP_DIR)/scripts/router
 	$(foreach p,$(PY_PACKAGES),$(CP) $(PKG_BUILD_DIR)/$(p) $(1)$(APP_DIR)/;)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/socks.py $(1)$(APP_DIR)/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/sockshandler.py $(1)$(APP_DIR)/
@@ -111,20 +101,15 @@ define Package/nodes-tester/install
 	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg $(1)/usr/share/nodes-tester/examples/singbox/presets \
 		$(1)/usr/share/nodes-tester/examples/singbox/rules
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.example.json $(1)/usr/share/nodes-tester/examples/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/providers.example.json $(1)/usr/share/nodes-tester/examples/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/user_nodes.example.json $(1)/usr/share/nodes-tester/examples/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/groups_params.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/clients.list.example $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules.example.json $(1)/usr/share/nodes-tester/examples/singbox/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/presets/*.json $(1)/usr/share/nodes-tester/examples/singbox/presets/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules/*.json $(1)/usr/share/nodes-tester/examples/singbox/rules/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/pipeline.example.json $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/awg/de.conf.example $(1)/usr/share/nodes-tester/examples/awg/
 
 	# Схема принадлежит пакету (обновляется вместе с кодом), лежит рядом с config.json
 	$(INSTALL_DIR) $(1)/etc/nodes-tester
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.schema.json $(1)/etc/nodes-tester/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/schemas/pipeline.schema.json $(1)/etc/nodes-tester/
 
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/uci-defaults $(1)/usr/bin
 	$(INSTALL_CONF) ./files/nodes-tester.config $(1)/etc/config/nodes-tester

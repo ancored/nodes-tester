@@ -30,7 +30,7 @@ FETCH_DEFAULTS = {
 
 
 class ProvidersError(ValueError):
-    """Некорректный providers.json."""
+    """Некорректные подписки или раздел pipeline.fetch."""
 
 
 class GuardError(RuntimeError):

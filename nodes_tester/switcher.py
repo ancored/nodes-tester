@@ -88,8 +88,8 @@ class Switcher:
             self._persist()
 
     def prune_groups(self, groups) -> None:
-        """Забыть состояние групп, которых больше нет в sing-box (группу выключили в
-        groups_params): иначе монитор и ротация продолжали бы обслуживать её ноду."""
+        """Забыть состояние групп, которых больше нет в sing-box (группу убрали из
+        config.json): иначе монитор и ротация продолжали бы обслуживать её ноду."""
         with self._lock:
             gone = [g for g in self.state if g not in groups]
             if not gone:
