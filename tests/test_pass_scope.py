@@ -77,6 +77,53 @@ class ScopedPassTest(unittest.TestCase):
         self.r._wait_for_rotation()                  # срок eu уже наступил
         self.assertTrue(self.r._scoped_next)
 
+    def test_fresh_pass_tests_only_new_nodes(self):
+        self.r._scoped_next = True                   # новые ноды важнее срока ротации
+        self.r._fresh_next = {"cccc0001"}
+        self._pass()
+        self.assertEqual(self.tested, [NEW])
+        self.assertIn(A, self.r.board.rows)
+        self.assertEqual(self.evaluated, [])         # переключение не оценивается
+        self.assertEqual(self.r._fresh_next, set())
+
+
+class MemberSyncTest(unittest.TestCase):
+    """Между прогонами: смена состава селектора сразу видна в базе, новые ноды — прогон."""
+
+    def setUp(self):
+        self.r = make_runner(temp_dir(), tags=[A, B])
+        self.r._present_crcs = {"aaaa0001", "aaaa0002"}
+        for crc, present in (("aaaa0001", 1), ("aaaa0002", 1), ("cccc0001", None)):
+            self.r.storage._db.execute("INSERT INTO nodes (crc, tag, present) VALUES (?,?,?)",
+                                       (crc, crc, present))
+
+    def tearDown(self):
+        self.r.storage.close()
+
+    def _present(self):
+        return dict(self.r.storage._db.execute("SELECT crc, present FROM nodes").fetchall())
+
+    def test_same_members_no_pass(self):
+        self.assertFalse(self.r._wait_step(0))
+        self.assertEqual(self.r._fresh_next, set())
+
+    def test_new_node_triggers_fresh_pass(self):
+        self.r.api._tags = [A, NEW]
+        self.assertTrue(self.r._wait_step(0))
+        self.assertEqual(self.r._fresh_next, {"cccc0001"})
+        self.assertEqual(self._present(), {"aaaa0001": 1, "aaaa0002": 0, "cccc0001": 1})
+
+    def test_removal_only_updates_presence(self):
+        self.r.api._tags = [A]
+        self.assertFalse(self.r._wait_step(0))
+        self.assertEqual(self._present()["aaaa0002"], 0)
+
+    def test_paused_during_apply(self):
+        self.r.api._tags = [A, NEW]
+        self.r._apply_start()
+        self.assertFalse(self.r._wait_step(0))
+        self.assertEqual(self._present()["cccc0001"], None)
+
 
 class LowScoreQuarantineTest(unittest.TestCase):
     def setUp(self):

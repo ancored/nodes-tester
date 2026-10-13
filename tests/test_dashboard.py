@@ -180,6 +180,20 @@ class LifecycleGraveyardTest(unittest.TestCase):
         self.assertEqual(data["traffic_range"]["start"], self.now)
         self.assertEqual(data["traffic_tester_range"]["start"], self.now + 1)
 
+    def test_removed_nodes_only_in_archive(self):
+        from types import SimpleNamespace
+        x = self.st._db.execute
+        x("INSERT INTO nodes (crc, tag, provider, first_seen) VALUES ('new', 'new', 'P', ?)", (self.now,))
+        for crc in ("ok", "gone"):
+            x("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
+              (self.now, crc, "latency", 1, '{"ms": 50}'))
+        self.st._db.commit()
+        data = D._collect(SimpleNamespace(storage=_Cfg(self.db)))
+        crcs = {n["crc"] for n in data["nodes"]}
+        self.assertNotIn("gone", crcs)
+        self.assertIn("new", crcs)                   # собрана конвейером, тестер ещё не сверил
+        self.assertEqual([r["crc"] for r in data["results"]["rows"]], ["ok"])
+        self.assertEqual([r["crc"] for r in data["graveyard"]], ["gone"])
 
     def test_client_nodes_listed_with_whitelist_only(self):
         import json

@@ -44,6 +44,8 @@ _EMPTY_PASS_RETRY = 30.0
 # Пауза после перезапуска sing-box посреди прогона: ядро поднимает наборы правил и
 # inbound-ы, прежде чем замерам можно верить.
 _BOX_SETTLE = 60.0
+# Шаг ожидания между прогонами: срок ротации, запрос из админки и смена состава нод в sing-box.
+_WAIT_STEP = 30.0
 # Карантин по низкому рейтингу — только после стольких замеров (новую ноду не судим
 # по одному прогону).
 _LOW_SCORE_MIN_SAMPLES = 3
@@ -109,6 +111,10 @@ class Runner:
         # Прогон разбужен сроком ротации (rotation_bound) → тестируем только ноды групп,
         # у которых ротация наступила. Первый и внеплановый прогоны — полные.
         self._scoped_next = False
+        # Ключи нод, появившихся в sing-box между прогонами: следующий прогон — только по ним.
+        self._fresh_next: set[str] = set()
+        # Ключи нод селектора тестера на момент последней сверки (бан и исключённые — тоже).
+        self._present_crcs: set[str] = set()
         # Прогон прерван применением конфига (конвейер перезапускает sing-box, состав нод
         # меняется) — следующий начнётся сразу после окна применения, без ожидания ротации.
         self._pass_aborted = False
@@ -158,7 +164,7 @@ class Runner:
         top = self._top
         out = []
         banned_n = 0
-        self._present_crcs: set[str] = set()
+        self._present_crcs = set()
         # Страна из базы: после рестарта тестера в рейтинге её ещё нет, а российская нода
         # не должна получить зарубежный набор тестов.
         stored = self.storage.node_countries()
@@ -368,6 +374,7 @@ class Runner:
             fresh = not self._pass_requested.is_set()
             self._pass_requested.set()
             self._scoped_next = False           # запрос из админки — полный прогон
+            self._fresh_next = set()
             return fresh
 
     def _wait_interruptible(self, seconds: float) -> bool:
@@ -490,14 +497,49 @@ class Runner:
             self._wait_for_rotation()
         elif self.cfg.tester.pause > 0:
             print(f"\n===== пауза между прогонами {self.cfg.tester.pause:.0f}s =====")
-            self._wait_interruptible(self.cfg.tester.pause)
+            deadline = time.time() + self.cfg.tester.pause
+            while (left := deadline - time.time()) > 0:
+                if self._wait_step(min(left, _WAIT_STEP)):
+                    return
+
+    def _wait_step(self, seconds: float) -> bool:
+        """Шаг ожидания между прогонами. True — прогон нужен сейчас: запрос из админки
+        или в sing-box появились новые ноды (прогон только по ним)."""
+        if self._wait_interruptible(seconds):
+            print("\n===== внеплановый прогон (запрос из админки) =====")
+            return True
+        fresh = self._sync_members()
+        if not fresh:
+            return False
+        print(f"\n===== в sing-box новые ноды ({len(fresh)}) → прогон по ним =====")
+        self._fresh_next = fresh
+        return True
+
+    def _sync_members(self) -> set[str]:
+        """Сверить состав селектора тестера с прошлой сверкой: после применения конфига
+        новые ноды сразу попадают в базу (админка показывает их без замеров), ушедшие —
+        в архив. Возвращает ключи появившихся нод."""
+        if self._apply_paused():
+            return set()
+        self.storage.maybe_load_nodes(self.cfg.nodes_file)
+        try:
+            members = {parse_node(tag).node_id for tag in self.api.list_group_members(self._top)}
+        except ApiError:
+            return set()
+        members.discard("")
+        if members == self._present_crcs:
+            return set()
+        self.storage.touch_seen(members)
+        self.storage.reconcile_presence(members)
+        fresh = members - self._present_crcs
+        self._present_crcs = members
+        return fresh
 
     def _wait_for_rotation(self) -> None:
         """Спать до ближайшего срока ротации (switcher), потом вернуться → новый прогон.
         Опрос короткими шагами: реагируем на сдвиг дедлайна (напр. emergency из монитора
         передвинул rotate_deadline) и на Ctrl+C. Нет дедлайнов (регионы не активированы) —
         ждём один интервал ротации и пробуем снова."""
-        poll = 30.0
         # Без дедлайнов — один интервал от начала ожидания (не пересчитывать каждый шаг,
         # иначе ожидание не кончится); не меньше минуты, чтобы не крутить прогоны.
         fallback = time.time() + max(float(self.cfg.selection.rotation.interval), 60.0)
@@ -512,14 +554,13 @@ class Runner:
                 self._scoped_next = True
                 return
             # Сообщаем при старте и при сдвиге срока, а не на каждом шаге опроса.
-            if announced is None or abs(due - announced) > poll:
+            if announced is None or abs(due - announced) > _WAIT_STEP:
                 mins = wait / 60.0
                 tgt = ("ближайшая ротация" if target is not None
                        else "регионы не активированы, повтор")
                 print(f"\n===== rotation_bound: ждём {mins:.1f} мин ({tgt}) =====")
                 announced = due
-            if self._wait_interruptible(min(wait, poll)):
-                print("\n===== внеплановый прогон (запрос из админки) =====")
+            if self._wait_step(min(wait, _WAIT_STEP)):
                 return
 
     def _run_pass(self, pass_no: int) -> bool:
@@ -541,6 +582,7 @@ class Runner:
         self._banned = self.storage.banned_crcs()
 
         scoped, self._scoped_next = self._scoped_next, False
+        fresh, self._fresh_next = self._fresh_next, set()
         self._pass_aborted = False
         self._box_pid = self.singbox.pid()
         self.board.set_restricted(self._restricted_now() | self._banned)
@@ -558,9 +600,12 @@ class Runner:
         node_by_raw = {ident.raw: (region, ident) for region, ident in nodes}
         self._node_by_raw = node_by_raw
         self.reserve.wake()               # состав нод известен — резерв можно собирать
-        due = self._due_groups() if scoped else None
-        if due:
-            total = len(nodes)
+        due = self._due_groups() if scoped and not fresh else None
+        total = len(nodes)
+        if fresh:
+            nodes = [(r, i) for r, i in nodes if i.node_id in fresh]
+            print(f"\n===== Прогон #{pass_no}: новые ноды — {len(nodes)} из {total} =====")
+        elif due:
             nodes = [(r, i) for r, i in nodes if self._in_due_groups(i.raw, due)]
             print(f"\n===== Прогон #{pass_no}: ротация {', '.join(sorted(due))} — "
                   f"нод {len(nodes)} из {total} =====")
@@ -570,28 +615,27 @@ class Runner:
         self._host_ep_last = {}               # host -> {sig: monotonic} (зазор, все тесты)
         self.board.set_pass(pass_no)
         self.board.begin_pass()
-        if due:
-            tested = {i.raw for _r, i in nodes}
-            for raw in node_by_raw:            # не тестируем — но строку и score сохраняем
-                if raw not in tested:
-                    self.board.keep(raw)
+        tested = {i.raw for _r, i in nodes}
+        for raw in node_by_raw:                # не тестируем — но строку и score сохраняем
+            if raw not in tested:
+                self.board.keep(raw)
 
         exit_ips = []
         for index, (region, ident) in enumerate(self._order_by_host(nodes)):
             self._progress = {"phase": "testing", "processed": index,
                               "total": len(nodes), "node": ident.raw}
             if self._apply_paused():
-                return self._abort_pass(scoped, node_by_raw)
+                return self._abort_pass(scoped, fresh, node_by_raw)
             if self._backed_off(ident.node_id):     # backoff/карантин — не тестируем
                 self.board.keep(ident.raw)          # чтобы end_pass не удалил строку/score
                 continue
             self._respect_host_gap(self._host_of(ident), self._ep_sig(ident))
             record = self._test_node(region, ident, pass_no)
             if self._apply_paused():                # замер мог попасть на перезапуск sing-box
-                return self._abort_pass(scoped, node_by_raw)
+                return self._abort_pass(scoped, fresh, node_by_raw)
             if record is not None and self._box_interrupted(record):
                 self._apply_pause_until = time.monotonic() + _BOX_SETTLE
-                return self._abort_pass(scoped, node_by_raw,
+                return self._abort_pass(scoped, fresh, node_by_raw,
                                         "sing-box недоступен или перезапустился")
             if record is None:                      # ноды уже нет в селекторе
                 self.board.keep(ident.raw)
@@ -608,17 +652,20 @@ class Runner:
         self._progress = {**self._progress, "phase": "switching", "node": None}
         # Частичный прогон: оцениваем только группы, чьи ноды проверены (у прочих
         # рейтинг не обновлялся — quality-счётчик не должен копиться на старых данных).
+        # Прогон по новым нодам переключение не оценивает: остальные ноды групп не
+        # перемерены, новые станут кандидатами к ближайшей ротации.
         groups = None
         if due:
             groups = set(due)
             for _r, i in nodes:
                 groups.update(self.board.node_groups(i.raw))
-        self.switcher.evaluate_all(groups)
+        if not fresh:
+            self.switcher.evaluate_all(groups)
         self.reserve.wake(ratings_changed=True)
         self._progress = {**self._progress, "processed": self._progress["total"], "node": None}
         return False
 
-    def _abort_pass(self, scoped: bool, node_by_raw: dict,
+    def _abort_pass(self, scoped: bool, fresh: set, node_by_raw: dict,
                     why: str = "конвейер применяет конфиг") -> bool:
         """Конвейер начал применять конфиг или sing-box перезапустился: остаток прогона
         по старому списку нод не имеет смысла, а замеры во время перезапуска ложно
@@ -629,6 +676,7 @@ class Runner:
             self.board.keep(raw)
         self.board.end_pass(self._current_pass)
         self._scoped_next = scoped
+        self._fresh_next = fresh
         self._pass_aborted = True
         return False
 

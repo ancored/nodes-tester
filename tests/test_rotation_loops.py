@@ -85,6 +85,8 @@ class RotationLoopTest(unittest.TestCase):
                 def time():
                     return clock["now"]
 
+                monotonic = time
+
             def wait(seconds):
                 clock["now"] += seconds
                 return False

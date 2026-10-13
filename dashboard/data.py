@@ -211,10 +211,13 @@ def _collect(cfg) -> dict:
     clients = _client_nodes(getattr(cfg, "whnodes_file", "") or "", {n["crc"] for n in nodes})
     nodes += [{**meta, "present": 1, "banned": 0, "score": None, "reserve": "", "wh_only": 1}
               for meta in clients.values()]
-    for r in results.get("rows", []):
+    # Ушедшие из подписок ноды — только в «Архиве» (_graveyard).
+    shown = {n["crc"] for n in nodes}
+    results["rows"] = [r for r in results.get("rows", []) if r["crc"] in shown]
+    for r in results["rows"]:
         if r["crc"] in clients:
             r.update(provider=clients[r["crc"]]["provider"], protocol=clients[r["crc"]]["protocol"], wh_only=1)
-    for table in (nodes, results.get("rows", []), garbage, longevity, dropouts, rows):
+    for table in (nodes, results["rows"], garbage, longevity, dropouts, rows):
         for r in table:
             r["groups"] = groups_of.get(r.get("crc"), [])
     traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
@@ -742,7 +745,9 @@ def _client_nodes(whnodes_file: str, known: set) -> dict:
 
 
 def _nodes_list(db: str) -> list[dict]:
-    """Полный список нод (таблица nodes) для раздела «Управление» админки.
+    """Ноды подписок (таблица nodes) для раздела «Все ноды» админки. Ушедшие из подписок
+    (present = 0) — только в «Архиве»; present ещё не известен у ноды, которую конвейер
+    только что собрал, — она показывается.
 
     Для каждой ноды — идентичность (crc/tag/provider/protocol/country/server),
     флаги present/banned, счёт рейтинга (score/region/active из scores) и текущий
@@ -758,6 +763,7 @@ def _nodes_list(db: str) -> list[dict]:
         FROM nodes n
         LEFT JOIN scores s ON s.crc = n.crc
         LEFT JOIN garbage g ON g.crc = n.crc
+        WHERE n.present IS NOT 0
         ORDER BY n.present DESC, s.score DESC""")
     pass_seq = _pass_seq(db)
     for r in rows:
