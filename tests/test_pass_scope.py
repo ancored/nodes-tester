@@ -20,14 +20,15 @@ def _row(node, region, score=70.0, samples=5, active=0):
 
 class ScopedPassTest(unittest.TestCase):
     def setUp(self):
-        self.r = make_runner(temp_dir(), tags=[A, B, U, NEW])
+        self.r = make_runner(temp_dir(), tags=[A, B, U, NEW], groups=[{"tag": "eu"}, {"tag": "us"}])
         r = self.r
         r._tests_cache = {}
         r.api.all_proxies = lambda: {
-            "eu-auto-out": {"all": ["eu-auto-out-failsafe", A, B]},
-            "us-auto-out": {"all": ["us-auto-out-failsafe", U]},
+            "eu-auto-out": {"all": ["failsafe-out", A, B]},
+            "us-auto-out": {"all": ["failsafe-out", U]},
         }
         r.board.rows = {A: _row(A, "eu"), B: _row(B, "eu"), U: _row(U, "us")}
+        r.board.set_groups({"eu": {A, B}, "us": {U}})
         now = time.time()
         r.switcher.state = {
             "eu": {"active": A, "rotate_deadline": now - 1, "last_switch": now - 7200},

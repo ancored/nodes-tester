@@ -90,10 +90,11 @@ class NodeGroupsTest(unittest.TestCase):
         self.assertNotIn("gone", sw.state)
         self.assertNotIn("gone", sw.active_regions())
 
-    def test_no_groups_falls_back_to_regions(self):
+    def test_no_group_selectors_means_no_groups(self):
+        # В sing-box нет {tag}-auto-out (база без групп) — выбирать некуда, а не «группа = регион».
         self.r.api.proxies = {"nodes-tester": {"type": "selector", "all": [EU], "now": EU}}
         self.r._refresh_groups()
-        self.assertEqual(sorted(self.board.regions()), ["eu", "us"])
+        self.assertEqual(self.board.regions(), [])
 
 
 if __name__ == "__main__":

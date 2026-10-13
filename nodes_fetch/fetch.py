@@ -9,7 +9,6 @@ nodes_config). Его задачи — надёжно достать ноды:
 - --only: обновить часть подписок, остальные переносятся из прошлого raw как есть.
 """
 
-import os
 from datetime import datetime, timedelta, timezone
 
 from nodes_common import raw as rawfmt
@@ -179,10 +178,6 @@ def summary(raw, previous=None, written=False, output=None):
             "changed": previous is None or previous.get("nodes_hash") != raw["nodes_hash"],
             "nodes_hash": raw["nodes_hash"], "generated_at": raw["generated_at"],
             "sources": srcs}
-
-
-def providers_name(path):
-    return os.path.splitext(os.path.basename(path))[0]
 
 
 def providers_from_config(cfg, branch):

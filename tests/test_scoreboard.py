@@ -21,6 +21,7 @@ class ScoreboardVetoTest(unittest.TestCase):
         self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.set_heavy_ttl(3600)
         self.sb.rows = {"A": _row("A", score=80), "B": _row("B", score=60)}
+        self.sb.set_groups({"eu": set(self.sb.rows)})          # состав группы из sing-box
 
     def tearDown(self):
         self.storage.close()
@@ -100,6 +101,7 @@ class RestrictedActiveTest(unittest.TestCase):
         self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
         self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.rows = {"A": _row("A", score=80), "B": _row("B", score=60)}
+        self.sb.set_groups({"eu": set(self.sb.rows)})          # состав группы из sing-box
 
     def tearDown(self):
         self.storage.close()
@@ -133,6 +135,7 @@ class ReservePoolTest(unittest.TestCase):
         self.sb = Scoreboard(self.storage, RatingConfig())
         self.sb.set_heavy_ttl(3600)
         self.sb.rows = {n: _row(n, score=s) for n, s in (("A", 90), ("B", 80), ("C", 50), ("D", 70))}
+        self.sb.set_groups({"eu": set(self.sb.rows)})          # состав группы из sing-box
 
     def tearDown(self):
         self.storage.close()

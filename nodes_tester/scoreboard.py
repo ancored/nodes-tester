@@ -33,9 +33,9 @@ class Scoreboard:
         self._seen: set[str] = set()
         self._history: list[tuple] = []       # буфер точек истории за прогон
         self._heavy_ttl = 0.0                 # срок годности heavy, с; 0 — бессрочно
-        # Группы переключения ({name}-auto-out в sing-box) → теги нод-членов. Нода может
-        # быть в нескольких группах. None — состав неизвестен: группа = регион ноды.
-        self._members: dict[str, set[str]] | None = None
+        # Группы переключения ({tag}-auto-out в sing-box) → теги нод-членов. Пока состав
+        # из sing-box не получен, групп нет: выбирать не из чего.
+        self._members: dict[str, set[str]] = {}
         self._active: dict[str, str] = {}     # группа → активная нода
         # Политика групп (config.groups): обязательные и приоритетные проверки.
         self._policy: dict = {}
@@ -195,27 +195,19 @@ class Scoreboard:
     def set_groups(self, members: dict[str, set[str]]) -> None:
         """Состав групп переключения по данным sing-box (группа → теги нод)."""
         with self._lock:
-            # Групп нет (нестандартный конфиг) — прежняя схема: группа = регион ноды.
-            self._members = {g: set(tags) for g, tags in members.items() if tags} or None
+            self._members = {g: set(tags) for g, tags in members.items() if tags}
 
     def node_groups(self, node: str) -> list[str]:
         """Группы, в которые входит нода (порядок — как в sing-box)."""
         with self._lock:
-            if self._members is None:
-                r = self.rows.get(node)
-                return [r["region"]] if r and r.get("region") else []
             return [g for g, tags in self._members.items() if node in tags]
 
     def group_nodes(self, group: str) -> list[str]:
-        """Ноды группы (без данных sing-box — ноды региона)."""
+        """Ноды группы."""
         with self._lock:
-            if self._members is None:
-                return [n for n, r in self.rows.items() if r.get("region") == group]
             return list(self._members.get(group, ()))
 
     def _in_group(self, r: dict, group: str) -> bool:
-        if self._members is None:
-            return r["region"] == group
         return r["node"] in self._members.get(group, ())
 
     # --- Политика групп: проверки ------------------------------------------
@@ -424,11 +416,9 @@ class Scoreboard:
             return bool(r and r.get("id") in self._restricted)
 
     def regions(self) -> list[str]:
-        """Группы переключения (без данных sing-box — регионы нод)."""
+        """Группы переключения в порядке sing-box."""
         with self._lock:
-            if self._members is not None:
-                return list(self._members)
-            return sorted({r["region"] for r in self.rows.values() if r["region"]})
+            return list(self._members)
 
     def set_active(self, region: str, node: str) -> None:
         """Активная нода группы; флаг active у ноды — активна хотя бы в одной группе."""

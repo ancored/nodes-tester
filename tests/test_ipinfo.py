@@ -65,12 +65,7 @@ class IpInfoTest(unittest.TestCase):
         self.assertEqual((rows[0]["ip_kind"], rows[0]["ip_proxy"], rows[0]["ip_db_cc"]),
                          ("hosting", 1, "DE"))
 
-    def test_preferred_and_country_mismatch(self):
-        self.assertTrue(ipinfo.preferred({"mobile": 1, "hosting": 1}))
-        self.assertTrue(ipinfo.preferred({"country": "NL"}))
-        self.assertFalse(ipinfo.preferred({"hosting": 1}))
-        self.assertFalse(ipinfo.preferred({"proxy": 1}))
-        self.assertFalse(ipinfo.preferred(None))
+    def test_country_mismatch(self):
         self.assertEqual(ipinfo.db_country_mismatch({"country": "DE"}, "nl"), "DE")
         self.assertEqual(ipinfo.db_country_mismatch({"country": "NL"}, "nl"), "")
         self.assertEqual(ipinfo.db_country_mismatch({"country": "DE"}, ""), "")

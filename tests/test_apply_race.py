@@ -121,6 +121,7 @@ class RotationSingleCandidateTest(unittest.TestCase):
     def setUp(self):
         self.r = r = make_runner(temp_dir(), tags=[U])
         r.board.rows = {U: _row(U, "us")}
+        r.board.set_groups({"us": {U}})
         now = time.time()
         r.switcher.state = {"us": {"active": U, "rotate_deadline": now - 1,
                                    "last_switch": now - 7200}}

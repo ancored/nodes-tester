@@ -113,6 +113,7 @@ class StrictExitIpTest(unittest.TestCase):
                         "PROXY": _row("PROXY", 80, "1.0.0.3"), "GEO": _row("GEO", 95, "1.0.0.4"),
                         "MOB": _row("MOB", 40, "1.0.0.5"), "NOINFO": _row("NOINFO", 85, "9.9.9.9")}
         self.sb.set_ip_info(IPS)
+        self.sb.set_groups({"eu": set(self.sb.rows)})
 
     def _cands(self):
         return [c["node"] for c in self.sb.candidates("eu")]
