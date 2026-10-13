@@ -56,8 +56,8 @@ const provCols = [
 const cols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'protocol', title: 'протокол', l: true },
-  { key: 'cc', title: 'cc', l: true },
   { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut', cellTitle: (r) => r.tag || '' },
+  { key: 'cc', title: 'cc', l: true },
   { key: 'first_seen', title: 'появилась', fmt: dateDM, cls: () => 'num' },
   { key: 'removed_at', title: 'удалена', fmt: dateDM, cls: () => 'num' },
   { key: 'lifespan', title: 'прожила', fmt: dur, cls: () => 'num', strong: true },

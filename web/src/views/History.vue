@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
 import { dateTime } from '../format.js'
+import { crcOf } from '../ux.js'
+import NodeKey from '../components/NodeKey.vue'
 import DataTable from '../components/DataTable.vue'
 import ReasonIcon from '../components/ReasonIcon.vue'
 const s=useSnapshot()
@@ -15,13 +17,14 @@ const rows=computed(()=>{
   })
 })
 const reasons={manual:'Ручной выбор',rotation:'Плановая ротация',quality:'Смена по качеству',emergency:'Аварийная замена',
-  'emergency-stuck':'Авария: замена не найдена',failsafe:'Никто не прошёл обязательный тест — failsafe',initial:'Первый выбор',init:'Первый выбор'}
+  'emergency-stuck':'Авария: замена не найдена',failsafe:'Кандидатов нет — запасной выход',initial:'Первый выбор',init:'Первый выбор'}
 const reasonText=v=>reasons[v] || v || 'Не записана'
-const reasonFilters=[{key:'reason',title:'Причина',get:r=>reasonText(r.reason_key)}]
+const reasonFilters=[{key:'region',title:'Группа'},{key:'reason',title:'Причина',get:r=>reasonText(r.reason_key)}]
+const keyOf=tag=>crcOf({node:tag || ''})
 const columns=[
   {key:'ts',title:'Дата и время',fmt:dateTime,l:true},{key:'region',title:'Группа',l:true},
-  {key:'tag',title:'Выбранная нода',l:true},{key:'crc',title:'Карточка',l:true,nowrap:true},
-  {key:'prev',title:'Предыдущая нода',l:true},{key:'reason_key',title:'Причина',l:true,slot:true},
+  {key:'tag',title:'Выбранная нода',l:true,slot:true},
+  {key:'prev',title:'Предыдущая нода',l:true,slot:true},{key:'reason_key',title:'Причина',l:true,slot:true},
   {key:'current_choice',title:'Активная нода',fmt:v=>v ? '● Активна' : '—',cls:v=>v ? 'good' : ''},
 ]
 </script>
@@ -33,6 +36,10 @@ const columns=[
   </section>
   <p class="hint">Последние 200 записей. При работающем тестере зелёным выделена последняя запись для текущей активной ноды каждой группы. При аварии без замены новое переключение не произошло.</p>
   <DataTable :rows="rows" :columns="columns" :extra-filters="reasonFilters" :page-size="20" :row-class="r=>r.current_choice ? 'active' : ''">
+    <template v-for="k in ['tag','prev']" :key="k" #[`cell-${k}`]="{row}">
+      <RouterLink v-if="keyOf(row[k])" :to="'/nodes/'+keyOf(row[k])" class="break"><NodeKey :text="row[k]" /></RouterLink>
+      <span v-else class="break">{{ row[k] || '—' }}</span>
+    </template>
     <template #cell-reason_key="{row}"><span class="reason"><ReasonIcon :reason="row.reason_key" />{{ reasonText(row.reason_key) }}</span></template>
   </DataTable>
 </template>

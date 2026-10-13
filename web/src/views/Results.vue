@@ -14,14 +14,16 @@ const tests=computed(()=>s.data.results?.tests || [])
 const rows=computed(()=>s.data.results?.rows || [])
 // AI-тесты — узкие колонки: галка, крест или «?» (сеть, вердикт прежний); у Google AI — флаг страны.
 const AI_NOTE='Google AI — страна по мнению Google (флаг) и доступность Gemini; OpenAI и Claude AI — доступность сервиса. ✓ — доступен, ✗ — нет, ? — сбой сети, действует прошлый результат. Проверяются только кандидаты групп с обязательными тестами; наведите курсор, чтобы увидеть время и причину.'
-const AI={gemini:1,openai:1,anthropic:1}
+// Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список.
+const AI={gemini:1,openai:1,anthropic:1,connectivity:1,whitelist:1}
+const NOTES={gemini:AI_NOTE,whitelist:'Пропустит ли ноду режим белых списков мобильного интернета: IP сервера в IP-списке и SNI в списке доменов (без TLS — достаточно IP). Проверяется локально раз в сутки; наведите курсор, чтобы увидеть адреса и SNI.'}
 const aiMark = c => c.unk ? '?' : c.ok ? '✓' : '✗'
 const aiTitle = c => [c.v, c.title, short(c.ts) + (c.off_pass ? ' · другой проход' : '')].filter(Boolean).join('\n')
 const columns=computed(()=>[
-  {key:'provider',title:'Провайдер',l:true},{key:'protocol',title:'Протокол',slot:true,l:true},{key:'country',title:'Страна',head:'',l:true},
-  {key:'crc',title:'Нода',l:true,nowrap:true},{key:'ts',title:'Проход',slot:true,l:true,nowrap:true},
+  {key:'provider',title:'Провайдер',l:true},{key:'protocol',title:'Протокол',slot:true,l:true},
+  {key:'crc',title:'Нода',l:true,nowrap:true},{key:'country',title:'Страна',head:'',l:true},{key:'ts',title:'Проход',slot:true,l:true,nowrap:true},
   {key:'ip_type',title:'Тип IP',head:'IP',slot:true,narrow:true,note:'Выходной IP по базе ip-api.com: здание — дата-центр, телефон — мобильная сеть, дом — домашний; маска — IP известен как VPN/прокси; флаг ниже — база относит IP к другой стране, чем показал тест соединения. Красное хуже для AI-сервисов. Наведите курсор: IP и сеть (ASN).'},
-  ...tests.value.map(t=>t in AI ? {key:t,title:testTitle(t),slot:true,narrow:true,note:t==='gemini'?AI_NOTE:null} : {key:t,title:testTitle(t),slot:true,l:true}),
+  ...tests.value.map(t=>t in AI ? {key:t,title:testTitle(t),slot:true,narrow:true,note:NOTES[t] || null} : {key:t,title:testTitle(t),slot:true,l:true}),
 ])
 </script>
 <template>
@@ -43,7 +45,7 @@ const columns=computed(()=>[
   </DataTable>
 </template>
 <style scoped>
-.proto { display: inline-flex; flex-direction: column; font-size: 12px; line-height: 1.25; }
+.proto { display: inline-flex; flex-direction: column; font-size: 12px; line-height: 1.25; white-space: nowrap; }
 .ip-type, .ai-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.2; }
 .ip-type > span:first-child { display: inline-flex; gap: 2px; }
 </style>

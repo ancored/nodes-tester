@@ -318,24 +318,22 @@ def _switch_history(db: str) -> list[dict]:
 
 
 def _provider_quality(rating: list[dict]) -> list[dict]:
-    """Качество провайдеров: всего/мёртвых нод и средний рейтинг (без учёта мёртвых)
-    по (провайдер, группа). Нода входит в каждую свою группу."""
+    """Качество провайдеров: всего/мёртвых нод и средний рейтинг (без учёта мёртвых).
+    По группам не делим: в каждой группе все ноды."""
     acc: dict = {}
     for r in rating:
-        prov = r.get("provider") or "?"
         sc = _float(r.get("score"))
-        for group in r.get("groups") or ["вне групп"]:
-            a = acc.setdefault((prov, group), {"total": 0, "dead": 0, "sum": 0.0, "live": 0})
-            a["total"] += 1
-            if sc <= 0:
-                a["dead"] += 1
-            else:
-                a["sum"] += sc
-                a["live"] += 1
-    out = [{"provider": prov, "group": group, "total": a["total"], "dead": a["dead"],
+        a = acc.setdefault(r.get("provider") or "?", {"total": 0, "dead": 0, "sum": 0.0, "live": 0})
+        a["total"] += 1
+        if sc <= 0:
+            a["dead"] += 1
+        else:
+            a["sum"] += sc
+            a["live"] += 1
+    out = [{"provider": prov, "total": a["total"], "dead": a["dead"],
             "dead_pct": round(100 * a["dead"] / a["total"]) if a["total"] else 0,
             "avg": round(a["sum"] / a["live"], 1) if a["live"] else 0.0}
-           for (prov, group), a in acc.items()]
+           for prov, a in acc.items()]
     out.sort(key=lambda x: x["avg"], reverse=True)
     return out
 
@@ -355,10 +353,11 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
-               "heavy_download", "gemini", "openai", "anthropic"]
-# Тесты отдельных фаз (для кандидатов групп): последний известный результат, вне прогона.
+               "heavy_download", "gemini", "openai", "anthropic", "whitelist"]
+# Тесты отдельных фаз (резерв групп, белые списки после прохода): последний известный
+# результат, вне прогона.
 _AI_TESTS = ("gemini", "openai", "anthropic")
-_PHASE_TESTS = ("heavy_download", *_AI_TESTS)
+_PHASE_TESTS = ("heavy_download", *_AI_TESTS, "whitelist")
 
 
 def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
@@ -393,6 +392,16 @@ def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
     return cell
 
 
+def _whitelist_cell(ok, m: dict) -> dict:
+    """Ячейка белых списков: галка или крест, подробности — адреса и SNI."""
+    parts = [f"IP {', '.join(m.get('ips') or []) or '?'}: {'в списке' if m.get('ip_ok') else 'нет в списке'}"]
+    if m.get("sni"):
+        parts.append(f"SNI {m['sni']}: {'в списке' if m.get('sni_ok') else 'нет в списке'}")
+    else:
+        parts.append("без TLS — достаточно IP")
+    return {"v": "Пройдена" if ok else "Не пройдена", "ok": 1 if ok else 0, "ai": 1, "title": "\n".join(parts)}
+
+
 def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
     """Компактное значение теста для ячейки: {v, ok, title?}."""
     try:
@@ -401,11 +410,15 @@ def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
         m = {}
     if test in _AI_TESTS:
         return _ai_cell(test, ok, m, error)
+    if test == "whitelist":
+        return _whitelist_cell(ok, m)
+    if test == "connectivity":                # галка или крест: страна — во флаге строки
+        cell = {"v": "Есть" if ok else "Провал", "ok": 1 if ok else 0, "ai": 1}
+        if not ok and (error or "").strip():
+            cell["title"] = error.strip()
+        return cell
     if not ok:
         return {"v": "Провал", "ok": 0, "title": (error or "").strip()}
-    if test == "connectivity":
-        cc = m.get("country")
-        return {"v": cc or "OK", "ok": 1}
     if test == "latency":
         return {"v": f"{m.get('ttfb_ms', '?')}", "ok": 1}
     if test == "jitter":

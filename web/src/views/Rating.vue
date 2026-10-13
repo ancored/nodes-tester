@@ -14,8 +14,8 @@ const c01 = (v) => fixed(v, 2)
 const columns = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'protocol', title: 'протокол', l: true },
-  { key: 'country', title: 'страна', l: true },
   { key: 'id', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
+  { key: 'country', title: 'страна', l: true },
   { key: 'score', title: 'рейтинг', slot: true },
   { key: 'active', title: 'выбрана', slot: true },
   { key: 'reserve', title: 'резерв', l: true, fmt: (v) => v || '—' },

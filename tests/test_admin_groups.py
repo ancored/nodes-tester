@@ -40,16 +40,16 @@ class NodeGroupsSnapshotTest(unittest.TestCase):
         self.assertEqual(by_crc, {"aaaa0001.00000000": ["eu"], US_CRC: ["us", "ai"]})
         self.assertEqual(data.node_groups(os.path.join(tmp, "missing.json")), ([], {}))
 
-    def test_provider_quality_counts_node_in_each_group(self):
+    def test_provider_quality_per_provider(self):
+        # в каждой группе все ноды — по группам не делим
         rows = data._provider_quality([
             {"provider": "LUNA", "score": 50, "groups": ["us", "ai"]},
             {"provider": "LUNA", "score": 0, "groups": ["us"]},
-            {"provider": "LUNA", "score": 10, "groups": []}])
-        by = {r["group"]: r for r in rows}
-        self.assertEqual(by["us"]["total"], 2)
-        self.assertEqual(by["us"]["dead"], 1)
-        self.assertEqual(by["ai"]["total"], 1)
-        self.assertEqual(by["вне групп"]["total"], 1)
+            {"provider": "STAR", "score": 10, "groups": []}])
+        by = {r["provider"]: r for r in rows}
+        self.assertEqual((by["LUNA"]["total"], by["LUNA"]["dead"], by["LUNA"]["avg"]), (2, 1, 50.0))
+        self.assertNotIn("group", by["LUNA"])
+        self.assertEqual(by["STAR"]["total"], 1)
 
 
 class Board:

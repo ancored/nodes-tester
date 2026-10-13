@@ -8,9 +8,9 @@ import { STATUS } from '../status.js'
 
 const s = useSnapshot()
 
-// --- Качество провайдеров (по группам нод) ---
+// --- Качество провайдеров ---
 const qualityRows = computed(() => s.data.provider_quality || [])
-const qualityFilters = [{ key: 'group', title: 'Группа', get: (r) => r.group }, { key: 'provider', title: 'Провайдер' }]
+const qualityFilters = [{ key: 'provider', title: 'Провайдер' }]
 const score1 = (v) => fixed(v, 1)
 const nextProbe = (v, r) =>
   r.state === 'backoff'
@@ -18,7 +18,6 @@ const nextProbe = (v, r) =>
     : v ? `${dateDM(v)} ${timeHMS(v).slice(0, 5)}` : '–'
 const qualCols = [
   { key: 'provider', title: 'провайдер', l: true },
-  { key: 'group', title: 'группа', l: true },
   { key: 'total', title: 'всего нод' },
   { key: 'dead_pct', title: 'доля с рейтингом 0', fmt: pct, cls: (v) => (+v > 50 ? 'bad' : 'num'), strong: true },
   { key: 'avg', title: 'ср. рейтинг (без нулей)', fmt: score1, cls: scoreClass, strong: true },
@@ -31,8 +30,8 @@ const garbageFilters = [{ key: 'state', title: 'Статус', get: stateLabel }
 const garbCols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'protocol', title: 'протокол', l: true },
-  { key: 'cc', title: 'cc', l: true },
   { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
+  { key: 'cc', title: 'cc', l: true },
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'state', title: 'статус', slot: true },
   { key: 'streak', title: 'провалов подряд' },
@@ -47,8 +46,8 @@ const longevity = computed(() => s.data.longevity || [])
 const longCols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'protocol', title: 'протокол', l: true },
-  { key: 'cc', title: 'cc', l: true },
   { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
+  { key: 'cc', title: 'cc', l: true },
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'age', title: 'возраст', fmt: dur, cls: () => 'num' },
   { key: 'score', title: 'score', fmt: score1, cls: scoreClass, strong: true },
@@ -61,8 +60,8 @@ const dropouts = computed(() => s.data.dropouts || [])
 const dropCols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'protocol', title: 'протокол', l: true },
-  { key: 'cc', title: 'cc', l: true },
   { key: 'crc', title: 'crc', l: true, nowrap: true, cls: () => 'mut' },
+  { key: 'cc', title: 'cc', l: true },
   { key: 'first_seen', title: 'в конфиге с', fmt: dateDM, cls: () => 'num' },
   { key: 'first_garbage', title: '1-й карантин', fmt: dateDM, cls: () => 'num' },
   { key: 'lifespan', title: 'до 1-го карантина', fmt: dur, cls: () => 'num' },

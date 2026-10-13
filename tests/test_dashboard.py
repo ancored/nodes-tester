@@ -47,6 +47,22 @@ class PassLabelTest(unittest.TestCase):
         row.update(ok=0, error="connection refused")
         self.assertEqual(self._run([row])["rows"][0]["cells"]["connectivity"]["title"], "connection refused")
 
+    def test_connectivity_and_whitelist_are_marks_and_whitelist_is_off_pass(self):
+        import json
+        now = int(time.time())
+        conn = self._row("connectivity", now, 7)
+        conn["metrics"] = json.dumps({"country": "NL"})
+        wl = self._row("whitelist", now + 300, 7)          # пишется после прохода
+        wl["metrics"] = json.dumps({"ips": ["203.0.113.5"], "ip_ok": True, "sni": "vk.com", "sni_ok": True})
+        res = self._run([conn, wl])
+        row = res["rows"][0]
+        self.assertEqual(row["ts"], now)                   # проход — по лёгким тестам, не по whitelist
+        self.assertEqual((row["cells"]["connectivity"]["ok"], row["cells"]["connectivity"]["ai"]), (1, 1))
+        self.assertNotIn("NL", row["cells"]["connectivity"]["v"])
+        self.assertEqual(row["cells"]["whitelist"]["ok"], 1)
+        self.assertIn("SNI vk.com: в списке", row["cells"]["whitelist"]["title"])
+        self.assertEqual(res["tests"][-1], "whitelist")
+
 
 class _Cfg:
     def __init__(self, db):

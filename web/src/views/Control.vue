@@ -10,17 +10,17 @@ const all = computed(() => s.data.nodes || [])
 const states = n => [+n.active === 1 && 'активные', n.score == null && 'без замеров', n.gstate === 'backoff' && 'пауза',
   n.gstate === 'garbage' && 'карантин', +n.banned === 1 && 'исключены', +n.present === 0 && 'отсутствуют'].filter(Boolean)
 const extraFilters = [{ key:'state', title:'Состояние', get:states }]
+// Рейтинг и резерв — в своих столбцах, в «Состоянии» их не повторяем.
+const stateFlags = n => nodeFlags(n).filter(f => !/^(Рейтинг|Нет замеров|Резерв)/.test(f)).join(' · ') || '—'
 const columns = [
-  { key:'node', title:'Нода', l:true },
-  { key:'provider', title:'Провайдер', l:true }, { key:'country',title:'Страна',l:true },
-  { key:'groups', title:'Группы',l:true,fmt:v => (v || []).join(', ') || '—' }, { key:'score', title:'Рейтинг',fmt:v => v == null ? 'Нет замеров' : Number(v).toFixed(1),cls:scoreClass },
-  { key:'flags',title:'Состояние',l:true,fmt:(_,n) => nodeFlags(n).join(' · ') },
-  { key:'detail', title:'Подробности', l:true,slot:true },
+  { key:'provider', title:'Провайдер', l:true }, { key:'protocol', title:'Протокол', l:true },
+  { key:'crc', title:'Нода', l:true, nowrap:true }, { key:'country', title:'Страна', head:'', l:true },
+  { key:'reserve', title:'Резерв', l:true, fmt:v => v || '—' },
+  { key:'score', title:'Рейтинг',fmt:v => v == null ? 'Нет замеров' : Number(v).toFixed(1),cls:scoreClass },
+  { key:'flags',title:'Состояние',l:true,fmt:(_,n) => stateFlags(n) },
 ]
 </script>
 <template>
-  <p class="hint">Здесь ноды, известные тестеру, а не содержимое всех подписок. Откройте карточку для результатов, истории и действий.</p>
-  <DataTable :rows="all" :extra-filters="extraFilters" :columns="columns" :page-size="20" empty="Нод с такими условиями нет. Сбросьте фильтры или проверьте состояние базы на обзоре.">
-    <template #cell-detail="{row}"><RouterLink :to="'/nodes/'+row.crc">Открыть карточку</RouterLink></template>
-  </DataTable>
+  <p class="hint">Здесь ноды, известные тестеру, а не содержимое всех подписок. Нажмите на ключ ноды, чтобы открыть карточку с результатами, историей и действиями.</p>
+  <DataTable :rows="all" :extra-filters="extraFilters" :columns="columns" :page-size="20" empty="Нод с такими условиями нет. Сбросьте фильтры или проверьте состояние базы на обзоре." />
 </template>

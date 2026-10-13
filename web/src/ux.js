@@ -1,6 +1,6 @@
 export const TEST_NAMES = { connectivity: 'Соединение', latency: 'Задержка', jitter: 'Джиттер / потери',
   download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка',
-  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI' }
+  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', whitelist: 'Белый список' }
 // Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
 export const TEST_UNITS = { latency: 'мс', jitter: 'мс / %', download: 'Мбит/с', heavy_download: 'Мбит/с' }
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).
@@ -83,7 +83,7 @@ export function rowKeys(rows) {
 // Стандартные фильтры таблиц (DataTable): поля строк снимка /api/data.
 export const STANDARD_FILTERS = [
   { key: 'country', title: 'Страна', get: r => (r.country ?? r.cc)?.toUpperCase?.() },
-  { key: 'group', title: 'Группа', get: r => r.groups },
+  { key: 'reserve', title: 'Резерв', get: r => String(r.reserve || '').split(',').filter(Boolean) },
   { key: 'protocol', title: 'Протокол' },
   { key: 'provider', title: 'Провайдер' },
 ]
