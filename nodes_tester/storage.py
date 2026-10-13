@@ -262,13 +262,13 @@ class Storage:
             self._db.commit()
 
     def load_ip_info(self) -> dict:
-        """{ip: {asn, as_name, isp, org, country, mobile, proxy, hosting}} — весь кэш."""
+        """{ip: {asn, as_name, isp, org, country, mobile, proxy, hosting, ts}} — весь кэш."""
         with self._lock:
-            rows = self._db.execute("SELECT ip,asn,as_name,isp,org,country,mobile,proxy,hosting "
+            rows = self._db.execute("SELECT ip,asn,as_name,isp,org,country,mobile,proxy,hosting,ts "
                                     "FROM ip_info").fetchall()
         return {r[0]: {"asn": r[1], "as_name": r[2] or "", "isp": r[3] or "", "org": r[4] or "",
                        "country": r[5] or "", "mobile": _int(r[6]), "proxy": _int(r[7]),
-                       "hosting": _int(r[8])} for r in rows}
+                       "hosting": _int(r[8]), "ts": _int(r[9])} for r in rows}
 
     # --- Трафик --------------------------------------------------------
 

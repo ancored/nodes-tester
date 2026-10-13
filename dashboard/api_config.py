@@ -83,25 +83,58 @@ def _document(path: str):
         raise HttpError(500, f"Не удалось прочитать файл {path}: {exc}")
 
 
+def _keys_by_provider(tags) -> dict[str, set]:
+    from naming import parse_node
+    out: dict[str, set] = {}
+    for tag in tags:
+        ident = parse_node(tag)
+        if ident.node_id:
+            out.setdefault(ident.provider, set()).add(ident.node_id)
+    return out
+
+
+def _branch_diff(app: App, branch: str, raw: dict) -> dict:
+    """Разница последнего опроса с действующим конфигом ветви по подпискам: сколько нод в
+    конфиге, сколько дала бы сборка из опроса, новых и ушедших доступов."""
+    from nodes_config import build
+    nodes_file = app.cfg.nodes_file if branch == "router" else app.cfg.whnodes_file
+    try:
+        fragment, _ = build.build([raw], app.cfg, branch, log=lambda m: None)
+        with open(nodes_file, encoding="utf-8") as fh:
+            current = json.load(fh)
+    except (OSError, ValueError, KeyError, TypeError):     # нет файла, битый raw или nodes.json
+        return {}
+    fresh = _keys_by_provider(build.tags(fragment))
+    config = _keys_by_provider(build.tags(current))
+    return {provider: {"in_config": len(config.get(provider, ())), "in_poll": len(fresh.get(provider, ())),
+                       "new": len(fresh.get(provider, set()) - config.get(provider, set())),
+                       "gone": len(config.get(provider, set()) - fresh.get(provider, set()))}
+            for provider in set(fresh) | set(config)}
+
+
 def _subscription_states(app: App) -> dict:
     """Состояние подписок по последнему raw (raw/router.json, raw/clients.json): tag →
-    {ok, count, last_ok_at, stale, error, meta}. Без оркестратора (нет каталога данных) — пусто."""
+    {ok, count, last_ok_at, stale, error, meta, diff}; diff — разница с действующим конфигом.
+    Без оркестратора (нет каталога данных) — пусто."""
     orch = getattr(getattr(app, "runner", None), "orchestrator", None)
     if orch is None:
         return {}
     folder = os.path.join(str(orch.data_dir), "raw")
     out = {}
-    for name in ("router.json", "clients.json"):
+    for branch in ("router", "clients"):
         try:
-            with open(os.path.join(folder, name), encoding="utf-8") as fh:
-                sources = json.load(fh).get("sources") or []
+            with open(os.path.join(folder, branch + ".json"), encoding="utf-8") as fh:
+                raw = json.load(fh)
+            sources = raw.get("sources") or []
         except (OSError, ValueError, AttributeError):
             continue
+        diff = _branch_diff(app, branch, raw)
         for src in sources:
             if isinstance(src, dict) and src.get("provider"):
-                out[src["provider"]] = {k: src.get(k) for k in
-                                        ("ok", "count", "fetched_at", "last_ok_at", "stale",
-                                         "error", "meta")}
+                state = {k: src.get(k) for k in ("ok", "count", "fetched_at", "last_ok_at", "stale",
+                                                 "error", "meta")}
+                state["diff"] = diff.get(src["provider"])
+                out[src["provider"]] = state
     return out
 
 

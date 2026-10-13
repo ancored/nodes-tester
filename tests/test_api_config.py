@@ -90,6 +90,19 @@ class ApiConfigTest(unittest.TestCase):
         self.assertEqual(r.status, 400)
         self.assertIn("groups[0].tag", json.loads(r.body)["error"])
 
+    def test_subscription_states_diff_with_config(self):
+        from tests.test_nodes_config import _raw, _vless
+        os.makedirs(os.path.join(self.tmp, "raw"))
+        raw = _raw([("A", "x", _vless("10.0.0.1")), ("A", "y", _vless("10.0.0.2"))])
+        raw["sources"][0]["count"] = 2
+        with open(os.path.join(self.tmp, "raw", "router.json"), "w", encoding="utf-8") as fh:
+            json.dump(raw, fh)
+        with open(self.cfg.nodes_file, "w", encoding="utf-8") as fh:   # в конфиге — ушедшая нода
+            json.dump({"outbounds": [{"type": "vless", "tag": "A-vless|reality-out [11111111.22222222]"}]}, fh)
+        self.app.runner = type("R", (), {"orchestrator": type("O", (), {"data_dir": self.tmp})()})()
+        data = json.loads(self._call("GET", "/api/config/subscription-options").body)
+        self.assertEqual(data["sources"]["A"]["diff"], {"in_config": 1, "in_poll": 2, "new": 2, "gone": 1})
+
     def test_put_restarts_embedded_tester_unless_pipeline_runs(self):
         init = os.path.join(self.tmp, "nodes-tester.init")
         open(init, "w").close()

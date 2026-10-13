@@ -300,6 +300,34 @@ class Scoreboard:
             g = self._policy.get(group)
             return self._tier(r, group) if r is not None else len(g.prefer if g else ())
 
+    def _check_ts(self, r: dict, check: str) -> "int | None":
+        """Когда получен результат проверки (для возраста в админке)."""
+        if check == "country":
+            ts = r.get("country_ts")
+        elif check in ("ip_type", "geo_consistent"):
+            ts = (self._exit_info(r) or {}).get("ts")
+        elif check == "heavy":
+            ts = r.get("heavy_ts")
+        else:
+            ts = ((r.get("required") or {}).get(check) or {}).get("ts")
+        return int(ts) if ts else None
+
+    def check_report(self, node: str, group: str) -> list[dict]:
+        """Проверки группы для ноды (админка): обязательные и желательные — вердикт
+        "1"/"0"/"" и время результата."""
+        with self._lock:
+            r, g = self.rows.get(node), self._policy.get(group)
+            if r is None or g is None:
+                return []
+            return [{"check": check, "part": part, "verdict": self._verdict(r, check, params),
+                     "ts": self._check_ts(r, check)}
+                    for part in ("require", "prefer") for check, params in getattr(g, part).items()]
+
+    def node_by_key(self, key: str) -> "str | None":
+        """Тег ноды по ключу node_crc.cred_crc."""
+        with self._lock:
+            return next((n for n, r in self.rows.items() if r.get("id") == key), None)
+
     def fits(self, node: str, group: str) -> bool:
         """Нода проходит все обязательные проверки группы (свежие успехи)."""
         with self._lock:

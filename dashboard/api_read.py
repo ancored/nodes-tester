@@ -47,6 +47,48 @@ def register(app: App) -> None:
     def details(app, req, crc):
         return read_node(app, crc, include_config=True)
 
+    @app.route("GET", "/api/groups", needs_token=not open_read)
+    def groups(app, req):
+        """Группы из config.json и их живое состояние: активная нода или запасной выход,
+        кандидаты (первые 5 по порядку выбора), резерв."""
+        r = app.runner
+        out = []
+        for g in app.cfg.groups:
+            item = {"tag": g.tag, "strict": g.strict, "direct_fallback": g.direct_fallback,
+                    "in_global": g.in_global, "require": list(g.require), "prefer": list(g.prefer),
+                    "live": r is not None}
+            if r is not None:
+                st = r.switcher.state.get(g.tag) or {}
+                candidates = r.board.candidates(g.tag)
+                fallback = None
+                if not st.get("active") and st.get("failsafe"):
+                    fallback = st.get("fallback") or r.switcher.fallback(g.tag)
+                item.update(active=st.get("active"), fallback=fallback,
+                            members=len(r.board.group_nodes(g.tag)), candidates=len(candidates),
+                            top=[{"node": c["node"], "score": round(float(c.get("score") or 0), 1),
+                                  "tier": c.get("tier", 0)} for c in candidates[:5]],
+                            reserve=r.board.reserve(g.tag))
+            out.append(item)
+        return {"groups": out}
+
+    @app.route("GET", "/api/nodes/{crc}/groups", needs_token=not open_read)
+    def node_group_checks(app, req, crc):
+        """Проверки групп для ноды: входит ли, кандидат ли, вердикты и время результатов."""
+        if not NODE_KEY_RE.fullmatch(crc.lower()):
+            raise HttpError(400, "ключ ноды — node_crc.cred_crc, по 8 hex-символов")
+        r = app.runner
+        node = r.board.node_by_key(crc.lower()) if r is not None else None
+        if node is None:
+            return {"live": r is not None, "groups": []}
+        out = []
+        for g in app.cfg.groups:
+            out.append({"group": g.tag, "member": node in r.board.group_nodes(g.tag),
+                        "candidate": any(c["node"] == node for c in r.board.candidates(g.tag)),
+                        "active": r.switcher.active_node(g.tag) == node,
+                        "reserve": node in r.board.reserve(g.tag),
+                        "checks": r.board.check_report(node, g.tag)})
+        return {"live": True, "groups": out}
+
     def _snapshot(app: App) -> dict:
         try:
             data = collect(app.cfg)
