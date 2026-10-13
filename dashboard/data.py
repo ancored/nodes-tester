@@ -536,8 +536,9 @@ def _results(db: str) -> dict:
             tests_seen.add(test)
         node_rows.append(node)
 
-    cols = [t for t in _TEST_ORDER if t in tests_seen]
-    cols += sorted(tests_seen - set(cols))
+    # Все проверки — всегда: столбец без результатов (новая база, проверка ещё не шла)
+    # показывает прочерки, а не пропадает.
+    cols = list(_TEST_ORDER) + sorted(tests_seen - set(_TEST_ORDER))
     node_rows.sort(key=lambda x: x["ts"], reverse=True)
     for n in node_rows:                       # ярлык прогона "DD/MM-NNN" (дата из ts)
         lt = time.localtime(n["ts"]) if n.get("ts") else None

@@ -218,7 +218,7 @@ class ResultCellsTest(unittest.TestCase):
         finally:
             st.close()
         res = data._results(db)
-        self.assertEqual(res["tests"][-3:], ["gemini", "openai", "anthropic"])
+        self.assertEqual(res["tests"][-4:-1], ["gemini", "openai", "anthropic"])
         cells = res["rows"][0]["cells"]
         self.assertEqual((cells["gemini"]["ok"], cells["gemini"]["cc"], cells["gemini"]["ai"]), (0, "RU", 1))
         self.assertEqual((cells["openai"]["ok"], cells["openai"]["v"]), (1, "Доступен"))
