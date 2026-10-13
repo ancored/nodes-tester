@@ -3,7 +3,9 @@
 Конфиг содержит секреты (api.secret, admin.token, токены уведомлений, URL подписок),
 поэтому ВСЕ эндпоинты модуля требуют X-Admin-Token. Тело проверяется тем же загрузчиком,
 что у тестера (nodes_tester.config.parse_config); при ошибке файл не трогается. Изменения
-действуют после перезапуска тестера — админка перезапускает его сама (api_session).
+действуют после перезапуска тестера — админка встроенного тестера на OpenWrt перезапускает его
+сама. Соединения пользователей при этом не рвутся: на несколько секунд останавливаются только
+мониторинг и прогон.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import threading
 
 from nodes_common.fileio import atomic_write_private, dumps_json
@@ -18,6 +21,25 @@ from nodes_common.fileio import atomic_write_private, dumps_json
 from .webapp import App, HttpError
 
 _edit_lock = threading.Lock()
+TESTER_INIT = "/etc/init.d/nodes-tester"
+
+
+def _restart_tester(app: App) -> str:
+    """Перезапустить встроенный тестер после сохранения. Пусто — перезапуск запущен, иначе
+    причина, почему перезапускать нужно вручную.
+
+    Перезапуск идёт отвязанным процессом через секунду: ответ на PUT успевает уйти, а
+    процесс переживает остановку тестера (своя сессия). Во время конвейера не перезапускаем:
+    оркестратор живёт в тестере, и прерванное применение осталось бы без надзора."""
+    runner = getattr(app, "runner", None)
+    if runner is None or not os.path.exists(TESTER_INIT):
+        return "перезапустите тестер вручную"
+    orch = getattr(runner, "orchestrator", None)
+    if orch is not None and orch.status()["current"]:
+        return "идёт конвейер — перезапустите тестер после его завершения"
+    subprocess.Popen(["/bin/sh", "-c", f"sleep 1; {TESTER_INIT} restart"], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return ""
 
 
 def _revision(path):
@@ -107,7 +129,9 @@ def register(app: App) -> None:
                 raise HttpError(409, "Файл изменился после открытия. Перечитайте его перед сохранением.")
             atomic_write_private(path, dumps_json(data))
             revision = _revision(path)
-        return {"ok": True, "path": path, "revision": revision, "restart_required": True}
+        note = _restart_tester(app)
+        return {"ok": True, "path": path, "revision": revision, "restart_required": True,
+                "restarting": not note, "restart_note": note}
 
     @app.route("GET", "/api/config/subscription-options", needs_token=True)
     def subscription_options(app, req):

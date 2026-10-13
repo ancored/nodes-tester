@@ -56,6 +56,16 @@ function update(field,event,type='text') {
   if(type === 'duration') v = v.trim() || undefined
   setPath(document.value,field,v); preview.value=false
 }
+// Тестер перезапускается отвязанным процессом через секунду; ждём, пока админка снова ответит.
+async function waitRestart(epoch,suffix) {
+  const pause=ms=>new Promise(r=>setTimeout(r,ms))
+  await pause(5000)
+  for(let i=0;i<30;i++) {
+    try { await api.get('/capabilities'); if(epoch===auth.epoch){message.value='Тестер перезапущен, новые настройки действуют.'+suffix;restart.value=false}; return }
+    catch { await pause(2000) }
+  }
+  if(epoch===auth.epoch) error.value='Тестер не ответил за минуту после перезапуска. Журнал: logread -e nodes-tester'
+}
 async function save() {
   if(!can('edit_config') || !candidate.value) {error.value='Проверьте JSON: нужен корректный объект'; return}
   busy.value=true; error.value=''; const epoch=auth.epoch
@@ -65,7 +75,9 @@ async function save() {
     if(epoch !== auth.epoch) return
     document.value=data; original.value=JSON.parse(JSON.stringify(data)); text.value=JSON.stringify(data,null,2)
     revision.value=result.revision; restart.value=!!result.restart_required; preview.value=false
-    message.value=subscriptions.value ? 'config.json сохранён. Загрузка, сборка и применение к sing-box не запускались; тестер перечитает файл после перезапуска.' : 'config.json сохранён. Изменения начнут действовать после перезапуска тестера.'
+    const sb=subscriptions.value ? ' Загрузка подписок, сборка и применение к sing-box не запускались.' : ''
+    message.value=result.restarting ? 'config.json сохранён. Тестер перезапускается…'+sb : 'config.json сохранён; '+(result.restart_note || 'перезапустите тестер')+'.'+sb
+    if(result.restarting) waitRestart(epoch,sb)
   } catch(e){error.value=e.message; if(e.status === 409) conflict.value=true}
   finally{busy.value=false}
 }
@@ -158,7 +170,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
     <p v-if="message" class="notice" role="status">{{ message }}</p><p v-if="error" class="notice bad" role="alert">{{ error }}</p>
     <section v-if="preview" class="panel">
       <h2>Изменяемые поля</h2><p class="break">{{ changed.join(', ') }}</p>
-      <p>Значения скрыты, чтобы не раскрывать секреты. Сервер проверит конфигурацию перед атомарной записью. {{ subscriptions ? 'Применение к sing-box не выполняется.' : 'Изменения начнут действовать после перезапуска.' }}</p>
+      <p>Значения скрыты, чтобы не раскрывать секреты. Сервер проверит конфигурацию перед атомарной записью. После сохранения тестер перезапустится сам: на несколько секунд остановятся мониторинг и прогон, соединения пользователей не рвутся.{{ subscriptions ? ' Подписки и группы попадут в sing-box со следующей сборкой конвейера.' : '' }}</p>
       <button class="btn primary" :disabled="busy || !dirty || conflict" @click="save">Подтвердить и сохранить файл</button><p v-if="conflict" class="mut">Сохранение заблокировано: перечитайте файл. Несохранённые правки придётся внести заново.</p>
     </section>
     <template v-if="document">

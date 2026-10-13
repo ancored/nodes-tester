@@ -21,7 +21,7 @@ start_service() {
 	mkdir -p "$data_dir"
 
 	procd_open_instance
-	# относительные пути config.json (storage.db_file) отсчитываются от data_dir
+	# относительные пути config.json (storage.path) и nodes.json — в data_dir
 	procd_set_param command /bin/sh -c "cd '$data_dir' && exec /usr/bin/python3 -u -m nodes_tester --config '$config_dir/config.json'"
 	procd_set_param env PYTHONPATH="$APP_DIR" PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1
 	procd_set_param respawn

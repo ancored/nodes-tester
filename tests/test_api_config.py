@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+from unittest.mock import patch
 
 from tests.helpers import load_test_config, temp_dir
 from nodes_tester.config import load_config
@@ -63,6 +64,27 @@ class ApiConfigTest(unittest.TestCase):
             self.assertEqual(json.load(fh), cur)
         stale = self._call("PUT", "/api/config", body=cur, headers={"If-Match": doc["revision"]})
         self.assertEqual(stale.status, 409)
+
+    def test_put_restarts_embedded_tester_unless_pipeline_runs(self):
+        init = os.path.join(self.tmp, "nodes-tester.init")
+        open(init, "w").close()
+        busy = {"current": None}
+        runner = type("R", (), {"orchestrator": type("O", (), {"status": lambda s: busy})()})()
+        self.app.runner = runner
+        with patch("dashboard.api_config.TESTER_INIT", init), \
+                patch("dashboard.api_config.subprocess.Popen") as popen:
+            body = json.loads(self._call("PUT", "/api/config", body=self._current()["data"]).body)
+            self.assertTrue(body["restarting"])
+            self.assertIn(init + " restart", popen.call_args.args[0][-1])
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            busy["current"] = {"id": "x"}
+            body = json.loads(self._call("PUT", "/api/config", body=self._current()["data"]).body)
+            self.assertFalse(body["restarting"])
+            self.assertIn("конвейер", body["restart_note"])
+            self.assertEqual(popen.call_count, 1)
+        self.app.runner = None                    # без тестера (отдельный процесс) — вручную
+        body = json.loads(self._call("PUT", "/api/config", body=self._current()["data"]).body)
+        self.assertFalse(body["restarting"])
 
     @unittest.skipUnless(os.name == "posix", "права файлов — только POSIX")
     def test_put_keeps_config_private(self):
