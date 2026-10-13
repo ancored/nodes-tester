@@ -63,6 +63,16 @@ class PassLabelTest(unittest.TestCase):
         self.assertIn("SNI vk.com: в списке", row["cells"]["whitelist"]["title"])
         self.assertEqual(res["tests"][-1], "whitelist")
 
+    def test_country_from_previous_pass_is_marked(self):
+        now = int(time.time())
+        ok = self._row("connectivity", now - 1800, 6)
+        failed = self._row("connectivity", now, 7)
+        failed.update(ok=0, error="timeout")
+        row = self._run([ok, failed])["rows"][0]
+        self.assertEqual((row["country"], row["country_stale"], row["country_ts"]), ("nl", 1, now - 1800))
+        fresh = self._run([self._row("connectivity", now, 7)])["rows"][0]
+        self.assertNotIn("country_stale", fresh)
+
     def test_all_check_columns_even_without_results(self):
         res = self._run([self._row("connectivity", int(time.time()), 7)])
         self.assertEqual(res["tests"][-4:], ["gemini", "openai", "anthropic", "whitelist"])

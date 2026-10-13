@@ -61,7 +61,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
         </th></tr></thead>
         <tbody>
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
-            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
+            <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="c.cellTitle ? c.cellTitle(row) : isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break"><NodeKey :text="cellText(c,row)" stacked /></RouterLink>
               <span v-else-if="isProtocol(c)" class="proto"><span v-for="p in String(row[c.key] || '—').split('|')" :key="p">{{ p }}</span></span>

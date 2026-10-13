@@ -518,6 +518,12 @@ def _results(db: str) -> dict:
             if r["test"] == "connectivity" and r["ok"]:
                 _ip_type(node, r["metrics"], ip_info)
             tests_seen.add(r["test"])
+        # Страна ноды — последний успешный замер; соединение в этом проходе не прошло —
+        # флаг из прошлого замера, админка показывает его бледным с временем замера.
+        if node["country"] and not (node["cells"].get("connectivity") or {}).get("ok"):
+            measured = [r["ts"] for r in rws if r["test"] == "connectivity" and r["ok"]]
+            node["country_stale"] = 1
+            node["country_ts"] = max(measured) if measured else None
         # Тесты отдельных фаз (DL50, AI) — последнее известное значение; помечаем off_pass.
         for test in _PHASE_TESTS:
             phase = [r for r in rws if r["test"] == test]
