@@ -9,7 +9,7 @@ import unittest
 from naming import NODE_KEY_RE, node_key, parse_node, split_payload
 from nodes_tester.config import load_config
 from nodes_tester.scoreboard import Scoreboard
-from nodes_tester.storage import SCHEMA_VERSION, Storage
+from nodes_tester.storage import _SCHEMA, SCHEMA_VERSION, Storage
 from tests.helpers import fresh_nodes_json, make_config, temp_dir
 from tests.test_reserve import _Base, _row
 
@@ -112,6 +112,23 @@ class StorageSchemaTest(unittest.TestCase):
         finally:
             storage.close()
         self.assertTrue(any(name.startswith("stats.db.v1-") for name in os.listdir(tmp)))
+
+    def test_title_column_added_to_r6_database(self):
+        tmp = temp_dir()
+        db = os.path.join(tmp, "stats.db")
+        con = sqlite3.connect(db)
+        con.executescript(_SCHEMA.replace(", title TEXT", ""))          # схема r6
+        con.execute("INSERT INTO meta VALUES ('schema', ?)", (SCHEMA_VERSION,))
+        con.execute("INSERT INTO nodes (crc, tag) VALUES ('aaaa0001.00000001', 'A')")
+        con.commit()
+        con.close()
+        storage = Storage(load_config(make_config(tmp)).storage)
+        try:
+            self.assertTrue(storage.node_exists("aaaa0001.00000001"))     # история на месте
+            cols = {row[1] for row in storage._db.execute("PRAGMA table_info(nodes)")}
+            self.assertIn("title", cols)
+        finally:
+            storage.close()
 
     def test_connectivity_country_marks_every_access_of_the_node(self):
         tmp = temp_dir()

@@ -117,6 +117,9 @@ class Storage:
         self._db = sqlite3.connect(cfg.path, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(_SCHEMA)
+        # База пакета 0.5.0-r6 создана без nodes.title.
+        if "title" not in {row[1] for row in self._db.execute("PRAGMA table_info(nodes)")}:
+            self._db.execute("ALTER TABLE nodes ADD COLUMN title TEXT")
         self._db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)",
                          (SCHEMA_VERSION,))
         self._db.commit()
