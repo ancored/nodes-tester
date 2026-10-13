@@ -251,7 +251,12 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | `geo_consistent` | страна IP по базе совпадает с измеренной | `ttl` `24h` |
 | `gemini`, `openai`, `anthropic` | доступ к AI-сервису | `ttl` `24h`, `attempts` `3`, `timeout` |
 | `heavy` | тяжёлая закачка кандидатов резерва | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2` |
-| `whitelist` | вхождение сервера в белые списки | пока не выполняется |
+| `whitelist` | пропустит ли ноду режим белых списков: IP сервера в IP-списке и SNI в списке доменов (домен и поддомены); без TLS — достаточно IP | `ttl` `24h`, `ip_list`, `sni_list` (текстовые списки [ru-mobile-whitelist](https://github.com/ancored/ru-mobile-whitelist)), `dns` `dns-ru`, `timeout` `10s` |
+
+`whitelist` — локальная проверка после прохода, трафик через ноду не идёт. Домен сервера ноды резолвится
+DoH-запросом к серверу `dns`: тегу DNS-сервера `type: https` из работающего конфига sing-box
+(`singbox.config`) или URL; тега нет — Quad9. Системный резолвер роутера не используется: он отправил бы
+имя ноды провайдеру.
 
 Дорогие проверки (AI, `heavy`) тестер запускает только для нод, уже прошедших дешёвые: gate и
 обязательную страну группы.
@@ -451,6 +456,7 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | Поле | По умолчанию | Описание |
 |---|---|---|
 | `init` | `/etc/init.d/sing-box` | init-скрипт sing-box |
+| `config` | `/etc/sing-box/config.json` | Работающий конфиг: из него `checks.whitelist.dns` берёт DNS-сервер по тегу |
 | `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | init-скрипт и таблица nftables `inet` kill switch |
 | `watch` | `5s` | Период сторожа |
 | `down_alert` | `1m` | Уведомить, если sing-box лежит дольше |

@@ -33,6 +33,7 @@ from .storage import Storage
 from .switcher import Switcher
 from .tests import TestContext, get_test_class
 from .traffic import TrafficCollector
+from .whitelist import WhitelistCheck
 
 
 # Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, cron).
@@ -83,6 +84,7 @@ class Runner:
         self._endpoints: dict = {}
         self._host_ep_last: dict = {}
         self._released_at: dict = {}            # crc → когда снята для резерва (monotonic)
+        self._whitelist = None              # WhitelistCheck: списки и адреса в кэше
         self._phase_tests: dict = {}            # имя → инстанс теста резерва (обязательные, heavy)
 
         # Админка (Фаза 2-3): живой лог, внеплановый прогон, статус.
@@ -586,6 +588,7 @@ class Runner:
             self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
 
         self._refresh_ip_info(exit_ips)
+        self._refresh_whitelist(nodes)
 
         self.board.end_pass(pass_no)
         self._progress = {**self._progress, "phase": "switching", "node": None}
@@ -653,6 +656,41 @@ class Runner:
         self.storage.save_ip_info(infos)
         self.board.set_ip_info(self.storage.load_ip_info())
         print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
+
+    def _refresh_whitelist(self, nodes) -> None:
+        """Проверка «белый список» для нод прохода без свежего результата (локальная: списки и
+        адрес сервера, трафик через ноду не идёт). Неудача проверки прежний вердикт не отменяет."""
+        params = self.cfg.checks["whitelist"]
+        now = time.time()
+        stale = [(r, i) for r, i in nodes
+                 if now - (self.board.result_ts(i.raw, "whitelist") or 0) >= params["ttl"]]
+        if not stale:
+            return
+        try:
+            with open(self.cfg.nodes_file, encoding="utf-8") as fh:
+                fragment = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"  [whitelist] {self.cfg.nodes_file} не прочитан: {exc}")
+            return
+        outbounds = {ob.get("tag"): ob for ob in fragment.get("outbounds", []) + fragment.get("endpoints", [])}
+        if self._whitelist is None:
+            self._whitelist = WhitelistCheck(params, self.cfg.singbox.config)
+        passed = checked = 0
+        for _regions, ident in stale:
+            ob = outbounds.get(ident.raw)
+            if ob is None:
+                continue
+            res = self._whitelist.run(ob)
+            if res.get("inconclusive"):
+                print(f"  [whitelist] {ident.short()}: {res['error']}")
+                continue
+            self.board.set_required_result(ident.raw, "whitelist", res["ok"])
+            self.storage.add_results({"round": self._current_pass, "id": ident.node_id,
+                                      "node": ident.raw, "tests": {"whitelist": res}})
+            checked += 1
+            passed += res["ok"]
+        if checked:
+            print(f"  · белые списки: проверено {checked}, проходят {passed}")
 
     def via_tester(self, fn, attempts: int = 3):
         """Выполнить fn(session) через SOCKS тестера на лучших здоровых нодах (по очереди,

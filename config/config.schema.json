@@ -601,15 +601,26 @@
               "description": "Срок годности вердикта.",
               "default": "24h"
             },
-            "cidr": {
+            "ip_list": {
               "type": "string",
-              "description": "Набор адресов белого списка.",
-              "default": "russia-mobile-whitelist-cidr.srs"
+              "description": "Список подсетей (текст, по строке).",
+              "default": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-ip.txt"
             },
-            "domains": {
+            "sni_list": {
               "type": "string",
-              "description": "Набор доменов белого списка.",
-              "default": "russia-mobile-whitelist-domains.srs"
+              "description": "Список доменов SNI (текст, домен и поддомены).",
+              "default": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-sni.txt"
+            },
+            "dns": {
+              "type": "string",
+              "description": "DoH для адресов серверов нод: тег DNS-сервера type https из конфига sing-box или URL; тега нет — Quad9.",
+              "default": "dns-ru"
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут загрузки списков и DNS-запроса.",
+              "default": "10s"
             },
             "for_region": {
               "type": "object",
@@ -619,7 +630,7 @@
               }
             }
           },
-          "description": "Вхождение сервера ноды в белые списки (пока не выполняется)."
+          "description": "Пропустит ли ноду режим белых списков: IP сервера в IP-списке и SNI в списке доменов; без TLS — достаточно IP."
         }
       },
       "description": "Проверки с вердиктом и сроком годности; значения по умолчанию для групп."
@@ -1511,6 +1522,11 @@
           "type": "string",
           "description": "init-скрипт sing-box.",
           "default": "/etc/init.d/sing-box"
+        },
+        "config": {
+          "type": "string",
+          "description": "Работающий конфиг sing-box: из него берутся DNS-серверы по тегу.",
+          "default": "/etc/sing-box/config.json"
         },
         "killswitch": {
           "type": "object",

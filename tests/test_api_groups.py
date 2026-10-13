@@ -57,5 +57,14 @@ class ApiGroupsTest(unittest.TestCase):
         self.assertEqual(bad.status, 400)
 
 
+class FailsafeNotTestedTest(unittest.TestCase):
+    def test_pass_skips_failsafe_member_of_tester_selector(self):
+        # failsafe-out — член nodes-tester ради зонда монитора, но в прогонах его нет
+        r = make_runner(temp_dir(), tags=[A, "failsafe-out", B])
+        self.addCleanup(r.storage.close)
+        self.assertEqual([ident.raw for _, ident in r._enumerate_nodes()], [A, B])
+        self.assertNotIn("failsafe-out", r._present_crcs)
+
+
 if __name__ == "__main__":
     unittest.main()

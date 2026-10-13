@@ -17,8 +17,6 @@ function liveText(g){
 const KIND_NAMES={residential:'домашний',mobile:'мобильный',hosting:'дата-центр',proxy:'прокси'}
 const COUNTRY_FIELDS=[['countries','Страны (ISO-коды)'],['regions','Регионы'],['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов']]
 const BUILTIN=['eu','us','ru','other']
-// Проверка белых списков ещё не выполняется тестером: обязательной её не предлагаем.
-const checkList=computed(()=>props.checks.filter(c=>c!=='whitelist'))
 const groups=computed(()=>props.doc.groups)
 const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.regions || {})])])
 function changed(){emit('changed')}
@@ -73,7 +71,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> Входит в global-auto-out</label>
         </div>
         <table class="checks">
-          <tr v-for="check in checkList" :key="check">
+          <tr v-for="check in checks" :key="check">
             <td>{{ CHECK_NAMES[check] || check }}</td>
             <td><select :value="mode(g,check)" @change="setMode(g,check,$event.target.value)"><option value="">не учитывать</option><option value="require">обязательна</option><option value="prefer">желательна</option></select></td>
             <td>

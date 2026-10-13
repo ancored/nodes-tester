@@ -49,6 +49,7 @@ def make_runner(tmp: str, tags=None, **overrides):
     r._endpoints = {}
     r._host_ep_last = {}
     r.api = FakeApi(tags or [])
+    r._refresh_whitelist = lambda nodes: None     # проверка белых списков качает списки — не в тестах
     return r
 
 

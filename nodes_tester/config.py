@@ -180,8 +180,8 @@ _CHECK_DEFAULTS = {
     "anthropic": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
     "heavy": {"ttl": 21600.0, "url": "https://speed.cloudflare.com/__down?bytes=20000000",
               "duration": 30.0, "window_mb": 2},
-    "whitelist": {"ttl": 86400.0, "cidr": "russia-mobile-whitelist-cidr.srs",
-                  "domains": "russia-mobile-whitelist-domains.srs"},
+    "whitelist": {"ttl": 86400.0, "ip_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-ip.txt",
+                  "sni_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-sni.txt", "dns": "dns-ru", "timeout": 10.0},
 }
 CHECKS = tuple(_CHECK_DEFAULTS)
 # Параметры проверки внутри группы (require/prefer): условия отбора.
@@ -690,13 +690,15 @@ class SingboxConfig:
     watch: float = 5.0                       # период сторожа
     down_alert: float = 60.0                 # уведомить, если sing-box лежит дольше
     stop_flag: str = "/var/run/nodes-tester/singbox-stopped"
+    config: str = "/etc/sing-box/config.json"   # работающий конфиг: DNS-серверы по тегу
 
 
 def _singbox(obj) -> SingboxConfig:
     path, d = "singbox", SingboxConfig()
-    obj = _fields(obj, path, ("init", "killswitch", "watch", "down_alert"))
+    obj = _fields(obj, path, ("init", "config", "killswitch", "watch", "down_alert"))
     ks = _fields(obj.get("killswitch"), f"{path}.killswitch", ("init", "table"))
     return SingboxConfig(init=_string(obj, "init", path, d.init),
+                         config=_string(obj, "config", path, d.config),
                          killswitch_init=_string(ks, "init", f"{path}.killswitch", d.killswitch_init),
                          killswitch_table=_string(ks, "table", f"{path}.killswitch", d.killswitch_table),
                          watch=_duration(obj, "watch", path, d.watch),
