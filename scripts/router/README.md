@@ -17,7 +17,7 @@ nodes-tester pipeline router
 
 ```text
 nodes_fetch
-    -> raw/router.json
+    -> raw/router.json            (pipeline.sh fetch — только этот шаг)
     -> nodes_config
     -> nodes.json
     -> update-rules.sh

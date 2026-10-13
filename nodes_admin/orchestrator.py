@@ -16,9 +16,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-MODES = ("router", "clients")          # по расписанию
-RUN_MODES = MODES + ("apply", "apply-clients")  # вручную, без загрузки подписок: база и пресеты
-                                                # к текущему nodes.json / клиенты к whnodes.json
+MODES = ("router", "clients")          # по расписанию at (ЧЧ:ММ)
+FETCH = "fetch"                        # опрос подписок роутера каждые pipeline.fetch.every
+RUN_MODES = MODES + (FETCH, "apply", "apply-clients")  # apply*: без загрузки подписок — база и
+                                                # пресеты к текущему nodes.json / клиенты к whnodes.json
 APPLY_MODES = ("router", "apply")      # меняют sing-box роутера: тестер на паузе
 STATUSES = ("running", "ok", "error", "busy", "timeout", "interrupted")
 
@@ -254,7 +255,8 @@ class Orchestrator:
 
     def start_run(self, mode: str, dry_run: bool, *, trigger="manual", scheduled_for=None) -> str:
         if (mode not in RUN_MODES or type(dry_run) is not bool
-                or trigger not in ("manual", "schedule") or (trigger == "schedule" and mode not in MODES)):
+                or trigger not in ("manual", "schedule")
+                or (trigger == "schedule" and mode not in MODES + (FETCH,))):
             raise ValueError("разрешены router|clients|apply и dry_run: bool")
         with self._lock, self._connect() as db:
             if self._active(db):
@@ -418,6 +420,33 @@ class Orchestrator:
         future = [s for s in _slot_stamps(job["times"], (today, today + dt.timedelta(days=1))) if s > now]
         return min(future) if future else None
 
+    def _fetch_every(self) -> float:
+        """pipeline.fetch.every из config.json, с; 0 — отдельного опроса нет."""
+        from nodes_tester.config import parse_config
+        try:
+            data = json.loads(self.config_path.read_text(encoding="utf-8"))
+            return parse_config(data).pipeline.fetch.every
+        except (OSError, ValueError):
+            return 0.0
+
+    def _tick_fetch(self, now) -> None:
+        """Отдельный опрос подписок: прошло every с начала прошлого опроса или сборки
+        роутера (она тоже опрашивает). Конвейер занят — ждём следующего тика, без записи busy."""
+        every = self._fetch_every()
+        if every <= 0:
+            return
+        with self._lock, self._connect() as db:
+            if self._active(db):
+                return
+            last = db.execute("SELECT MAX(started) FROM runs WHERE mode IN (?, 'router') "
+                              "AND dry_run=0 AND status!='busy'", (FETCH,)).fetchone()[0]
+        if last is not None and now - last < every:
+            return
+        try:
+            self.start_run(FETCH, False, trigger="schedule", scheduled_for=now)
+        except BusyError:
+            pass
+
     def tick(self):
         now = self.clock()
         data, _ = self.read_schedule()
@@ -430,6 +459,9 @@ class Orchestrator:
                 last = db.execute("SELECT last_slot FROM schedule_state WHERE mode=?", (mode,)).fetchone()[0]
                 if slot is None or slot <= last:
                     continue
+                running = db.execute("SELECT mode FROM runs WHERE status='running' LIMIT 1").fetchone()
+                if running and running[0] == FETCH:
+                    continue                      # опрос короткий: слот подождёт, а не пропадёт
                 db.execute("UPDATE schedule_state SET last_slot=? WHERE mode=?", (slot, mode))
             try:
                 self.start_run(mode, False, trigger="schedule", scheduled_for=slot)
@@ -440,6 +472,7 @@ class Orchestrator:
                                   VALUES (?,?,0,'schedule',?,?,'busy',?,?)""",
                                (run_id, mode, now, now, str(self.logs_dir / (run_id + ".log")), slot))
                     self._prune(db)
+        self._tick_fetch(now)
 
     def start(self):
         if self._thread is not None:

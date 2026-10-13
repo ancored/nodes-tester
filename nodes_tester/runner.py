@@ -425,10 +425,11 @@ class Runner:
         except OSError:
             log_text = ""
         self.notifier.pipeline_finished(row, log_text)
-        if row.get("dry_run") or row.get("mode") not in ("router", "clients") or self.orchestrator is None:
+        branch = {"router": "router", "fetch": "router", "clients": "clients"}.get(row.get("mode"))
+        if row.get("dry_run") or branch is None or self.orchestrator is None:
             return
         try:
-            with open(self.orchestrator.data_dir / "raw" / f"{row['mode']}.json", encoding="utf-8") as fh:
+            with open(self.orchestrator.data_dir / "raw" / f"{branch}.json", encoding="utf-8") as fh:
                 sources = json.load(fh).get("sources") or []
         except (OSError, ValueError, AttributeError):
             return

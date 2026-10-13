@@ -101,6 +101,40 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len([row for row in orch.runs() if row["trigger"] == "schedule"]), 1)
         orch.stop()
 
+    def test_fetch_every_runs_between_builds_and_never_eats_a_slot(self):
+        path = self.config / "config.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["pipeline"]["fetch"] = {"every": "3h"}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        fake_now = [time.time()]
+        orch = Orchestrator(path, self.data, command=[sys.executable, "-c", "import time; time.sleep(.3)"],
+                            clock=lambda: fake_now[0])
+        orch.tick()                                        # опросов ещё не было — сразу
+        first = orch.runs()[0]
+        self.assertEqual((first["mode"], first["trigger"]), ("fetch", "schedule"))
+        # слот сборки роутера наступил, пока идёт опрос: слот ждёт, busy не пишется
+        slot = time.localtime(fake_now[0] + 60)
+        self.schedule["jobs"]["router"] = {"enabled": True,
+                                           "times": [f"{slot.tm_hour:02d}:{slot.tm_min:02d}"]}
+        _, revision = orch.read_schedule()
+        orch.write_schedule(self.schedule, revision)     # pipeline.fetch остаётся в config.json
+        fake_now[0] += 120
+        orch.tick()
+        self.assertEqual([r["mode"] for r in orch.runs()], ["fetch"])
+        self.wait_done(orch, first["id"])
+        orch.tick()                                        # опрос кончился — сборка по слоту
+        router = orch.runs()[0]
+        self.assertEqual(router["mode"], "router")
+        self.wait_done(orch, router["id"])
+        fake_now[0] += 3600                                # сборка тоже опрашивает: рано
+        orch.tick()
+        self.assertEqual(len(orch.runs()), 2)
+        fake_now[0] += 3 * 3600
+        orch.tick()
+        self.assertEqual(orch.runs()[0]["mode"], "fetch")
+        self.wait_done(orch, orch.runs()[0]["id"])
+        orch.stop()
+
     def test_recover_exit_file(self):
         orch = Orchestrator(self.config / "config.json", self.data)
         with closing(sqlite3.connect(str(orch.db_path))) as db, db:

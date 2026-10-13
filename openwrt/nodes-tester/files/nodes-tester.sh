@@ -6,7 +6,7 @@
 #   nodes-tester config   [args]   python3 -m nodes_config
 #   nodes-tester tester   [args]   python3 -m nodes_tester -c <config_dir>/config.json
 #   nodes-tester vacuum            VACUUM stats.db (для cron раз в месяц)
-#   nodes-tester pipeline router|clients [--dry-run]
+#   nodes-tester pipeline router|clients|fetch [--dry-run]
 #   nodes-tester backup   [--stable] [--pkg FILE]   снимок перед обновлением
 #   nodes-tester rollback [-y] [--keep-db] [--check] [SNAPSHOT]
 #

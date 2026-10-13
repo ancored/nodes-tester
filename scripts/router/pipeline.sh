@@ -4,6 +4,8 @@
 #
 #   pipeline.sh router  [--dry-run]   подписки → nodes.json → правила → применение к sing-box
 #   pipeline.sh clients [--dry-run]   WH-подписки → whnodes.json → клиентские конфиги
+#   pipeline.sh fetch   [--dry-run]   только опрос подписок роутера → raw/router.json
+#                                     (без сборки и применения; расписание — pipeline.fetch.every)
 #   pipeline.sh apply   [--dry-run]   база + пресеты правил → применение к текущему nodes.json
 #                                     (подписки не загружаются)
 #   pipeline.sh apply-clients [--dry-run]   базы клиентов + клиентские пресеты → клиентские
@@ -52,9 +54,9 @@ MODE="${1:-}"; DRY=0
 log() { echo "[pipeline] $*"; logger -t nodes-pipeline "$*" 2>/dev/null || true; }
 
 case "$MODE" in
-    router|apply) BRANCH=router; OUT="$DATA/nodes.json" ;;
+    router|apply|fetch) BRANCH=router; OUT="$DATA/nodes.json" ;;
     clients|apply-clients) BRANCH=clients; OUT="$DATA/whnodes.json" ;;
-    *) echo "использование: pipeline.sh router|clients|apply|apply-clients [--dry-run]" >&2; exit 2 ;;
+    *) echo "использование: pipeline.sh router|clients|fetch|apply|apply-clients [--dry-run]" >&2; exit 2 ;;
 esac
 SINGBOX="${SINGBOX:-$CFG_ROOT/singbox}"
 export PRESETS_DIR="$SINGBOX/presets"
@@ -85,6 +87,20 @@ CONFIG="$CFG_ROOT/config.json"
 
 cd "$PROJECT_DIR" || exit 1
 mkdir -p "$DATA/raw"
+
+if [ "$MODE" = fetch ]; then
+    if [ "$DRY" = 1 ]; then
+        python3 -m nodes_fetch -c "$CONFIG" --branch router --dry-run
+    else
+        python3 -m nodes_fetch -c "$CONFIG" --branch router -o "$DATA/raw/router.json"
+    fi
+    code=$?
+    case "$code" in
+        0) exit 0 ;;
+        2) log "fetch: guard — прошлый raw сохранён"; exit 0 ;;
+        *) log "fetch: ошибка ($code)"; exit 1 ;;
+    esac
+fi
 
 python3 -m nodes_fetch -c "$CONFIG" --branch "$BRANCH" -o "$DATA/raw/$BRANCH.json"
 code=$?
