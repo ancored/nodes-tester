@@ -1,92 +1,91 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { api } from '../api.js'
+import { computed } from 'vue'
 import JsonField from './JsonField.vue'
-const props=defineProps({doc:{type:Object,required:true},branch:{type:String,default:'router'},builtin:{type:Object,default:()=>({})}})
+const props=defineProps({doc:{type:Object,required:true},checks:{type:Array,default:()=>[]},ipKinds:{type:Array,default:()=>[]},builtin:{type:Object,default:()=>({})}})
 const emit=defineEmits(['changed','valid'])
-const CONDITIONS=[
-  ['countries','Страны (ISO-коды)'],['regions','Регионы'],
-  ['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов'],
-]
+const CHECK_NAMES={country:'Страна выхода',ip_type:'Тип выходного IP',geo_consistent:'Страна IP совпадает по базам',
+  gemini:'Google AI',openai:'OpenAI',anthropic:'Claude AI',heavy:'Тяжёлая загрузка',whitelist:'Белые списки'}
+const KIND_NAMES={residential:'домашний',mobile:'мобильный',hosting:'дата-центр',proxy:'прокси'}
+const COUNTRY_FIELDS=[['countries','Страны (ISO-коды)'],['regions','Регионы'],['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов']]
 const BUILTIN=['eu','us','ru','other']
+// Проверка белых списков ещё не выполняется тестером: обязательной её не предлагаем.
+const checkList=computed(()=>props.checks.filter(c=>c!=='whitelist'))
 const groups=computed(()=>props.doc.groups)
 const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.regions || {})])])
-const regionNames=computed(()=>regionList.value.join(', '))
-// Предпросмотр: оценка состава по текущему raw ветви (main.json или wh.json); после правки формы устаревает.
-const preview=ref(null), previewError=ref(''), previewBusy=ref(false)
-const byName=computed(()=>Object.fromEntries((preview.value?.groups || []).map(g=>[g.name,g])))
-function changed(){preview.value=null;emit('changed')}
-watch(()=>JSON.stringify(props.doc),()=>{preview.value=null})
-async function estimate(){
-  previewBusy.value=true;previewError.value=''
-  try{preview.value=await api.post(`/config/groups/preview?set=${props.branch}`,JSON.parse(JSON.stringify(props.doc)))}
-  catch(e){previewError.value=e.message}
-  finally{previewBusy.value=false}
-}
-// Неизвестные регионы и коды стран — подсказка рядом с полем (сервер их тоже отклонит или не найдёт).
-function unknown(g,key){
-  const values=g.match?.[key] || []
-  if(key.endsWith('regions'))return values.filter(v=>!regionList.value.includes(String(v).toLowerCase()))
-  return values.filter(v=>!/^[a-z]{2}$/i.test(v))
-}
-function add(){(props.doc.groups ||= []).push({name:'',enabled:true,in_global:false,fallback:true,match:{}});changed()}
-function remove(i){if(window.confirm(`Удалить группу ${props.doc.groups[i].name || i+1}?`)){props.doc.groups.splice(i,1);changed()}}
+function changed(){emit('changed')}
+function add(){(props.doc.groups ||= []).push({tag:''});changed()}
+function remove(i){if(window.confirm(`Удалить группу ${props.doc.groups[i].tag || i+1}?`)){props.doc.groups.splice(i,1);changed()}}
 function move(i,d){const g=props.doc.groups;const j=i+d;if(j<0||j>=g.length)return;[g[i],g[j]]=[g[j],g[i]];changed()}
 function flag(g,key,dflt){return g[key] ?? dflt}
 function setFlag(g,key,e){g[key]=e.target.checked;changed()}
-function cond(g,key){return (g.match?.[key] || []).join(', ')}
-function setCond(g,key,e){
-  const v=e.target.value.split(',').map(x=>x.trim()).filter(Boolean)
-  g.match ||= {}
-  if(v.length)g.match[key]=v; else delete g.match[key]
+function setReserve(g,e){if(e.target.value==='')delete g.reserve; else g.reserve=Number(e.target.value);changed()}
+// Проверка в группе: require (без свежего успеха нода не кандидат), prefer (влияет на выбор) или не используется.
+function mode(g,check){return g.require?.[check] ? 'require' : g.prefer?.[check] ? 'prefer' : ''}
+function params(g,check){return g.require?.[check] || g.prefer?.[check] || {}}
+function setMode(g,check,m){
+  const p=params(g,check)
+  for(const key of ['require','prefer']){if(g[key]){delete g[key][check];if(!Object.keys(g[key]).length)delete g[key]}}
+  if(m)(g[m] ||= {})[check]=p
   changed()
+}
+function setParam(g,check,key,list){
+  const p=params(g,check)
+  if(list.length)p[key]=list; else delete p[key]
+  changed()
+}
+function listValue(e){return e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}
+function toggleKind(g,kind,on){const cur=params(g,'ip_type').kinds || [];setParam(g,'ip_type','kinds',on ? [...new Set([...cur,kind])] : cur.filter(k=>k!==kind))}
+function unknown(g,key){
+  const values=params(g,'country')[key] || []
+  if(key.endsWith('regions'))return values.filter(v=>!regionList.value.includes(String(v).toLowerCase()))
+  return values.filter(v=>!/^[a-z]{2}$/i.test(v))
+}
+function fallbackText(g){
+  const direct=flag(g,'direct_fallback',false)
+  if(flag(g,'strict',false))return direct ? 'без кандидатов — direct-out' : 'без кандидатов — block-out: трафик группы блокируется'
+  return direct ? 'без кандидатов — failsafe-out; direct-out можно выбрать вручную' : 'без кандидатов — failsafe-out (лучшая нода по urltest)'
 }
 function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else delete props.doc.regions;changed()}
 </script>
 <template>
   <section class="panel">
     <h2>Группы нод</h2>
-    <p class="help-text">Для каждой группы сборка создаёт selector <code>{имя}-auto-out</code> и urltest <code>{имя}-auto-out-failsafe</code>. Тестер выбирает активную ноду в каждой группе отдельно. Нода может входить в несколько групп. Условия объединяются через И, значения внутри условия — через ИЛИ; без условий в группу попадают все ноды.</p>
-    <p v-if="!groups?.length" class="notice">Группы не заданы. Добавьте хотя бы одну группу.</p>
+    <p class="help-text">Каждая группа — selector <code>{tag}-auto-out</code>, в котором все ноды. Активную ноду выбирает тестер среди прошедших обязательные проверки группы; желательные проверки повышают приоритет. Нестрогая группа без кандидатов переключается на общий <code>failsafe-out</code>, строгая — на <code>block-out</code>, чтобы трафик не ушёл через неподходящую ноду.</p>
+    <p v-if="!groups?.length" class="notice">Группы не заданы: сборка создаст одну группу <code>all</code>.</p>
     <template v-if="groups">
       <div v-for="(g,i) in groups" :key="i" class="panel">
-        <h3>{{ g.name || 'Новая группа' }}<span v-if="g.name" class="mut"> · {{ g.name }}-auto-out</span><span v-if="g.enabled===false" class="mut"> · не создаётся</span></h3>
+        <h3>{{ g.tag || 'Новая группа' }}<span v-if="g.tag" class="mut"> · {{ g.tag }}-auto-out · {{ fallbackText(g) }}</span></h3>
         <div class="form-grid">
-          <label>Имя группы (латиница, цифры, _)<input :value="g.name" @input="g.name=$event.target.value.trim();changed()" /></label>
-          <label class="check"><input type="checkbox" :checked="flag(g,'enabled',true)" @change="setFlag(g,'enabled',$event)" /> Создавать группу</label>
+          <label>Тег группы (латиница в нижнем регистре, цифры, _)<input :value="g.tag" @input="g.tag=$event.target.value.trim();changed()" /></label>
+          <label>Кандидатов в резерве<input type="number" min="0" :value="g.reserve" placeholder="Как в настройках" @input="setReserve(g,$event)" /></label>
+          <label class="check"><input type="checkbox" :checked="flag(g,'strict',false)" @change="setFlag(g,'strict',$event)" /> Строгая: без подходящей ноды — блокировать</label>
+          <label class="check"><input type="checkbox" :checked="flag(g,'direct_fallback',false)" @change="setFlag(g,'direct_fallback',$event)" /> Разрешить прямой выход (direct-out)</label>
           <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> Входит в global-auto-out</label>
-          <label class="check"><input type="checkbox" :checked="flag(g,'fallback',true)" @change="setFlag(g,'fallback',$event)" /> Если нод нет — заполнить всеми нодами</label>
         </div>
-        <div class="form-grid">
-          <label v-for="[key,label] in CONDITIONS" :key="key">{{ label }}<input :value="cond(g,key)" placeholder="через запятую" @change="setCond(g,key,$event)" />
-            <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? 'Нет такого региона' : 'Нужен двухбуквенный ISO-код' }}: {{ unknown(g,key).join(', ') }}</small></label>
-        </div>
-        <div v-if="preview && g.name && g.enabled !== false" class="group-preview">
-          <template v-if="byName[g.name]">
-            <p><b>{{ byName[g.name].count }}</b> нод<template v-if="Object.keys(byName[g.name].overlaps).length"> · пересечения: {{ Object.entries(byName[g.name].overlaps).map(([o,n])=>o+' '+n).join(', ') }}</template></p>
-            <p v-if="byName[g.name].fallback" class="notice bad">Условиям не подошла ни одна нода: сработает fallback, группа получит все ноды.</p>
-            <p v-if="byName[g.name].samples.length" class="mut break">Например: {{ byName[g.name].samples.join(', ') }}</p>
-          </template>
-          <p v-else class="notice bad">Группа не будет создана: подходящих нод нет, а fallback выключен.</p>
-        </div>
+        <table class="checks">
+          <tr v-for="check in checkList" :key="check">
+            <td>{{ CHECK_NAMES[check] || check }}</td>
+            <td><select :value="mode(g,check)" @change="setMode(g,check,$event.target.value)"><option value="">не учитывать</option><option value="require">обязательна</option><option value="prefer">желательна</option></select></td>
+            <td>
+              <div v-if="check==='country' && mode(g,check)" class="form-grid">
+                <label v-for="[key,label] in COUNTRY_FIELDS" :key="key">{{ label }}<input :value="(params(g,check)[key] || []).join(', ')" placeholder="через запятую" @change="setParam(g,check,key,listValue($event))" />
+                  <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? 'Нет такого региона' : 'Нужен двухбуквенный ISO-код' }}: {{ unknown(g,key).join(', ') }}</small></label>
+              </div>
+              <div v-else-if="check==='ip_type' && mode(g,check)" class="toolbar">
+                <label v-for="kind in ipKinds" :key="kind" class="check"><input type="checkbox" :checked="(params(g,check).kinds || []).includes(kind)" @change="toggleKind(g,kind,$event.target.checked)" /> {{ KIND_NAMES[kind] || kind }}</label>
+              </div>
+            </td>
+          </tr>
+        </table>
         <div class="toolbar">
           <button class="btn sm" :disabled="i===0" @click="move(i,-1)">Выше</button>
           <button class="btn sm" :disabled="i===groups.length-1" @click="move(i,1)">Ниже</button>
           <button class="btn sm" @click="remove(i)">Удалить группу</button>
         </div>
       </div>
-      <p class="help-text">Регионы: {{ regionNames }}. Порядок групп — порядок в конфиге и в global-auto-out.</p>
+      <p class="help-text">Регионы: {{ regionList.join(', ') }}. Порядок групп — порядок в конфиге и в global-auto-out. Страна выхода берётся из замера соединения, а не из названия ноды у провайдера.</p>
     </template>
-    <div class="toolbar">
-      <button class="btn" @click="add">Добавить группу</button>
-      <button class="btn" :disabled="previewBusy || !groups?.length" @click="estimate">Оценить состав групп</button>
-    </div>
-    <p v-if="previewError" class="notice bad">{{ previewError }}</p>
-    <div v-if="preview" class="notice">
-      <p>Оценка по текущим данным подписок ({{ new Date(preview.raw_mtime*1000).toLocaleString('ru-RU') }}): нод {{ preview.leaf_nodes }}, вне групп {{ preview.ungrouped }}. Новая загрузка подписок может изменить результат.</p>
-      <p v-if="preview.current_known && (preview.added.length || preview.removed.length)">По сравнению с текущим nodes.json<template v-if="preview.added.length"> появятся: <b>{{ preview.added.join(', ') }}</b></template><template v-if="preview.removed.length"><template v-if="preview.added.length">;</template> исчезнут: <b class="bad">{{ preview.removed.join(', ') }}</b></template>.</p>
-      <p v-else-if="preview.current_known">Набор групп совпадает с текущим nodes.json.</p>
-    </div>
+    <div class="toolbar"><button class="btn" @click="add">Добавить группу</button></div>
   </section>
   <section class="panel">
     <h2>Регионы</h2>
@@ -95,6 +94,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
   </section>
 </template>
 <style scoped>
-.group-preview { border-top: 1px solid var(--line); padding-top: 8px; }
-.group-preview p { margin: 4px 0; }
+.checks { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.checks td { padding: 4px 8px 4px 0; vertical-align: top; text-align: left; border-top: 1px solid var(--line); }
+.checks td:first-child { white-space: nowrap; }
 </style>
