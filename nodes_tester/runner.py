@@ -28,7 +28,7 @@ from .config import TESTS, Config, region_of
 from .freshness import expires, fresh
 from .identity import NodeIdentity, parse_node
 from .logbuffer import LogRing, TeeStream
-from .monitor import ProductionMonitor
+from .monitor import ProductionMonitor, singbox_log_path
 from .notify import Notifier
 from .singbox_ctl import SingboxControl
 from .proxy import make_session
@@ -144,6 +144,7 @@ class Runner:
         self.board = Scoreboard(self.storage, cfg.rating)
         self.board.set_policy(cfg.groups, cfg.regions)
         self.board.set_heavy_ttl(cfg.checks["heavy"]["ttl"], cfg.checks["heavy"]["ttl_jitter"])
+        self.board.tier_floor = cfg.selection.tier_floor
         balance = cfg.selection.rotation.balance
         traffic_provider = (_traffic_provider_factory(self.storage, balance.window)
                             if balance.enabled else None)
@@ -157,6 +158,7 @@ class Runner:
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
             pause_check=self._apply_paused, on_tick=self.rebuild.check,
+            singbox_log=singbox_log_path(cfg.singbox.config),
         )
 
     # --- Состав нод ------------------------------------------------------

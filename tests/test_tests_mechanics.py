@@ -2,11 +2,12 @@
 требование exit_ip в connectivity, нейтральность http_error в скоринге."""
 
 import unittest
+from unittest.mock import patch
 
 import requests
 
-from nodes_tester.tests import TestContext
-from nodes_tester.tests.download import DownloadTest
+from nodes_tester.tests import TestContext, download
+from nodes_tester.tests.download import DownloadTest, HeavyDownloadTest
 from nodes_tester.tests.reachability import ReachabilityTest
 from nodes_tester.tests.connectivity import ConnectivityTest
 from nodes_tester import scoring
@@ -142,6 +143,28 @@ class ScoringNeutralHttpErrorTest(unittest.TestCase):
     def test_transport_break_zeroes_throughput(self):
         comps = scoring.components({"download": {"ok": False}}, self.th)
         self.assertEqual(comps.get("throughput"), 0.0)   # реальный провал транспорта
+
+
+class HeavyMinSpeedTest(unittest.TestCase):
+    """heavy: стабильная закачка медленнее min_mbps — провал (veto), а не успех."""
+
+    def _run(self, mbps, **extra):
+        stream = {"samples": [(0.0, 0)], "total": int(mbps * 1_000_000 / 8 * 10), "expected": None,
+                  "seconds": 10.0, "capped": True, "broken": False, "server_limit": False,
+                  "http_error": False, "http_status": None, "error": None, **extra}
+        with patch.object(download, "stream_single", lambda *a, **k: stream):
+            return HeavyDownloadTest({"min_mbps": 5}).run(_ctx(_Session())).to_dict()
+
+    def test_slow_but_stable_is_fail(self):
+        r = self._run(0.67)
+        self.assertFalse(r["ok"])
+        self.assertIn("ниже порога 5", r["error"])
+
+    def test_fast_enough_ok(self):
+        self.assertTrue(self._run(20)["ok"])
+
+    def test_server_limit_not_vetoed(self):
+        self.assertTrue(self._run(0.1, server_limit=True)["ok"])
 
 
 if __name__ == "__main__":

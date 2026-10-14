@@ -118,9 +118,10 @@ sing-box только со следующей сборкой конвейера.
     "quality_margin": 15,
     "confirm_cycles": 2,
     "comfort_floor": 50,
+    "tier_floor": 75,
     "cooldown": "5m",
     "rotation": {
-      "enabled": true, "interval": "3h", "jitter": "15m", "align": true,
+      "enabled": true, "interval": "3h", "jitter": "15m",
       "min_dwell": "30m", "min_score": 55, "avoid_recent": 2,
       "balance": { "window": "24h", "provider": 1.0, "country": 1.0, "protocol": 0.3 }
     },
@@ -136,12 +137,14 @@ sing-box только со следующей сборкой конвейера.
   },
 
   "monitor": {
-    "interval": "20s",
+    "interval": "10s",
     "reassert_drift": true,
     "silence": "5m",
     "silence_floor_mb": 0,
     "probe": { "url": "", "size_mb": 1, "min_mbps": 1, "timeout": "8s" },
-    "fails": 2
+    "fails": 2,
+    "retry": "30s",
+    "error_burst": 5
   },
 
   "pipeline": {
@@ -255,7 +258,7 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | `geo_consistent` | страна IP по базе совпадает с измеренной | `ttl` `24h` |
 | `gemini`, `openai`, `anthropic` | доступ к AI-сервису | `ttl` `24h`, `attempts` `3`, `timeout` |
 | `upstream` | проходит ли через ноду вышестоящий прокси — outbound sing-box типа `socks` с `detour` на группу | `ttl` `6h`, `outbound` (обязателен, если проверка есть в группе), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
-| `heavy` | тяжёлая закачка кандидатов резерва | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2` |
+| `heavy` | тяжёлая закачка кандидатов резерва; медленнее `min_mbps` — провал | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2`, `min_mbps` `5` |
 | `whitelist` | пропустит ли ноду режим белых списков: IP сервера в IP-списке и SNI в списке доменов (домен и поддомены); без TLS — достаточно IP | `ttl` `24h`, `ip_list`, `sni_list` (текстовые списки [ru-mobile-whitelist](https://github.com/ancored/ru-mobile-whitelist)), `dns` `dns-ru`, `timeout` `10s` |
 
 `whitelist` — локальная проверка (тестер раз в 5 минут смотрит, у каких нод истёк вердикт), трафик через ноду не идёт. Домен сервера ноды резолвится
@@ -342,10 +345,10 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 | `reserve_margin` | `quality_margin` | На сколько баллов нода должна быть лучше худшего кандидата резерва (того же яруса), чтобы занять его место |
 | `confirm_cycles` | `2` | Сколько замеров подряд (активной ноды или лидера резерва) подтверждать замену по качеству |
 | `comfort_floor` | `50` | Выше этого рейтинга активную ноду по качеству не меняют |
+| `tier_floor` | `75` | Рейтинг ниже — ярус после всех остальных нод группы: слабая нода, прошедшая приоритетные проверки (`prefer`), не обходит сильные, которые их не прошли |
 | `cooldown` | `5m` | Пауза между переключениями группы |
 | `rotation.enabled` | `true` | Плановая ротация |
-| `rotation.interval`, `rotation.jitter` | `3h`, `15m` | Срок ротации и случайный сдвиг |
-| `rotation.align` | `true` | Сроки ротации всех групп на общей сетке |
+| `rotation.interval`, `rotation.jitter` | `3h`, `15m` | Срок ротации и случайный сдвиг; у каждой группы свой срок от её переключения, группы не переключаются разом |
 | `rotation.min_dwell` | `30m` | Минимальное время на ноде |
 | `rotation.min_score` | `55` | Минимальный рейтинг кандидата ротации |
 | `rotation.avoid_recent` | `2` | Не возвращаться к последним N нодам |
@@ -367,17 +370,21 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 ## monitor
 
 Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` — внеплановый
-зонд; провал `fails` раз подряд — авария и замена.
+зонд; в логе sing-box за тик `error_burst` ошибок соединений через группу — зонд сразу; провал — повтор
+через `retry`, `fails` провалов подряд — авария и замена. Ошибки читаются из файла `log.output` работающего
+конфига sing-box (`singbox.config`); лог не в файле — сигнал не работает.
 
 | Поле | По умолчанию | Описание |
 |---|---|---|
-| `interval` | `20s` | Тик монитора |
+| `interval` | `10s` | Тик монитора |
 | `reassert_drift` | `true` | Вернуть выбор селекторов, если его сменили в обход тестера |
 | `silence` | `5m` | Тишина дольше — зонд |
 | `silence_floor_mb` | `0` | МБ за окно, которые считаются трафиком; `0` — `probe.min_mbps × silence` |
 | `probe.url`, `probe.size_mb` | speed.cloudflare.com, `1` | Адрес и объём зонда |
 | `probe.min_mbps`, `probe.timeout` | `1`, `8s` | Минимальная скорость зонда и тайм-аут |
 | `fails` | `2` | Провалов подряд до аварии |
+| `retry` | `30s` | Повтор зонда после провала |
+| `error_burst` | `5` | Ошибок соединений через группу за тик — зонд сразу; `0` — выключено |
 
 ## pipeline
 

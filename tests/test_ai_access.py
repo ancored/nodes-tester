@@ -136,6 +136,13 @@ class StrictExitIpTest(unittest.TestCase):
         self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 1, 1])
         self.assertEqual(self.sb.reserve_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
 
+    def test_low_score_after_wrong_ip_type(self):
+        # Домашний с рейтингом ниже tier_floor не обходит дата-центр с хорошим рейтингом.
+        self._strict()
+        self.sb.tier_floor = 75
+        self.assertEqual(self._cands(), ["DC", "PROXY", "HOME", "MOB"])
+        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [1, 1, 2, 2])
+
     def _switcher(self, active):
         from nodes_tester.config import SelectionConfig
         from nodes_tester.switcher import Switcher

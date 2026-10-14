@@ -738,6 +738,12 @@
               "default": 2,
               "minimum": 0
             },
+            "min_mbps": {
+              "type": "number",
+              "description": "Минимальная скорость: медленнее — провал (veto), нода не идёт в резерв.",
+              "default": 5,
+              "minimum": 0
+            },
             "for_region": {
               "type": "object",
               "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
@@ -1074,6 +1080,13 @@
           "minimum": 0,
           "maximum": 100
         },
+        "tier_floor": {
+          "type": "number",
+          "description": "Рейтинг ниже — ярус после всех остальных нод группы: слабая нода, прошедшая приоритетные проверки, не обходит сильные, которые их не прошли.",
+          "default": 75,
+          "minimum": 0,
+          "maximum": 100
+        },
         "cooldown": {
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
@@ -1098,13 +1111,8 @@
             "jitter": {
               "type": "string",
               "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
-              "description": "Случайный сдвиг срока.",
+              "description": "Случайный сдвиг срока: у каждой группы свой, группы не переключаются разом.",
               "default": "15m"
-            },
-            "align": {
-              "type": "boolean",
-              "description": "Сроки всех групп на общей сетке.",
-              "default": true
             },
             "min_dwell": {
               "type": "string",
@@ -1233,7 +1241,7 @@
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
           "description": "Тик монитора.",
-          "default": "20s"
+          "default": "10s"
         },
         "reassert_drift": {
           "type": "boolean",
@@ -1286,6 +1294,18 @@
           "description": "Провалов подряд до аварии.",
           "default": 2,
           "minimum": 1
+        },
+        "retry": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+          "description": "Повтор зонда после провала.",
+          "default": "30s"
+        },
+        "error_burst": {
+          "type": "integer",
+          "description": "Ошибок соединений через группу за тик (по логу sing-box) — зонд сразу; 0 — выключено.",
+          "default": 5,
+          "minimum": 0
         }
       },
       "description": "Надзор за активными нодами."

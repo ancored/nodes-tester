@@ -1,5 +1,5 @@
-"""Имена нод из подписок, карантин слабых нод (selection.quarantine.low_score) и общая
-сетка сроков ротации (rotation.align)."""
+"""Имена нод из подписок, карантин слабых нод (selection.quarantine.low_score) и сроки
+ротации групп."""
 
 import time
 import unittest
@@ -109,49 +109,26 @@ class LowScoreQuarantineTest(unittest.TestCase):
         self.assertNotIn("aaaa0001", r.storage.load_backoff())
 
 
-class AlignedRotationTest(unittest.TestCase):
-    """rotation.align: сроки групп — на общей сетке слотов."""
+class RotationDeadlineTest(unittest.TestCase):
+    """Срок ротации у каждой группы свой: interval ± jitter от её переключения."""
 
-    def _sw(self, state=None, **rot):
+    def _sw(self, **rot):
         from nodes_tester.config import RotationConfig, SelectionConfig
         from nodes_tester.switcher import Switcher
         cfg = SelectionConfig(rotation=RotationConfig(**rot))
-        storage = type("S", (), {"load_switch_state": lambda self: dict(state or {}),
+        storage = type("S", (), {"load_switch_state": lambda self: {},
                                  "set_active_crcs": lambda self, crcs: None})()
         return Switcher(cfg, None, _Board(), "nodes-tester", storage=storage)
 
-    def test_switches_at_different_times_share_deadline(self):
+    def test_groups_switched_together_get_different_deadlines(self):
         sw = self._sw()
-        base = sw._slot(165_740) + 60                 # сразу после слота (ротация)
-        a = sw._next_deadline(base)
-        b = sw._next_deadline(base + 1200)            # другая группа на 20 мин позже
-        self.assertEqual(a, b)
-        self.assertGreaterEqual(a, base + 1200 + 1800)   # не раньше min_dwell
-        self.assertLessEqual(a - base, 10800 + 1800 + 900 * 2)
+        deadlines = {sw._next_deadline(1000.0) for _ in range(20)}
+        self.assertGreater(len(deadlines), 1)
+        for d in deadlines:
+            self.assertLessEqual(abs(d - (1000.0 + 10800)), 900)
 
-    def test_jitter_common_and_bounded(self):
-        sw = self._sw()
-        for k in range(100, 120):
-            self.assertLessEqual(abs(sw._slot(k) - k * 10800), 900)
-        self.assertEqual(sw._slot(7), self._sw()._slot(7))   # стабилен между рестартами
-
-    def test_no_align_keeps_per_group_delay(self):
-        sw = self._sw(align=False, jitter=0)
-        self.assertEqual(sw._next_deadline(1000.0), 1000.0 + 10800)
-
-    def test_loaded_deadlines_snap_to_grid(self):
-        now = time.time()
-        state = {
-            "eu": {"active": A, "rotate_deadline": now + 3600, "last_switch": now - 7200},
-            "us": {"active": U, "rotate_deadline": now + 5400, "last_switch": now - 5400},
-            "ai": {"active": B, "rotate_deadline": now - 10, "last_switch": now - 9000},
-        }
-        sw = self._sw(state)
-        for g in ("eu", "us"):
-            d = sw.state[g]["rotate_deadline"]
-            self.assertEqual(d, sw._slot_at_or_after(d))           # на сетке
-            self.assertGreaterEqual(d, sw.state[g]["last_switch"] + 1800)
-        self.assertEqual(sw.state["ai"]["rotate_deadline"], now - 10)   # наступивший не трогаем
+    def test_no_jitter(self):
+        self.assertEqual(self._sw(jitter=0)._next_deadline(1000.0), 1000.0 + 10800)
 
 
 class _Board:

@@ -32,6 +32,7 @@ class Scoreboard:
         self.rows: dict[str, dict] = storage.load_scores()
         storage.set_reserve_marks({})         # резерв после старта собирается заново
         self._heavy_ttl = (0.0, 0.0)          # срок годности heavy и разброс, с; 0 — бессрочно
+        self.tier_floor = 0.0                 # selection.tier_floor: ниже — ярус после всех
         # Группы переключения ({tag}-auto-out в sing-box) → теги нод-членов. Пока состав
         # из sing-box не получен, групп нет: выбирать не из чего.
         self._members: dict[str, set[str]] = {}
@@ -279,8 +280,14 @@ class Scoreboard:
         return any(v == "0" for v in self._checks(r, group, "require").values())
 
     def _tier(self, r: dict, group: str) -> int:
-        """Ярус кандидата: сколько приоритетных проверок группы не пройдено."""
-        return sum(v != "1" for v in self._checks(r, group, "prefer").values())
+        """Ярус кандидата: сколько приоритетных проверок группы не пройдено. Рейтинг ниже
+        tier_floor — ярус после всех остальных: слабая нода, прошедшая приоритетные проверки,
+        не обходит сильные, которые их не прошли."""
+        prefer = self._checks(r, group, "prefer")
+        missed = sum(v != "1" for v in prefer.values())
+        if float(r.get("score") or 0) < self.tier_floor:
+            missed += len(prefer) + 1
+        return missed
 
     def tier(self, node: str, group: str) -> int:
         with self._lock:

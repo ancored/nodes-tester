@@ -90,6 +90,16 @@ class HeavyDownloadTest(DownloadTest):
     pass/fail. Логика замера та же, что у лёгкого download; отличается объёмом (url)
     и назначением.
 
-    Это проверка `heavy`: url, длительность и for_region — в config.checks.heavy."""
+    Это проверка `heavy`: url, длительность, min_mbps и for_region — в config.checks.heavy.
+    Медленнее min_mbps — провал: стабильная, но ползущая нода в резерв не идёт."""
     name = "heavy_download"
     default_url = HEAVY_URL
+
+    def run(self, ctx: TestContext) -> TestResult:
+        res = super().run(ctx)
+        floor = float(self.option(ctx, "min_mbps", 0) or 0)
+        speed = res.metrics.get("speed_mbps") or 0.0
+        if res.ok and not res.metrics.get("limited") and speed < floor:
+            return TestResult(self.name, ok=False, metrics=res.metrics,
+                              error=f"{speed} Мбит/с ниже порога {floor:g}", url=res.url)
+        return res

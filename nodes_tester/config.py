@@ -196,7 +196,7 @@ _CHECK_DEFAULTS = {
     "openai": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
     "anthropic": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
     "heavy": {"ttl": 21600.0, "url": "https://speed.cloudflare.com/__down?bytes=20000000",
-              "duration": 30.0, "window_mb": 2},
+              "duration": 30.0, "window_mb": 2, "min_mbps": 5.0},
     "upstream": {"ttl": 21600.0, "outbound": "", "url": "https://www.cloudflare.com/cdn-cgi/trace",
                  "attempts": 2, "timeout": 15.0},
     "whitelist": {"ttl": 86400.0, "ip_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-ip.txt",
@@ -398,9 +398,6 @@ class RotationConfig:
     enabled: bool = True
     interval: float = 10800.0
     jitter: float = 900.0
-    # align: сроки ротации всех групп — на общей сетке слотов, замеры нод освежаются
-    # один раз к слоту.
-    align: bool = True
     min_dwell: float = 1800.0
     min_score: float = 55.0
     avoid_recent: int = 2
@@ -424,6 +421,7 @@ class SelectionConfig:
     reserve_margin: float = 15.0              # не задан — как quality_margin
     confirm_cycles: int = 2
     comfort_floor: float = 50.0
+    tier_floor: float = 75.0                  # рейтинг ниже — ярус после всех остальных
     cooldown: float = 300.0
     rotation: RotationConfig = field(default_factory=RotationConfig)
     quarantine: QuarantineConfig = field(default_factory=QuarantineConfig)
@@ -432,9 +430,9 @@ class SelectionConfig:
 def _selection(obj) -> SelectionConfig:
     path, d = "selection", SelectionConfig()
     obj = _fields(obj, path, ("reserve", "quality_margin", "reserve_margin", "confirm_cycles", "comfort_floor",
-                              "cooldown", "rotation", "quarantine"))
+                              "tier_floor", "cooldown", "rotation", "quarantine"))
     rpath, r = f"{path}.rotation", RotationConfig()
-    rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "align", "min_dwell",
+    rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "min_dwell",
                                                "min_score", "avoid_recent", "balance"))
     bpath, b = f"{rpath}.balance", BalanceConfig()
     bal = _fields(rot.get("balance"), bpath, ("window", "provider", "country", "protocol"))
@@ -447,12 +445,12 @@ def _selection(obj) -> SelectionConfig:
         reserve_margin=_number(obj, "reserve_margin", path, quality_margin, 0),
         confirm_cycles=_number(obj, "confirm_cycles", path, d.confirm_cycles, 1, integer=True),
         comfort_floor=_number(obj, "comfort_floor", path, d.comfort_floor, 0, 100),
+        tier_floor=_number(obj, "tier_floor", path, d.tier_floor, 0, 100),
         cooldown=_duration(obj, "cooldown", path, d.cooldown),
         rotation=RotationConfig(
             enabled=_bool(rot, "enabled", rpath, r.enabled),
             interval=_duration(rot, "interval", rpath, r.interval),
             jitter=_duration(rot, "jitter", rpath, r.jitter),
-            align=_bool(rot, "align", rpath, r.align),
             min_dwell=_duration(rot, "min_dwell", rpath, r.min_dwell),
             min_score=_number(rot, "min_score", rpath, r.min_score, 0, 100),
             avoid_recent=_number(rot, "avoid_recent", rpath, r.avoid_recent, 0, integer=True),
@@ -472,7 +470,7 @@ class MonitorConfig:
     """Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` —
     внеплановый зонд (закачка probe_mb через socks); провал (нет ответа или скорость ниже
     probe_min_mbps — так ловится троттлинг) `fails` раз подряд — авария."""
-    interval: float = 20.0
+    interval: float = 10.0
     reassert_drift: bool = True       # вернуть выбор селекторов, если его сменили в обход
     silence: float = 300.0
     silence_floor_mb: float = 0.0     # МБ за окно = «трафик идёт»; 0 — авто
@@ -481,6 +479,8 @@ class MonitorConfig:
     probe_min_mbps: float = 1.0
     probe_timeout: float = 8.0
     fails: int = 2
+    retry: float = 30.0               # повтор зонда после провала
+    error_burst: int = 5              # ошибок соединений через группу за тик — зонд; 0 — выкл.
 
     @property
     def silence_floor_bytes(self) -> int:
@@ -492,7 +492,8 @@ class MonitorConfig:
 
 def _monitor(obj) -> MonitorConfig:
     path, d = "monitor", MonitorConfig()
-    obj = _fields(obj, path, ("interval", "reassert_drift", "silence", "silence_floor_mb", "probe", "fails"))
+    obj = _fields(obj, path, ("interval", "reassert_drift", "silence", "silence_floor_mb", "probe", "fails",
+                              "retry", "error_burst"))
     ppath = f"{path}.probe"
     probe = _fields(obj.get("probe"), ppath, ("url", "size_mb", "min_mbps", "timeout"))
     return MonitorConfig(interval=_duration(obj, "interval", path, d.interval),
@@ -503,7 +504,9 @@ def _monitor(obj) -> MonitorConfig:
                          probe_mb=_number(probe, "size_mb", ppath, d.probe_mb, 0.01),
                          probe_min_mbps=_number(probe, "min_mbps", ppath, d.probe_min_mbps, 0),
                          probe_timeout=_duration(probe, "timeout", ppath, d.probe_timeout),
-                         fails=_number(obj, "fails", path, d.fails, 1, integer=True))
+                         fails=_number(obj, "fails", path, d.fails, 1, integer=True),
+                         retry=_duration(obj, "retry", path, d.retry),
+                         error_burst=_number(obj, "error_burst", path, d.error_burst, 0, integer=True))
 
 
 @dataclass

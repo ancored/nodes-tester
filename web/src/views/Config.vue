@@ -101,7 +101,7 @@ const groups = [
     ['tester.request_timeout','Тайм-аут проверки (например, 10s)','duration'],['selection.reserve','Кандидатов в резерве группы','number']]},
   {title:'Переключение и наблюдение',note:'Включение ротации может изменить выбор боевых селекторов после перезапуска тестера.',fields:[
     ['selection.rotation.enabled','Ротация','checkbox'],['selection.rotation.interval','Интервал ротации (например, 3h)','duration'],
-    ['selection.rotation.min_dwell','Минимальное время на ноде (например, 30m)','duration'],['monitor.interval','Тик монитора активных нод (например, 20s)','duration'],
+    ['selection.rotation.min_dwell','Минимальное время на ноде (например, 30m)','duration'],['monitor.interval','Тик монитора активных нод (например, 10s)','duration'],
     ['selection.quarantine.duration','Длительность карантина (например, 3d)','duration'],['selection.quarantine.after_skips','Карантин после пропуска сроков соединения','number']]},
   {title:'Админка и хранение',note:'Смена токена, адреса или порта потребует перезапуска админки. Форма редактирует файл, не настройки текущего процесса.',fields:[
     ['admin.enabled','Встроенная админка','checkbox'],['admin.listen','Адрес прослушивания','text'],['admin.port','Порт админки','number'],

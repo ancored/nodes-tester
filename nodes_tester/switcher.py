@@ -64,7 +64,6 @@ class Switcher:
         # scores.active в БД — как в состоянии переключателя сразу после старта, а не
         # после первого замера (админка читает рейтинг из БД).
         self._sync_active_crcs()
-        self._align_loaded()
 
     # --- Публичное ------------------------------------------------------
 
@@ -544,50 +543,11 @@ class Switcher:
                 pass
         return groups
 
-    def _rotate_delay(self) -> float:
-        base = self.cfg.rotation.interval
-        j = self.cfg.rotation.jitter
-        return base + random.uniform(-j, j) if j else base
-
-    # --- Общая сетка сроков ротации (rotation.align) ----------------------
-    # Слот k: k*interval от эпохи + jitter, общий для всех групп и стабильный между
-    # рестартами (зерно — номер слота). Сроки групп совпадают → тестер освежает замеры
-    # нод один раз к слоту, а не к сроку каждой группы.
-
-    def _slot(self, k: int) -> float:
-        rot = self.cfg.rotation
-        j = min(float(rot.jitter or 0), float(rot.interval) / 4)   # слоты не перехлёстываются
-        return k * float(rot.interval) + (random.Random(k).uniform(-j, j) if j else 0.0)
-
-    def _slot_at_or_after(self, t: float) -> float:
-        k = int(t // float(self.cfg.rotation.interval)) - 1
-        while self._slot(k) < t:
-            k += 1
-        return self._slot(k)
-
     def _next_deadline(self, now: float) -> float:
-        """Срок следующей ротации после переключения в момент now."""
+        """Срок следующей ротации после переключения в момент now: у каждой группы свой,
+        interval ± jitter — группы не переключаются разом."""
         rot = self.cfg.rotation
-        if not rot.align or float(rot.interval) <= 0:
-            return now + self._rotate_delay()
-        return self._slot_at_or_after(now + float(rot.min_dwell))
-
-    def _align_loaded(self) -> None:
-        """Сроки, сохранённые до включения align, — на ближайший слот сетки (не раньше
-        last_switch + min_dwell). Наступившие сроки не трогаем."""
-        rot = self.cfg.rotation
-        if not rot.align or float(rot.interval) <= 0:
-            return
-        now = time.time()
-        for st in self.state.values():
-            old = float(st.get("rotate_deadline") or 0)
-            if not st.get("active") or old <= now:
-                continue
-            new = self._slot_at_or_after(old - float(rot.interval) / 2)
-            earliest = float(st.get("last_switch") or 0) + float(rot.min_dwell)
-            if new < earliest:
-                new = self._slot_at_or_after(earliest)
-            st["rotate_deadline"] = new
+        return now + rot.interval + (random.uniform(-rot.jitter, rot.jitter) if rot.jitter else 0.0)
 
 
 def _foreign_group_auto(tag: str, group: str, groups: set) -> bool:
