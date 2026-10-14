@@ -138,5 +138,6 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
 <style scoped>
 .node-checks { width: 100%; border-collapse: collapse; }
 .node-checks td, .node-checks th { padding: 6px 8px 6px 0; vertical-align: top; border-top: 1px solid var(--line); }
+.node-checks td:last-child, .node-checks th:last-child { width: 100%; white-space: normal; }
 .check-chip { display: inline-block; margin: 0 12px 4px 0; white-space: nowrap; }
 </style>
