@@ -90,6 +90,9 @@
         "anthropic": {
           "$ref": "#/definitions/groupCheck"
         },
+        "upstream": {
+          "$ref": "#/definitions/groupCheck"
+        },
         "heavy": {
           "$ref": "#/definitions/groupCheck"
         },
@@ -656,6 +659,53 @@
           },
           "description": "Доступ к Claude."
         },
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "6h"
+            },
+            "ttl_jitter": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Разброс срока: вердикт живёт от ttl − ttl_jitter до ttl; по умолчанию ttl/10.",
+              "default": "36m"
+            },
+            "outbound": {
+              "type": "string",
+              "description": "Тег outbound sing-box типа socks, который выходит через группу (detour), например nl-static-out. Без него проверку нельзя включить в группе."
+            },
+            "url": {
+              "type": "string",
+              "description": "Что запросить через прокси; ответ 200 — прошла.",
+              "default": "https://www.cloudflare.com/cdn-cgi/trace"
+            },
+            "attempts": {
+              "type": "integer",
+              "description": "Попыток; нода проходит, если удались все.",
+              "default": 2,
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Тайм-аут попытки.",
+              "default": "15s"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Проходит ли через ноду вышестоящий прокси (outbound с detour на группу): SOCKS5-рукопожатие с ним и запрос url через него."
+        },
         "heavy": {
           "type": "object",
           "additionalProperties": false,
@@ -726,7 +776,7 @@
             },
             "dns": {
               "type": "string",
-              "description": "DoH для адресов серверов нод: тег DNS-сервера type https из конфига sing-box или URL; тега нет — Quad9.",
+              "description": "DoH для адресов серверов нод: тег DNS-сервера type https или группы type group (её серверы https по очереди) из конфига sing-box, или URL; не нашлось — Cloudflare 1.1.1.1.",
               "default": "dns-ru"
             },
             "timeout": {

@@ -6,6 +6,8 @@ import struct
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from nodes_tester import whitelist
 from nodes_tester.config import parse_config
 from tests.helpers import make_runner, temp_dir
@@ -56,14 +58,34 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(whitelist._dns_addresses(_answer("n.example", ["203.0.113.9", "198.51.100.7"])),
                          ["203.0.113.9", "198.51.100.7"])
 
-    def test_doh_url_from_singbox_tag(self):
+    def test_doh_urls_from_singbox_tag(self):
         path = os.path.join(temp_dir(), "config.json")
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"dns": {"servers": [{"type": "https", "tag": "dns-ru", "server": "dns.example",
-                                            "path": "/abc/router"}]}}, fh)
-        self.assertEqual(whitelist.doh_url("dns-ru", path), "https://dns.example/abc/router")
-        self.assertEqual(whitelist.doh_url("dns-xx", path), "https://9.9.9.9/dns-query")
-        self.assertEqual(whitelist.doh_url("https://d/q", path), "https://d/q")
+            json.dump({"dns": {"servers": [
+                {"type": "https", "tag": "dns-ru", "server": "dns.example", "path": "/abc/router"},
+                {"type": "https", "tag": "dns-a", "server": "77.88.8.8"},
+                {"type": "local", "tag": "dns-local"},
+                {"type": "https", "tag": "dns-b", "server": "8.8.8.8", "server_port": 8443},
+                {"type": "group", "tag": "dns-grp", "servers": ["dns-a", "dns-local", "dns-b"]}]}}, fh)
+        self.assertEqual(whitelist.doh_urls("dns-ru", path), ["https://dns.example/abc/router"])
+        self.assertEqual(whitelist.doh_urls("dns-grp", path),
+                         ["https://77.88.8.8/dns-query", "https://8.8.8.8:8443/dns-query"])
+        self.assertEqual(whitelist.doh_urls("dns-xx", path), ["https://1.1.1.1/dns-query"])
+        self.assertEqual(whitelist.doh_urls("https://d/q", path), ["https://d/q"])
+
+    def test_next_group_server_after_failure(self):
+        path = os.path.join(temp_dir(), "config.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"dns": {"servers": [
+                {"type": "https", "tag": "a", "server": "192.0.2.1"},
+                {"type": "https", "tag": "b", "server": "192.0.2.2"},
+                {"type": "group", "tag": "dns-ru", "servers": ["a", "b"]}]}}, fh)
+        check = whitelist.WhitelistCheck(parse_config({}).checks["whitelist"], path)
+        with patch.object(whitelist, "resolve",
+                          side_effect=[requests.HTTPError("505"), ["203.0.113.9"]]) as resolve:
+            self.assertEqual(check._addresses("n.example"), ["203.0.113.9"])
+        self.assertEqual([c.args[0] for c in resolve.call_args_list],
+                         ["https://192.0.2.1/dns-query", "https://192.0.2.2/dns-query"])
 
 
 class WhitelistCheckTest(unittest.TestCase):
@@ -93,7 +115,7 @@ class WhitelistCheckTest(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(res["ips"], ["203.0.113.9"])
         self.assertEqual(resolve.call_count, 1)
-        self.assertEqual(resolve.call_args.args[0], "https://9.9.9.9/dns-query")   # тега dns-ru нет
+        self.assertEqual(resolve.call_args.args[0], "https://1.1.1.1/dns-query")   # тега dns-ru нет
 
     def test_unresolved_is_inconclusive(self):
         with patch.object(whitelist, "resolve", side_effect=ValueError("DNS rcode 3")):

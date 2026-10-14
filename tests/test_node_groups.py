@@ -83,6 +83,19 @@ class NodeGroupsTest(unittest.TestCase):
             "SELECT crc FROM scores WHERE active = 1")}
         self.assertTrue(crcs <= {"aaaa0002.00000001"})
 
+    def test_active_gone_from_singbox_replaced_at_once(self):
+        # Пересборка убрала активную ноду ai: замена сразу, а не на ротации (до неё
+        # селектор стоял бы на запасном члене).
+        sw = self.r.switcher
+        sw.api = self.r.api
+        self.assertTrue(sw.force_activate("ai", EU_AI))
+        self.board.prune({EU, US_AI})
+        sw.replace_missing({EU, US_AI})
+        self.assertEqual(sw.active_node("ai"), US_AI)
+        self.assertEqual(self.r.api.selected[-1], ("ai-auto-out", US_AI))
+        sw.replace_missing({EU, US_AI})                  # активная на месте — ничего не трогаем
+        self.assertEqual(self.r.api.selected[-1], ("ai-auto-out", US_AI))
+
     def test_vanished_group_state_pruned(self):
         sw = self.r.switcher
         sw.state["gone"] = {"active": EU, "recent": [], "activations": {}}

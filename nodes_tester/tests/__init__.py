@@ -21,3 +21,4 @@ from . import download      # noqa: F401,E402  (единый транспорт-
 from . import reachability  # noqa: F401,E402
 from . import gemini        # noqa: F401,E402  (фаза для групп с required_tests: страна по мнению Google)
 from . import ai_access     # noqa: F401,E402  (то же: доступность OpenAI и Claude)
+from . import upstream      # noqa: F401,E402  (проходит ли через ноду вышестоящий прокси)

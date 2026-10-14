@@ -1,11 +1,11 @@
 export const TEST_NAMES = { connectivity: 'Соединение', latency: 'Задержка', jitter: 'Джиттер / потери',
   download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка',
-  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', whitelist: 'Белый список' }
+  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', upstream: 'Прокси через ноду', whitelist: 'Белый список' }
 // Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
 export const TEST_UNITS = { latency: 'мс', jitter: 'мс / %', download: 'Мбит/с', heavy_download: 'Мбит/с' }
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).
 export const CHECK_NAMES = { country: 'Страна выхода', ip_type: 'Тип выходного IP', geo_consistent: 'Страна IP по базам',
-  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', heavy: 'Тяжёлая загрузка', whitelist: 'Белые списки' }
+  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', upstream: 'Прокси через ноду', heavy: 'Тяжёлая загрузка', whitelist: 'Белые списки' }
 export const checkNames = list => (list || []).map(c => CHECK_NAMES[c] || c).join(', ')
 export function verdictMark(v) { return v === '1' ? '✓' : v === '0' ? '✗' : '?' }
 export function verdictClass(v) { return v === '1' ? 'good' : v === '0' ? 'bad' : 'mut' }

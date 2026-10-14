@@ -5,7 +5,8 @@
 текстовые файлы ancored/ru-mobile-whitelist. Проверка локальная: трафик через ноду не идёт.
 
 Домен сервера резолвится DoH-запросом к DNS-серверу из конфига sing-box (по тегу, например
-dns-ru) или по URL: системный резолвер роутера отправил бы имя ноды провайдеру.
+dns-ru; у группы — к её серверам по очереди) или по URL: системный резолвер роутера
+отправил бы имя ноды провайдеру.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import time
 
 import requests
 
-_FALLBACK_DOH = "https://9.9.9.9/dns-query"
+_FALLBACK_DOH = "https://1.1.1.1/dns-query"
 
 
 # --- DNS поверх HTTPS (RFC 8484, wire format) --------------------------------
@@ -69,21 +70,29 @@ def resolve(url: str, name: str, timeout: float) -> list[str]:
     return out
 
 
-def doh_url(spec: str, singbox_config: str) -> str:
-    """URL DoH-сервера: сам spec, если это URL, иначе сервер type https с этим тегом из
-    конфига sing-box. Тега нет — Quad9."""
+def doh_urls(spec: str, singbox_config: str) -> list[str]:
+    """URL DoH-серверов: сам spec, если это URL, иначе сервер type https с этим тегом из
+    конфига sing-box; группа (type group) — её серверы https по порядку. Не нашлось —
+    Cloudflare (Quad9 требует HTTP/2, а requests умеет только HTTP/1.1)."""
     if spec.startswith("https://"):
-        return spec
+        return [spec]
     try:
         with open(singbox_config, encoding="utf-8") as fh:
             servers = (json.load(fh).get("dns") or {}).get("servers") or []
     except (OSError, ValueError):
         servers = []
-    for server in servers:
-        if server.get("tag") == spec and server.get("type") == "https":
-            port = f":{server['server_port']}" if server.get("server_port") else ""
-            return f"https://{server['server']}{port}{server.get('path') or '/dns-query'}"
-    return _FALLBACK_DOH
+    by_tag = {s.get("tag"): s for s in servers}
+    server = by_tag.get(spec) or {}
+    if server.get("type") == "group":
+        members = [by_tag.get(tag) or {} for tag in server.get("servers") or []]
+    else:
+        members = [server]
+    urls = []
+    for s in members:
+        if s.get("type") == "https":
+            port = f":{s['server_port']}" if s.get("server_port") else ""
+            urls.append(f"https://{s['server']}{port}{s.get('path') or '/dns-query'}")
+    return urls or [_FALLBACK_DOH]
 
 
 # --- Списки ------------------------------------------------------------------
@@ -163,8 +172,14 @@ class WhitelistCheck:
         cached = self._resolved.get(server)
         if cached and self._clock() - cached[0] < self.params["ttl"]:
             return cached[1]
-        url = doh_url(self.params["dns"], self.singbox_config)
-        ips = resolve(url, server, self.params["timeout"])
+        for url in doh_urls(self.params["dns"], self.singbox_config):
+            try:
+                ips = resolve(url, server, self.params["timeout"])
+                break
+            except (requests.RequestException, ValueError, IndexError, struct.error) as exc:
+                error = exc                         # следующий сервер группы
+        else:
+            raise error
         self._resolved[server] = (self._clock(), ips)
         return ips
 

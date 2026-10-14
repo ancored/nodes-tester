@@ -197,6 +197,8 @@ _CHECK_DEFAULTS = {
     "anthropic": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
     "heavy": {"ttl": 21600.0, "url": "https://speed.cloudflare.com/__down?bytes=20000000",
               "duration": 30.0, "window_mb": 2},
+    "upstream": {"ttl": 21600.0, "outbound": "", "url": "https://www.cloudflare.com/cdn-cgi/trace",
+                 "attempts": 2, "timeout": 15.0},
     "whitelist": {"ttl": 86400.0, "ip_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-ip.txt",
                   "sni_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-sni.txt", "dns": "dns-ru", "timeout": 10.0},
 }
@@ -239,6 +241,8 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
     obj = _fields(obj, path, CHECKS)
     out = {}
     for name, params in obj.items():
+        if name == "upstream" and not checks["upstream"]["outbound"]:
+            raise ConfigError(f"{path}.upstream: не задан checks.upstream.outbound")
         allowed = _GROUP_CHECK_FIELDS.get(name, _TTL_KEYS)
         params = _options(params or {}, f"{path}.{name}", allowed)
         if "for_region" in params:

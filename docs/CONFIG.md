@@ -254,13 +254,21 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | `ip_type` | тип выходного IP по ip-api: `residential`, `mobile`, `hosting`, `proxy` | `ttl` `24h`, `url`, `timeout` `10s`, `via_tester` `true` |
 | `geo_consistent` | страна IP по базе совпадает с измеренной | `ttl` `24h` |
 | `gemini`, `openai`, `anthropic` | доступ к AI-сервису | `ttl` `24h`, `attempts` `3`, `timeout` |
+| `upstream` | проходит ли через ноду вышестоящий прокси — outbound sing-box типа `socks` с `detour` на группу | `ttl` `6h`, `outbound` (обязателен, если проверка есть в группе), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
 | `heavy` | тяжёлая закачка кандидатов резерва | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2` |
 | `whitelist` | пропустит ли ноду режим белых списков: IP сервера в IP-списке и SNI в списке доменов (домен и поддомены); без TLS — достаточно IP | `ttl` `24h`, `ip_list`, `sni_list` (текстовые списки [ru-mobile-whitelist](https://github.com/ancored/ru-mobile-whitelist)), `dns` `dns-ru`, `timeout` `10s` |
 
 `whitelist` — локальная проверка (тестер раз в 5 минут смотрит, у каких нод истёк вердикт), трафик через ноду не идёт. Домен сервера ноды резолвится
 DoH-запросом к серверу `dns`: тегу DNS-сервера `type: https` из работающего конфига sing-box
-(`singbox.config`) или URL; тега нет — Quad9. Системный резолвер роутера не используется: он отправил бы
-имя ноды провайдеру.
+(`singbox.config`), её группе `type: group` (серверы `https` по очереди) или URL; не нашлось — Cloudflare
+`1.1.1.1` (Quad9 требует HTTP/2). Системный резолвер роутера не используется: он отправил бы имя ноды
+провайдеру.
+
+`upstream` нужен, когда выход идёт через группу цепочкой — например, SOCKS со статическим IP
+(`"detour": "ai-auto-out"`). Нода может быть жива, но не пускать соединения на порт прокси, или сам прокси
+не принимает её IP; тогда выход мёртв, хотя остальные проверки ноду пропускают. Резерв через ноду проходит
+SOCKS5-рукопожатие с сервером `outbound` (логин и пароль — из работающего конфига sing-box) и запрашивает
+`url`; нода проходит, если удались все попытки.
 
 Дорогие проверки (AI, `heavy`) тестер запускает только для нод, уже прошедших дешёвые: gate и
 обязательную страну группы.
@@ -459,7 +467,7 @@ DoH-запросом к серверу `dns`: тегу DNS-сервера `type:
 | Поле | По умолчанию | Описание |
 |---|---|---|
 | `init` | `/etc/init.d/sing-box` | init-скрипт sing-box |
-| `config` | `/etc/sing-box/config.json` | Работающий конфиг: из него `checks.whitelist.dns` берёт DNS-сервер по тегу |
+| `config` | `/etc/sing-box/config.json` | Работающий конфиг: из него `checks.whitelist.dns` берёт DNS-сервер по тегу, `checks.upstream.outbound` — сервер и учётные данные прокси |
 | `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | init-скрипт и таблица nftables `inet` kill switch |
 | `watch` | `5s` | Период сторожа |
 | `down_alert` | `1m` | Уведомить, если sing-box лежит дольше |

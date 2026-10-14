@@ -370,7 +370,7 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
                "heavy_download", "gemini", "openai", "anthropic", "whitelist"]
-_AI_TESTS = ("gemini", "openai", "anthropic")
+_AI_TESTS = ("gemini", "openai", "anthropic", "upstream")
 
 
 def _ai_cell(test: str, ok, m: dict, error: str) -> dict:

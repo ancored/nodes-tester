@@ -21,7 +21,7 @@ from .identity import NodeIdentity
 from .ipinfo import db_country_mismatch, kind
 
 # Проверки, которые резерв догоняет сам (по одной на ноду); прочие дают замеры тестера.
-RUNNABLE_CHECKS = ("gemini", "openai", "anthropic", "heavy")
+RUNNABLE_CHECKS = ("gemini", "openai", "anthropic", "upstream", "heavy")
 _DEFAULT_KINDS = ("residential", "mobile")
 
 
@@ -217,7 +217,7 @@ class Scoreboard:
         return list(g.require) if g else []
 
     def set_required_result(self, node: str, test: str, ok: bool, detail: str = "") -> None:
-        """Вердикт AI-проверки (gemini, openai, anthropic) — его дают тесты резерва."""
+        """Вердикт проверки, которую гоняет резерв (gemini, openai, anthropic, upstream)."""
         with self._lock:
             r = self.rows.get(node)
             if r is not None:

@@ -207,6 +207,7 @@ class Runner:
         self._forced &= set(self._node_by_raw)
         self.board.prune(set(self._node_by_raw))
         self.board.set_restricted(self._restricted_now() | self._banned)
+        self.switcher.replace_missing(self._node_by_raw)
         added = set(self._node_by_raw) - known
         if known and added:
             print(f"  · в sing-box новые ноды: {len(added)}")
@@ -680,14 +681,17 @@ class Runner:
         return g.reserve if g is not None else self.cfg.selection.reserve
 
     def _phase_test(self, check: str):
-        """Инстанс теста проверки (gemini, openai, anthropic, heavy) с её параметрами."""
+        """Инстанс теста проверки (gemini, openai, anthropic, upstream, heavy) с её параметрами."""
         if check not in self._phase_tests:
             cls = get_test_class("heavy_download" if check == "heavy" else check)
-            self._phase_tests[check] = cls(self.cfg.checks.get(check) or {}) if cls else None
+            options = self.cfg.checks.get(check) or {}
+            if check == "upstream":                 # outbound берётся из работающего конфига
+                options = {**options, "singbox_config": self.cfg.singbox.config}
+            self._phase_tests[check] = cls(options) if cls else None
         return self._phase_tests[check]
 
     def check_node(self, raw: str, check: str) -> None:
-        """Обязательный тест группы (gemini, openai, anthropic) или "heavy" на одной ноде;
+        """Обязательный тест группы (gemini, openai, anthropic, upstream) или "heavy" на одной ноде;
         вердикт — в рейтинг, замер — в results. Сетевой сбой обязательного теста
         (inconclusive) прошлый вердикт не отменяет."""
         node = self._node_by_raw.get(raw)
@@ -712,7 +716,8 @@ class Runner:
             if not res.get("inconclusive"):
                 self.board.set_required_result(raw, check, ok, res.get("country") or "")
             verdict = "OK" if ok else ("INCONCLUSIVE" if res.get("inconclusive") else "FAIL")
-            detail = f"{res.get('countries') or res.get('verdicts') or ''} {res.get('error') or ''}".strip()
+            detail = (f"{res.get('countries') or res.get('verdicts') or res.get('exit_ip') or ''} "
+                      f"{res.get('error') or ''}").strip()
         self.storage.add_results({"id": ident.node_id, "node": raw, "tests": {test.name: res}})
         print(f"  [reserve] {ident.short()}: {test.name}={verdict} {detail}".rstrip())
 

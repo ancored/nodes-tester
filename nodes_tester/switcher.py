@@ -86,6 +86,17 @@ class Switcher:
                     self._evaluate_region_locked(region, emergency=False)
             self._persist()
 
+    def replace_missing(self, nodes) -> None:
+        """Группы, чья активная нода ушла из sing-box (пересборка сменила состав): оценить
+        сразу. Иначе группа стоит на запасном члене селектора до ротации."""
+        with self._lock:
+            gone = [g for g, st in self.state.items() if st.get("active") and st["active"] not in nodes]
+            for group in gone:
+                print(f"  [switch] {group}: активной ноды больше нет в sing-box — замена")
+                self._evaluate_region_locked(group, emergency=True)
+            if gone:
+                self._persist()
+
     def after_measure(self, node: str) -> None:
         """Новый замер ноды: оценить группы, где она активна или в резерве, и группы без
         активной или в аварии без замены — нода может стать в них кандидатом."""
