@@ -56,15 +56,17 @@ function update(field,event,type='text') {
   if(type === 'duration') v = v.trim() || undefined
   setPath(document.value,field,v); preview.value=false
 }
-// Тестер перезапускается отвязанным процессом через секунду; ждём, пока админка снова ответит.
+// Тестер перезапускается отвязанным процессом через секунду; ждём, пока ответит процесс, который
+// загрузил сохранённый файл (restart_required=false), — прежний ответил бы с true.
 async function waitRestart(epoch,suffix) {
   const pause=ms=>new Promise(r=>setTimeout(r,ms))
-  await pause(5000)
   for(let i=0;i<30;i++) {
-    try { await api.get('/capabilities'); if(epoch===auth.epoch){message.value='Тестер перезапущен, новые настройки действуют.'+suffix;restart.value=false}; return }
-    catch { await pause(2000) }
+    await pause(2000)
+    try { if((await api.get(endpoint)).restart_required) continue } catch { continue }
+    if(epoch===auth.epoch){message.value='Тестер перезапущен, новые настройки действуют.'+suffix;restart.value=false}
+    return
   }
-  if(epoch===auth.epoch) error.value='Тестер не ответил за минуту после перезапуска. Журнал: logread -e nodes-tester'
+  if(epoch===auth.epoch) error.value='Тестер не перезапустился за минуту: файл сохранён, но новые настройки ещё не действуют. Журнал: logread -e nodes-tester'
 }
 async function save() {
   if(!can('edit_config') || !candidate.value) {error.value='Проверьте JSON: нужен корректный объект'; return}
@@ -94,13 +96,13 @@ const groups = [
     ['api.url','Адрес API sing-box','text'],['api.secret','Секрет API sing-box','password'],['api.timeout','Тайм-аут API (например, 5s)','duration'],
     ['tester.socks','SOCKS тестера (socks5h://хост:порт)','text'],['tester.selector','Тестовый селектор','text']]},
   {title:'Проходы тестера',note:'Тестер замеряет все ноды; группы выбирают из них по своим проверкам (страница «Подписки» → «Сборка и группы»).',fields:[
-    ['tester.follow_rotation','Привязать проходы к ротации','checkbox'],['tester.pause','Пауза между проходами (например, 0s)','duration'],
+
     ['tester.host_gap','Зазор обращений к одному хосту (например, 2m)','duration'],
     ['tester.request_timeout','Тайм-аут проверки (например, 10s)','duration'],['selection.reserve','Кандидатов в резерве группы','number']]},
   {title:'Переключение и наблюдение',note:'Включение ротации может изменить выбор боевых селекторов после перезапуска тестера.',fields:[
     ['selection.rotation.enabled','Ротация','checkbox'],['selection.rotation.interval','Интервал ротации (например, 3h)','duration'],
     ['selection.rotation.min_dwell','Минимальное время на ноде (например, 30m)','duration'],['monitor.interval','Тик монитора активных нод (например, 20s)','duration'],
-    ['selection.quarantine.duration','Длительность карантина (например, 3d)','duration'],['selection.quarantine.after_skips','Карантин после пропусков проходов','number']]},
+    ['selection.quarantine.duration','Длительность карантина (например, 3d)','duration'],['selection.quarantine.after_skips','Карантин после пропуска сроков соединения','number']]},
   {title:'Админка и хранение',note:'Смена токена, адреса или порта потребует перезапуска админки. Форма редактирует файл, не настройки текущего процесса.',fields:[
     ['admin.enabled','Встроенная админка','checkbox'],['admin.listen','Адрес прослушивания','text'],['admin.port','Порт админки','number'],
     ['admin.token','Токен администратора','password'],['admin.public_read','Просмотр без токена','checkbox'],
@@ -177,7 +179,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
     <p v-if="message" class="notice" role="status">{{ message }}</p><p v-if="error" class="notice bad" role="alert">{{ error }}</p>
     <section v-if="preview" class="panel">
       <h2>Изменяемые поля</h2><p class="break">{{ changed.join(', ') }}</p>
-      <p>Значения скрыты, чтобы не раскрывать секреты. Сервер проверит конфигурацию перед атомарной записью. После сохранения тестер перезапустится сам: на несколько секунд остановятся мониторинг и прогон, соединения пользователей не рвутся.{{ subscriptions ? ' Подписки и группы попадут в sing-box со следующей сборкой конвейера.' : '' }}</p>
+      <p>Значения скрыты, чтобы не раскрывать секреты. Сервер проверит конфигурацию перед атомарной записью. После сохранения тестер перезапустится сам: на несколько секунд остановятся мониторинг и тестирование, соединения пользователей не рвутся.{{ subscriptions ? ' Подписки и группы попадут в sing-box со следующей сборкой конвейера.' : '' }}</p>
       <button class="btn primary" :disabled="busy || !dirty || conflict" @click="save">Подтвердить и сохранить файл</button><p v-if="conflict" class="mut">Сохранение заблокировано: перечитайте файл. Несохранённые правки придётся внести заново.</p>
     </section>
     <template v-if="document">
@@ -210,7 +212,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
               <template v-else-if="sourceKind(sub)==='folder'"><label>Папка <input v-model="sub.path" /></label><label>Формат <input v-model="sub.format" /></label><label>Расширение файлов <input v-model="sub.ext" placeholder=".conf" /></label></template>
               <template v-if="sourceKind(sub)==='url'"><label>User-Agent<select :value="uaChoice(sub)" @change="setUA(sub,$event.target.value,true)"><option v-for="o in options.user_agents" :key="o.value" :value="o.value">{{ o.label }}</option><option value="__custom">Свой User-Agent</option></select></label><label v-if="uaChoice(sub)==='__custom'">Свой User-Agent<input :value="userAgent(sub)" @input="setUA(sub,$event.target.value)" /></label></template>
             </div>
-            <JsonField v-if="sourceKind(sub)==='inline'" label="Outbound-ы" note="Список outbound-ов sing-box. Теги задаёт сборка: провайдер — tag подписки." :model-value="sub.outbounds || []" @update:model-value="sub.outbounds=$event;preview=false" @valid="jsonValid['inline'+index]=$event" />
+            <JsonField v-if="sourceKind(sub)==='inline'" array label="Outbound-ы" note="Список outbound-ов sing-box. Теги задаёт сборка: провайдер — tag подписки." :model-value="sub.outbounds || []" @update:model-value="sub.outbounds=$event;preview=false" @valid="jsonValid['inline'+index]=$event" />
             <p v-if="sourceKind(sub)==='url'" class="help-text">User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.</p>
             <details v-if="sourceKind(sub)==='url' && !userAgent(sub)"><summary>User-Agent по умолчанию</summary><p class="break">{{ options.user_agents[0]?.effective }}</p></details>
             <label v-if="sourceKind(sub)==='url'" class="check"><input type="checkbox" :checked="!!sub.send_device" @change="sub.send_device=$event.target.checked || undefined; preview=false" /> Отправлять HWID и описание устройства (для панелей с лимитом устройств)</label>
@@ -242,7 +244,7 @@ function removeSub(index){if(window.confirm('Удалить эту подпис�
           </div><p class="help-text">При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале <RouterLink to="/pipeline">«Конвейера»</RouterLink>.</p></section>
         </template>
         <details v-if="subscriptions" class="panel"><summary><b>Как изменения попадают в sing-box</b></summary>
-          <ol><li>Подписки, параметры сборки и группы хранятся в одном <code>config.json</code>; его читают конвейер и тестер.</li><li>Админка запускает конвейер по расписанию (<code>pipeline.router.at</code>, <code>pipeline.clients.at</code>) или вручную в <RouterLink to="/pipeline">«Конвейере»</RouterLink>: загрузка подписок, сборка <code>nodes.json</code>, <code>sing-box check</code>, применение. sing-box перезапускается только при изменениях; без связности возвращается прежний конфиг.</li><li>Тестер подхватывает новые ноды в следующем проходе; изменения групп и настроек тестера — после его перезапуска.</li></ol>
+          <ol><li>Подписки, параметры сборки и группы хранятся в одном <code>config.json</code>; его читают конвейер и тестер.</li><li>Админка запускает конвейер по расписанию (<code>pipeline.router.at</code>, <code>pipeline.clients.at</code>) или вручную в <RouterLink to="/pipeline">«Конвейере»</RouterLink>: загрузка подписок, сборка <code>nodes.json</code>, <code>sing-box check</code>, применение. sing-box перезапускается только при изменениях; без связности возвращается прежний конфиг.</li><li>Тестер подхватывает новые ноды в течение минуты; изменения групп и настроек тестера — после его перезапуска.</li></ol>
           <h3>Файлы конвейера</h3>
           <p>Загруженные подписки — <code>raw/router.json</code> и <code>raw/clients.json</code>, результат сборки — <code>nodes.json</code> и <code>whnodes.json</code> в каталоге данных (в пакете OpenWrt — <code>/opt/nodes-tester</code>, задаётся data_dir в /etc/config/nodes-tester).</p>
           <p>Отдельный запуск: <code>nodes-tester fetch -c config.json --branch router -o raw/router.json</code>, затем <code>nodes-tester config -c config.json --branch router --raw raw/router.json -o nodes.json</code>.</p>

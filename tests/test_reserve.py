@@ -119,13 +119,83 @@ class KeeperTest(_Base):
         self.assertEqual(self.activated[0][1:], (B, "init"))
 
 
+    def test_active_required_rechecked_before_expiry(self):
+        self._require(gemini=3600)
+        self.r.board.set_required_result(A, "gemini", True)
+        self.r.reserve.maintain("eu")
+        self.assertNotIn((A, "gemini"), self.checks)                  # результат свежий
+        self.r.board.rows[A]["required"]["gemini"]["ts"] = int(time.time()) - 3600 + 120
+        self.r.reserve.maintain("eu")
+        self.assertIn((A, "gemini"), self.checks)
+        self.assertEqual(self.activated, [])                          # прошла — остаётся
+
+    def test_active_failing_recheck_replaced(self):
+        self._require(gemini=3600)
+        self.r.board.set_required_result(A, "gemini", True)
+        self.r.board.rows[A]["required"]["gemini"]["ts"] = int(time.time()) - 3600 + 120
+        self.failing = {(A, "gemini")}
+        self.r.reserve.maintain("eu")
+        self.assertEqual(self.activated[0][0::2], ("eu", "emergency"))
+
+    def test_prefer_checks_measured_and_failure_keeps_member(self):
+        from nodes_tester.config import GroupConfig
+        self.r.board.set_policy([GroupConfig("eu", prefer={"openai": {"ttl": 3600}}), GroupConfig("us")],
+                                self.r.cfg.regions)
+        self.failing = {(B, "openai")}
+        self.r.reserve.maintain("eu")
+        self.assertEqual(self.checks[:2], [(B, "heavy"), (B, "openai")])
+        self.assertEqual(self.r.board.reserve("eu")[0], B)
+        self.assertEqual(self.r.board.tier(B, "eu"), 1)
+
+
+class DisplaceTest(_Base):
+    def setUp(self):
+        super().setUp()
+        self.r.reserve.maintain("eu")
+        self.checks.clear()                         # резерв набран: B, C, D
+
+    def test_better_node_takes_worst_place(self):
+        self.r.board.rows[E]["score"] = 96            # D 80 + зазор 15
+        self.r.reserve.maintain("eu")
+        self.assertEqual(self.r.board.reserve("eu"), [B, C, E])
+        self.assertEqual(self.checks, [(E, "heavy")])
+
+    def test_within_margin_kept(self):
+        self.r.board.rows[E]["score"] = 94
+        self.r.reserve.maintain("eu")
+        self.assertEqual(self.r.board.reserve("eu"), [B, C, D])
+        self.assertEqual(self.checks, [])
+
+    def test_failed_candidate_not_retried_soon(self):
+        self.r.board.rows[E]["score"] = 96
+        self.r.check_node = lambda raw, check: self.checks.append((raw, check))   # без вердикта
+        self.r.reserve.maintain("eu")
+        self.r.reserve.maintain("eu")
+        self.assertEqual(self.r.board.reserve("eu"), [B, C, D])
+        self.assertEqual(self.checks, [(E, "heavy")])
+
+
+class HeavyVerdictTest(_Base):
+    def _heavy(self, result):
+        from nodes_tester.runner import Runner
+        with patch.object(self.r, "_run_one", return_value=result):
+            Runner.check_node(self.r, B, "heavy")
+        return self.r.board.rows[B]["heavy_ok"]
+
+    def test_server_refusal_keeps_verdict(self):
+        self.r.board.set_heavy(B, True)
+        self.assertEqual(self._heavy({"ok": False, "http_error": True, "error": "HTTP 403"}), "1")
+        self.assertEqual(self._heavy({"ok": True, "limited": True}), "1")
+        self.assertEqual(self._heavy({"ok": False, "error": "обрыв"}), "0")
+
+
 class ReleaseTest(_Base):
     def setUp(self):
         super().setUp()
         r = self.r
         later = int(time.time()) + 3600
         r.storage.set_backoff("aaaa0004", later, 5, "garbage")
-        r.storage.set_backoff("aaaa0005", None, 2, "backoff", until_pass=103)
+        r.storage.set_backoff("aaaa0005", later, 2, "backoff")
         r.storage.set_backoff("bbbb0001", later, 5, "garbage")
         r.storage._db.execute("UPDATE garbage SET since = 1000 WHERE crc = 'aaaa0005'")
         r.storage._db.commit()
@@ -134,11 +204,12 @@ class ReleaseTest(_Base):
         self.gate = {}
         self.light = []
 
-        def fake_test(region, ident, pass_no):
+        def fake_test(region, ident, tests):
             self.light.append(ident.raw)
             return {"tests": {}}
 
         r._test_node = fake_test
+        r._respect_host_gap = lambda host, sig: None
         r._score_and_maybe_switch = lambda region, ident, record: self.gate.get(ident.raw, True)
 
     def test_oldest_released_one_by_one(self):
@@ -160,7 +231,7 @@ class ReleaseTest(_Base):
         r.storage._db.execute("UPDATE garbage SET since = 1 WHERE crc = 'aaaa0004'")
         r.storage._db.commit()
         self.assertEqual(r.release_for_reserve("eu", set()), D)
-        until, _p, streak, reason = r._backoff["aaaa0004"]
+        until, streak, reason = r._backoff["aaaa0004"]
         self.assertEqual((reason, streak), ("garbage", 6))
         self.assertGreater(until, time.time() + 3600)
         self.assertEqual(r.release_for_reserve("eu", set()), E)      # D повторно не снимаем
@@ -181,7 +252,7 @@ class ReleaseTest(_Base):
         self.light.clear()
         r.reserve.maintain("eu")
         self.assertEqual(self.light, [])
-        r.reserve.wake(ratings_changed=True)                          # новый проход — сразу
+        r.reserve.wake(ratings_changed=True)                          # новые ноды — сразу
         self.assertNotIn("eu", r.reserve._retry_at)
 
 

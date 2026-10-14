@@ -207,7 +207,7 @@ def _validate(app: App, name: str, data: object) -> None:
         _check_clients(app, name, settings=data)
     # Без whnodes.json клиентская ветка не собиралась — базу клиента проверять не с чем, как и раньше.
     if name.startswith("clients/base_") and _whnodes(app).is_file():
-        _check_clients(app, name, base=(Path(name).stem.removeprefix("base_"), data))
+        _check_clients(app, name, base=(Path(name).stem[len("base_"):], data))
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:

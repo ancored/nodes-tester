@@ -26,7 +26,7 @@ def build_app(cfg, *, runner=None, interval: int | None = None) -> App:
         read_open=(dash.public_read if dash else True),
     )
     api_read.register(app)
-    # Управление (карантин/бан/switch/статус/прогон/логи) — требует runner (409 без
+    # Управление (карантин/бан/switch/статус/тестирование/логи) — требует runner (409 без
     # него); редактор конфигов — файловый, работает и в read-only режиме (по токену).
     from . import api_control, api_config
     api_control.register(app)

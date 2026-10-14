@@ -17,7 +17,7 @@ def capabilities(app: App) -> dict:
         "edit_config": bool(app.token),
         "node_actions": bool(r is not None and r.storage is not None and app.token),
         "switch": bool(r is not None and r.switcher is not None and app.token),
-        "run_pass": bool(r is not None and app.token),
+        "run_tests": bool(r is not None and app.token),
         "pipeline": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token
                          and shutil.which("nodes-tester")),
         "singbox_files": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token),

@@ -33,8 +33,6 @@ class FakeRunner:
         self.switcher = FakeSwitcher()
         self.log = LogRing()
         self._running = True
-        self._current_pass = 7
-        self._current_day = "2026-09-20"
         self._requested = False
         self.restricted = []
 
@@ -44,14 +42,12 @@ class FakeRunner:
     def restricted_crcs(self):
         return set()
 
-    def request_pass(self):
+    def request_tests(self):
         self._requested = True
 
     def status(self):
         return {
-            "running": self._running, "pass": self._current_pass,
-            "day": self._current_day, "switching": True, "monitor": False,
-            "traffic": False, "rotation_bound": False,
+            "running": self._running, "switching": True, "monitor": False, "traffic": False,
             "regions": [{"region": "eu", "active": "LUNA-vless|reality-out [abcd1234.0000beef]"}],
             "next_rotation": None,
         }
@@ -89,7 +85,7 @@ class ApiControlTest(unittest.TestCase):
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/quarantine").status, 200)
         backoff = self.storage.load_backoff()
         self.assertIn("abcd1234.0000beef", backoff)
-        self.assertEqual(backoff["abcd1234.0000beef"][3], "garbage")
+        self.assertEqual(backoff["abcd1234.0000beef"][2], "garbage")
         # снятие карантина
         self.assertEqual(self._call("POST", "/api/nodes/abcd1234.0000beef/unquarantine").status, 200)
         self.assertNotIn("abcd1234.0000beef", self.storage.load_backoff())
@@ -102,11 +98,11 @@ class ApiControlTest(unittest.TestCase):
     def test_force_switch_requires_node(self):
         self.assertEqual(self._call("POST", "/api/groups/eu/switch", body={}).status, 400)
 
-    def test_status_and_run_pass(self):
+    def test_status_and_run_tests(self):
         r = self._call("GET", "/api/status")
         self.assertEqual(r.status, 200)
-        self.assertEqual(json.loads(r.body)["pass"], 7)
-        self.assertEqual(self._call("POST", "/api/run/pass").status, 200)
+        self.assertTrue(json.loads(r.body)["running"])
+        self.assertEqual(self._call("POST", "/api/run/tests").status, 200)
         self.assertTrue(self.runner._requested)
 
     def test_logs(self):

@@ -1,5 +1,4 @@
-"""Дашборд: pass_label берёт pass_no из строки с максимальным ts (не независимый
-max), иначе через полночь свежая дата склеивается со старым номером прогона."""
+"""Дашборд: свод результатов — последний результат каждого теста со своим временем."""
 
 import time
 import unittest
@@ -7,7 +6,7 @@ import unittest
 from dashboard import data as D
 
 
-class PassLabelTest(unittest.TestCase):
+class ResultsTest(unittest.TestCase):
     def _run(self, rows):
         orig = D._query
         D._query = lambda db, sql: rows
@@ -16,24 +15,21 @@ class PassLabelTest(unittest.TestCase):
         finally:
             D._query = orig
 
-    def _row(self, test, ts, pass_no):
+    def _row(self, test, ts, _seq=0):
         return {"crc": "z", "test": test, "ok": 1, "metrics": "{}", "error": "",
-                "ts": ts, "pass_no": pass_no, "provider": "P", "protocol": "vless",
-                "country": "nl"}
+                "ts": ts, "provider": "P", "protocol": "vless", "country": "nl"}
 
-    def test_pass_no_from_latest_ts(self):
+    def test_latest_result_of_each_test_with_its_time(self):
         now = int(time.time())
-        rows = [self._row("connectivity", now - 90000, 15),   # вчера, большой номер
-                self._row("latency", now, 2)]                 # сегодня, свежий
-        res = self._run(rows)
-        node = res["rows"][0]
-        self.assertEqual(node["pass_no"], 2)
-        self.assertTrue(node["pass_label"].endswith("-002"))
-
-    def test_single_row(self):
-        now = int(time.time())
-        res = self._run([self._row("connectivity", now, 7)])
-        self.assertEqual(res["rows"][0]["pass_no"], 7)
+        old_latency = self._row("latency", now - 7200)
+        old_latency["ok"] = 0
+        rows = [old_latency, self._row("connectivity", now - 3600),
+                self._row("latency", now)]                    # строки идут по времени
+        node = self._run(rows)["rows"][0]
+        self.assertEqual(node["cells"]["latency"]["ok"], 1)
+        self.assertEqual(node["cells"]["latency"]["ts"], now)
+        self.assertEqual(node["cells"]["connectivity"]["ts"], now - 3600)
+        self.assertEqual(node["ts"], now)
 
     def test_heavy_success_has_no_failure_details(self):
         now = int(time.time())
@@ -47,23 +43,22 @@ class PassLabelTest(unittest.TestCase):
         row.update(ok=0, error="connection refused")
         self.assertEqual(self._run([row])["rows"][0]["cells"]["connectivity"]["title"], "connection refused")
 
-    def test_connectivity_and_whitelist_are_marks_and_whitelist_is_off_pass(self):
+    def test_connectivity_and_whitelist_are_marks(self):
         import json
         now = int(time.time())
         conn = self._row("connectivity", now, 7)
         conn["metrics"] = json.dumps({"country": "NL"})
-        wl = self._row("whitelist", now + 300, 7)          # пишется после прохода
+        wl = self._row("whitelist", now + 300, 7)
         wl["metrics"] = json.dumps({"ips": ["203.0.113.5"], "ip_ok": True, "sni": "vk.com", "sni_ok": True})
         res = self._run([conn, wl])
         row = res["rows"][0]
-        self.assertEqual(row["ts"], now)                   # проход — по лёгким тестам, не по whitelist
         self.assertEqual((row["cells"]["connectivity"]["ok"], row["cells"]["connectivity"]["ai"]), (1, 1))
         self.assertNotIn("NL", row["cells"]["connectivity"]["v"])
         self.assertEqual(row["cells"]["whitelist"]["ok"], 1)
         self.assertIn("SNI vk.com: в списке", row["cells"]["whitelist"]["title"])
         self.assertEqual(res["tests"][-1], "whitelist")
 
-    def test_country_from_previous_pass_is_marked(self):
+    def test_country_from_previous_connection_is_marked(self):
         now = int(time.time())
         ok = self._row("connectivity", now - 1800, 6)
         failed = self._row("connectivity", now, 7)
@@ -217,6 +212,13 @@ class LifecycleGraveyardTest(unittest.TestCase):
                          ("WH-SNI", "vless|reality", 1, None))
         row = next(r for r in data["results"]["rows"] if r["crc"] == "bbbb0002.00000002")
         self.assertEqual((row["provider"], row["wh_only"], row["cells"]["whitelist"]["ok"]), ("WH-SNI", 1, 1))
+        # Раньше нода была у роутера (в архиве): в клиентской ветви её результаты не прячутся.
+        self.st._db.execute("INSERT INTO nodes (crc, tag, present) VALUES (?, ?, 0)",
+                            ("bbbb0002.00000002", "WH-SNI-vless|reality-out [bbbb0002.00000002]"))
+        self.st._db.commit()
+        data = D._collect(SimpleNamespace(storage=_Cfg(self.db), whnodes_file=wh))
+        row = next(r for r in data["results"]["rows"] if r["crc"] == "bbbb0002.00000002")
+        self.assertEqual((row["wh_only"], row.get("removed")), (1, None))
 
 
 if __name__ == "__main__":

@@ -9,17 +9,17 @@ node_crc — CRC настроек сервера, cred_crc — CRC учётны�
         payload JSON, crc_ok, first_seen, last_seen, present, banned, title) — описание ноды
   traffic(ts, crc, up, down, conns, is_tester)                 — временной ряд объёма
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
-  results(ts, pass_no, crc, test, ok, url, metrics JSON, error)
+  results(ts, crc, test, ok, url, metrics JSON, error)
   activations(ts, region, crc, tag, reason, score, prev)       — история переключений
   scores(crc PK, …)                — снимок рейтинга
   score_history(ts, crc, region, score, s_run, gate)           — динамика рейтинга
   switch_state / switch_recent / switch_activations            — состояние switcher
   node_events(ts, crc, event, reason, streak)  — журнал added/removed/backoff/garbage/recovered
-  garbage(crc PK, since, until, reason, streak, until_pass) — текущая пауза/карантин
+  garbage(crc PK, since, until, reason, streak) — текущая пауза/карантин
   meta(key PK, value)              — сквозные значения между рестартами
 
-Одно соединение sqlite3 (check_same_thread=False) + Lock: пишут поток прогона и
-поток сбора трафика. Режим WAL для параллельного чтения.
+Одно соединение sqlite3 (check_same_thread=False) + Lock: пишут поток тестера, резерва
+и сбора трафика. Режим WAL для параллельного чтения.
 
 Очистка (cleanup) — единая и согласованная: удаляем ноды с last_seen старше
 storage.retention и КАСКАДОМ все их строки во всех таблицах (по crc). VACUUM —
@@ -36,6 +36,8 @@ import time
 
 from naming import canonical, node_key, node_payload, parse_node
 from nodes_common.raw import title_of, titles as raw_titles
+
+from .freshness import fresh
 
 # Версия схемы БД. Файл другой версии при открытии уходит в копию, история начинается
 # заново (0.5.0: сменился ключ ноды, переносить нечего).
@@ -56,7 +58,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
   up INTEGER, down INTEGER, flows INTEGER, last_seen INTEGER,
   PRIMARY KEY (crc, source_ip, dest_host, network));
 CREATE TABLE IF NOT EXISTS results (
-  ts INTEGER, pass_no INTEGER, crc TEXT, test TEXT, ok INTEGER,
+  ts INTEGER, crc TEXT, test TEXT, ok INTEGER,
   url TEXT, metrics TEXT, error TEXT);
 CREATE INDEX IF NOT EXISTS idx_results_ts ON results(ts);
 CREATE INDEX IF NOT EXISTS idx_results_crc ON results(crc);
@@ -66,13 +68,12 @@ CREATE INDEX IF NOT EXISTS idx_activations_ts ON activations(ts);
 CREATE INDEX IF NOT EXISTS idx_activations_crc ON activations(crc);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS garbage (
-  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER,
-  until_pass INTEGER);
+  crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER);
 CREATE TABLE IF NOT EXISTS scores (
   crc TEXT PRIMARY KEY, node TEXT, provider TEXT, protocol TEXT, region TEXT,
   country TEXT, active INTEGER, score REAL,
   reliability REAL, consistency REAL, throttle REAL, jitter REAL, latency REAL, throughput REAL,
-  score_ewma REAL, avail REAL, flap REAL, samples INTEGER, last_pass INTEGER,
+  score_ewma REAL, avail REAL, flap REAL, samples INTEGER,
   heavy_ok TEXT, heavy_ts INTEGER, required TEXT, exit_ip TEXT, exit_cc TEXT, country_ts INTEGER,
   reserve TEXT);
 CREATE TABLE IF NOT EXISTS score_history (
@@ -100,7 +101,7 @@ CREATE TABLE IF NOT EXISTS ip_info (
 _SCORE_COLS = (
     "node", "provider", "protocol", "region", "country", "active", "score",
     "reliability", "consistency", "throttle", "jitter", "latency", "throughput",
-    "score_ewma", "avail", "flap", "samples", "last_pass", "heavy_ok", "heavy_ts",
+    "score_ewma", "avail", "flap", "samples", "heavy_ok", "heavy_ts",
     "required", "exit_ip", "exit_cc", "country_ts", "reserve",
 )
 
@@ -210,7 +211,7 @@ class Storage:
         return len(rows)
 
     def touch_seen(self, crcs) -> None:
-        """Обновить last_seen для нод, реально присутствующих в selector в этом прогоне.
+        """Обновить last_seen для нод, реально присутствующих в selector тестера.
         Иначе last_seen обновляется только при смене mtime nodes.json, и cleanup() через
         retention_days удалит активно тестируемую ноду вместе со всей историей.
         Обновляем присутствие, а не только факт замера."""
@@ -238,8 +239,7 @@ class Storage:
         rows = []
         for test, res in (record.get("tests") or {}).items():
             metrics = {k: v for k, v in res.items() if k not in _SERVICE_KEYS}
-            rows.append((ts, record.get("round"), crc, test,
-                         1 if res.get("ok") else 0, res.get("url", ""),
+            rows.append((ts, crc, test, 1 if res.get("ok") else 0, res.get("url", ""),
                          json.dumps(metrics, ensure_ascii=False), res.get("error", "")))
         if not rows:
             return
@@ -247,8 +247,8 @@ class Storage:
         country = (conn.get("country") or "").lower() if conn.get("ok") else ""
         with self._lock:
             self._db.executemany(
-                "INSERT INTO results (ts,pass_no,crc,test,ok,url,metrics,error) "
-                "VALUES (?,?,?,?,?,?,?,?)", rows)
+                "INSERT INTO results (ts,crc,test,ok,url,metrics,error) "
+                "VALUES (?,?,?,?,?,?,?)", rows)
             if country:                       # страна ноды — измеренная conn-тестом
                 self._db.execute("UPDATE nodes SET country = ? WHERE node_crc = ?",
                                  (country, crc.partition(".")[0]))
@@ -260,6 +260,28 @@ class Storage:
             rows = self._db.execute("SELECT crc, country FROM nodes WHERE country != ''").fetchall()
         return dict(rows)
 
+    def latest_results(self, tests) -> dict:
+        """{ключ ноды: {тест: (ts, результат)}} — последний результат каждого теста; результат
+        в виде TestResult.to_dict()."""
+        tests = list(tests)
+        if not tests:
+            return {}
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT r.crc, r.test, r.ts, r.ok, r.url, r.metrics, r.error FROM results r "
+                "JOIN (SELECT crc, test, MAX(rowid) AS id FROM results "
+                f"WHERE test IN ({','.join('?' * len(tests))}) GROUP BY crc, test) last "
+                "ON r.rowid = last.id", tests).fetchall()
+        out: dict = {}
+        for crc, test, ts, ok, url, metrics, error in rows:
+            res = {**_json_dict(metrics), "ok": bool(ok)}
+            if url:
+                res["url"] = url
+            if error:
+                res["error"] = error
+            out.setdefault(crc, {})[test] = (int(ts or 0), res)
+        return out
+
     def last_result_ts(self, test: str) -> dict:
         """Ключ ноды → время последнего результата теста (свежесть локальных проверок)."""
         with self._lock:
@@ -269,17 +291,16 @@ class Storage:
 
     # --- Тип выходного IP (nodes_tester.ipinfo) ------------------------
 
-    def ip_info_stale(self, ips, ttl_seconds: float) -> list:
-        """IP без сведений или со сведениями старше ttl."""
+    def ip_info_stale(self, ips, ttl_seconds: float, jitter: float = 0.0) -> list:
+        """IP без сведений или со сведениями, у которых истёк срок годности."""
         ips = [ip for ip in dict.fromkeys(ips) if ip]
         if not ips:
             return []
-        cutoff = int(time.time() - ttl_seconds)
         with self._lock:
-            fresh = {r[0] for r in self._db.execute(
-                f"SELECT ip FROM ip_info WHERE ts >= ? AND ip IN ({','.join('?' * len(ips))})",
-                (cutoff, *ips)).fetchall()}
-        return [ip for ip in ips if ip not in fresh]
+            ts = dict(self._db.execute(
+                f"SELECT ip, ts FROM ip_info WHERE ip IN ({','.join('?' * len(ips))})",
+                ips).fetchall())
+        return [ip for ip in ips if not fresh(ts.get(ip), ttl_seconds, jitter, ip)]
 
     def save_ip_info(self, infos: dict) -> None:
         if not infos:
@@ -367,36 +388,15 @@ class Storage:
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
             self._db.commit()
 
-    def max_pass_today(self, day_str: str) -> int:
-        """Макс. pass_no среди результатов за указанный локальный день (YYYY-MM-DD).
-        Нужен при первом запуске после апдейта (метки pass_no ещё нет), чтобы не
-        начинать сегодняшнюю нумерацию с 1 поверх уже записанных прогонов."""
-        try:
-            start = int(time.mktime(time.strptime(day_str, "%Y-%m-%d")))
-        except ValueError:
-            return 0
-        end = start + 86400
-        with self._lock:
-            r = self._db.execute(
-                "SELECT MAX(pass_no) FROM results WHERE ts >= ? AND ts < ?",
-                (start, end)).fetchone()
-        return int(r[0]) if r and r[0] is not None else 0
-
     # --- Пауза (backoff) / карантин (garbage) нод, персистентно --------------
-    # reason='backoff' — ПАУЗА в прогонах: не тестируем, пока сквозной номер прогона
-    #   (meta.pass_seq) <= until_pass; until = NULL.
-    # reason='garbage' — КАРАНТИН во времени: не тестируем до `until` (unix ts);
-    #   until_pass = NULL. `streak` — число подряд провалов gate (для удвоения).
+    # Нода не тестируется до `until` (unix ts). reason='backoff' — пауза после провала gate,
+    # 'garbage' — карантин. `streak` — число провалов gate подряд (для удвоения паузы).
 
     def load_backoff(self) -> dict:
-        """{crc: (until, until_pass, streak, reason)} по всем строкам (снимок на прогон).
-        Старые строки временной модели (backoff без until_pass) → until_pass=0: нода
-        пробуется в ближайшем прогоне, streak сохраняется."""
+        """{crc: (until, streak, reason)} по всем строкам."""
         with self._lock:
-            rows = self._db.execute(
-                "SELECT crc, until, until_pass, streak, reason FROM garbage").fetchall()
-        return {r[0]: (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0), r[4] or "")
-                for r in rows}
+            rows = self._db.execute("SELECT crc, until, streak, reason FROM garbage").fetchall()
+        return {r[0]: (int(r[1] or 0), int(r[2] or 0), r[3] or "") for r in rows}
 
     def restricted_since(self) -> dict:
         """{crc: с какого времени нода под паузой или в карантине (unix ts)}."""
@@ -404,20 +404,16 @@ class Storage:
             rows = self._db.execute("SELECT crc, since FROM garbage").fetchall()
         return {r[0]: int(r[1] or 0) for r in rows}
 
-    def set_backoff(self, crc: str, until, streak: int, reason: str,
-                    until_pass=None) -> None:
-        """Записать/обновить паузу (until_pass) или карантин (until, unix ts)."""
+    def set_backoff(self, crc: str, until, streak: int, reason: str) -> None:
+        """Записать/обновить паузу или карантин до until (unix ts)."""
         if not crc:
             return
         with self._lock:
             self._db.execute(
-                "INSERT INTO garbage (crc, since, until, reason, streak, until_pass) "
-                "VALUES (?,?,?,?,?,?) "
+                "INSERT INTO garbage (crc, since, until, reason, streak) VALUES (?,?,?,?,?) "
                 "ON CONFLICT(crc) DO UPDATE SET until=excluded.until, "
-                "reason=excluded.reason, streak=excluded.streak, "
-                "until_pass=excluded.until_pass",
-                (crc, int(time.time()), None if until is None else int(until), reason,
-                 int(streak), None if until_pass is None else int(until_pass)))
+                "reason=excluded.reason, streak=excluded.streak",
+                (crc, int(time.time()), int(until), reason, int(streak)))
             self._db.commit()
 
     def clear_backoff(self, crc: str) -> None:
@@ -455,7 +451,7 @@ class Storage:
         return bool(row and row[0])
 
     def banned_crcs(self) -> set:
-        """Множество CRC забаненных нод (снимок на прогон)."""
+        """Множество CRC забаненных нод."""
         with self._lock:
             rows = self._db.execute(
                 "SELECT crc FROM nodes WHERE banned = 1").fetchall()
@@ -483,7 +479,7 @@ class Storage:
             rows = self._db.execute(
                 "SELECT crc,node,provider,protocol,region,country,active,score,"
                 "reliability,consistency,throttle,jitter,latency,throughput,"
-                "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
+                "score_ewma,avail,flap,samples,heavy_ok,heavy_ts,"
                 "required,exit_ip,exit_cc,country_ts FROM scores"
             ).fetchall()
         out: dict[str, dict] = {}
@@ -497,59 +493,45 @@ class Storage:
                 "throttle": _flt(r[10]), "jitter": _flt(r[11]),
                 "latency": _flt(r[12]), "throughput": _flt(r[13]),
                 "score_ewma": _flt(r[14]), "avail": _flt(r[15]), "flap": _flt(r[16]),
-                "samples": _int(r[17]), "last_seen": _int(r[18]),
-                "heavy_ok": "" if r[19] is None else str(r[19]), "heavy_ts": _int(r[20]),
-                "required": _json_dict(r[21]), "exit_ip": r[22] or "", "exit_cc": r[23] or "",
-                "country_ts": _int(r[24]) or 0,
+                "samples": _int(r[17]),
+                "heavy_ok": "" if r[18] is None else str(r[18]), "heavy_ts": _int(r[19]),
+                "required": _json_dict(r[20]), "exit_ip": r[21] or "", "exit_cc": r[22] or "",
+                "country_ts": _int(r[23]) or 0,
             }
         return out
 
     def save_scores(self, rows) -> None:
-        """Полная перезапись снимка рейтинга (исчезнувшие ноды уходят). Ключ БД — crc.
-
-        Разные теги с ОДИНАКОВЫМ crc (нода-дубль: идентичный конфиг, разное имя) в памяти
-        Scoreboard — отдельные строки, но в scores crc это PRIMARY KEY. Дедуплицируем по
-        crc, оставляя предпочтительную (активная > больший score), иначе INSERT упал бы с
-        UNIQUE constraint failed: scores.crc."""
-        by_crc: dict[str, tuple] = {}
-        for r in rows:
-            crc = r.get("id") or r.get("node")
-            if not crc:
-                continue
-            rank = ((_int(r.get("active")) or 0), _flt(r.get("score")))
-            row = (
-                crc, r.get("node", ""), r.get("provider", ""), r.get("protocol", ""),
-                r.get("region", ""), r.get("country", ""),
-                _int(r.get("active")), _flt(r.get("score")),
-                _flt(r.get("reliability")), _flt(r.get("consistency")),
-                _flt(r.get("throttle")), _flt(r.get("jitter")),
-                _flt(r.get("latency")), _flt(r.get("throughput")),
-                _flt(r.get("score_ewma")), _flt(r.get("avail")), _flt(r.get("flap")),
-                _int(r.get("samples")), _int(r.get("last_seen")),
-                "" if r.get("heavy_ok") is None else str(r.get("heavy_ok")),
-                _int(r.get("heavy_ts")),
-                json.dumps(r.get("required") or {}, ensure_ascii=False),
-                r.get("exit_ip") or "", r.get("exit_cc") or "", _int(r.get("country_ts")) or 0,
-                r.get("reserve") or "",
-            )
-            prev = by_crc.get(crc)
-            if prev is None or rank > prev[0]:
-                by_crc[crc] = (rank, row)
-        packed = [v[1] for v in by_crc.values()]
+        """Полная перезапись снимка рейтинга (исчезнувшие ноды уходят). Ключ БД — crc."""
+        packed = _pack_scores(rows)
         with self._lock:
             self._db.execute("DELETE FROM scores")
-            if packed:
-                self._db.executemany(
-                    "INSERT INTO scores (crc,node,provider,protocol,region,country,"
-                    "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
-                    "score_ewma,avail,flap,samples,last_pass,heavy_ok,heavy_ts,"
-                    "required,exit_ip,exit_cc,country_ts,reserve) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+            self._insert_scores(packed)
             self._db.commit()
 
+    def upsert_scores(self, rows) -> None:
+        """Записать строки рейтинга, не трогая остальные."""
+        packed = _pack_scores(rows)
+        with self._lock:
+            self._db.executemany("DELETE FROM scores WHERE crc = ?", [(p[0],) for p in packed])
+            self._insert_scores(packed)
+            self._db.commit()
+
+    def delete_scores(self, crcs) -> None:
+        with self._lock:
+            self._db.executemany("DELETE FROM scores WHERE crc = ?", [(c,) for c in crcs])
+            self._db.commit()
+
+    def _insert_scores(self, packed: list) -> None:
+        if packed:
+            self._db.executemany(
+                "INSERT INTO scores (crc,node,provider,protocol,region,country,"
+                "active,score,reliability,consistency,throttle,jitter,latency,throughput,"
+                "score_ewma,avail,flap,samples,heavy_ok,heavy_ts,"
+                "required,exit_ip,exit_cc,country_ts,reserve) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", packed)
+
     def set_reserve_marks(self, marks: dict) -> None:
-        """Флаг резерва в scores: {crc: группы через запятую}, у прочих — пусто. Резерв
-        меняется между прогонами, а save_scores переписывает scores раз в прогон."""
+        """Флаг резерва в scores: {crc: группы через запятую}, у прочих — пусто."""
         with self._lock:
             self._db.execute("UPDATE scores SET reserve = ''")
             self._db.executemany("UPDATE scores SET reserve = ? WHERE crc = ?",
@@ -558,11 +540,9 @@ class Storage:
 
     def set_active_crcs(self, crcs) -> None:
         """Пометить активные ноды в таблице scores (active=1 у crcs, 0 у прочих): нода
-        активна хотя бы в одной группе. Вызывается из switcher при переключении:
-        save_scores полностью переписывает scores лишь раз в прогон (end_pass), а
-        переключения (ротация/emergency из фонового монитора) идут между прогонами — без
-        этого scores.active в БД отстаёт от activations, и дашборд показывает разные
-        активные ноды в двух таблицах."""
+        активна хотя бы в одной группе. Вызывается из switcher при переключении: строку
+        рейтинга пишет только замер ноды, без этого scores.active в БД отставал бы от
+        activations."""
         crcs = sorted(c for c in crcs if c)
         with self._lock:
             self._db.execute("UPDATE scores SET active = 0")
@@ -718,6 +698,37 @@ class Storage:
         with self._lock:
             self._db.execute("PRAGMA busy_timeout = 60000")   # ждать активного писателя
             self._db.execute("VACUUM")
+
+
+def _pack_scores(rows) -> list[tuple]:
+    """Строки рейтинга в порядке колонок scores. Разные теги с ОДИНАКОВЫМ crc (нода-дубль:
+    идентичный конфиг, разное имя) в памяти Scoreboard — отдельные строки, а в scores crc —
+    PRIMARY KEY: остаётся предпочтительная (активная > больший score)."""
+    by_crc: dict[str, tuple] = {}
+    for r in rows:
+        crc = r.get("id") or r.get("node")
+        if not crc:
+            continue
+        rank = ((_int(r.get("active")) or 0), _flt(r.get("score")))
+        row = (
+            crc, r.get("node", ""), r.get("provider", ""), r.get("protocol", ""),
+            r.get("region", ""), r.get("country", ""),
+            _int(r.get("active")), _flt(r.get("score")),
+            _flt(r.get("reliability")), _flt(r.get("consistency")),
+            _flt(r.get("throttle")), _flt(r.get("jitter")),
+            _flt(r.get("latency")), _flt(r.get("throughput")),
+            _flt(r.get("score_ewma")), _flt(r.get("avail")), _flt(r.get("flap")),
+            _int(r.get("samples")),
+            "" if r.get("heavy_ok") is None else str(r.get("heavy_ok")),
+            _int(r.get("heavy_ts")),
+            json.dumps(r.get("required") or {}, ensure_ascii=False),
+            r.get("exit_ip") or "", r.get("exit_cc") or "", _int(r.get("country_ts")) or 0,
+            r.get("reserve") or "",
+        )
+        prev = by_crc.get(crc)
+        if prev is None or rank > prev[0]:
+            by_crc[crc] = (rank, row)
+    return [v[1] for v in by_crc.values()]
 
 
 def _mtime(path: str) -> float | None:

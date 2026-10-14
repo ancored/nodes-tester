@@ -16,12 +16,11 @@ from nodes_common.raw import title_of, titles as raw_titles
 
 _connection = ContextVar("dashboard_connection", default=None)
 
-# Колонки рейтинга (таблица scores) в порядке для дашборда; crc отдаём как 'id',
-# last_pass — как 'last_seen'.
+# Колонки рейтинга (таблица scores) в порядке для дашборда; crc отдаём как 'id'.
 _SCORE_SELECT = (
     "SELECT node, provider, protocol, region, country, crc AS id, active, score, "
     "reliability, consistency, throttle, jitter, latency, throughput, "
-    "score_ewma, avail, flap, samples, last_pass AS last_seen, heavy_ok, heavy_ts, reserve "
+    "score_ewma, avail, flap, samples, heavy_ok, heavy_ts, reserve "
     "FROM scores"
 )
 
@@ -216,7 +215,7 @@ def _collect(cfg) -> dict:
     # «Результаты» их не показывают, карточка ноды — показывает. Ключи, которых нет ни
     # в базе, ни в whnodes.json (прежние клиентские ноды), не отдаём.
     shown = {n["crc"] for n in nodes}
-    archived = {g["crc"] for g in graveyard}
+    archived = {g["crc"] for g in graveyard} - set(clients)   # ушла от роутера, но жива в whnodes
     known = shown | archived
     results["rows"] = [r for r in results.get("rows", []) if r["crc"] in known]
     for r in results["rows"]:
@@ -371,10 +370,7 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
                "heavy_download", "gemini", "openai", "anthropic", "whitelist"]
-# Тесты отдельных фаз (резерв групп, белые списки после прохода): последний известный
-# результат, вне прогона.
 _AI_TESTS = ("gemini", "openai", "anthropic")
-_PHASE_TESTS = ("heavy_download", *_AI_TESTS, "whitelist")
 
 
 def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
@@ -478,95 +474,49 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
                                               info.get("org")) if x)
 
 
-def _same_pass(hr: dict, pass_no, pass_ts: int) -> bool:
-    """DL50-строка относится к тому же прогону, что и лёгкие тесты: совпадают pass_no и
-    календарный день (pass_no цикличен по дням, поэтому сверяем ещё и дату)."""
-    if (hr.get("pass_no") or 0) != (pass_no or 0):
-        return False
-    ht, pt = hr.get("ts") or 0, pass_ts or 0
-    if not ht or not pt:
-        return False
-    a, b = time.localtime(ht), time.localtime(pt)
-    return (a.tm_year, a.tm_yday) == (b.tm_year, b.tm_yday)
-
-
-# Тесты, не входящие в «строго последний прогон» лёгких тестов:
-#   _select      — служебная запись переключения (в таблице не показываем);
-#   heavy_download — идёт вне прогона (every N), показываем как есть, но помечаем.
-_OFF_PASS_TESTS = {"_select", *_PHASE_TESTS}
-
-
 def _results(db: str) -> dict:
-    """Свод по ноде — строго ОДИН последний прогон (все лёгкие тесты берём из пасса
-    с максимальным ts, а не независимо по каждому тесту, иначе в таблице мешаются
-    данные разных прогонов). Исключение — DL50 (heavy_download): он идёт вне прогона,
-    поэтому берём его последнее известное значение и помечаем отдельно. Служебная
-    запись _select ('переключ.') в таблицу не выводится вовсе."""
+    """Свод по ноде: последний результат каждого теста со временем замера. Служебная
+    запись _select ('переключ.') в таблицу не выводится."""
     rows = _query(db, """
         SELECT r.crc AS crc, r.test AS test, r.ok AS ok, r.metrics AS metrics,
-               r.error AS error, r.ts AS ts, r.pass_no AS pass_no,
+               r.error AS error, r.ts AS ts,
                n.provider AS provider, n.protocol AS protocol, n.country AS country
-        FROM results r LEFT JOIN nodes n ON n.crc = r.crc""")
+        FROM results r LEFT JOIN nodes n ON n.crc = r.crc
+        WHERE r.test != '_select' ORDER BY r.ts, r.rowid""")
     ip_rows = _query(db, "SELECT ip, asn, as_name, isp, org, country, mobile, proxy, hosting "
                          "FROM ip_info")
     ip_info = {r.get("ip"): r for r in ip_rows if r.get("ip")}
-    per_node: dict[str, list] = {}
-    for r in rows:
-        if r["test"] == "_select":            # служебная запись — в таблицу не идёт
-            continue
-        per_node.setdefault(r["crc"], []).append(r)
+    latest: dict[str, dict] = {}
+    connected: dict[str, int] = {}             # ключ ноды → время последнего соединения
+    for r in rows:                             # по возрастанию времени: последний перекрывает
+        latest.setdefault(r["crc"], {})[r["test"]] = r
+        if r["test"] == "connectivity" and r["ok"]:
+            connected[r["crc"]] = r["ts"]
 
     tests_seen: set[str] = set()
     node_rows: list[dict] = []
-    for crc, rws in per_node.items():
-        light = [r for r in rws if r["test"] not in _PHASE_TESTS]
-        # ts последнего прогона — по лёгким тестам (все они пишутся одним ts за пасс).
-        base_pool = light or rws
-        base_row = max(base_pool, key=lambda r: r["ts"] or 0)
-        pass_ts = base_row["ts"] or 0
-        node = {"provider": base_row.get("provider"), "protocol": base_row.get("protocol"),
-                "country": base_row.get("country"), "crc": crc,
-                "ts": pass_ts, "pass_no": base_row.get("pass_no") or 0, "cells": {}}
-        # Лёгкие тесты — только из последнего прогона (ts == pass_ts).
-        for r in light:
-            if (r["ts"] or 0) != pass_ts:
-                continue
-            node["cells"][r["test"]] = {**_cell(r["test"], r["ok"], r["metrics"], r.get("error")), "ts": r["ts"]}
-            if r["test"] == "connectivity" and r["ok"]:
-                _ip_type(node, r["metrics"], ip_info)
-            tests_seen.add(r["test"])
-        # Страна ноды — последний успешный замер; соединение в этом проходе не прошло —
-        # флаг из прошлого замера, админка показывает его бледным с временем замера.
-        if node["country"] and not (node["cells"].get("connectivity") or {}).get("ok"):
-            measured = [r["ts"] for r in rws if r["test"] == "connectivity" and r["ok"]]
-            node["country_stale"] = 1
-            node["country_ts"] = max(measured) if measured else None
-        # Тесты отдельных фаз (DL50, AI) — последнее известное значение; помечаем off_pass.
-        for test in _PHASE_TESTS:
-            phase = [r for r in rws if r["test"] == test]
-            if not phase:
-                continue
-            hr = max(phase, key=lambda r: r["ts"] or 0)
-            cell = _cell(test, hr["ok"], hr["metrics"], hr.get("error"))
-            cell["ts"] = hr["ts"]
-            # Фаза пишется на пару минут позже лёгких тестов, но с тем же pass_no за тот
-            # же день — это ТОТ ЖЕ прогон. «Вне прогона» = другой pass_no или другой день
-            # (pass_no цикличен по дням, поэтому одного номера мало).
-            off_pass = not _same_pass(hr, node["pass_no"], pass_ts)
-            cell["heavy"] = 1
-            cell["off_pass"] = 1 if off_pass else 0
-            node["cells"][test] = cell
+    for crc, by_test in latest.items():
+        any_row = next(iter(by_test.values()))
+        node = {"provider": any_row.get("provider"), "protocol": any_row.get("protocol"),
+                "country": any_row.get("country"), "crc": crc,
+                "ts": max(r["ts"] or 0 for r in by_test.values()), "cells": {}}
+        for test, r in by_test.items():
+            node["cells"][test] = {**_cell(test, r["ok"], r["metrics"], r.get("error")), "ts": r["ts"]}
             tests_seen.add(test)
+        conn = by_test.get("connectivity")
+        if conn and conn["ok"]:
+            _ip_type(node, conn["metrics"], ip_info)
+        elif node["country"]:
+            # Последнее соединение не прошло — флаг из прошлого замера, админка показывает
+            # его бледным с временем замера.
+            node["country_stale"] = 1
+            node["country_ts"] = connected.get(crc)
         node_rows.append(node)
 
     # Все проверки — всегда: столбец без результатов (новая база, проверка ещё не шла)
     # показывает прочерки, а не пропадает.
     cols = list(_TEST_ORDER) + sorted(tests_seen - set(_TEST_ORDER))
     node_rows.sort(key=lambda x: x["ts"], reverse=True)
-    for n in node_rows:                       # ярлык прогона "DD/MM-NNN" (дата из ts)
-        lt = time.localtime(n["ts"]) if n.get("ts") else None
-        n["pass_label"] = (f"{lt.tm_mday:02d}/{lt.tm_mon:02d}-{n['pass_no']:03d}"
-                           if lt else str(n.get("pass_no", "")))
     return {"tests": cols, "rows": node_rows}
 
 
@@ -588,10 +538,9 @@ def _garbage_table(db: str, ev: dict) -> list[dict]:
     """Ноды, которые СЕЙЧАС в подписке и в паузе (backoff) / карантине (garbage).
     Удалённые из подписки сюда не попадают — они на «Кладбище» (_graveyard)."""
     now = int(time.time())
-    seq = _pass_seq(db)
     rows = _query(db, """
         SELECT g.crc AS crc, g.since AS since, g.until AS until, g.reason AS state,
-               g.streak AS streak, g.until_pass AS until_pass,
+               g.streak AS streak,
                n.provider AS provider, n.protocol AS protocol, n.country AS cc,
                n.first_seen AS first_seen, n.present AS present
         FROM garbage g LEFT JOIN nodes n ON n.crc = g.crc""")
@@ -606,9 +555,6 @@ def _garbage_table(db: str, ev: dict) -> list[dict]:
             "state": r.get("state"), "streak": r.get("streak"),
             "last_garbage": e.get("last_garbage"), "garbage_count": e.get("gcount") or 0,
             "in_garbage": max(0, now - int(r["since"] or now)), "until": r.get("until"),
-            # пауза: сколько прогонов ещё пропустит (0 = пробуется в ближайшем)
-            "passes_left": (max(0, int(r["until_pass"] or 0) - seq)
-                            if r.get("state") == "backoff" else None),
         })
     out.sort(key=lambda x: (x["state"] != "garbage", -(x["in_garbage"] or 0)))
     return out
@@ -769,27 +715,13 @@ def _nodes_list(db: str) -> list[dict]:
                n.protocol AS protocol, n.country AS country, n.server AS server,
                n.present AS present, COALESCE(n.banned, 0) AS banned,
                s.score AS score, s.region AS region, s.active AS active, s.reserve AS reserve,
-               g.reason AS gstate, g.until AS guntil, g.streak AS gstreak,
-               g.until_pass AS until_pass
+               g.reason AS gstate, g.until AS guntil, g.streak AS gstreak
         FROM nodes n
         LEFT JOIN scores s ON s.crc = n.crc
         LEFT JOIN garbage g ON g.crc = n.crc
         WHERE n.present IS NOT 0
         ORDER BY n.present DESC, s.score DESC""")
-    pass_seq = _pass_seq(db)
-    for r in rows:
-        until_pass = r.pop("until_pass")
-        r["passes_left"] = max(0, int(until_pass or 0) - pass_seq)
     return rows
-
-
-def _pass_seq(db: str) -> int:
-    """Сквозной номер прогона (meta.pass_seq): от него считается остаток паузы нод."""
-    meta = _query(db, "SELECT value FROM meta WHERE key = 'pass_seq'")
-    try:
-        return int(meta[0]["value"]) if meta else 0
-    except (TypeError, ValueError):
-        return 0
 
 
 def _float(v) -> float:

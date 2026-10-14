@@ -3,7 +3,7 @@
 Лестница приоритетов на регион:
     1. EMERGENCY  — активная нода обнулилась (заблокирована) → немедленно
     2. ROTATION   — вышел таймер принудительной ротации (размазать нагрузку)
-    3. QUALITY    — кандидат стабильно лучше активной (гистерезис Δ, M циклов)
+    3. QUALITY    — кандидат стабильно лучше активной (гистерезис Δ, M замеров подряд)
     4. STAY       — иначе не трогаем
 
 Замену берём из резерва группы (Scoreboard.reserve, его держит nodes_tester.reserve):
@@ -55,14 +55,14 @@ class Switcher:
         # Наблюдатель записей истории (уведомления): on_activation(group, reason, node, prev).
         self.on_activation = None
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
-        # Один RLock: switcher дёргают и поток прогона, и фоновый монитор.
+        # Один RLock: switcher дёргают тестер, резерв и фоновый монитор.
         self._lock = threading.RLock()
         # Нода может быть активной в нескольких группах: рейтингу нужен полный набор.
         for group, st in self.state.items():
             if st.get("active"):
                 self.board.set_active(group, st["active"])
         # scores.active в БД — как в состоянии переключателя сразу после старта, а не
-        # после первого прохода (админка читает рейтинг из БД).
+        # после первого замера (админка читает рейтинг из БД).
         self._sync_active_crcs()
         self._align_loaded()
 
@@ -79,13 +79,34 @@ class Switcher:
                 self.evaluate_region(region, emergency=True)
 
     def evaluate_all(self, groups=None) -> None:
-        """Вызывать в конце прогона: обычная оценка (quality/rotation/init).
-        groups — оценить только эти группы (частичный прогон); None — все."""
+        """Обычная оценка (quality/rotation/init) групп; None — всех."""
         with self._lock:
             for region in self.board.regions():
                 if groups is None or region in groups:
                     self._evaluate_region_locked(region, emergency=False)
             self._persist()
+
+    def after_measure(self, node: str) -> None:
+        """Новый замер ноды: оценить группы, где она активна или в резерве, и группы без
+        активной или в аварии без замены — нода может стать в них кандидатом."""
+        with self._lock:
+            groups = [g for g in self.board.node_groups(node)
+                      if (self.state.get(g) or {}).get("active") in (None, node)
+                      or self.stuck(g) or node in self.board.reserve(g)]
+            for group in groups:
+                self._evaluate_region_locked(group, emergency=False, measured=node)
+            if groups:
+                self._persist()
+
+    def rotate_due(self) -> None:
+        """Сменить активную у групп, чей срок ротации наступил (таймер тестера)."""
+        with self._lock:
+            due = [g for g in self.board.regions()
+                   if (self.state.get(g) or {}).get("active") and self.rotation_due(g)]
+            for group in due:
+                self._evaluate_region_locked(group, emergency=False, measured="")
+            if due:
+                self._persist()
 
     def prune_groups(self, groups) -> None:
         """Забыть состояние групп, которых больше нет в sing-box (группу убрали из
@@ -142,18 +163,21 @@ class Switcher:
             return st.get("active") if st else None
 
     def next_rotate_deadline(self) -> "float | None":
-        """Ближайший срок ротации среди активных регионов (для rotation_bound-режима
-        тестера). None — если ни один регион ещё не активирован. Срок не раньше
-        last_switch + min_dwell — как в rotation_due: иначе прогон будился бы раньше, чем
-        ротация возможна. Группы, которых нет в рейтинге, не учитываются: их никто не
-        оценит и срок не сдвинет."""
-        dwell = float(self.cfg.rotation.min_dwell)
-        groups = set(self.board.regions())
-        with self._lock:
-            ds = [max(float(st["rotate_deadline"]), float(st.get("last_switch") or 0) + dwell)
-                  for g, st in self.state.items()
-                  if g in groups and st.get("active") and st.get("rotate_deadline")]
+        """Ближайший срок ротации среди активных групп. None — ни одна не активирована."""
+        ds = [d for d in map(self.rotate_deadline, self.board.regions()) if d is not None]
         return min(ds) if ds else None
+
+    def rotate_deadline(self, region: str) -> "float | None":
+        """Когда группа сменит активную по ротации: не раньше last_switch + min_dwell — как в
+        rotation_due. None — ротация выключена или активной нет."""
+        if not self.cfg.rotation.enabled:
+            return None
+        with self._lock:
+            st = self.state.get(region) or {}
+            if not st.get("active") or not st.get("rotate_deadline"):
+                return None
+            return max(float(st["rotate_deadline"]),
+                       float(st.get("last_switch") or 0) + float(self.cfg.rotation.min_dwell))
 
     def excluded(self, region: str) -> set[str]:
         """Ноды, которые не берём в резерв группы: активная и avoid_recent последних."""
@@ -170,8 +194,8 @@ class Switcher:
             return bool((self.state.get(region) or {}).get("emg_stuck"))
 
     def rotation_due(self, region: str) -> bool:
-        """Ближайший evaluate_all сменит активную ноду региона по ротации (или выберет
-        первую, если активной нет). Условия — как в _evaluate_region_locked."""
+        """Ближайшая оценка сменит активную ноду региона по ротации (или выберет первую,
+        если активной нет). Условия — как в _evaluate_region_core."""
         with self._lock:
             st = self.state.get(region) or {}
             if not st.get("active"):
@@ -226,9 +250,8 @@ class Switcher:
     # --- Ядро -----------------------------------------------------------
 
     def evaluate_region(self, region: str, emergency: bool = False) -> None:
-        # Сохраняем state СРАЗУ после изменения: emergency/emg_stuck от монитора между
-        # прогонами (в rotation_bound ожидание — часы) иначе теряются при рестарте до
-        # следующего evaluate_all.
+        # Сохраняем state СРАЗУ после изменения: emergency/emg_stuck от монитора иначе
+        # теряются при рестарте.
         with self._lock:
             self._evaluate_region_locked(region, emergency)
             self._persist()
@@ -239,17 +262,17 @@ class Switcher:
             self._storage.save_switch_state(self.state)
 
     def _sync_active_crcs(self) -> None:
-        """scores.active в БД — по текущим активным нодам групп. save_scores переписывает
-        scores лишь раз в прогон, а переключение может произойти между прогонами."""
+        """scores.active в БД — по текущим активным нодам групп."""
         if self._storage is not None:
             self._storage.set_active_crcs(
                 {parse_node(s["active"]).node_id for s in self.state.values() if s.get("active")})
 
-    def _evaluate_region_locked(self, region: str, emergency: bool) -> None:
-        self._evaluate_region_core(region, emergency)
-        # Инвариант rotation_bound: после оценки у группы с активной нодой срок ротации в
-        # будущем. Любой путь, где ротация не случилась (один кандидат, нет кандидатов,
-        # авария без замены, сбой API), иначе будил бы прогон за прогоном.
+    def _evaluate_region_locked(self, region: str, emergency: bool,
+                                measured: "str | None" = None) -> None:
+        self._evaluate_region_core(region, emergency, measured)
+        # Инвариант: после оценки у группы с активной нодой срок ротации в будущем. Любой
+        # путь, где ротация не случилась (один кандидат, нет кандидатов, авария без замены,
+        # сбой API), иначе будил бы таймер ротации раз за разом.
         st = self.state.get(region) or {}
         now = time.time()
         if (self.cfg.rotation.enabled and st.get("active")
@@ -257,7 +280,10 @@ class Switcher:
             st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
             print(f"  [switch] {region}: ротация сейчас невозможна — срок перенесён")
 
-    def _evaluate_region_core(self, region: str, emergency: bool) -> None:
+    def _evaluate_region_core(self, region: str, emergency: bool, measured: "str | None") -> None:
+        """measured — нода, чей новый замер вызвал оценку: перевес по качеству засчитывается,
+        только если это активная или лучшая нода резерва; "" — таймер ротации (перевес не
+        засчитывается); None — оценка без замера (вручную, резерв) засчитывает перевес."""
         st = self.state.setdefault(region, _new_region_state())
         cands = self.board.candidates(region)
         if not cands:
@@ -324,6 +350,8 @@ class Switcher:
         if best["tier"] < active_tier or float(best["score"]) > active_score + margin:
             if now - st.get("last_switch", 0) < self.cfg.cooldown:
                 return  # антифлаппинг
+            if measured is not None and measured not in (active, best["node"]):
+                return  # перевес считается по замерам активной и лидера резерва
             st["quality_count"] = st.get("quality_count", 0) + 1
             if st["quality_count"] >= self.cfg.confirm_cycles:
                 self._activate(best, region, st, now, "quality")
@@ -366,8 +394,8 @@ class Switcher:
 
     def _note_emergency_stuck(self, region: str, st: dict, detail: str) -> None:
         """Emergency без замены (ТСПУ заблокировал активную, здоровых кандидатов нет).
-        Пишем в историю ОДИН раз за эпизод (флаг emg_stuck), чтобы не спамить каждый
-        прогон; сбрасывается, когда активная снова ожила или произошло переключение."""
+        Пишем в историю ОДИН раз за эпизод (флаг emg_stuck), чтобы не спамить каждой
+        оценкой; сбрасывается, когда активная снова ожила или произошло переключение."""
         if st.get("emg_stuck"):
             return
         st["emg_stuck"] = True
@@ -512,8 +540,8 @@ class Switcher:
 
     # --- Общая сетка сроков ротации (rotation.align) ----------------------
     # Слот k: k*interval от эпохи + jitter, общий для всех групп и стабильный между
-    # рестартами (зерно — номер слота). Сроки групп совпадают → тестер делает один
-    # прогон на слот вместо прогона к сроку каждой группы.
+    # рестартами (зерно — номер слота). Сроки групп совпадают → тестер освежает замеры
+    # нод один раз к слоту, а не к сроку каждой группы.
 
     def _slot(self, k: int) -> float:
         rot = self.cfg.rotation

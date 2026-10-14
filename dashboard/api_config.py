@@ -5,7 +5,7 @@
 что у тестера (nodes_tester.config.parse_config); при ошибке файл не трогается. Изменения
 действуют после перезапуска тестера — админка встроенного тестера на OpenWrt перезапускает его
 сама. Соединения пользователей при этом не рвутся: на несколько секунд останавливаются только
-мониторинг и прогон.
+мониторинг и тестирование.
 """
 
 from __future__ import annotations
@@ -14,13 +14,12 @@ import hashlib
 import json
 import os
 import subprocess
-import threading
 
 from nodes_common.fileio import atomic_write_private, dumps_json
+from nodes_tester.config import WRITE_LOCK
 
 from .webapp import App, HttpError
 
-_edit_lock = threading.Lock()
 TESTER_INIT = "/etc/init.d/nodes-tester"
 
 
@@ -44,7 +43,7 @@ def _restart_tester(app: App) -> str:
 
 def _save(app: App, path: str, data: dict) -> dict:
     """Проверить загрузчиком тестера, записать атомарно с правами 0600, перезапустить тестер.
-    Вызывается под _edit_lock."""
+    Вызывается под WRITE_LOCK."""
     from nodes_tester.config import ConfigError, parse_config
     try:
         parse_config(data)
@@ -144,7 +143,7 @@ def register(app: App) -> None:
     @app.route("GET", "/api/config", needs_token=True)
     def get_config(app, req):
         path = _config_path(app)
-        with _edit_lock:
+        with WRITE_LOCK:
             result = _document(path)
             result["restart_required"] = result["revision"] != initial_revision
             return result
@@ -166,7 +165,7 @@ def register(app: App) -> None:
         if not isinstance(data, dict):
             raise HttpError(400, "config.json должен быть объектом")
         path = _config_path(app)
-        with _edit_lock:
+        with WRITE_LOCK:
             expected = req.headers.get("If-Match")
             if expected and expected != _revision(path):
                 raise HttpError(409, "Файл изменился после открытия. Перечитайте его перед сохранением.")
@@ -182,7 +181,7 @@ def register(app: App) -> None:
         if not isinstance(base, dict) or not isinstance(new, dict) or not new:
             raise HttpError(400, "нужны объекты base и set")
         path = _config_path(app)
-        with _edit_lock:
+        with WRITE_LOCK:
             data = _document(path)["data"]
             changed = [key for key in new if data.get(key) != base.get(key)]
             if changed:

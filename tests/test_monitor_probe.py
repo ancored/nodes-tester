@@ -1,5 +1,4 @@
-"""Зонд монитора: одиночный обрыв перепроверяется, страйк — только если провалился и повтор.
-Ожидание срока ротации сообщает в лог один раз, а не на каждом шаге опроса."""
+"""Зонд монитора: одиночный обрыв перепроверяется, страйк — только если провалился и повтор."""
 
 import contextlib
 import io
@@ -157,36 +156,6 @@ class MonitorProbeRetryTest(unittest.TestCase):
                 self._probe(mon, st)
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(st["strikes"], 0)
-
-
-class WaitAnnounceTest(unittest.TestCase):
-    def test_wait_announced_once(self):
-        r = make_runner(temp_dir())
-        try:
-            clock = {"now": 1_000_000.0}
-
-            class FakeTime:
-                @staticmethod
-                def time():
-                    return clock["now"]
-
-                monotonic = time
-
-            def wait(seconds):
-                clock["now"] += seconds
-                return False
-
-            out = io.StringIO()
-            with patch("nodes_tester.runner.time", FakeTime), \
-                    patch.object(r.switcher, "next_rotate_deadline",
-                                 return_value=clock["now"] + 3600), \
-                    patch.object(r, "_wait_interruptible", side_effect=wait), \
-                    contextlib.redirect_stdout(out):
-                r._wait_for_rotation()
-            self.assertEqual(out.getvalue().count("ждём"), 1)
-            self.assertIn("настал срок ротации", out.getvalue())
-        finally:
-            r.storage.close()
 
 
 if __name__ == "__main__":

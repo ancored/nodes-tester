@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--once", action="store_true",
-        help="один проход и выход (по умолчанию работает непрерывно)",
+        help="проверить все ноды один раз и выйти (по умолчанию работает непрерывно)",
     )
     parser.add_argument(
         "--vacuum", action="store_true",
@@ -73,12 +73,12 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        path = Runner(cfg, rounds=1 if args.once else 0).run()
+        path = Runner(cfg, once=args.once).run()
     except KeyboardInterrupt:
         print("\nПрервано пользователем.", file=sys.stderr)
         return 130
     except Exception as exc:  # noqa: BLE001 — верхнеуровневый перехват для CLI
-        print(f"Ошибка прогона: {exc}", file=sys.stderr)
+        print(f"Ошибка тестера: {exc}", file=sys.stderr)
         return 1
 
     print(f"\nГотово. Результаты: {path}")

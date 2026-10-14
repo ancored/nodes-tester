@@ -383,9 +383,9 @@ class Orchestrator:
 
     def write_schedule(self, data, revision):
         from nodes_common.fileio import atomic_write_private, dumps_json
-        from nodes_tester.config import parse_config
+        from nodes_tester.config import WRITE_LOCK, parse_config
         validate_schedule(data)
-        with self._lock:
+        with WRITE_LOCK:
             raw = self.config_path.read_bytes()
             if revision != _revision(raw):
                 raise ValueError("revision_conflict")
@@ -399,12 +399,12 @@ class Orchestrator:
             parse_config(config)                     # вся остальная часть файла — без изменений
             text = dumps_json(config)
             atomic_write_private(str(self.config_path), text)
-            # A new or edited schedule starts with future slots; restart catch-up
-            # applies only to slots missed after this point.
-            with self._connect() as db:
-                for mode in MODES:
-                    db.execute("UPDATE schedule_state SET last_slot=? WHERE mode=?", (self.clock(), mode))
-            return _revision(text.encode("utf-8"))
+        # A new or edited schedule starts with future slots; restart catch-up
+        # applies only to slots missed after this point.
+        with self._lock, self._connect() as db:
+            for mode in MODES:
+                db.execute("UPDATE schedule_state SET last_slot=? WHERE mode=?", (self.clock(), mode))
+        return _revision(text.encode("utf-8"))
 
     def _latest_due(self, times, now):
         today = dt.datetime.fromtimestamp(now).date()

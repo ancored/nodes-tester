@@ -9,7 +9,7 @@ import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 const node = {crc:'abcd1234.0000beef',node:'DEMO-vless-out [abcd1234.0000beef]',provider:'DEMO',country:'nl',protocol:'vless',
   present:1,banned:0,score:null,region:'eu',can_activate:false}
 const data = {nodes:[node],source:{state:'ok',message:'Снимок SQLite'},rating:[],results:{rows:[],tests:[]},history:[],
-  runner:{running:true,pass:2,day:'2026-09-27',progress:{phase:'waiting',total:1,processed:1},regions:[],request_queued:true},
+  runner:{running:true,progress:{phase:'waiting'},regions:[],request_queued:true,forced_left:1},
   node_events:[],traffic_range:{},retention_days:30}
 globalThis.fetch = async()=>new Response(JSON.stringify(data),{status:200})
 const vite = await createServer({configLoader:'native',server:{middlewareMode:true},appType:'custom',optimizeDeps:{noDiscovery:true,include:[]}})
@@ -20,13 +20,13 @@ try {
   const session = await vite.ssrLoadModule('/src/api.js')
   session.auth.capabilities={mode:'embedded',edit_config:true,node_actions:true,switch:true}
   for(const [view,path,expected] of [
-    ['Control','/nodes','Открыть карточку'],
+    ['Control','/nodes','чтобы открыть карточку'],
     ['Control','/nodes?q=not-found','Ничего не найдено'],
     ['NodeDetail','/nodes/abcd1234.0000beef','Нет замеров рейтинга'],
     ['NodeDetail','/nodes/abcd1234.0000beef','<span class="crc-cred" title="CRC учётных данных">0000beef</span>'],
     ['NodeDetail','/nodes/abcd1234.0000beef?tab=Действия','disabled'],
     ['Control','/nodes','<span class="crc-node" title="CRC настроек сервера">abcd1234</span>'],
-    ['Overview','/','Ожидание следующего прохода'],
+    ['Overview','/','Ожидание сроков тестов'],
     ['Results','/results','Сохранённых результатов нет'],
     ['History','/history','Последние 200 записей'],
     ['Config','/subscriptions','Для редактора требуется'],

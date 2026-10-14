@@ -28,9 +28,9 @@ async function pollLogs() {
   }catch(e){if(epoch===auth.epoch && !disposed)logErr.value=e.message}
   finally{logsBusy=false}
 }
-async function runPass() {
+async function runTests() {
   busy.value=true; msg.value=''
-  try {const r=await api.post('/run/pass');msg.value=r.already_queued ? 'Запрос уже находится в очереди.' : 'Проверка запрошена. Текущий проход не прерывается; следующий начнётся после него.';await pollStatus()}
+  try {const r=await api.post('/run/tests');msg.value=r.already_queued ? 'Тестирование по запросу уже идёт.' : 'Тестирование запущено: все ноды проверяются, не дожидаясь сроков годности.';await pollStatus()}
   catch(e){msg.value=e.message}
   finally{busy.value=false}
 }
@@ -38,26 +38,23 @@ watch(()=>auth.epoch,()=>{status.value=null;lines.value=[];seq.value=0;statusErr
 watch(()=>auth.verified,()=>{pollStatus();pollLogs()})
 const visible=computed(()=>lines.value.filter(l=>(!query.value || l.line.toLowerCase().includes(query.value.toLowerCase())) &&
   (level.value === 'все' || (level.value === 'ошибки' ? /ошиб|error|fail|veto|\[!\]/i : /switch|переключ|rotation|ротац/i).test(l.line))))
-const outcome={completed:'Завершён',empty:'Нет тестируемых нод',error:'Прерван ошибкой'}
 onMounted(()=>{pollStatus();pollLogs();stTimer=setInterval(pollStatus,5000);logTimer=setInterval(pollLogs,2000)})
 onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
 </script>
 <template>
   <section class="panel">
     <h2>Проверки текущих нод sing-box</h2>
-    <p class="help-text">Внеплановый проход проверяет уже доступные ноды. Он не загружает подписки и не применяет настройки.</p>
+    <p class="help-text">Тестер проверяет ноды, у которых истёк срок годности тестов. Кнопка проверяет все доступные ноды сейчас; подписки она не загружает и настройки не применяет.</p>
     <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. Опрос продолжится автоматически.</p>
     <template v-if="status">
-      <p><b>{{ PHASES[status.progress?.phase] || (status.running ? 'Процесс запущен' : 'Остановлен') }}</b> · проход {{ status.day }} / {{ status.pass }}</p>
-      <p v-if="status.progress?.total">Обработано {{ status.progress.processed }} из {{ status.progress.total }} в текущем этапе (включая пропуски).</p>
+      <p><b>{{ PHASES[status.progress?.phase] || (status.running ? 'Процесс запущен' : 'Остановлен') }}</b></p>
       <p class="break" v-if="status.progress?.node">Текущая нода: {{ status.progress.node }}</p>
-      <p v-if="status.request_queued" class="notice">Внеплановая проверка ожидает начала.</p>
-      <p v-if="status.last_pass_result">Последний проход: {{ outcome[status.last_pass_result.outcome] }} · {{ dateTime(status.last_pass_result.finished) }}<span v-if="status.last_pass_result.error"> · {{ status.last_pass_result.error }}</span></p>
+      <p v-if="status.request_queued" class="notice">Идёт тестирование по запросу: осталось нод {{ status.forced_left }}.</p>
       <p v-if="status.wait_until">Текущее ожидание до {{ dateTime(status.wait_until) }}. Срок может измениться.</p>
-      <p>Следующая ротация: {{ dateTime(status.next_rotation) }}. Это не время завершения проверки.</p>
+      <p>Следующая ротация: {{ dateTime(status.next_rotation) }}.</p>
       <p>Монитор активных нод: {{ status.monitor ? 'работает' : 'не работает' }} · сбор трафика: {{ status.traffic ? 'работает' : 'не работает' }}</p>
     </template>
-    <button class="btn primary" :disabled="busy || !can('run_pass') || !status?.running || !!statusErr || status.request_queued" @click="runPass">Запросить внеплановую проверку</button>
+    <button class="btn primary" :disabled="busy || !can('run_tests') || !status?.running || !!statusErr || status.request_queued" @click="runTests">Запустить тестирование сейчас</button>
     <p role="status">{{ msg }}</p>
   </section>
   <section>

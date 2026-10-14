@@ -1,11 +1,13 @@
 <script setup>
 import { ref, watch } from 'vue'
-const props=defineProps({modelValue:{default:undefined},label:String,note:String})
+// array — поле ждёт JSON-массив, иначе JSON-объект.
+const props=defineProps({modelValue:{default:undefined},label:String,note:String,array:Boolean})
 const emit=defineEmits(['update:modelValue','valid'])
 const text=ref(''), error=ref('')
-watch(()=>props.modelValue,v=>{const formatted=JSON.stringify(v ?? {},null,2);try{if(JSON.stringify(JSON.parse(text.value))===JSON.stringify(v ?? {}))return}catch{}text.value=formatted;error.value='';emit('valid',true)},{immediate:true,deep:true})
+const empty=()=>props.array ? [] : {}
+watch(()=>props.modelValue,v=>{const formatted=JSON.stringify(v ?? empty(),null,2);try{if(JSON.stringify(JSON.parse(text.value))===JSON.stringify(v ?? empty()))return}catch{}text.value=formatted;error.value='';emit('valid',true)},{immediate:true,deep:true})
 function edit() {
-  try {const v=JSON.parse(text.value);if(!v || Array.isArray(v) || typeof v!=='object')throw new Error('Нужен JSON-объект');error.value='';emit('valid',true);emit('update:modelValue',v)}
+  try {const v=JSON.parse(text.value);if(!v || typeof v!=='object' || Array.isArray(v)!==props.array)throw new Error(props.array ? 'Нужен JSON-массив' : 'Нужен JSON-объект');error.value='';emit('valid',true);emit('update:modelValue',v)}
   catch(e){error.value=e.message;emit('valid',false)}
 }
 </script>

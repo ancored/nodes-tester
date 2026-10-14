@@ -50,7 +50,7 @@ function unknown(g,key){
 function fallbackText(g){
   const direct=flag(g,'direct_fallback',false)
   if(flag(g,'strict',false))return direct ? 'без кандидатов — direct-out' : 'без кандидатов — block-out: трафик группы блокируется'
-  return direct ? 'без кандидатов — failsafe-out; direct-out можно выбрать вручную' : 'без кандидатов — failsafe-out (лучшая нода по urltest)'
+  return direct ? 'без кандидатов — failsafe-out; не отвечает и он — тестер сам переключит группу на direct-out' : 'без кандидатов — failsafe-out (лучшая нода по urltest)'
 }
 function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else delete props.doc.regions;changed()}
 </script>

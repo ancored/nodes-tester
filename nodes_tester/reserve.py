@@ -1,8 +1,8 @@
 """Резерв групп: фоновый процесс держит в каждой группе переключения проверенных
 кандидатов на замену активной ноды.
 
-Проход тестера только рейтингует ноды (лёгкие тесты). Резерв добирается по рейтингу
-независимо от проходов: нода проходит обязательные тесты группы (gemini, openai,
+Замеры тестера только рейтингуют ноды (лёгкие тесты). Резерв добирается по рейтингу
+независимо от них: нода проходит обязательные тесты группы (gemini, openai,
 anthropic — свежий результат не повторяется), затем тяжёлый download (тоже, если не
 свежий), и встаёт в резерв. Ротация, авария и переключение по качеству берут замену
 только из резерва (Switcher), после смены активной резерв сразу добирается.
@@ -10,7 +10,8 @@ anthropic — свежий результат не повторяется), за
 У членов резерва следим за сроками: истёк срок теста — тест повторяется. Кандидаты по
 рейтингу кончились — снимаем ограничение с ноды группы, которая под ним дольше всех,
 и проверяем её (Runner.release_for_reserve). Не набрали резерв и снимать некого —
-следующая попытка добора через _RETRY_SHORT или после нового прохода.
+следующая попытка добора через _RETRY_SHORT или при появлении новых нод. Набранный резерв
+улучшается: после каждого замера тестера нода заметно лучше худшего кандидата занимает его место.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from .identity import parse_node
 _TICK = 60.0
 # Резерв не набран, а кандидаты и карантин исчерпаны — следующая попытка не раньше.
 _RETRY_SHORT = 900.0
+# Обязательные проверки активной ноды повторяются за столько до истечения результата.
+_ACTIVE_AHEAD = 5 * _TICK
 
 
 class ReserveKeeper:
@@ -34,6 +37,7 @@ class ReserveKeeper:
         self._stop = threading.Event()
         self._thread = None
         self._retry_at: dict[str, float] = {}     # группа → не добирать раньше (monotonic)
+        self._tried: dict[str, float] = {}        # не прошедший претендент → не пробовать раньше
 
     # --- Поток ---------------------------------------------------------
 
@@ -49,8 +53,8 @@ class ReserveKeeper:
             self._thread.join(timeout=5)
 
     def wake(self, ratings_changed: bool = False) -> None:
-        """Разбудить добор: сменилась активная, новый состав нод или рейтинг (тогда
-        отложенные из-за нехватки кандидатов группы пробуются сразу)."""
+        """Разбудить добор: сменилась активная или состав нод (ratings_changed — появились
+        новые ноды: отложенные из-за нехватки кандидатов группы пробуются сразу)."""
         if ratings_changed:
             self._retry_at.clear()
         self._wake.set()
@@ -73,7 +77,7 @@ class ReserveKeeper:
     def maintain_all(self) -> None:
         runner = self.runner
         if not runner._node_by_raw:
-            return                            # состав нод ещё неизвестен (до первого прохода)
+            return                            # состав нод ещё неизвестен (до первой сверки)
         for group in runner.board.regions():
             if runner._apply_paused():
                 return                        # конвейер перезапускает sing-box
@@ -88,27 +92,75 @@ class ReserveKeeper:
         board.set_reserve(group, members)
         if len(members) < size and time.monotonic() >= self._retry_at.get(group, 0.0):
             self._fill(group, members, size, excluded)
-        if members and not runner.switcher.active_node(group):
+        elif members and len(members) >= size:
+            self._displace(group, members, excluded)
+        active = runner.switcher.active_node(group)
+        if active:
+            self._refresh_active(group, active)
+        elif members:
             runner.switcher.evaluate_region(group)   # init или выход из failsafe
+
+    def _refresh_active(self, group: str, active: str) -> None:
+        """Повторить обязательные проверки активной ноды до истечения результата. Не прошла
+        или результат истёк — оценка группы сразу заменит её нодой из резерва."""
+        runner = self.runner
+        due = runner.board.due_checks(active, group, _ACTIVE_AHEAD)
+        if not due:
+            return
+        for check in due:
+            if runner._apply_paused():
+                return
+            runner.check_node(active, check)
+        if not runner.board.fits(active, group):
+            runner.switcher.evaluate_region(group)
+
+    def _fits(self, group: str, node: str, others: list, excluded: set) -> bool:
+        """Нода годится в резерв рядом с others. Доступы одного сервера падают вместе: в
+        резерве по одному на сервер, и не тот сервер, что у активной ноды."""
+        servers = {parse_node(n).node_crc for n in others}
+        active = self.runner.switcher.active_node(group)
+        if active:
+            servers.add(parse_node(active).node_crc)
+        return (node not in excluded and parse_node(node).node_crc not in servers
+                and self._verified(node, group))
+
+    def _displace(self, group: str, members: list, excluded: set) -> None:
+        """Резерв набран: нода вне резерва, которая лучше худшего члена (ярус выше или рейтинг
+        больше на selection.reserve_margin), занимает его место. За раз — одна попытка:
+        претендент сначала проходит проверки, провал оставляет резерв как был, и сам
+        претендент не пробуется _RETRY_SHORT."""
+        board = self.runner.board
+        margin = float(self.runner.cfg.selection.reserve_margin)
+
+        def score(node: str) -> float:
+            return float((board.get(node) or {}).get("score") or 0)
+
+        worst = max(members, key=lambda n: (board.tier(n, group), -score(n)))
+        worst_tier = board.tier(worst, group)
+        others = [n for n in members if n != worst]
+        for node in board.reserve_pool(group):
+            if (node in members or node in excluded
+                    or time.monotonic() < self._tried.get(node, 0.0)):
+                continue
+            tier = board.tier(node, group)
+            if tier > worst_tier or (tier == worst_tier and score(node) < score(worst) + margin):
+                continue
+            if self._fits(group, node, others, excluded):
+                members[members.index(worst)] = node
+                board.set_reserve(group, members)
+                print(f"  [reserve] {group}: {parse_node(node).short()} вместо "
+                      f"{parse_node(worst).short()} — лучше по рейтингу или ярусу")
+            else:
+                self._tried[node] = time.monotonic() + _RETRY_SHORT
+            return
 
     def _fill(self, group: str, members: list, size: int, excluded: set) -> None:
         board = self.runner.board
         min_score = float(self.runner.cfg.selection.rotation.min_score)
-
-        def fits(node: str) -> bool:
-            # Доступы одного сервера падают вместе: в резерве по одному на сервер, и не
-            # тот сервер, что у активной ноды.
-            servers = {parse_node(n).node_crc for n in members}
-            active = self.runner.switcher.active_node(group)
-            if active:
-                servers.add(parse_node(active).node_crc)
-            return (node not in excluded and parse_node(node).node_crc not in servers
-                    and self._verified(node, group))
-
         for node in board.reserve_pool(group, min_score):
             if len(members) >= size:
                 return
-            if fits(node):
+            if self._fits(group, node, members, excluded):
                 members.append(node)
                 board.set_reserve(group, members)
         released: set = set()
@@ -117,17 +169,18 @@ class ReserveKeeper:
             if node is None:
                 break
             released.add(node)
-            if fits(node):
+            if self._fits(group, node, members, excluded):
                 members.append(node)
                 board.set_reserve(group, members)
         if len(members) < size:
             self._retry_at[group] = time.monotonic() + _RETRY_SHORT
             print(f"  [reserve] {group}: в резерве {len(members)} из {size}, кандидатов больше "
-                  f"нет — повтор через {_RETRY_SHORT / 60:.0f} мин или после прохода")
+                  f"нет — повтор через {_RETRY_SHORT / 60:.0f} мин или при новых нодах")
 
     def _verified(self, node: str, group: str) -> bool:
         """Догнать недостающие проверки ноды (обязательные тесты, затем heavy) и сказать,
-        годится ли она в резерв. Провал выбивает её сразу, без остальных тестов."""
+        годится ли она в резерв. Провал выбивает её сразу, без остальных тестов. Годной
+        ноде — и желательные проверки: их результат влияет только на ярус."""
         board = self.runner.board
         missing = board.reserve_missing(node, group)
         while missing:
@@ -138,4 +191,10 @@ class ReserveKeeper:
             if after is not None and after[:1] == missing[:1]:
                 return False                  # тест не дал вердикта (сеть) — не сейчас
             missing = after
-        return missing is not None
+        if missing is None:
+            return False
+        for check in board.prefer_missing(node, group):
+            if self.runner._apply_paused():
+                break
+            self.runner.check_node(node, check)
+        return True

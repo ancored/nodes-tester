@@ -42,18 +42,17 @@ const kpis=computed(()=>[
   <section class="panel">
     <h2>Состояние системы</h2>
     <dl class="facts">
-      <dt>Этап тестера</dt><dd>{{ runner ? (runner.running ? PHASES[runner.progress?.phase] || 'Процесс запущен' : 'Остановлен') : 'Живое состояние недоступно в отдельной админке' }}<template v-if="runner?.running && runner.progress?.total"> · обработано {{ runner.progress.processed }} из {{ runner.progress.total }} нод (включая пропуски)</template></dd>
+      <dt>Этап тестера</dt><dd>{{ runner ? (runner.running ? PHASES[runner.progress?.phase] || 'Процесс запущен' : 'Остановлен') : 'Живое состояние недоступно в отдельной админке' }}</dd>
       <template v-if="runner?.running && runner.progress?.node"><dt>Текущая нода</dt><dd>{{ runner.progress.node }}</dd></template>
-      <template v-if="runner"><dt>Проход</dt><dd>{{ runner.day || '—' }} / {{ runner.pass || '—' }} · <RouterLink to="/runs">Подробности и журнал</RouterLink></dd></template>
       <dt>Последний замер в базе</dt><dd>{{ dateTime(s.data.source?.last_measurement) }}</dd>
       <dt>Настройки и управление</dt><dd>{{ auth.verified ? 'Токен проверен' : 'Доступен просмотр; войдите для действий' }}</dd>
     </dl>
     <p v-if="s.error || s.data.source?.state !== 'ok'" class="notice bad">{{ s.error || s.data.source?.message || 'Получаем данные…' }}</p>
     <div class="help-text">
-      <p>Этап показывает, чем тестер занят сейчас. Один проход может длиться долго: прогресс обновляется после обработки каждой ноды.</p>
+      <p>Этап показывает, чем тестер занят сейчас. Тестер проверяет только ноды с истёкшим сроком годности тестов; подробности и журнал — в <RouterLink to="/runs">«Проверках»</RouterLink>.</p>
       <p>Доступность этой страницы не подтверждает работу sing-box. Проверки соединения выполняет тестер; их результаты доступны у каждой ноды.</p>
     </div>
-    <p v-if="runner?.request_queued" class="notice">Внеплановая проверка ожидает начала. Повторный запрос не создаст отдельную очередь.</p>
+    <p v-if="runner?.request_queued" class="notice">Идёт тестирование по запросу: осталось нод {{ runner.forced_left }}.</p>
   </section>
   <section v-if="boxAvailable" class="panel">
     <h2>sing-box</h2>
@@ -97,7 +96,7 @@ const kpis=computed(()=>[
       <li><RouterLink to="/config">Настройки</RouterLink>: адрес API sing-box, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.</li>
       <li><RouterLink to="/subscriptions">Подписки и сборка</RouterLink>: источники и группы нод. После сохранения откройте <RouterLink to="/pipeline">Конвейер</RouterLink>, проверьте сборку и примените её.</li>
       <li><RouterLink to="/singbox">Файлы sing-box</RouterLink> и <RouterLink to="/presets">Правила</RouterLink>: база и пресеты. Сохранение файла не меняет работающий sing-box.</li>
-      <li><RouterLink to="/runs">Проверки</RouterLink>: этап прохода, очередь и журнал. Кнопка проверки не обновляет подписки.</li>
+      <li><RouterLink to="/runs">Проверки</RouterLink>: этап тестера и журнал. Кнопка тестирования не обновляет подписки.</li>
       <li><RouterLink to="/nodes">Ноды</RouterLink>: найдите ноду и откройте карточку с результатами, ограничениями и действиями.</li>
       <li><RouterLink to="/history">Переключения</RouterLink> и <RouterLink to="/traffic">трафик</RouterLink>: как выбирались ноды групп и что использовалось.</li>
     </ol>

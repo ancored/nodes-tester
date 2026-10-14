@@ -65,7 +65,7 @@ class AdminContractTest(unittest.TestCase):
         response = self.app.handle("GET", "/api/capabilities", {}, b"")
         self.assertEqual(response.status, 200)
         caps = json.loads(response.body)
-        self.assertTrue(caps["run_pass"])
+        self.assertTrue(caps["run_tests"])
         self.assertFalse(caps["pipeline"])
         self.assertNotIn("token", caps)
         self.assertEqual(self.app.handle("GET", "/api/session", {}, b"").status, 401)
@@ -77,8 +77,8 @@ class AdminContractTest(unittest.TestCase):
         caps = json.loads(app.handle("GET", "/api/capabilities", {}, b"").body)
         self.assertTrue(caps["edit_config"])
         self.assertFalse(caps["node_actions"])
-        self.assertFalse(caps["run_pass"])
-        self.assertEqual(app.handle("POST", "/api/run/pass", {"X-Admin-Token":"demo"}, b"{}").status, 409)
+        self.assertFalse(caps["run_tests"])
+        self.assertEqual(app.handle("POST", "/api/run/tests", {"X-Admin-Token":"demo"}, b"{}").status, 409)
 
     def test_revision_prevents_lost_updates_and_restart_is_visible(self):
         opened = json.loads(self.call("GET", "/api/config").body)
@@ -99,27 +99,25 @@ class AdminContractTest(unittest.TestCase):
 
     def test_only_active_restrictions_block_manual_choice(self):
         storage = self.runner.storage
-        self.runner._pass_seq = 10
-        storage.set_backoff("aaaa0001", None, 2, "backoff", until_pass=9)      # пауза истекла
-        storage.set_backoff("aaaa0002", None, 2, "backoff", until_pass=11)     # пауза идёт
+        storage.set_backoff("aaaa0001", 1, 2, "backoff")                        # пауза истекла
+        storage.set_backoff("aaaa0002", 2**40, 2, "backoff")                    # пауза идёт
         storage.set_backoff("aaaa0003", 1, 7, "garbage")                        # карантин истёк
         storage.set_backoff("aaaa0004", 2**40, 7, "garbage")                    # карантин идёт
         self.assertEqual(self.runner.restricted_crcs(), {"aaaa0002", "aaaa0004"})
 
     def test_request_is_deduplicated_and_status_has_real_progress(self):
         self.runner._running = True
-        a = json.loads(self.call("POST", "/api/run/pass").body)
-        b = json.loads(self.call("POST", "/api/run/pass").body)
+        a = json.loads(self.call("POST", "/api/run/tests").body)
+        b = json.loads(self.call("POST", "/api/run/tests").body)
         self.assertFalse(a["already_queued"])
         self.assertTrue(b["already_queued"])
         status = json.loads(self.call("GET", "/api/status").body)
         self.assertTrue(status["request_queued"])
         self.assertEqual(status["progress"]["phase"], "stopped")
-        self.assertTrue(self.runner._wait_interruptible(0))
-        self.assertFalse(self.runner.status()["request_queued"])
+        self.assertTrue(self.runner._idle(0))                       # запрос будит ожидание
 
-    def test_stopped_runner_rejects_pass_request(self):
-        self.assertEqual(self.call("POST", "/api/run/pass").status, 409)
+    def test_stopped_runner_rejects_test_request(self):
+        self.assertEqual(self.call("POST", "/api/run/tests").status, 409)
         self.assertFalse(self.runner.status()["request_queued"])
 
     def test_banned_node_cannot_be_manually_activated_even_with_stale_score(self):
@@ -131,24 +129,25 @@ class AdminContractTest(unittest.TestCase):
 
 
 class RunnerProgressTest(unittest.TestCase):
-    def test_progress_tracks_each_node_without_running_a_test(self):
+    def test_progress_shows_node_under_test(self):
         tmp = temp_dir()
         tags = ["DEMO-vless-nl-out [abcd1234]", "DEMO-vless-nl-out [abcd5678]"]
         r = make_runner(tmp, tags=tags)
         seen = []
-        def fake_test(region, ident, pass_no):
+        def fake_test(region, ident, tests):
             seen.append(dict(r.status()["progress"]))
-            return {"round":pass_no,"id":ident.node_id,"tests":{}}
+            return None
         try:
+            r._refresh_nodes()
             with patch.object(r, "_test_node", side_effect=fake_test), patch.object(r, "_respect_host_gap"):
-                self.assertFalse(r._run_pass(1))
-            self.assertEqual([s["processed"] for s in seen], [0,1])
-            self.assertTrue(all(s["total"] == 2 and s["phase"] == "testing" for s in seen))
-            self.assertEqual(r.status()["progress"]["processed"], 2)
+                for regions, ident in list(r._node_by_raw.values()):
+                    r._visit(regions, ident, ["connectivity"])
+            self.assertEqual([s["node"] for s in seen], tags)
+            self.assertTrue(all(s["phase"] == "testing" for s in seen))
         finally:
             r.storage.close()
 
-    def test_pass_loads_bans_before_enumerating_and_keeps_presence(self):
+    def test_refresh_loads_bans_before_enumerating_and_keeps_presence(self):
         tmp = temp_dir()
         tag = "DEMO-vless-nl-out [abcd1234]"
         r = make_runner(tmp, tags=[tag])
@@ -156,17 +155,20 @@ class RunnerProgressTest(unittest.TestCase):
             path = fresh_nodes_json(tmp, [{"tag":tag,"type":"vless","server":"example.invalid","server_port":443}])
             r.storage.load_nodes(path)
             r.storage.set_banned("abcd1234", True)
-            with patch.object(r, "_test_node", side_effect=AssertionError("No network tests allowed")):
-                self.assertTrue(r._run_pass(1))
+            r._refresh_nodes()
             self.assertIn("abcd1234", r._banned)
+            self.assertEqual(r._node_by_raw, {})                    # забаненную не тестируем
             self.assertEqual(r.storage._db.execute("SELECT present FROM nodes WHERE crc='abcd1234'").fetchone()[0], 1)
         finally:
             r.storage.close()
 
-    def test_empty_selector_pass_is_skipped(self):
-        r = make_runner(temp_dir())
+    def test_once_with_empty_selector_finishes(self):
+        r = make_runner(temp_dir(), once=True)
         try:
-            self.assertTrue(r._run_pass(1))
+            r._force_requested.set()
+            with patch.object(r, "_service"):
+                r._loop()
+            self.assertEqual(r._forced, set())
         finally:
             r.storage.close()
 

@@ -1,11 +1,11 @@
-"""Рейтинг нод в SQLite (таблица scores): обновляется каждый прогон, исчезнувшие
-ноды удаляются, активные помечаются флагом. Используется switcher'ом для выбора.
+"""Рейтинг нод в SQLite (таблица scores): строка ноды пересчитывается и пишется после
+каждого её замера, ушедшие из sing-box ноды удаляются, активные помечаются флагом.
+Используется switcher'ом для выбора.
 
-В памяти держим снимок (dict по raw-тегу ноды) — как раньше при csv; персистентность
-идёт через Storage (scores + score_history). Строка хранит идентичность, итоговый
-score (S_final), последние под-скоры и EWMA-состояние (продолжение между прогонами и
-после рестарта). score_history копит точку (score/s_run/gate) на каждую ноду каждый
-прогон — для динамики рейтинга в дашборде.
+В памяти держим снимок (dict по raw-тегу ноды); персистентность идёт через Storage
+(scores + score_history). Строка хранит идентичность, итоговый score (S_final), последние
+под-скоры и EWMA-состояние (продолжение между замерами и после рестарта). score_history
+копит точку (score/s_run/gate) на каждый замер ноды — для динамики рейтинга в дашборде.
 """
 
 from __future__ import annotations
@@ -16,10 +16,11 @@ from typing import Optional
 
 from . import scoring
 from .config import region_of
+from .freshness import expires, fresh
 from .identity import NodeIdentity
 from .ipinfo import db_country_mismatch, kind
 
-# Проверки, которые резерв догоняет сам (по одной на ноду), и проверки из данных прохода.
+# Проверки, которые резерв догоняет сам (по одной на ноду); прочие дают замеры тестера.
 RUNNABLE_CHECKS = ("gemini", "openai", "anthropic", "heavy")
 _DEFAULT_KINDS = ("residential", "mobile")
 
@@ -30,9 +31,7 @@ class Scoreboard:
         self.cfg = scoring_cfg
         self.rows: dict[str, dict] = storage.load_scores()
         storage.set_reserve_marks({})         # резерв после старта собирается заново
-        self._seen: set[str] = set()
-        self._history: list[tuple] = []       # буфер точек истории за прогон
-        self._heavy_ttl = 0.0                 # срок годности heavy, с; 0 — бессрочно
+        self._heavy_ttl = (0.0, 0.0)          # срок годности heavy и разброс, с; 0 — бессрочно
         # Группы переключения ({tag}-auto-out в sing-box) → теги нод-членов. Пока состав
         # из sing-box не получен, групп нет: выбирать не из чего.
         self._members: dict[str, set[str]] = {}
@@ -44,31 +43,20 @@ class Scoreboard:
         self._reserve: dict[str, list[str]] = {}
         # Сведения о выходных IP (кэш ip_info): страна по базе, тип IP.
         self._ip_info: dict[str, dict] = {}
-        # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся
-        # (board.keep), но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
+        # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся,
+        # но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
         self._restricted: set[str] = set()
-        # Прогон-поток пишет (record/set_heavy/end_pass/write), фоновый монитор читает
+        # Тестер и резерв пишут (record/set_heavy/prune), фоновый монитор читает
         # (candidates/get/regions) и ставит active — защищаем составные операции.
         self._lock = threading.RLock()
 
-    # --- Прогон --------------------------------------------------------
-
-    def begin_pass(self) -> None:
-        with self._lock:
-            self._seen = set()
-            self._history = []
-
-    def keep(self, tag: str) -> None:
-        """Пометить ноду «встреченной» без нового замера — чтобы end_pass её не
-        удалил (для backoff-пропуска: строка и её последний score сохраняются)."""
-        with self._lock:
-            self._seen.add(tag)
+    # --- Замеры --------------------------------------------------------
 
     def record(self, ident: NodeIdentity, region: str, tests: dict) -> tuple[float, float, bool]:
-        """Обновить рейтинг ноды по её тестам.
+        """Обновить рейтинг ноды по последнему результату каждого её теста.
 
         Возвращает (S_final, S_run, gate): S_final — сглаженный рейтинг (для
-        рейтинга/качества), S_run/gate — мгновенный результат этого прогона
+        рейтинга/качества), S_run/gate — мгновенный результат этого замера
         (для emergency: gate=False значит нода заблокирована прямо сейчас).
         """
         s_run, gate, comps = scoring.instant_score(
@@ -80,7 +68,7 @@ class Scoreboard:
 
     def _record_locked(self, ident, region, s_run, gate, comps, conn):
         # Новый доступ известной ноды (провайдер перевыпустил учётные данные) наследует
-        # её состояние от лучшего соседнего доступа; gate этого прохода — свой.
+        # её состояние от лучшего соседнего доступа; gate этого замера — свой.
         own = self.rows.get(ident.raw)
         prev = own or self._best_sibling(ident) or {}
         prev_state = None
@@ -100,11 +88,9 @@ class Scoreboard:
             "region": region,
             "id": ident.node_id,
             "active": (own.get("active", 0) if own else 0),
-            "last_seen": self._pass_no,
-            # veto тяжёлого download не относится к лёгкому прогону — переносим как есть
+            # heavy и обязательные тесты групп гоняет резерв — переносим как есть
             "heavy_ok": prev.get("heavy_ok", ""),
             "heavy_ts": prev.get("heavy_ts", 0),
-            # обязательные тесты групп идут отдельной фазой — переносим как есть
             "required": dict(prev.get("required") or {}),
             "exit_ip": prev.get("exit_ip", ""),
             "exit_cc": prev.get("exit_cc", ""),
@@ -120,10 +106,28 @@ class Scoreboard:
             row[comp] = round(v, 3) if v is not None else ""
         row.update(agg)
         self.rows[ident.raw] = row
-        self._seen.add(ident.raw)
-        # Точка истории рейтинга этой ноды за прогон (для динамики в дашборде).
-        self._history.append((ident.node_id, region, float(agg["score"]), s_run, gate))
+        self._persist(row)
+        self.storage.add_score_history(int(time.time()), [(ident.node_id, region,
+                                                           float(agg["score"]), s_run, gate)])
         return float(agg["score"]), s_run, gate
+
+    def _persist(self, row: dict) -> None:
+        """Записать строку ноды в scores. У дублей с тем же ключом пишется предпочтительная."""
+        same = [r for r in self.rows.values() if r.get("id") == row.get("id")]
+        marks = self._reserve_marks()
+        self.storage.upsert_scores([{**r, "reserve": marks.get(r["node"], "")} for r in same])
+
+    def prune(self, nodes) -> None:
+        """Убрать строки нод, которых больше нет среди тестируемых (ушли из sing-box, бан)."""
+        with self._lock:
+            gone = [tag for tag in self.rows if tag not in nodes]
+            if not gone:
+                return
+            crcs = {self.rows.pop(tag).get("id") for tag in gone}
+            crcs -= {r.get("id") for r in self.rows.values()}
+        crcs.discard(None)
+        if crcs:
+            self.storage.delete_scores(crcs)
 
     def _best_sibling(self, ident) -> Optional[dict]:
         """Строка лучшего (по рейтингу) другого доступа той же ноды (node_crc)."""
@@ -138,27 +142,8 @@ class Scoreboard:
             row = self.rows.get(ident.raw) or self._best_sibling(ident)
             return (row or {}).get("country") or ""
 
-    def end_pass(self, pass_no: int) -> None:
-        """Удалить исчезнувшие ноды (не встреченные в этом прогоне), записать снимок
-        рейтинга и дописать точки истории за прогон."""
-        with self._lock:
-            for tag in list(self.rows):
-                if tag not in self._seen:
-                    del self.rows[tag]
-            self.storage.save_scores(self._rows_for_save())
-            if self._history:
-                self.storage.add_score_history(int(time.time()), self._history)
-                self._history = []
-
-    @property
-    def _pass_no(self):
-        return getattr(self, "_current_pass", 0)
-
-    def set_pass(self, pass_no: int) -> None:
-        self._current_pass = pass_no
-
     # --- Доступ для switcher (читается из фонового монитора — снимаем снимок) ---
-    # Монитор-поток читает рейтинг, пока прогон-поток его пишет. Снимок через
+    # Монитор-поток читает рейтинг, пока тестер его пишет. Снимок через
     # list(...) атомарен под GIL и исключает "dict changed size during iteration".
 
     def get(self, node: str) -> Optional[dict]:
@@ -171,8 +156,8 @@ class Scoreboard:
     # но лишь при наличии не-vetoed альтернатив: при малом числе нод выбираем из
     # имеющихся. Результат (успех и veto) живёт heavy_ttl, потом нода проверяется снова.
 
-    def set_heavy_ttl(self, seconds: float) -> None:
-        self._heavy_ttl = max(0.0, float(seconds or 0))
+    def set_heavy_ttl(self, seconds: float, jitter: float = 0.0) -> None:
+        self._heavy_ttl = (max(0.0, float(seconds or 0)), max(0.0, float(jitter or 0)))
 
     def set_heavy(self, node: str, ok: bool) -> None:
         """Зафиксировать результат тяжёлого download для ноды (veto-фильтр)."""
@@ -181,13 +166,14 @@ class Scoreboard:
             if r is not None:
                 r["heavy_ok"] = "1" if ok else "0"
                 r["heavy_ts"] = int(time.time())
+                self._persist(r)
 
     def _heavy(self, r: dict) -> str:
         """Свежий результат heavy: "1"/"0", "" — нет или просрочен."""
-        verdict = str(r.get("heavy_ok", ""))
-        if self._heavy_ttl > 0 and time.time() - int(r.get("heavy_ts", 0) or 0) >= self._heavy_ttl:
+        ttl, jitter = self._heavy_ttl
+        if not fresh(r.get("heavy_ts"), ttl, jitter, f"{r.get('id')}/heavy"):
             return ""
-        return verdict
+        return str(r.get("heavy_ok", ""))
 
     def _vetoed(self, r: dict) -> bool:
         return self._heavy(r) == "0"
@@ -237,6 +223,7 @@ class Scoreboard:
             if r is not None:
                 r.setdefault("required", {})[test] = {"ok": "1" if ok else "0",
                                                       "ts": int(time.time()), "cc": detail or ""}
+                self._persist(r)
 
     def set_ip_info(self, infos: dict) -> None:
         """Сведения о выходных IP (кэш ip_info): {ip: {country, mobile, proxy, hosting, …}}."""
@@ -247,13 +234,14 @@ class Scoreboard:
         return self._ip_info.get(r.get("exit_ip") or "")
 
     def _verdict(self, r: dict, check: str, params: dict) -> str:
-        ttl = float(params.get("ttl") or 0)
+        ttl, jitter = float(params.get("ttl") or 0), float(params.get("ttl_jitter") or 0)
+        key = f"{r.get('id')}/{check}"
 
-        def fresh(ts) -> bool:
-            return bool(ts) and (ttl <= 0 or time.time() - int(ts) < ttl)
+        def current(ts) -> bool:
+            return fresh(ts, ttl, jitter, key)
 
         if check == "country":
-            if not r.get("exit_cc") or not fresh(r.get("country_ts")):
+            if not r.get("exit_cc") or not current(r.get("country_ts")):
                 return ""
             return "1" if self._country_fits(r["exit_cc"].lower(), params) else "0"
         if check in ("ip_type", "geo_consistent"):
@@ -266,9 +254,9 @@ class Scoreboard:
             is_proxy = bool(info.get("proxy"))
             return "1" if kind(info) in kinds and (not is_proxy or "proxy" in kinds) else "0"
         if check == "heavy":
-            return str(r.get("heavy_ok", "")) if fresh(r.get("heavy_ts")) else ""
+            return str(r.get("heavy_ok", "")) if current(r.get("heavy_ts")) else ""
         result = (r.get("required") or {}).get(check) or {}
-        return str(result.get("ok", "")) if fresh(result.get("ts")) else ""
+        return str(result.get("ok", "")) if current(result.get("ts")) else ""
 
     def _country_fits(self, cc: str, params: dict) -> bool:
         regions = region_of(cc, self._regions)
@@ -369,7 +357,7 @@ class Scoreboard:
         """Что осталось проверить, чтобы нода годилась в резерв группы: обязательные
         проверки без свежего результата, которые резерв гоняет сам, и heavy. None — нода
         не годится (нет в группе, рейтинг 0, ограничена, свежий провал, или неизвестна
-        проверка из данных прохода — страна, тип IP: её даст следующий проход)."""
+        проверка из замеров тестера — страна, тип IP: её даст следующий замер)."""
         with self._lock:
             r = self.rows.get(node)
             if r is None or not self._reserve_fit(r, group):
@@ -383,6 +371,33 @@ class Scoreboard:
             if "heavy" not in missing and self._heavy(r) != "1":
                 missing.append("heavy")
             return missing
+
+    def prefer_missing(self, node: str, group: str) -> list[str]:
+        """Желательные проверки группы без свежего результата, которые гоняет резерв."""
+        with self._lock:
+            r = self.rows.get(node)
+            if r is None:
+                return []
+            return [check for check, verdict in self._checks(r, group, "prefer").items()
+                    if verdict == "" and check in RUNNABLE_CHECKS]
+
+    def due_checks(self, node: str, group: str, ahead: float) -> list[str]:
+        """Обязательные проверки группы, которые гоняет резерв, с результатом, истёкшим или
+        истекающим в ближайшие ahead секунд (для активной ноды: резерв её не проверяет)."""
+        with self._lock:
+            r, g = self.rows.get(node), self._policy.get(group)
+            if r is None or g is None:
+                return []
+            soon = time.time() + ahead
+            due = []
+            for check, params in g.require.items():
+                if check not in RUNNABLE_CHECKS:
+                    continue
+                until = expires(self._check_ts(r, check), float(params.get("ttl") or 0),
+                                float(params.get("ttl_jitter") or 0), f"{r.get('id')}/{check}")
+                if until <= soon:
+                    due.append(check)
+            return due
 
     def _reserve_fit(self, r: dict, group: str) -> bool:
         return (self._in_group(r, group) and float(r.get("score", 0)) > 0
@@ -416,7 +431,7 @@ class Scoreboard:
         return [{**r, "reserve": marks.get(r["node"], "")} for r in self.rows.values()]
 
     def set_restricted(self, crcs) -> None:
-        """Полный набор ограниченных нод (снимок на прогон)."""
+        """Полный набор ограниченных нод."""
         with self._lock:
             self._restricted = {c for c in crcs if c}
 

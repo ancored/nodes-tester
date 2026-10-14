@@ -46,7 +46,7 @@ class RebuildWatch:
         self.notifier = notifier
         self.clock = clock
         self._since: dict[tuple[str, str], float] = {}   # (группа, признак) → с какого времени
-        self._gain_cache: tuple = (None, None)           # (mtime raw и nodes.json, результат)
+        self._gain_cache: tuple = (None, None)   # (mtime raw и nodes.json, (новые, ушедшие, ключи конфига))
 
     def check(self) -> str:
         """Вызывается тиком монитора. Возвращает причину запущенной пересборки или ""."""
@@ -102,19 +102,18 @@ class RebuildWatch:
             stamp = (os.path.getmtime(raw_file), os.path.getmtime(self.cfg.nodes_file))
         except OSError:
             return ""
-        if self._gain_cache[0] == stamp:
-            return self._gain_cache[1]
-        try:
-            fresh, current = _raw_keys(raw_file, self.cfg), _config_keys(self.cfg.nodes_file)
-        except (OSError, ValueError) as exc:
-            print(f"  [rebuild] сравнение с опросом не удалось: {exc}")
-            return ""
-        added, gone = fresh - current, current - fresh
+        # Файлы кэшируются по mtime, мёртвые ноды меняются с каждым замером.
+        if self._gain_cache[0] != stamp:
+            try:
+                fresh, current = _raw_keys(raw_file, self.cfg), _config_keys(self.cfg.nodes_file)
+            except (OSError, ValueError) as exc:
+                print(f"  [rebuild] сравнение с опросом не удалось: {exc}")
+                return ""
+            self._gain_cache = (stamp, (fresh - current, current - fresh, current))
+        added, gone, current = self._gain_cache[1]
         dead = current & self.board.dead_keys()
         share = len(gone & dead) / len(dead) if dead else 0.0
-        result = ""
-        if added and share >= rules["gone_share"]:
-            result = (f"новых доступов в подписках: {len(added)}, ушли из подписок {len(gone & dead)} "
-                      f"из {len(dead)} мёртвых нод конфига")
-        self._gain_cache = (stamp, result)
-        return result
+        if not added or share < rules["gone_share"]:
+            return ""
+        return (f"новых доступов в подписках: {len(added)}, ушли из подписок {len(gone & dead)} "
+                f"из {len(dead)} мёртвых нод конфига")

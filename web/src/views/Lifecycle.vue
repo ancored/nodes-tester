@@ -13,10 +13,7 @@ const s = useSnapshot()
 const qualityRows = computed(() => s.data.provider_quality || [])
 const qualityFilters = [{ key: 'provider', title: 'Провайдер' }]
 const score1 = (v) => fixed(v, 1)
-const nextProbe = (v, r) =>
-  r.state === 'backoff'
-    ? r.passes_left > 0 ? `пропустит ещё ${r.passes_left}` : 'в ближайшем прогоне'
-    : v ? `${dateDM(v)} ${timeHMS(v).slice(0, 5)}` : '–'
+const nextProbe = (v) => v ? `${dateDM(v)} ${timeHMS(v).slice(0, 5)}` : '–'
 const qualCols = [
   { key: 'provider', title: 'провайдер', l: true },
   { key: 'total', title: 'всего нод' },
@@ -36,7 +33,7 @@ const garbCols = [
   { key: 'garbage_count', title: '× в карантине', note: 'сколько раз за историю попадала в карантин' },
   { key: 'last_garbage', title: 'посл. карантин', fmt: dateDM, cls: () => 'num' },
   { key: 'in_garbage', title: 'в статусе', fmt: dur, cls: () => 'num', note: 'сколько длится текущий эпизод паузы/карантина' },
-  { key: 'until', title: 'след. проба', fmt: nextProbe, note: 'пауза — сколько прогонов ещё пропустит; карантин — когда истечёт' },
+  { key: 'until', title: 'след. проба', fmt: nextProbe, note: 'когда истечёт пауза или карантин' },
 ]
 
 // --- Долгожители / выпадающие ---

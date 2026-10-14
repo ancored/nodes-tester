@@ -44,10 +44,10 @@ class HistoryCapTest(unittest.TestCase):
                   open(p, "w", encoding="utf-8"))
         st.load_nodes(p)                          # нода живая (last_seen=now)
         now = int(time.time())
-        st._db.execute("INSERT INTO results (ts,pass_no,crc,test,ok) VALUES (?,?,?,?,?)",
-                       (now - 40 * 86400, 1, "cc", "latency", 1))   # старая
-        st._db.execute("INSERT INTO results (ts,pass_no,crc,test,ok) VALUES (?,?,?,?,?)",
-                       (now, 2, "cc", "latency", 1))                # свежая
+        st._db.execute("INSERT INTO results (ts,crc,test,ok) VALUES (?,?,?,?)",
+                       (now - 40 * 86400, "cc", "latency", 1))   # старая
+        st._db.execute("INSERT INTO results (ts,crc,test,ok) VALUES (?,?,?,?)",
+                       (now, "cc", "latency", 1))                # свежая
         st._db.commit()
         st.cleanup()
         n = st._db.execute("SELECT COUNT(*) FROM results WHERE crc='cc'").fetchone()[0]

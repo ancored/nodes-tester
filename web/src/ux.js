@@ -10,9 +10,8 @@ export const checkNames = list => (list || []).map(c => CHECK_NAMES[c] || c).joi
 export function verdictMark(v) { return v === '1' ? '✓' : v === '0' ? '✗' : '?' }
 export function verdictClass(v) { return v === '1' ? 'good' : v === '0' ? 'bad' : 'mut' }
 export const testTitle = t => (TEST_NAMES[t] || t) + (TEST_UNITS[t] ? ', ' + TEST_UNITS[t] : '')
-export const PHASES = { stopped: 'Остановлен', initializing: 'Подготовка', enumerating: 'Получение списка нод',
-  testing: 'Основные проверки', required_testing: 'Обязательные тесты групп (AI)', heavy_testing: 'Тяжёлая проверка кандидатов', switching: 'Выбор нод регионов',
-  waiting: 'Ожидание следующего прохода' }
+export const PHASES = { stopped: 'Остановлен', initializing: 'Подготовка', testing: 'Проверка ноды',
+  waiting: 'Ожидание сроков тестов', apply_wait: 'Ожидание применения конфига' }
 export function getPath(obj,path) { return path.split('.').reduce((v,k) => v?.[k],obj) }
 export function setPath(obj,path,value) {
   const keys = path.split('.'), last = keys.pop(); let part = obj

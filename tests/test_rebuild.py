@@ -92,6 +92,12 @@ class RebuildWatchTest(unittest.TestCase):
         self.assertEqual(self.watch.check(), "")
         self.assertEqual(self.orch.started, [])
 
+    def test_dead_nodes_reread_with_unchanged_files(self):
+        self.board.dead_keys = lambda: set()                      # мёртвых ещё нет
+        self.assertEqual(self.watch._gain(self.orch, self.cfg.pipeline.router.rebuild), "")
+        self.board.dead_keys = lambda: {"11111111.22222222"}      # файлы те же, нода умерла
+        self.assertIn("новых доступов", self.watch._gain(self.orch, self.cfg.pipeline.router.rebuild))
+
     def test_disabled_router_build_and_healthy_group(self):
         self.cfg.pipeline.router.enabled = False
         self.watch.check()

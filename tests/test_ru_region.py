@@ -1,5 +1,5 @@
 """Российская нода не получает зарубежный набор тестов: страна — из базы после рестарта,
-а у ещё не измеренной ноды остальные тесты прохода идут по стране из conn-теста."""
+а у ещё не измеренной ноды остальные тесты замера идут по стране из conn-теста."""
 
 import unittest
 
@@ -31,14 +31,14 @@ class RuRegionTest(unittest.TestCase):
         [(regions, _ident)] = self.r._enumerate_nodes()
         self.assertEqual(regions, {"ru"})
 
-    def test_unknown_country_rest_of_pass_uses_measured(self):
+    def test_unknown_country_rest_of_measure_uses_measured(self):
         seen = []
-        self.r._tests_cache = [FakeTest("connectivity", {"ok": True, "country": "RU"}, seen),
-                               FakeTest("latency", {"ok": True}, seen)]
-        self.r._originals = {self.r._top: ""}         # выбор селектора запомнен при старте прохода
+        self.r._tests_cache = {"connectivity": FakeTest("connectivity", {"ok": True, "country": "RU"}, seen),
+                               "latency": FakeTest("latency", {"ok": True}, seen)}
+        self.r._originals = {self.r._top: ""}         # выбор селектора уже запомнен
         self.r.cfg.tester.switch_delay = 0
         [(regions, ident)] = self.r._enumerate_nodes()
-        record = self.r._test_node(regions, ident, 1)
+        record = self.r._test_node(regions, ident, ["connectivity", "latency"])
         self.assertEqual(seen, [("connectivity", set()), ("latency", {"ru"})])
         self.assertEqual(record["regions"], ["ru"])
 

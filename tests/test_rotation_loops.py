@@ -1,11 +1,10 @@
-"""rotation_bound не крутит прогоны: после любой оценки группы срок ротации в будущем —
-при 0–3 нодах в группе, без кандидатов, при аварии, сбое API, пропавшей активной и
-недобранном min_dwell. Ожидание без активных групп конечно."""
+"""Таймер ротации не срабатывает раз за разом: после любой оценки группы срок ротации в
+будущем — при 0–3 нодах в группе, без кандидатов, при аварии, сбое API, пропавшей активной и
+недобранном min_dwell."""
 
 import itertools
 import time
 import unittest
-from unittest.mock import patch
 
 from nodes_tester.api import ApiError
 from tests.helpers import make_runner, temp_dir
@@ -73,33 +72,6 @@ class RotationLoopTest(unittest.TestCase):
         for n, scenario in itertools.product(range(4), self.SCENARIOS):
             with self.subTest(nodes=n, scenario=scenario):
                 self._check(n, scenario)
-
-    def test_wait_without_deadlines_is_finite(self):
-        r = make_runner(temp_dir())
-        try:
-            r.switcher.state = {}
-            clock = {"now": 1_000_000.0}
-
-            class FakeTime:
-                @staticmethod
-                def time():
-                    return clock["now"]
-
-                monotonic = time
-
-            def wait(seconds):
-                clock["now"] += seconds
-                return False
-
-            with patch("nodes_tester.runner.time", FakeTime), \
-                    patch.object(r, "_wait_interruptible", side_effect=wait):
-                r._wait_for_rotation()
-            spent = clock["now"] - 1_000_000.0
-            self.assertGreaterEqual(spent, r.cfg.selection.rotation.interval)
-            self.assertLess(spent, r.cfg.selection.rotation.interval + 60)
-            self.assertTrue(r._scoped_next)
-        finally:
-            r.storage.close()
 
 
 if __name__ == "__main__":

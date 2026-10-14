@@ -38,13 +38,13 @@ def load_test_config(tmp: str, **overrides):
     return load_config(make_config(tmp, **overrides), data_dir=tmp)
 
 
-def make_runner(tmp: str, tags=None, **overrides):
+def make_runner(tmp: str, tags=None, once=False, **overrides):
     """Runner с временными путями и фейковым API sing-box (без сети). tags — члены nodes-tester."""
     from nodes_tester.runner import Runner
 
     cfg = load_test_config(tmp, **overrides)
-    r = Runner(cfg)
-    r._tests_cache = []
+    r = Runner(cfg, once=once)
+    r._tests_cache = {}
     r._backoff = {}
     r._endpoints = {}
     r._host_ep_last = {}

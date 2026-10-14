@@ -69,8 +69,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
       <h2 class="break"><NodeKey :text="node.node" /></h2>
       <p class="break">Имя в подписке: {{ node.title || '—' }}</p>
       <div class="chips"><span v-if="node.groups?.length" class="badge">Группы: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
-      <p v-if="node.guntil">Ограничение по времени до {{ dateTime(node.guntil) }}. Для паузы также учитывается номер прохода.</p>
-      <p v-if="node.gstate === 'backoff'">{{ node.passes_left ? 'Будет пропущено ещё проходов: '+node.passes_left : 'Повторная проба возможна в ближайшем проходе' }}. Точную дату заранее определить нельзя.</p>
+      <p v-if="node.guntil">{{ node.gstate === 'backoff' ? 'Пауза' : 'Карантин' }} до {{ dateTime(node.guntil) }}, затем нода снова проверяется.</p>
       <p class="help-text">Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.</p>
     </section>
     <nav class="chips" aria-label="Карточка ноды"><button v-for="v in ['Состояние','Группы','Результаты','Трафик','События','Действия']" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ v }}</button></nav>
@@ -102,8 +101,8 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
     </section>
     <section v-if="tab === 'Результаты'" class="panel">
       <p v-if="!result">Сохранённых результатов нет. Это не означает провал проверки.</p>
-      <template v-else><p>Последний проход: {{ result.pass_label }}, {{ dateTime(result.ts) }}</p>
-        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small v-if="cell.heavy" class="cell-note">{{ dateTime(cell.ts) }}<span v-if="cell.off_pass" title="Другой проход"> ↻</span></small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>Подробности</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
+      <template v-else><p>Последний результат каждого теста и время замера.</p>
+        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>Подробности</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
       </template>
     </section>
     <section v-if="tab === 'Трафик'" class="panel">
@@ -120,7 +119,7 @@ const eventNames = { added:'Добавлена', removed:'Исчезла из с
       <p v-if="nodeGroupsError" class="notice bad">{{ nodeGroupsError }}</p>
       <p v-else-if="!nodeGroups">Загрузка…</p>
       <p v-else-if="!nodeGroups.live">Нет подключённого тестера: состояние групп недоступно.</p>
-      <p v-else-if="!nodeGroups.groups.length">Тестер ещё не знает эту ноду: она появится после прохода.</p>
+      <p v-else-if="!nodeGroups.groups.length">Тестер ещё не знает эту ноду: она появится после первого замера.</p>
       <table v-else class="node-checks">
         <thead><tr><th class="l">Группа</th><th class="l">Состояние</th><th class="l">Проверки: ✓ пройдена, ✗ провалена, ? нет свежего результата</th></tr></thead>
         <tbody><tr v-for="g in nodeGroups.groups" :key="g.group">

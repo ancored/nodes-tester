@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -109,10 +110,6 @@ def _api(obj) -> ApiConfig:
 class TesterConfig:
     socks: str = "socks5h://127.0.0.1:2080"   # socks5h: DNS резолвит выбранная нода
     selector: str = "nodes-tester"
-    # Проход к сроку ротации (монитор ловит аварии между проходами); false — проходы
-    # подряд с паузой `pause`.
-    follow_rotation: bool = True
-    pause: float = 0.0
     switch_delay: float = 1.0
     request_timeout: float = 10.0
     # Анти-ТСПУ: не чаще раза в host_gap к одному хосту с другим портом или протоколом.
@@ -121,21 +118,24 @@ class TesterConfig:
 
 def _tester(obj) -> TesterConfig:
     path, d = "tester", TesterConfig()
-    obj = _fields(obj, path, ("socks", "selector", "follow_rotation", "pause", "switch_delay",
-                              "request_timeout", "host_gap"))
+    obj = _fields(obj, path, ("socks", "selector", "switch_delay", "request_timeout", "host_gap"))
     socks = _string(obj, "socks", path, d.socks)
     if not re.fullmatch(r"socks5h?://([^@/]+@)?[^:/]+:\d+", socks):
         raise ConfigError(f"{path}.socks: ожидается socks5h://хост:порт, получено {socks!r}")
     return TesterConfig(socks=socks, selector=_string(obj, "selector", path, d.selector),
-                        follow_rotation=_bool(obj, "follow_rotation", path, d.follow_rotation),
-                        pause=_duration(obj, "pause", path, d.pause),
                         switch_delay=_duration(obj, "switch_delay", path, d.switch_delay),
                         request_timeout=_duration(obj, "request_timeout", path, d.request_timeout),
                         host_gap=_duration(obj, "host_gap", path, d.host_gap))
 
 
-# Замеры рейтинга при каждом проходе ноды и их параметры по умолчанию.
+# Правки config.json в процессе тестера (формы админки, расписание конвейера) — по одной:
+# каждая читает, проверяет и записывает весь файл.
+WRITE_LOCK = threading.Lock()
+
+# Замеры рейтинга и их параметры. Каждый замер живёт ttl (по умолчанию 3 ч), срок
+# укорачивается на случайную долю ttl_jitter (по умолчанию ttl/10).
 TESTS = ("connectivity", "latency", "jitter", "download", "reachability")
+_TEST_TTL = 3 * 3600.0
 _TEST_FIELDS = {
     "connectivity": ("service", "timeout"),
     "latency": ("url", "timeout"),
@@ -143,7 +143,13 @@ _TEST_FIELDS = {
     "download": ("url", "duration", "window_mb", "timeout"),
     "reachability": ("urls", "timeout", "workers"),
 }
-_DURATION_KEYS = ("timeout", "interval", "duration", "ttl")
+_DURATION_KEYS = ("timeout", "interval", "duration", "ttl", "ttl_jitter")
+_TTL_KEYS = ("ttl", "ttl_jitter")
+
+
+def _with_jitter(params: dict, ttl: float) -> dict:
+    """ttl и ttl_jitter параметров; ttl_jitter не задан — десятая часть ttl."""
+    return {**params, "ttl": ttl, "ttl_jitter": params.get("ttl_jitter", ttl / 10)}
 
 
 def _options(obj: dict, path: str, allowed) -> dict:
@@ -161,13 +167,24 @@ def _options(obj: dict, path: str, allowed) -> dict:
 def _tests(obj) -> dict[str, dict]:
     path = "tests"
     obj = _fields(obj, path, (*TESTS, "for_region"))
-    out = {name: _options(obj.get(name) or {}, f"{path}.{name}", _TEST_FIELDS[name]) for name in TESTS}
+    out = {}
+    for name in TESTS:
+        opts = _options(obj.get(name) or {}, f"{path}.{name}", (*_TEST_FIELDS[name], *_TTL_KEYS))
+        for region, over in (opts.get("for_region") or {}).items():
+            _no_ttl(over, f"{path}.{name}.for_region.{region}")
+        out[name] = _with_jitter(opts, opts.get("ttl", _TEST_TTL))
     for region, over in _mapping(obj.get("for_region"), f"{path}.for_region").items():
         over = _fields(over, f"{path}.for_region.{region}", TESTS)
         for name, opts in over.items():
             region_opts = _options(opts, f"{path}.for_region.{region}.{name}", _TEST_FIELDS[name])
             out[name].setdefault("for_region", {})[region] = region_opts
     return out
+
+
+def _no_ttl(opts: dict, path: str) -> None:
+    for key in _TTL_KEYS:
+        if key in opts:
+            raise ConfigError(f"{path}.{key}: срок годности задаётся только для теста целиком")
 
 
 # Проверки: вердикт «да / нет / неизвестно» со сроком годности ttl.
@@ -186,8 +203,8 @@ _CHECK_DEFAULTS = {
 CHECKS = tuple(_CHECK_DEFAULTS)
 # Параметры проверки внутри группы (require/prefer): условия отбора.
 _GROUP_CHECK_FIELDS = {
-    "country": ("ttl", "countries", "regions", "exclude_countries", "exclude_regions"),
-    "ip_type": ("ttl", "kinds"),
+    "country": (*_TTL_KEYS, "countries", "regions", "exclude_countries", "exclude_regions"),
+    "ip_type": (*_TTL_KEYS, "kinds"),
 }
 IP_KINDS = ("residential", "mobile", "hosting", "proxy")
 
@@ -197,8 +214,9 @@ def _checks(obj) -> dict[str, dict]:
     obj = _fields(obj, path, CHECKS)
     out = {}
     for name, defaults in _CHECK_DEFAULTS.items():
-        given = _options(obj.get(name) or {}, f"{path}.{name}", defaults)
-        out[name] = {**defaults, **given}
+        given = _options(obj.get(name) or {}, f"{path}.{name}", (*defaults, "ttl_jitter"))
+        merged = {**defaults, **given}
+        out[name] = _with_jitter(merged, merged["ttl"])
     return out
 
 
@@ -221,7 +239,7 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
     obj = _fields(obj, path, CHECKS)
     out = {}
     for name, params in obj.items():
-        allowed = _GROUP_CHECK_FIELDS.get(name, ("ttl",))
+        allowed = _GROUP_CHECK_FIELDS.get(name, _TTL_KEYS)
         params = _options(params or {}, f"{path}.{name}", allowed)
         if "for_region" in params:
             raise ConfigError(f"{path}.{name}.for_region: в группе не задаётся")
@@ -235,7 +253,10 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
         kinds = _strings(params, "kinds", f"{path}.{name}")
         if [k for k in kinds if k not in IP_KINDS]:
             raise ConfigError(f"{path}.{name}.kinds: допустимы {', '.join(IP_KINDS)}")
-        out[name] = {"ttl": checks[name]["ttl"], **params}
+        if "ttl" in params:
+            out[name] = _with_jitter(params, params["ttl"])
+        else:
+            out[name] = {"ttl": checks[name]["ttl"], "ttl_jitter": checks[name]["ttl_jitter"], **params}
     return out
 
 
@@ -373,8 +394,8 @@ class RotationConfig:
     enabled: bool = True
     interval: float = 10800.0
     jitter: float = 900.0
-    # align: сроки ротации всех групп — на общей сетке слотов, один проход тестера
-    # обслуживает все группы.
+    # align: сроки ротации всех групп — на общей сетке слотов, замеры нод освежаются
+    # один раз к слоту.
     align: bool = True
     min_dwell: float = 1800.0
     min_score: float = 55.0
@@ -384,8 +405,8 @@ class RotationConfig:
 
 @dataclass
 class QuarantineConfig:
-    """Пауза и карантин нод, проваливших gate: после n-го провала подряд нода пропускает
-    2^(n-1) проходов; дорос пропуск до after_skips — карантин на duration, затем одна
+    """Пауза и карантин нод, проваливших gate: после n-го провала подряд нода не проверяется
+    2^(n-1) сроков connectivity; дорос пропуск до after_skips — карантин на duration, затем одна
     проба. low_score > 0 — карантин и для живых, но слабых нод (не активных и не новых)."""
     after_skips: int = 32
     duration: float = 72 * 3600.0
@@ -396,6 +417,7 @@ class QuarantineConfig:
 class SelectionConfig:
     reserve: int = 3
     quality_margin: float = 15.0
+    reserve_margin: float = 15.0              # не задан — как quality_margin
     confirm_cycles: int = 2
     comfort_floor: float = 50.0
     cooldown: float = 300.0
@@ -405,7 +427,7 @@ class SelectionConfig:
 
 def _selection(obj) -> SelectionConfig:
     path, d = "selection", SelectionConfig()
-    obj = _fields(obj, path, ("reserve", "quality_margin", "confirm_cycles", "comfort_floor",
+    obj = _fields(obj, path, ("reserve", "quality_margin", "reserve_margin", "confirm_cycles", "comfort_floor",
                               "cooldown", "rotation", "quarantine"))
     rpath, r = f"{path}.rotation", RotationConfig()
     rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "align", "min_dwell",
@@ -414,9 +436,11 @@ def _selection(obj) -> SelectionConfig:
     bal = _fields(rot.get("balance"), bpath, ("window", "provider", "country", "protocol"))
     qpath, q = f"{path}.quarantine", QuarantineConfig()
     quar = _fields(obj.get("quarantine"), qpath, ("after_skips", "duration", "low_score"))
+    quality_margin = _number(obj, "quality_margin", path, d.quality_margin, 0)
     return SelectionConfig(
         reserve=_number(obj, "reserve", path, d.reserve, 0, 20, integer=True),
-        quality_margin=_number(obj, "quality_margin", path, d.quality_margin, 0),
+        quality_margin=quality_margin,
+        reserve_margin=_number(obj, "reserve_margin", path, quality_margin, 0),
         confirm_cycles=_number(obj, "confirm_cycles", path, d.confirm_cycles, 1, integer=True),
         comfort_floor=_number(obj, "comfort_floor", path, d.comfort_floor, 0, 100),
         cooldown=_duration(obj, "cooldown", path, d.cooldown),

@@ -49,7 +49,7 @@ def register(app: App) -> None:
         storage.set_backoff(crc, until, streak, "garbage")
         storage.add_node_event(crc, "garbage", "manual")
         # Сразу вне кандидатов переключателя; активная — заменяется.
-        r.restrict_node(crc, True, (until, 0, streak, "garbage"))
+        r.restrict_node(crc, True, (until, streak, "garbage"))
         return {"ok": True, "until": until}
 
     @app.route("POST", "/api/nodes/{crc}/unquarantine", needs_token=True)
@@ -155,18 +155,18 @@ def register(app: App) -> None:
     def notify_test(app, req):
         return _runner(app).notifier.test()
 
-    # --- Статус / внеплановый прогон / живой лог ------------------------
+    # --- Статус / тестирование по запросу / живой лог -----------------
 
     @app.route("GET", "/api/status", needs_token=not open_read)
     def status(app, req):
         return _runner(app).status()
 
-    @app.route("POST", "/api/run/pass", needs_token=True)
-    def run_pass(app, req):
+    @app.route("POST", "/api/run/tests", needs_token=True)
+    def run_tests(app, req):
         r = _runner(app)
         if not r.status().get("running"):
             raise HttpError(409, "Тестер остановлен. Запрос проверки не запускает сервис.")
-        queued = r.request_pass()
+        queued = r.request_tests()
         return {"ok": True, "queued": True, "already_queued": queued is False}
 
     @app.route("GET", "/api/logs", needs_token=not open_read)

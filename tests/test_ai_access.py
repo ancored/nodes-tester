@@ -197,7 +197,8 @@ class ConfigTest(unittest.TestCase):
             {"tag": "ai", "strict": True, "require": {"gemini": {}, "openai": {"ttl": "1h"}},
              "prefer": {"ip_type": {"kinds": ["mobile"]}}}]})
         ai = cfg.group("ai")
-        self.assertEqual(ai.require, {"gemini": {"ttl": 43200.0}, "openai": {"ttl": 3600.0}})
+        self.assertEqual(ai.require, {"gemini": {"ttl": 43200.0, "ttl_jitter": 4320.0},
+                                      "openai": {"ttl": 3600.0, "ttl_jitter": 360.0}})
         self.assertEqual(ai.prefer["ip_type"]["kinds"], ["mobile"])
         self.assertTrue(ai.strict)
 

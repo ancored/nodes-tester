@@ -16,8 +16,8 @@
 При `admin.enabled: true` сервер создаётся внутри `nodes_tester.Runner`. Ему доступны
 Runner, Switcher, Scoreboard и Storage. В этом режиме работают:
 
-- статус текущего прохода;
-- запрос внепланового прохода;
+- статус тестера;
+- тестирование всех нод по запросу, не дожидаясь сроков годности;
 - живой журнал;
 - бан, карантин и снятие ограничений;
 - ручной выбор ноды в группе;
@@ -29,7 +29,7 @@ Runner, Switcher, Scoreboard и Storage. В этом режиме работаю
 python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 ```
 
-Отдельный процесс открывает базу для чтения и может редактировать `config.json` по токену, но не имеет живого Runner. Управление проходом, журналом и селекторами в таком
+Отдельный процесс открывает базу для чтения и может редактировать `config.json` по токену, но не имеет живого Runner. Управление тестированием, журналом и селекторами в таком
 режиме недоступно.
 
 ## Доступ
@@ -55,7 +55,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды, строки для `node_crc` и `cred_crc`, пути учётных данных (details требует токен) |
 | Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
 | Переключение | `/api/groups/{group}/switch` | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
-| Runner | `/api/status`, `/api/run/pass`, `/api/logs` | состояние, запрос прохода и журнал |
+| Runner | `/api/status`, `/api/run/tests`, `/api/logs` | состояние, тестирование по запросу и журнал |
 | sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, включение и выключение службы killswitch роутера (только OpenWrt) |
 | Уведомления | `POST /api/notify/test` | тестовое сообщение по настройкам работающего процесса |
 | Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |

@@ -13,13 +13,6 @@ from tests.helpers import fresh_nodes_json, make_runner, temp_dir
 
 
 class RunnerLifecycleRegressionTest(unittest.TestCase):
-    def test_request_during_last_non_loop_pass_schedules_another(self):
-        runner = make_runner(temp_dir())
-        runner.rounds = 1
-        self.assertFalse(runner._should_continue(1))
-        runner.request_pass()
-        self.assertTrue(runner._should_continue(1))
-
     def test_invalid_initial_config_restores_process_state(self):
         tmp = temp_dir()
         runner = make_runner(tmp)
