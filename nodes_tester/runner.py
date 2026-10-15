@@ -742,11 +742,13 @@ class Runner:
         self.storage.add_results({"id": ident.node_id, "node": raw, "tests": {test.name: res}})
         print(f"  [reserve] {ident.short()}: {test.name}={verdict} {detail}".rstrip())
 
-    def release_for_reserve(self, group: str, skip: set) -> "str | None":
+    def release_for_reserve(self, group: str, skip: set, hosts: set = frozenset()) -> "str | None":
         """Резерву группы не хватает кандидатов: снять паузу или карантин с ноды группы,
         которая ограничена дольше всех, и сразу проверить её лёгкими тестами. Провал
         вернёт её в карантин с прежним счётчиком. Бан не снимается; нода, снятая и
-        провалившаяся недавно (_RELEASE_RETRY), повторно не снимается.
+        провалившаяся недавно (_RELEASE_RETRY), повторно не снимается. Не снимаются и ноды,
+        которые группе заведомо не подойдут (страна, свежий провал обязательной проверки),
+        и ноды хостов hosts — резерв их всё равно не возьмёт.
         Возвращает снятую ноду (годится ли она — решит рейтинг) или None — снимать некого."""
         backoff = self.storage.load_backoff()
         since = self.storage.restricted_since()
@@ -759,7 +761,8 @@ class Runner:
             entry = backoff.get(crc)
             if (raw in skip or not entry or crc in banned
                     or not self._in_effect(entry, time.time())
-                    or now - self._released_at.get(crc, -_RELEASE_RETRY) < _RELEASE_RETRY):
+                    or now - self._released_at.get(crc, -_RELEASE_RETRY) < _RELEASE_RETRY
+                    or self.switcher.host(raw) in hosts or not self.board.may_fit(raw, group)):
                 continue
             choices.append((since.get(crc, 0), raw))
         if not choices:

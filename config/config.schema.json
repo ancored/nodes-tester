@@ -848,6 +848,12 @@
             "minimum": 0,
             "maximum": 20
           },
+          "tier_floor": {
+            "type": "number",
+            "description": "Рейтинг ниже — ярус после всех остальных нод группы (по умолчанию selection.tier_floor).",
+            "minimum": 0,
+            "maximum": 100
+          },
           "require": {
             "$ref": "#/definitions/groupChecks",
             "description": "Обязательные проверки: без свежего успеха нода не кандидат."

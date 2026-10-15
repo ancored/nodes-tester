@@ -285,7 +285,9 @@ class Scoreboard:
         не обходит сильные, которые их не прошли."""
         prefer = self._checks(r, group, "prefer")
         missed = sum(v != "1" for v in prefer.values())
-        if float(r.get("score") or 0) < self.tier_floor:
+        g = self._policy.get(group)
+        floor = g.tier_floor if g is not None and g.tier_floor is not None else self.tier_floor
+        if float(r.get("score") or 0) < floor:
             missed += len(prefer) + 1
         return missed
 
@@ -405,6 +407,21 @@ class Scoreboard:
                 if until <= soon:
                     due.append(check)
             return due
+
+    def may_fit(self, node: str, group: str) -> bool:
+        """Может ли ограниченная нода пройти обязательные проверки группы: известная страна
+        выхода подходит (даже давний замер страны лучше, чем снять заведомо чужую ноду),
+        свежих провалов нет. О ноде ничего не известно — может."""
+        with self._lock:
+            r = self.rows.get(node)
+            if r is None:
+                return True
+            g = self._policy.get(group)
+            country = g.require.get("country") if g is not None else None
+            cc = (r.get("exit_cc") or "").lower()
+            if country is not None and cc and not self._country_fits(cc, country):
+                return False
+            return not self._failed(r, group)
 
     def _reserve_fit(self, r: dict, group: str) -> bool:
         return (self._in_group(r, group) and float(r.get("score", 0)) > 0

@@ -244,6 +244,31 @@ class ReleaseTest(_Base):
         r.storage.banned_crcs = lambda: {"aaaa0004", "aaaa0005"}
         self.assertIsNone(r.release_for_reserve("eu", set()))
 
+    def test_wrong_country_and_failed_check_not_released(self):
+        from nodes_tester.config import GroupConfig
+        r = self.r
+        r.board.set_policy([GroupConfig("eu", require={"country": {"regions": ["eu"]}}),
+                            GroupConfig("us")], r.cfg.regions)
+        r.board.rows[E].update(exit_cc="US", country_ts=1)        # страна давняя, но известная
+        self.assertEqual(r.release_for_reserve("eu", set()), D)
+        self.assertEqual(self.light, [D])
+
+    def test_occupied_host_not_released(self):
+        r = self.r
+        r._endpoints = {"aaaa0005": ("1.2.3.4", 443), "aaaa0004": ("5.6.7.8", 443)}
+        self.assertEqual(r.release_for_reserve("eu", set(), {"1.2.3.4"}), D)
+        self.assertIsNone(r.release_for_reserve("eu", {D}, {"1.2.3.4"}))
+
+    def test_keeper_releases_few_per_round(self):
+        r = self.r
+        r.switcher.state["eu"]["recent"] = [B, C]
+        with patch("nodes_tester.reserve._RELEASES_PER_ROUND", 1):
+            r.reserve.maintain("eu")
+            self.assertEqual(self.light, [E])
+            self.assertNotIn("eu", r.reserve._retry_at)               # не перебрали — следующий круг
+            r.reserve.maintain("eu")
+        self.assertEqual(self.light, [E, D])
+
     def test_keeper_releases_when_candidates_run_out(self):
         r = self.r
         r.switcher.state["eu"]["recent"] = [B, C]                     # с активной A — все трое

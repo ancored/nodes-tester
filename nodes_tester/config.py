@@ -230,6 +230,7 @@ class GroupConfig:
     direct_fallback: bool = False   # в крайнем случае — direct-out
     in_global: bool = True          # входит в global-auto-out
     reserve: int = 3
+    tier_floor: float | None = None  # None — selection.tier_floor
     require: dict[str, dict] = field(default_factory=dict)   # проверка → условия
     prefer: dict[str, dict] = field(default_factory=dict)
 
@@ -273,7 +274,7 @@ def _groups(obj, checks: dict, regions: dict, reserve: int) -> list[GroupConfig]
     for i, item in enumerate(obj):
         path = f"groups[{i}]"
         item = _fields(item, path, ("tag", "strict", "direct_fallback", "in_global", "reserve",
-                                    "require", "prefer"))
+                                    "tier_floor", "require", "prefer"))
         tag = item.get("tag")
         if not isinstance(tag, str) or not _TAG.fullmatch(tag) or tag in ("global", "nodes", "failsafe"):
             raise ConfigError(f"{path}.tag: латиница в нижнем регистре, цифры и _; не global, nodes, "
@@ -285,6 +286,7 @@ def _groups(obj, checks: dict, regions: dict, reserve: int) -> list[GroupConfig]
                             direct_fallback=_bool(item, "direct_fallback", path, False),
                             in_global=_bool(item, "in_global", path, True),
                             reserve=_number(item, "reserve", path, reserve, 0, 20, integer=True),
+                            tier_floor=_number(item, "tier_floor", path, None, 0, 100),
                             require=_group_checks(item.get("require"), f"{path}.require", checks),
                             prefer=_group_checks(item.get("prefer"), f"{path}.prefer", checks))
         for part in ("require", "prefer"):

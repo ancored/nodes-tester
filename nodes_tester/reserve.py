@@ -26,6 +26,8 @@ from .identity import parse_node
 _TICK = 60.0
 # Резерв не набран, а кандидаты и карантин исчерпаны — следующая попытка не раньше.
 _RETRY_SHORT = 900.0
+# Столько нод снимаем с ограничения за круг: остальные группы не ждут, пока одна переберёт всех.
+_RELEASES_PER_ROUND = 3
 # Обязательные проверки активной ноды повторяются за столько до истечения результата.
 _ACTIVE_AHEAD = 5 * _TICK
 
@@ -163,9 +165,13 @@ class ReserveKeeper:
             if self._fits(group, node, members, excluded):
                 members.append(node)
                 board.set_reserve(group, members)
+        sw = self.runner.switcher
         released: set = set()
         while len(members) < size:
-            node = self.runner.release_for_reserve(group, released)
+            if len(released) >= _RELEASES_PER_ROUND:
+                return                        # продолжим на следующем круге
+            hosts = {sw.host(n) for n in members} | sw.avoided_hosts(group)
+            node = self.runner.release_for_reserve(group, released, hosts)
             if node is None:
                 break
             released.add(node)

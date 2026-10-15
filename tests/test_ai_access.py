@@ -143,6 +143,12 @@ class StrictExitIpTest(unittest.TestCase):
         self.assertEqual(self._cands(), ["DC", "PROXY", "HOME", "MOB"])
         self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [1, 1, 2, 2])
 
+    def test_group_tier_floor_overrides_selection(self):
+        self._strict()
+        self.sb.tier_floor = 75
+        self.sb.policy("eu").tier_floor = 0                 # у группы свой порог
+        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "PROXY"])
+
     def _switcher(self, active):
         from nodes_tester.config import SelectionConfig
         from nodes_tester.switcher import Switcher
