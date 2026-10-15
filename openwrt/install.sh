@@ -7,9 +7,9 @@
 #
 # Конфиг sing-box минимальный: TUN с перехватом трафика и DNS роутера и LAN, sniff, весь трафик —
 # напрямую (единственный пресет), DNS — системный резолвер роутера. Подписки для этого не нужны;
-# с подпиской скрипт сразу собирает ноды и применяет конфиг.
+# с подпиской скрипт сразу собирает ноды, применяет конфиг и включает ночную сборку.
 #
-#   SINGBOX_LX_VERSION=1.14.2-lx.11   версия ядра вместо последней
+#   SINGBOX_LX_VERSION=1.14.3-lx.20   версия ядра вместо последней
 
 set -eu
 
@@ -19,6 +19,8 @@ NT_FEED=https://ancored.github.io/nodes-tester/packages.adb
 SB_DIR=/etc/sing-box
 NT_DIR=/etc/nodes-tester
 NODES=/opt/nodes-tester/nodes.json        # data_dir пакета по умолчанию
+SB_LOG=/var/log/sing-box.log              # монитор тестера считает по нему ошибки групп
+SB_LOG_MAX_KB=5120                        # /var/log — в RAM: больше — cron очищает
 SUB_URL="${1:-}"
 
 log() { echo "[install] $*"; }
@@ -78,6 +80,7 @@ start_service() {
 	procd_set_param stdout 1
 	procd_set_param stderr 1
 	procd_set_param respawn
+	procd_set_param limits nofile="65535 65535"
 	procd_close_instance
 }
 EOF
@@ -103,9 +106,9 @@ WAN_DEV="$(ifstatus wan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null ||
 # не должны снова попасть в TUN, иначе петля.
 DNSMASQ_UID="$(id -u dnsmasq 2>/dev/null || echo 453)"
 umask 077
-python3 - "$NT_DIR/singbox/base.json" "$SECRET" "$LAN_NET" "$LAN_DEV" "$WAN_DEV" "$DNSMASQ_UID" <<'EOF'
+python3 - "$NT_DIR/singbox/base.json" "$SECRET" "$LAN_NET" "$LAN_DEV" "$WAN_DEV" "$DNSMASQ_UID" "$SB_LOG" <<'EOF'
 import ipaddress, json, sys
-path, secret, lan_net, lan_dev, wan_dev, dnsmasq_uid = sys.argv[1:]
+path, secret, lan_net, lan_dev, wan_dev, dnsmasq_uid, log_file = sys.argv[1:]
 route = {
     "rules": [
         {"action": "sniff"},
@@ -120,7 +123,7 @@ if wan_dev:
 else:
     route["auto_detect_interface"] = True
 base = {
-    "log": {"level": "warn", "timestamp": True},
+    "log": {"level": "warn", "output": log_file, "timestamp": True},
     "dns": {"servers": [{"type": "local", "tag": "bootstrap"}], "final": "bootstrap"},
     "inbounds": [
         {"type": "tun", "tag": "tun-in", "interface_name": "tun0", "address": ["172.18.0.1/30"],
@@ -173,6 +176,8 @@ with open(path, encoding="utf-8") as f:
 cfg["api"]["secret"] = secret
 cfg["admin"].update(enabled=True, listen=host)
 cfg["subscriptions"] = [{"tag": "SUB", "url": sub_url}] if sub_url else []
+# Ночная сборка (pipeline.router.at) и пересборка при деградации групп — только с подпиской.
+cfg["pipeline"]["router"]["enabled"] = bool(sub_url)
 with open(path + ".tmp", "w", encoding="utf-8") as f:
     json.dump(cfg, f, ensure_ascii=False, indent=2)
 os.chmod(path + ".tmp", 0o600)
@@ -185,16 +190,27 @@ EOF
 ok=0
 for _ in 1 2 3 4 5 6; do
 	sleep 5
-	if pidof sing-box >/dev/null && ip link show tun0 >/dev/null 2>&1 && nft list table inet sing-box >/dev/null 2>&1 		&& nslookup www.gstatic.com 127.0.0.1 >/dev/null 2>&1 && wget -qO /dev/null https://www.gstatic.com/generate_204; then
+	if pidof sing-box >/dev/null && ip link show tun0 >/dev/null 2>&1 && nft list table inet sing-box >/dev/null 2>&1 \
+		&& nslookup www.gstatic.com 127.0.0.1 >/dev/null 2>&1 && wget -qO /dev/null https://www.gstatic.com/generate_204; then
 		ok=1; break
 	fi
 done
 if [ "$ok" = 0 ]; then
 	/etc/init.d/sing-box stop
 	/etc/init.d/sing-box disable
-	die "через sing-box нет связности — служба остановлена и выключена; журнал: logread -e sing-box"
+	die "через sing-box нет связности — служба остановлена и выключена; журнал: $SB_LOG, logread -e sing-box"
 fi
 log "sing-box работает, трафик идёт через TUN напрямую"
+
+# Раз в месяц — VACUUM базы тестера; лог sing-box в RAM очищается, когда перерастёт лимит
+# (sing-box пишет с O_APPEND, монитор тестера после очистки читает файл с начала).
+CRON=/etc/crontabs/root
+touch "$CRON"
+grep -qF 'nodes-tester vacuum' "$CRON" || echo '0 4 1 * * /usr/bin/nodes-tester vacuum' >> "$CRON"
+grep -qF "$SB_LOG" "$CRON" \
+	|| echo "*/10 * * * * [ -n \"\$(find $SB_LOG -size +${SB_LOG_MAX_KB}k 2>/dev/null)\" ] && : > $SB_LOG" >> "$CRON"
+/etc/init.d/cron enable
+/etc/init.d/cron restart
 uci set nodes-tester.tester.enabled=1
 uci commit nodes-tester
 /etc/init.d/nodes-tester enable
@@ -209,4 +225,4 @@ TOKEN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["admin"
 log "готово"
 echo "  админка: http://$LAN_IP:8088/"
 echo "  токен:   $TOKEN"
-[ -n "$SUB_URL" ] || echo "  дальше: «Подписки» — добавить свою, «Конвейер» — «Применить»"
+[ -n "$SUB_URL" ] || echo "  дальше: «Подписки» — добавить свою, «Конвейер» — «Применить» и включить расписание роутера"
