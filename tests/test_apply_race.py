@@ -87,6 +87,51 @@ class ApplyRaceTest(unittest.TestCase):
         self.assertIsNone(r._test_node(frozenset({"eu"}), parse_node(A), ["connectivity"]))
 
 
+class ApplyEndTest(unittest.TestCase):
+    """Конвейер применил конфиг: выбор селекторов и состав нод — сразу, замеры — после паузы."""
+
+    def setUp(self):
+        self.r = make_runner(temp_dir(), tags=[A])
+        self.refreshes = []
+        self.r._refresh_nodes = lambda: self.refreshes.append(self.r._apply_in_progress)
+
+    def tearDown(self):
+        self.r.storage.close()
+
+    def _wait(self, sleeps):
+        """_wait_apply_window: каждый sleep — следующий шаг из sleeps, потом конец паузы."""
+        def step(_seconds):
+            if sleeps:
+                sleeps.pop(0)()
+            else:
+                self.r._apply_pause_until = 0.0
+        with patch("nodes_tester.runner.time.sleep", side_effect=step):
+            self.r._wait_apply_window()
+
+    def test_apply_end_reasserts_and_refreshes_in_pause(self):
+        r = self.r
+        with patch.object(r.monitor, "reassert") as reassert:
+            r._apply_start()
+            self._wait([lambda: self.assertEqual(self.refreshes, []), r._apply_end])
+        reassert.assert_called_once()
+        self.assertEqual(self.refreshes, [False])          # один раз, уже после конвейера
+        self.assertFalse(r._stale_nodes)
+
+    def test_refresh_retried_while_api_down(self):
+        r = self.r
+        down = [ApiError("Connection refused")]
+
+        def refresh():
+            if down:
+                raise down.pop()
+            self.refreshes.append(r._apply_in_progress)
+        r._refresh_nodes = refresh
+        with patch.object(r.monitor, "reassert"):
+            r._apply_end()
+        self._wait([lambda: None])
+        self.assertEqual(self.refreshes, [False])
+
+
 class RotationSingleCandidateTest(unittest.TestCase):
     def setUp(self):
         self.r = r = make_runner(temp_dir(), tags=[U])

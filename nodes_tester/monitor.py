@@ -4,7 +4,8 @@
 тестера. По каждой активной ноде (из switcher):
 
   1. ДРЕЙФ ВЫБОРА — если боевые селекторы слетели (напр. после reload sing-box),
-     возвращает выбор на активную ноду по цепочке (switcher.reassert_chain).
+     возвращает выбор на активную ноду по цепочке (switcher.reassert_chain). В паузе
+     после применения конфига монитор делает только это — зонды ждут.
   2. ЗДОРОВЬЕ — самый надёжный сигнал «нода жива» это боевой трафик через неё.
      Логика:
        • в логе sing-box за тик не меньше error_burst ошибок соединений через группу
@@ -78,8 +79,8 @@ def singbox_log_path(config_path: str) -> str:
 
 
 class ProductionMonitor:
-    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None, on_tick=None,
-                 singbox_log=""):
+    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None, hold_check=None,
+                 on_tick=None, singbox_log=""):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
@@ -89,7 +90,11 @@ class ProductionMonitor:
         self.prober = prober
         # traffic() -> {crc: накопительные байты боевого трафика} (TrafficCollector.user_bytes).
         self.traffic = traffic
+        # pause_check — пауза применения конфига: зондов нет, только восстановление выбора;
+        # hold_check — конвейер ещё работает (его проверка связности идёт через failsafe):
+        # селекторы не трогаем совсем.
         self.pause_check = pause_check or (lambda: False)
+        self.hold_check = hold_check or (lambda: False)
         # Доп. проверка на каждом тике вне окна применения (пересборка по деградации).
         self.on_tick = on_tick
         self._stop = threading.Event()
@@ -132,8 +137,21 @@ class ProductionMonitor:
             except Exception as exc:  # noqa: BLE001 — монитор не должен ронять процесс
                 print(f"  [monitor] ошибка: {exc}")
 
+    def reassert(self) -> None:
+        """Вернуть выбор боевых селекторов на активные ноды — после перезапуска sing-box они
+        на default (failsafe-out, block-out). Ноды, ушедшей из конфига, здесь не заменяем."""
+        if not self.cfg.reassert_drift or self.hold_check():
+            return
+        try:
+            proxies = self.api.all_proxies()
+        except ApiError:
+            return
+        for region in self.sw.active_regions():
+            self.sw.reassert_chain(region, proxies)
+
     def _tick(self) -> None:
         if self.pause_check():
+            self.reassert()
             return
         try:
             proxies = self.api.all_proxies()

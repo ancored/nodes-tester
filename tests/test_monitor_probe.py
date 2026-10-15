@@ -221,5 +221,33 @@ class ErrorBurstTest(unittest.TestCase):
         self.assertEqual(self.calls, [])                  # 1 ошибка за тик — не всплеск
 
 
+class ApplyPauseTest(unittest.TestCase):
+    """Пауза применения конфига: только восстановление выбора, пока конвейер работает — ничего."""
+
+    def setUp(self):
+        sw = FakeSwitcher()
+        sw.active_regions = lambda: ["eu", "ai"]
+        sw.active_node = lambda region: NODE
+        self.reasserted = []
+        sw.reassert_chain = lambda region, proxies: self.reasserted.append(region) or 0
+        sw.fallback_regions = lambda: []
+        self.calls, self.paused, self.held = [], True, False
+        self.mon = ProductionMonitor(cfg=MonitorConfig(), api=FakeApi(), switcher=sw,
+                                     prober=lambda region, node: self.calls.append(region) or GOOD,
+                                     traffic=dict, pause_check=lambda: self.paused,
+                                     hold_check=lambda: self.held)
+
+    def test_pause_reasserts_without_probes(self):
+        self.mon._tick()
+        self.assertEqual(self.reasserted, ["eu", "ai"])
+        self.assertEqual(self.calls, [])
+
+    def test_pipeline_running_touches_nothing(self):
+        self.held = True
+        self.mon._tick()
+        self.mon.reassert()
+        self.assertEqual(self.reasserted, [])
+
+
 if __name__ == "__main__":
     unittest.main()

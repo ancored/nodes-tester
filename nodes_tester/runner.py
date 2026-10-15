@@ -157,7 +157,8 @@ class Runner:
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
-            pause_check=self._apply_paused, on_tick=self.rebuild.check,
+            pause_check=self._apply_paused, hold_check=lambda: self._apply_in_progress,
+            on_tick=self.rebuild.check,
             singbox_log=singbox_log_path(cfg.singbox.config),
         )
 
@@ -491,15 +492,27 @@ class Runner:
         self._apply_in_progress = True
 
     def _apply_end(self) -> None:
+        """Конвейер применил конфиг: замеры ждут ещё 120 с, а выбор селекторов и состав нод
+        восстанавливаются сразу — после перезапуска sing-box группы стоят на failsafe/block-out."""
         self._apply_in_progress = False
         self._apply_pause_until = time.monotonic() + 120
+        self._stale_nodes = True
+        self.monitor.reassert()
 
     def _apply_paused(self) -> bool:
         return self._apply_in_progress or time.monotonic() < self._apply_pause_until
 
     def _wait_apply_window(self) -> None:
+        """Ждать конца паузы применения. Состав нод перечитывается, как только конвейер
+        закончил: активная нода могла уйти из конфига, замена не должна ждать паузу."""
         while self._apply_paused():
             self._progress = {**self._progress, "phase": "apply_wait", "node": None}
+            if self._stale_nodes and not self._apply_in_progress:
+                self._stale_nodes = False
+                try:
+                    self._refresh_nodes()
+                except ApiError:                   # ядро ещё поднимается — повтор через секунду
+                    self._stale_nodes = True
             time.sleep(1)
 
     def _start_orchestrator(self) -> None:
