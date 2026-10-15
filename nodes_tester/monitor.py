@@ -264,6 +264,7 @@ class ProductionMonitor:
               f"{st['strikes']}/{self.cfg.fails}")
         if st["strikes"] >= self.cfg.fails:
             print(f"  [monitor] {region}: активная нода не тянет трафик — EMERGENCY")
+            self.sw.penalize(node)
             self.sw.evaluate_region(region, emergency=True)
             st.update(strikes=0, next_probe=now)
 

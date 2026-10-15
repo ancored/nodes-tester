@@ -117,7 +117,7 @@ const groups = [
     ['checks.ip_type.ttl','Обновлять сведения раз в (например, 1d)','duration'],['checks.ip_type.via_tester','Запрашивать через тестер','checkbox']]},
 ]
 // Флажки, которые загрузчик конфига считает включёнными, если поля нет в файле.
-const ON_BY_DEFAULT=new Set(['tester.follow_rotation','selection.rotation.enabled','admin.enabled','admin.public_read','storage.traffic.enabled','notify.enabled','checks.ip_type.via_tester'])
+const ON_BY_DEFAULT=new Set(['selection.rotation.enabled','admin.enabled','admin.public_read','storage.traffic.enabled','notify.enabled','checks.ip_type.via_tester'])
 const NOTIFY_EVENTS={switch:'Переключение ноды',failsafe:'Запасная группа',rollback:'Откат конфига sing-box',pipeline:'Ошибка конвейера',subscription:'Сбой подписки',expiry:'Конец подписки и трафика',singbox:'Остановка и сбой sing-box'}
 const SWITCH_REASONS={emergency:'авария',['emergency-stuck']:'авария без замены',rotation:'ротация',quality:'качество',manual:'вручную',init:'первый выбор'}
 const DEFAULT_EVENTS=Object.keys(NOTIFY_EVENTS), DEFAULT_REASONS=['emergency','emergency-stuck']

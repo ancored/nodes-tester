@@ -149,7 +149,8 @@ class Runner:
         traffic_provider = (_traffic_provider_factory(self.storage, balance.window)
                             if balance.enabled else None)
         self.switcher = Switcher(cfg.selection, self.api, self.board, self._top,
-                                 cfg.groups, traffic_provider, self.storage)
+                                 cfg.groups, traffic_provider, self.storage,
+                                 server_of=lambda node: self._server(parse_node(node).node_id))
         self.switcher.on_activation = self._on_activation
         self.reserve = ReserveKeeper(self)
         self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
@@ -218,11 +219,16 @@ class Runner:
 
     # --- Host-aware обход (анти-ТСПУ) ----------------------------------
 
+    def _server(self, node_id: str) -> str:
+        """Адрес сервера ноды из storage (нижний регистр); пусто — неизвестен."""
+        ep = self._endpoints.get(node_id)
+        return (ep[0] or "").lower() if ep else ""
+
     def _host_of(self, ident: NodeIdentity) -> str:
         """Хост ноды (server из storage). Фолбэк без storage/server — провайдер/CRC."""
-        ep = self._endpoints.get(ident.node_id)
-        if ep and ep[0]:
-            return ep[0]
+        server = self._server(ident.node_id)
+        if server:
+            return server
         return f"prov:{ident.provider}" if ident.provider else f"crc:{ident.node_id}"
 
     def _ep_sig(self, ident: NodeIdentity) -> tuple:

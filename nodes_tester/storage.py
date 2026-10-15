@@ -187,9 +187,13 @@ class Storage:
             if str(ob.get("type", "")).lower() in _NON_NODE_TYPES:
                 continue
             crc_ok = 1 if node_key(ob) == ident.node_id else 0
+            server, port = ob.get("server", ""), ob.get("server_port")
+            peers = ob.get("peers") or []
+            if not server and peers and isinstance(peers[0], dict):   # wireguard/AWG
+                server, port = peers[0].get("address", ""), peers[0].get("port")
             rows.append((
                 ident.node_id, ident.node_crc, tag, ident.provider, ident.protocol,
-                ob.get("type", ""), ob.get("server", ""), _int(ob.get("server_port")),
+                ob.get("type", ""), server, _int(port),
                 canonical(node_payload(ob)), crc_ok, now, now,
             ))
         # Страну не трогаем: её пишет conn-тест (add_results), а не сборка.

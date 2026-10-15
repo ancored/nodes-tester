@@ -4,7 +4,7 @@
 import time
 import unittest
 
-from tests.helpers import make_runner, temp_dir
+from tests.helpers import fresh_nodes_json, make_runner, temp_dir
 
 
 class RegionAwareChainTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class RegionAwareChainTest(unittest.TestCase):
 
 class HistoryCapTest(unittest.TestCase):
     def test_old_raw_facts_capped_even_for_live_node(self):
-        import json, os
+        import os
         from nodes_tester import storage as S
 
         class Cfg:
@@ -38,11 +38,9 @@ class HistoryCapTest(unittest.TestCase):
             retention = 30 * 86400
             retention_days = 30
         st = S.Storage(Cfg())
-        p = os.path.join(temp_dir(), "n.json")
-        json.dump({"outbounds": [{"tag": "LUNA-vless|reality-nl-out [cc]", "type": "vless",
-                                  "server": "1.2.3.4", "server_port": 443}]},
-                  open(p, "w", encoding="utf-8"))
-        st.load_nodes(p)                          # нода живая (last_seen=now)
+        node = {"tag": "LUNA-vless|reality-nl-out [cc]", "type": "vless",
+                "server": "1.2.3.4", "server_port": 443}
+        st.load_nodes(fresh_nodes_json(temp_dir(), [node]))   # нода живая (last_seen=now)
         now = int(time.time())
         st._db.execute("INSERT INTO results (ts,crc,test,ok) VALUES (?,?,?,?)",
                        (now - 40 * 86400, "cc", "latency", 1))   # старая

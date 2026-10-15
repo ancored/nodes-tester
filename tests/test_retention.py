@@ -5,7 +5,7 @@ import time
 import unittest
 
 from nodes_tester import storage as S
-from tests.helpers import temp_dir
+from tests.helpers import fresh_nodes_json, temp_dir
 
 
 class _Cfg:
@@ -38,20 +38,14 @@ class RetentionTest(unittest.TestCase):
             "SELECT COUNT(*) FROM nodes WHERE crc=?", (crc,)).fetchone()[0]
 
     def test_touch_seen_saves_active_node(self):
-        import json, os
-        p = os.path.join(temp_dir(), "n.json")
-        json.dump({"outbounds": [_node("aaaa")]}, open(p, "w", encoding="utf-8"))
-        self.st.load_nodes(p)
+        self.st.load_nodes(fresh_nodes_json(temp_dir(), [_node("aaaa")]))
         self._age("aaaa", 31)                 # как будто nodes.json не менялся 31 день
         self.st.touch_seen(["aaaa"])          # но нода присутствует в selector
         self.st.cleanup()
         self.assertEqual(self._count("aaaa"), 1)   # жива
 
     def test_absent_node_removed_after_retention(self):
-        import json, os
-        p = os.path.join(temp_dir(), "n.json")
-        json.dump({"outbounds": [_node("bbbb")]}, open(p, "w", encoding="utf-8"))
-        self.st.load_nodes(p)
+        self.st.load_nodes(fresh_nodes_json(temp_dir(), [_node("bbbb")]))
         self._age("bbbb", 31)                 # старая и БЕЗ touch_seen (исчезла из selector)
         self.st.cleanup()
         self.assertEqual(self._count("bbbb"), 0)   # удалена

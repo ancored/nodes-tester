@@ -423,6 +423,7 @@ class SelectionConfig:
     comfort_floor: float = 50.0
     tier_floor: float = 75.0                  # рейтинг ниже — ярус после всех остальных
     cooldown: float = 300.0
+    host_penalty: float = 10800.0             # хост ноды, снятой аварией монитора, не выбирать
     rotation: RotationConfig = field(default_factory=RotationConfig)
     quarantine: QuarantineConfig = field(default_factory=QuarantineConfig)
 
@@ -430,7 +431,7 @@ class SelectionConfig:
 def _selection(obj) -> SelectionConfig:
     path, d = "selection", SelectionConfig()
     obj = _fields(obj, path, ("reserve", "quality_margin", "reserve_margin", "confirm_cycles", "comfort_floor",
-                              "tier_floor", "cooldown", "rotation", "quarantine"))
+                              "tier_floor", "cooldown", "host_penalty", "rotation", "quarantine"))
     rpath, r = f"{path}.rotation", RotationConfig()
     rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "min_dwell",
                                                "min_score", "avoid_recent", "balance"))
@@ -447,6 +448,7 @@ def _selection(obj) -> SelectionConfig:
         comfort_floor=_number(obj, "comfort_floor", path, d.comfort_floor, 0, 100),
         tier_floor=_number(obj, "tier_floor", path, d.tier_floor, 0, 100),
         cooldown=_duration(obj, "cooldown", path, d.cooldown),
+        host_penalty=_duration(obj, "host_penalty", path, d.host_penalty),
         rotation=RotationConfig(
             enabled=_bool(rot, "enabled", rpath, r.enabled),
             interval=_duration(rot, "interval", rpath, r.interval),

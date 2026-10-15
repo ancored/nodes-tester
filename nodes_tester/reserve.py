@@ -87,8 +87,10 @@ class ReserveKeeper:
         runner, board = self.runner, self.runner.board
         size = runner.reserve_size(group)
         excluded = runner.switcher.excluded(group)
-        members = [n for n in board.reserve(group)[:size]
-                   if n not in excluded and self._verified(n, group)]
+        members = []
+        for node in board.reserve(group)[:size]:
+            if self._fits(group, node, members, excluded):
+                members.append(node)
         board.set_reserve(group, members)
         if len(members) < size and time.monotonic() >= self._retry_at.get(group, 0.0):
             self._fill(group, members, size, excluded)
@@ -115,13 +117,11 @@ class ReserveKeeper:
             runner.switcher.evaluate_region(group)
 
     def _fits(self, group: str, node: str, others: list, excluded: set) -> bool:
-        """Нода годится в резерв рядом с others. Доступы одного сервера падают вместе: в
-        резерве по одному на сервер, и не тот сервер, что у активной ноды."""
-        servers = {parse_node(n).node_crc for n in others}
-        active = self.runner.switcher.active_node(group)
-        if active:
-            servers.add(parse_node(active).node_crc)
-        return (node not in excluded and parse_node(node).node_crc not in servers
+        """Нода годится в резерв рядом с others. Доступы одного хоста падают вместе: в
+        резерве по одному на хост, и не хост активной ноды или под штрафом."""
+        sw = self.runner.switcher
+        hosts = {sw.host(n) for n in others} | sw.avoided_hosts(group)
+        return (node not in excluded and sw.host(node) not in hosts
                 and self._verified(node, group))
 
     def _displace(self, group: str, members: list, excluded: set) -> None:

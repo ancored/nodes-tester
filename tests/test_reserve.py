@@ -1,6 +1,8 @@
 """Резерв групп: добор проверенных кандидатов, сроки проверок, снятие ограничения по
 одной ноде при нехватке, выбор переключателя только из резерва."""
 
+import contextlib
+import io
 import time
 import unittest
 from unittest.mock import patch
@@ -287,6 +289,76 @@ class SwitcherFromReserveTest(_Base):
         r.switcher.evaluate_region("eu", emergency=True)
         self.assertEqual(self.activated[-1][2], "emergency")
         self.assertNotEqual(self.activated[-1][1], E)
+
+
+class SameHostTest(_Base):
+    """Ноды одного хоста (разные настройки и учётные данные) падают вместе: замену берём
+    с другого хоста, хост ноды, снятой аварией монитора, под штрафом."""
+
+    def setUp(self):
+        super().setUp()
+        hosts = {A: "1.2.3.4", B: "1.2.3.4", C: "h.example", D: "H.example", E: "5.6.7.8"}
+        self.r._endpoints = {parse_node(n).node_id: (h, 443) for n, h in hosts.items()}
+
+    def test_reserve_one_per_host_and_not_active_host(self):
+        r = self.r
+        r.board.set_reserve("eu", [B])                  # остался от прежней активной
+        r.reserve.maintain("eu")
+        self.assertEqual(r.board.reserve("eu"), [C, E])  # B — хост A, D — хост C
+
+    def test_rotation_and_quality_skip_active_host(self):
+        r = self.r
+        r.board.set_reserve("eu", [B])
+        r.board.rows[A]["score"] = 40
+        r.switcher.state["eu"]["rotate_deadline"] = time.time() - 1
+        with patch.object(r.switcher.cfg, "confirm_cycles", 1):
+            r.switcher.evaluate_region("eu")
+        self.assertEqual(self.activated, [])
+
+    def test_emergency_other_host_then_same_host_as_last_resort(self):
+        r = self.r
+        r.board.set_reserve("eu", [B])
+        r.switcher.evaluate_region("eu", emergency=True)
+        self.assertNotIn(self.activated[-1][1], (A, B))
+        r.board.set_groups({"eu": {A, B}, "us": {U}})
+        r.switcher.state["eu"]["active"] = A
+        r.switcher.evaluate_region("eu", emergency=True)
+        self.assertEqual(self.activated[-1][1], B)      # других хостов нет — лучше, чем block-out
+
+    def test_penalized_host_avoided_until_expiry(self):
+        r = self.r
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.switcher.penalize(C)
+        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.4", "h.example"})
+        r.board.set_reserve("eu", [D, E])
+        r.switcher.evaluate_region("eu", emergency=True)
+        self.assertEqual(self.activated[-1][1], E)
+        with patch("nodes_tester.switcher.time.time", return_value=time.time() + 3 * 3600 - 60):
+            self.assertIn("h.example", r.switcher.avoided_hosts("eu"))
+        with patch("nodes_tester.switcher.time.time", return_value=time.time() + 3 * 3600 + 1):
+            self.assertNotIn("h.example", r.switcher.avoided_hosts("eu"))
+
+    def test_only_penalized_left_still_taken(self):
+        r = self.r
+        r.board.set_groups({"eu": {A, C, D}, "us": {U}})
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.switcher.penalize(C)                      # хост C и D
+        r.board.set_reserve("eu", [C, D])
+        r.switcher.state["eu"]["rotate_deadline"] = time.time() - 1
+        r.switcher.evaluate_region("eu")
+        self.assertEqual(self.activated, [])            # ротация не берёт штрафной хост
+        r.switcher.evaluate_region("eu", emergency=True)
+        self.assertIn(self.activated[-1][1], (C, D))    # авария — лучше штрафной, чем block-out
+        r.board.set_groups({"eu": {C, D}, "us": {U}})   # первый выбор — тоже
+        r.switcher.state["eu"] = {}
+        r.switcher.evaluate_region("eu")
+        self.assertIn(self.activated[-1], [("eu", C, "init"), ("eu", D, "init")])
+
+    def test_zero_penalty_disabled(self):
+        r = self.r
+        with patch.object(r.switcher.cfg, "host_penalty", 0):
+            r.switcher.penalize(C)
+        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.4"})
 
 
 if __name__ == "__main__":

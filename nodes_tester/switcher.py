@@ -8,7 +8,9 @@
 
 Замену берём из резерва группы (Scoreboard.reserve, его держит nodes_tester.reserve):
 там ноды с пройденными обязательными проверками и свежим heavy. Пустой резерв — авария
-берёт любого прошедшего кандидата, ротация и переключение по качеству ждут.
+берёт любого прошедшего кандидата, ротация и переключение по качеству ждут. Ноды хоста
+активной и хостов под штрафом (авария монитора) замену не дают; авария берёт их, только
+если других кандидатов нет.
 
 Кандидатов нет вовсе — группа уходит на запасной член селектора: нестрогая — общий
 failsafe-urltest, строгая — block-out (с direct_fallback — direct-out).
@@ -41,7 +43,8 @@ _FROZEN = {"global-auto-out"}
 
 class Switcher:
     def __init__(self, cfg, api: ApiClient, scoreboard: Scoreboard,
-                 tester_group: str, groups=(), traffic_provider=None, storage=None):
+                 tester_group: str, groups=(), traffic_provider=None, storage=None,
+                 server_of=None):
         self.cfg = cfg                      # SelectionConfig
         self._groups = {g.tag: g for g in groups}
         self.api = api
@@ -54,6 +57,10 @@ class Switcher:
         self._storage = storage
         # Наблюдатель записей истории (уведомления): on_activation(group, reason, node, prev).
         self.on_activation = None
+        # Адрес сервера ноды (server_of(node) -> str, пусто — неизвестен). Доступы одного
+        # хоста падают и блокируются вместе: замену берём с другого хоста.
+        self._server_of = server_of or (lambda node: "")
+        self._penalty: dict[str, float] = {}     # хост → не выбирать до (time.time())
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают тестер, резерв и фоновый монитор.
         self._lock = threading.RLock()
@@ -198,6 +205,30 @@ class Switcher:
                 out.add(st["active"])
             return out
 
+    def host(self, node: str) -> str:
+        """Хост ноды; адрес неизвестен — node_crc (общий у доступов одного сервера)."""
+        return self._server_of(node) or parse_node(node).node_crc or node
+
+    def avoided_hosts(self, region: str) -> set[str]:
+        """Хосты, с которых группа не берёт замену: хост активной ноды и хосты под штрафом."""
+        with self._lock:
+            now = time.time()
+            self._penalty = {h: until for h, until in self._penalty.items() if until > now}
+            out = set(self._penalty)
+            active = self.active_node(region)
+            if active:
+                out.add(self.host(active))
+            return out
+
+    def penalize(self, node: str) -> None:
+        """Авария монитора сняла ноду: её хост не выбираем selection.host_penalty."""
+        if self.cfg.host_penalty <= 0:
+            return
+        host = self.host(node)
+        with self._lock:
+            self._penalty[host] = time.time() + self.cfg.host_penalty
+        print(f"  [switch] хост {host} не выбираем {self.cfg.host_penalty / 60:.0f} мин — авария монитора")
+
     def stuck(self, region: str) -> bool:
         """Группа в аварии без замены: активная заблокирована, переключаться не на что."""
         with self._lock:
@@ -317,8 +348,10 @@ class Switcher:
         active_score = float(active_row["score"]) if active_row else 0.0
         now = time.time()
         reserve = set(self.board.reserve(region))
+        avoid = self.avoided_hosts(region)
         # Кандидаты идут по ярусу (непройденные приоритетные проверки), внутри — по рейтингу.
-        pool = [c for c in cands if c["node"] in reserve and c["node"] != active]
+        # Ноды хоста активной (и хостов под штрафом) не берём: падают вместе с ней.
+        pool = [c for c in cands if c["node"] in reserve and self.host(c["node"]) not in avoid]
 
         # 1. Инициализация — активной ноды ещё нет: лучшая из резерва (резерв ещё не
         # собран — лучший кандидат).
@@ -327,10 +360,11 @@ class Switcher:
             return
 
         # 2. EMERGENCY — активная заблокирована/исчезла: немедленно на ДРУГУЮ из резерва
-        # (пуст — на любого другого кандидата) лучшего яруса, БАЛАНСИРОВАННО и уводя от
-        # провайдера упавшей ноды.
+        # (пуст — на любого кандидата другого хоста, нет и таких — на любого другого)
+        # лучшего яруса, БАЛАНСИРОВАННО и уводя от провайдера упавшей ноды.
         if emergency or active_score <= 0:
-            others = pool or [c for c in cands if c["node"] != active]
+            others = (pool or [c for c in cands if self.host(c["node"]) not in avoid]
+                      or [c for c in cands if c["node"] != active])
             if others:
                 self._activate(self._pick_emergency(_top_tier(others), st, active),
                                region, st, now, "emergency")

@@ -149,6 +149,19 @@ class StorageSchemaTest(unittest.TestCase):
             storage.close()
 
 
+    def test_wireguard_server_from_first_peer(self):
+        tmp = temp_dir()
+        storage = Storage(load_config(make_config(tmp)).storage)
+        try:
+            wg = {"type": "wireguard", "address": ["10.0.0.2/32"], "private_key": "k",
+                  "peers": [{"address": "9.9.9.9", "port": 51820, "public_key": "p"}]}
+            wg["tag"] = f"AWG-wg-out [{node_key(wg)}]"
+            storage.load_nodes(fresh_nodes_json(tmp, [wg]))
+            self.assertEqual(list(storage.endpoints_by_crc().values()), [("9.9.9.9", 51820)])
+        finally:
+            storage.close()
+
+
 class ReserveDiversityTest(_Base):
     def test_one_access_per_server_and_not_the_active_server(self):
         r = self.r

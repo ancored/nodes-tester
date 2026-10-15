@@ -19,6 +19,10 @@ LIMITED = (False, 0.0, True, "HTTP 403")
 class FakeSwitcher:
     def __init__(self):
         self.emergencies = []
+        self.penalized = []
+
+    def penalize(self, node):
+        self.penalized.append(node)
 
     def evaluate_region(self, region, emergency=False):
         self.emergencies.append(region)
@@ -141,6 +145,7 @@ class MonitorProbeRetryTest(unittest.TestCase):
         self._probe(mon, st)
         self._probe(mon, st, now=30.0)
         self.assertEqual(sw.emergencies, ["us"])
+        self.assertEqual(sw.penalized, ["node-us"])       # хост упавшей — под штраф
         self.assertEqual(st["strikes"], 0)
 
     def test_good_or_inconclusive_resets_strikes(self):
