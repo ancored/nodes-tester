@@ -66,8 +66,11 @@ class ListsTest(unittest.TestCase):
                 {"type": "https", "tag": "dns-a", "server": "77.88.8.8"},
                 {"type": "local", "tag": "dns-local"},
                 {"type": "https", "tag": "dns-b", "server": "8.8.8.8", "server_port": 8443},
+                {"type": "https", "tag": "dns-ip", "server": "45.90.28.0", "path": "/abc/router",
+                 "tls": {"server_name": "dns.nextdns.io"}},
                 {"type": "group", "tag": "dns-grp", "servers": ["dns-a", "dns-local", "dns-b"]}]}}, fh)
         self.assertEqual(whitelist.doh_urls("dns-ru", path), ["https://dns.example/abc/router"])
+        self.assertEqual(whitelist.doh_urls("dns-ip", path), ["https://dns.nextdns.io/abc/router"])
         self.assertEqual(whitelist.doh_urls("dns-grp", path),
                          ["https://77.88.8.8/dns-query", "https://8.8.8.8:8443/dns-query"])
         self.assertEqual(whitelist.doh_urls("dns-xx", path), ["https://1.1.1.1/dns-query"])

@@ -72,7 +72,8 @@ def resolve(url: str, name: str, timeout: float) -> list[str]:
 
 def doh_urls(spec: str, singbox_config: str) -> list[str]:
     """URL DoH-серверов: сам spec, если это URL, иначе сервер type https с этим тегом из
-    конфига sing-box; группа (type group) — её серверы https по порядку. Не нашлось —
+    конфига sing-box; группа (type group) — её серверы https по порядку. Сервер на IP с
+    tls.server_name адресуется по этому имени: сертификат NextDNS на IP не выписан. Не нашлось —
     Cloudflare (Quad9 требует HTTP/2, а requests умеет только HTTP/1.1)."""
     if spec.startswith("https://"):
         return [spec]
@@ -90,8 +91,9 @@ def doh_urls(spec: str, singbox_config: str) -> list[str]:
     urls = []
     for s in members:
         if s.get("type") == "https":
+            host = (s.get("tls") or {}).get("server_name") or s["server"]
             port = f":{s['server_port']}" if s.get("server_port") else ""
-            urls.append(f"https://{s['server']}{port}{s.get('path') or '/dns-query'}")
+            urls.append(f"https://{host}{port}{s.get('path') or '/dns-query'}")
     return urls or [_FALLBACK_DOH]
 
 
