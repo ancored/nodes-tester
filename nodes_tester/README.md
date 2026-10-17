@@ -257,6 +257,14 @@ from the subscriptions). Then the tester starts the `router` pipeline marked “
 more often than `min_interval` and only with the router build enabled. The fields are `pipeline.router.rebuild`
 ([CONFIG.md](../docs/CONFIG.md#pipeline)).
 
+## Amnezia Premium countries
+
+For subscriptions with `type: "amnezia"` [`amnezia_slots.py`](amnezia_slots.py) once every 3 hours compares the
+country files with the rating of their nodes (a node is found by the server address from the file): it revokes a
+country whose node stays below `min_rating` for 6 hours, fills free places with random new countries and issues anew a
+file whose server was updated. The rules are in [CONFIG.md](../docs/CONFIG.md#amnezia-premium); the results
+go to the log and to the `subscription` notification.
+
 ## Monitor, pause and quarantine
 
 The Monitor watches the active nodes between their measurements. When there is user traffic,
@@ -367,6 +375,7 @@ User guide: [`docs/USAGE.md`](../docs/USAGE.md). Technical description:
 | `switcher.py` | emergency, quality, rotation and manual choice |
 | `monitor.py` | watching active nodes between measurements |
 | `rebuild.py` | rebuilding the config on degradation |
+| `amnezia_slots.py` | Amnezia Premium countries by the rating |
 | `traffic.py` | exact traffic accounting from the connection stream |
 | `storage.py` | SQLite schema and operations |
 | `vacuum.py` | `VACUUM` of the database by the `storage.vacuum` schedule and from the admin panel |

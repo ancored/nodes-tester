@@ -50,7 +50,9 @@ entry has a unique `tag` and one source:
 - `url`: HTTP(S), a single share link, `sub://` or `happ://`;
 - `file`: a local text subscription or Clash YAML;
 - `type: "folder"`: a directory of files, currently used for AWG `.conf`;
-- `type: "inline"`: your own sing-box outbounds right in `outbounds`.
+- `type: "inline"`: your own sing-box outbounds right in `outbounds`;
+- `type: "amnezia"`: a directory of AWG `.conf` files of Amnezia Premium countries; the files are issued and
+  replaced by the tester ([CONFIG.md](../docs/CONFIG.md#amnezia-premium)), fetch reads them like `folder`.
 
 `enabled`, `branch`, `user_agent`, `happ_headers` and `send_device` are supported. Relative
 paths are counted from the `config.json` directory.
@@ -183,4 +185,5 @@ its content changes.
 | `happ.py` | expanding and downloading happ subscriptions |
 | `happ_crypto.py`, `_chacha.py` | decrypting `happ://crypt…` (RSA, ChaCha20-Poly1305) |
 | `happ_keys.py` | source and cache of the Happ keys |
+| `amnezia.py`, `_aes.py` | Amnezia gateway client: the `vpn://` link, AES-256-CBC, RSA, X25519 in pure Python |
 | `parsers/` | share links, Clash and Xray JSON → sing-box objects; `_common.py`: address, TLS, transports, XHTTP |

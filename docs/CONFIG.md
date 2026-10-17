@@ -213,10 +213,14 @@ is decided by the tester by the group checks. The country in the provider's node
 | `tag` | string | — | Provider name, unique; the first part of node tags |
 | `enabled` | bool | `true` | Use the subscription |
 | `branch` | `router` · `clients` · `both` | `router` | Build branch: router `nodes.json`, client `whnodes.json` or both |
-| `type` | `url` · `file` · `folder` · `inline` | `url` | Source kind |
-| `url` | string | — | Subscription URL, share link or `happ://crypt…` |
+| `type` | `url` · `file` · `folder` · `inline` · `amnezia` | `url` | Source kind |
+| `url` | string | — | Subscription URL, share link, `happ://crypt…` or the Amnezia Premium `vpn://` link |
 | `file` | string | — | `file`: path to the subscription file (relative to `config.json`) |
-| `path`, `format`, `ext` | strings | — | `folder`: directory, format (`awg`) and file extension (`.conf`) |
+| `path`, `format`, `ext` | strings | — | `folder`: directory, format (`awg`) and file extension (`.conf`); `amnezia`: directory of the country files |
+| `gateway_key` | string | — | `amnezia`: file with the public key of the Amnezia gateway (PEM), relative to `config.json` |
+| `slots` | integer | all slots | `amnezia`: how many country files to keep |
+| `min_rating` | number | `40` | `amnezia`: a country whose node keeps a lower rating is replaced |
+| `exclude_countries` | list of strings | `["ru"]` | `amnezia`: country codes that are not issued |
 | `outbounds` | array | — | `inline`: your own sing-box outbounds; the build sets their tags |
 | `user_agent` | string | Safari | User-Agent of the HTTP download: `curl`, `clashmeta` or your own string |
 | `happ_headers` | object | Happ set | `happ://`: headers on top of the default set |
@@ -225,6 +229,26 @@ is decided by the tester by the group checks. The country in the provider's node
 
 The router HWID is stored in `device.json`, the `happ://crypt…` keys in `happ-keys.json`; both are next to
 `config.json` and are created automatically.
+
+### Amnezia Premium
+
+A subscription with `type: "amnezia"` takes the `vpn://` link of Amnezia Premium and keeps AmneziaWG files of
+countries in `path` (`<country code>.conf`, rights 0600). The files are issued by the tester through the Amnezia gateway
+(`gw.amnezia.org`, with `pipeline.fetch.proxy` if it is set) once every 3 hours:
+
+- a country whose node keeps a rating below `min_rating` for 6 hours is considered blocked: its file is revoked and
+  deleted, and the country is not issued again;
+- free places, up to `slots` and the free slots of the subscription, get random countries not issued before;
+- a file whose server was updated after the issue is issued anew.
+
+If all rated countries are below the threshold at once, the cause is not the countries (the protocol is blocked or the
+network is down), and nothing is replaced. Countries issued elsewhere (no file in `path`) are not touched: a new issue
+would break that file. The memory of the tried and blocked countries is `state.json` in `path`; delete a country from
+`blocked` to allow it again. New files reach sing-box with the next subscription poll and router build.
+
+The gateway key is not part of the project. It is the `-----BEGIN PUBLIC KEY-----` block in the official AmneziaVPN
+app: for example, in `lib/<abi>/libAmneziaVPN_<abi>.so` of the Android APK. The application has two keys; the
+working one is accepted by the gateway, the other one gets HTTP 500.
 
 ## tests
 

@@ -189,6 +189,10 @@ Research the app-side and regulatory threats are taken from:
   Do not expose them to the internet; access only from the LAN or through a tunnel.
 - **Secrets in configs.** The base, client configs and subscriptions contain passwords, UUIDs, Reality keys,
   secret distribution paths. They must be replaced before publishing fragments (bug reports, issues).
+- **Amnezia Premium.** The `vpn://` link holds the subscription `api_key`, the country files hold AWG private
+  keys; the tester writes the files with rights 0600. The gateway is reached over plain HTTP, and the request is
+  protected only by the gateway RSA key: take it only from the official AmneziaVPN app, a substituted key
+  gives the `api_key` to whoever is on the path.
 - **Client config distribution** over secret paths is protected only by the path length and TLS; a leaked
   link gives the full client config.
 - **Laptop kill switch.** The Windows counterpart of the Android “Block connections without VPN” is

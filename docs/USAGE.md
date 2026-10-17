@@ -58,7 +58,8 @@ database size, the last `VACUUM` (when, size before and after) and the next run 
 schedule, and has a “Run now” button. Other fields are available in the advanced JSON.
 
 “Subscriptions and build” is split into the “Router” and “Clients” branches. The “Subscription sources” tab has
-the subscriptions of the branch: URL/happ, file, AWG folder or own nodes (sing-box outbounds), the “Branch” field
+the subscriptions of the branch: URL/happ, file, AWG folder, Amnezia Premium (the tester issues and replaces the
+country files, see [CONFIG.md](CONFIG.md#amnezia-premium)) or own nodes (sing-box outbounds), the “Branch” field
 (router, clients or both) and excluding nodes by a name substring. URLs and secrets are hidden by default.
 The “Build and groups” tab has the schedule and filters of the branch, sing-box group parameters and, for the router,
 groups with checks and regions.

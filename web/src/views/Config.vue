@@ -142,10 +142,12 @@ function daysLeft(m){return m.expire ? Math.ceil((m.expire*1000-Date.now())/8640
 function trafficLine(m){if(m.download==null && m.total==null)return '';const used=(m.upload||0)+(m.download||0);return m.total ? t('{used} of {total}',{used:bytes(used),total:bytes(m.total)}) : t('{used}, no limit',{used:bytes(used)})}
 function lastOk(st){return st?.last_ok_at ? dateTime(Date.parse(st.last_ok_at)/1000) : t('none')}
 function setHappKeys(v) {v=v.trim();setPath(document.value,'pipeline.fetch.happ_keys_url',v && v!==options.value.happ_keys?.default_url ? v : undefined);preview.value=false}
-function sourceKind(sub) {return ['folder','inline'].includes(sub.type) ? sub.type : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
+function sourceKind(sub) {return ['folder','inline','amnezia'].includes(sub.type) ? sub.type : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
 function changeKind(sub,kind) {
   delete sub.url; delete sub.file; delete sub.type; delete sub.path; delete sub.outbounds
-  if(kind === 'folder'){sub.type='folder';sub.path=''; if(!sub.format)sub.format='awg'}
+  for(const key of ['gateway_key','slots','min_rating','exclude_countries'])delete sub[key]
+  if(kind === 'amnezia'){sub.type='amnezia';sub.url='';sub.path='';sub.gateway_key=''}
+  else if(kind === 'folder'){sub.type='folder';sub.path=''; if(!sub.format)sub.format='awg'}
   else if(kind === 'inline'){sub.type='inline';sub.outbounds=[]}
   else if(kind==='happ')sub.url='happ://crypt/'
   else sub[kind]=''
@@ -154,6 +156,7 @@ function changeKind(sub,kind) {
 // Подписки текущей ветви с индексами в общем списке (branch both — в обеих).
 const branchSubs=computed(()=>(document.value?.subscriptions || []).map((sub,index)=>({sub,index})).filter(({sub})=>[branch.value,'both'].includes(sub.branch || 'router')))
 function setBranch(sub,v){if(v==='router')delete sub.branch; else sub.branch=v;preview.value=false}
+function setNumber(sub,key,v){if(v==='')delete sub[key]; else sub[key]=Number(v);preview.value=false}
 function setList(sub,key,v){const list=v.split(',').map(x=>x.trim()).filter(Boolean);if(list.length)sub[key]=list; else delete sub[key];preview.value=false}
 function addSub(){(document.value.subscriptions ||= []).push(branch.value==='router' ? {tag:'',url:''} : {tag:'',url:'',branch:branch.value})}
 function userAgent(sub){return sub.user_agent ?? ''}
@@ -176,7 +179,7 @@ function recipeUpdate(field,event,type){update(recipePath(field),event,type)}
 // selector и urltest передаются в sing-box как есть: без значения действует умолчание sing-box.
 function recipePlaceholder(field){return placeholder(recipePath(field)) || (/^(selector|urltest)\./.test(field) ? t('sing-box default') : '')}
 function removeSub(index){if(window.confirm(t('Remove this subscription from the file? The running sing-box changes after the pipeline runs.'))) document.value.subscriptions.splice(index,1)}
-const SOURCE_KINDS=[['url',t('URL / link')],['happ',t('Happ · encrypted link (crypt–crypt5)')],['file',t('File')],['folder',t('AWG folder')],['inline',t('Own nodes (sing-box outbounds)')]]
+const SOURCE_KINDS=[['url',t('URL / link')],['happ',t('Happ · encrypted link (crypt–crypt5)')],['file',t('File')],['folder',t('AWG folder')],['amnezia',t('Amnezia Premium · vpn:// link')],['inline',t('Own nodes (sing-box outbounds)')]]
 const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],['pipeline.fetch.min_ratio',t('Minimum share of remaining nodes (0–1)'),'number',{min:0,max:1,step:0.05}],
   ['pipeline.fetch.retries',t('HTTP retries'),'number',{min:0}],['pipeline.fetch.keep_stale',t('Keep previous nodes on failure'),'duration'],
   ['pipeline.fetch.every',t('Poll router subscriptions every (0s: only when building)'),'duration'],['pipeline.fetch.proxy',t('Download proxy (empty: direct)'),'text']]
@@ -228,11 +231,15 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
               <label>{{ t('Source') }} <select :value="sourceKind(sub)" @change="changeKind(sub,$event.target.value)"><option v-for="[kind,label] in SOURCE_KINDS" :key="kind" :value="kind">{{ label }}</option></select></label>
               <label>{{ t('Exclude nodes by a name substring (comma-separated)') }}<input :value="(sub.exclude_names || []).join(', ')" @change="setList(sub,'exclude_names',$event.target.value)" /></label>
               <label v-if="['url','happ'].includes(sourceKind(sub))">{{ sourceKind(sub)==='happ' ? t('happ://crypt… link') : t('Subscription URL / share link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label>
+              <template v-else-if="sourceKind(sub)==='amnezia'"><label>{{ t('vpn:// link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label><label>{{ t('Folder for country files') }} <input v-model="sub.path" placeholder="amnezia" /></label><label>{{ t('Gateway key file (PEM)') }} <input v-model="sub.gateway_key" placeholder="amnezia-gateway.pem" /></label>
+                <label>{{ t('Country files to keep') }} <input type="number" min="1" :value="sub.slots ?? ''" :placeholder="t('all slots')" @change="setNumber(sub,'slots',$event.target.value)" /></label><label>{{ t('Replace a country rated below') }} <input type="number" min="0" max="100" :value="sub.min_rating ?? ''" placeholder="40" @change="setNumber(sub,'min_rating',$event.target.value)" /></label>
+                <label>{{ t('Do not issue countries (comma-separated)') }} <input :value="(sub.exclude_countries || []).join(', ')" placeholder="ru" @change="setList(sub,'exclude_countries',$event.target.value)" /></label></template>
               <label v-else-if="sourceKind(sub)==='file'">{{ t('File') }} <input v-model="sub.file" /></label>
               <template v-else-if="sourceKind(sub)==='folder'"><label>{{ t('Folder') }} <input v-model="sub.path" /></label><label>{{ t('Format') }} <input v-model="sub.format" /></label><label>{{ t('File extension') }} <input v-model="sub.ext" placeholder=".conf" /></label></template>
               <template v-if="sourceKind(sub)==='url'"><label>User-Agent<select :value="uaChoice(sub)" @change="setUA(sub,$event.target.value,true)"><option v-for="o in options.user_agents" :key="o.value" :value="o.value">{{ o.label }}</option><option value="__custom">{{ t('Custom User-Agent') }}</option></select></label><label v-if="uaChoice(sub)==='__custom'">{{ t('Custom User-Agent') }}<input :value="userAgent(sub)" @input="setUA(sub,$event.target.value)" /></label></template>
             </div>
             <JsonField v-if="sourceKind(sub)==='inline'" array :label="t('Outbounds')" :note="t('A list of sing-box outbounds. Tags are set by the build: the provider is the subscription tag.')" :model-value="sub.outbounds || []" @update:model-value="sub.outbounds=$event;preview=false" @valid="jsonValid['inline'+index]=$event" />
+            <p v-if="sourceKind(sub)==='amnezia'" class="help-text">{{ t('The tester issues country files through the Amnezia gateway and replaces a country whose node keeps a rating below the threshold for 6 hours with a random country not tried before. The gateway key is taken from the official AmneziaVPN app. Slots above the limit stay free for the app.') }}</p>
             <p v-if="sourceKind(sub)==='url'" class="help-text">{{ t('The User-Agent is sent on HTTP downloads (including sub:// with an HTTP link). It is not used for ready share links and local files. The provider may choose the response format by this header. On an empty HTTP response the loader repeats the request with clashmeta.') }}</p>
             <details v-if="sourceKind(sub)==='url' && !userAgent(sub)"><summary>{{ t('Default User-Agent') }}</summary><p class="break">{{ options.user_agents[0]?.effective }}</p></details>
             <label v-if="sourceKind(sub)==='url'" class="check"><input type="checkbox" :checked="!!sub.send_device" @change="sub.send_device=$event.target.checked || undefined; preview=false" /> {{ t('Send the HWID and device description (for panels with a device limit)') }}</label>

@@ -50,7 +50,9 @@ python3 -m nodes_fetch -c config.json --dry-run --json
 - `url`: HTTP(S), отдельная share-ссылка, `sub://` или `happ://`;
 - `file`: локальная текстовая подписка или Clash YAML;
 - `type: "folder"`: каталог файлов, сейчас используется для AWG `.conf`;
-- `type: "inline"`: свои outbound-ы sing-box прямо в `outbounds`.
+- `type: "inline"`: свои outbound-ы sing-box прямо в `outbounds`;
+- `type: "amnezia"`: каталог файлов AWG `.conf` стран Amnezia Premium; файлы выпускает и меняет тестер
+  ([CONFIG.md](../docs/CONFIG.ru.md#amnezia-premium)), fetch читает их как `folder`.
 
 Поддерживаются `enabled`, `branch`, `user_agent`, `happ_headers` и `send_device`. Относительные
 пути считаются от каталога `config.json`.
@@ -183,4 +185,5 @@ sing-box:
 | `happ.py` | раскрытие и загрузка happ-подписок |
 | `happ_crypto.py`, `_chacha.py` | расшифровка `happ://crypt…` (RSA, ChaCha20-Poly1305) |
 | `happ_keys.py` | источник и кэш ключей Happ |
+| `amnezia.py`, `_aes.py` | клиент шлюза Amnezia: ссылка `vpn://`, AES-256-CBC, RSA, X25519 на чистом Python |
 | `parsers/` | share-ссылки, Clash и JSON Xray → объекты sing-box; `_common.py` — адрес, TLS, транспорты, XHTTP |

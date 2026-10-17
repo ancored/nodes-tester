@@ -23,6 +23,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from .amnezia_slots import AmneziaSlots
 from .api import ApiClient, ApiError
 from .config import TESTS, Config, region_of
 from .freshness import expires, fresh
@@ -157,6 +158,7 @@ class Runner:
         self.reserve = ReserveKeeper(self)
         self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
                                     self.notifier)
+        self.amnezia = AmneziaSlots(cfg, self._ratings_by_server, self.notifier)
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
@@ -225,6 +227,11 @@ class Runner:
         """Адрес сервера ноды из storage (нижний регистр); пусто — неизвестен."""
         ep = self._endpoints.get(node_id)
         return (ep[0] or "").lower() if ep else ""
+
+    def _ratings_by_server(self) -> dict[str, float]:
+        """{адрес сервера: рейтинг} нод с замерами — для стран Amnezia Premium."""
+        return {server: row["score"] for row in self.board.rows.copy().values()
+                if row.get("score") is not None and (server := self._server(row.get("id") or ""))}
 
     def _host_of(self, ident: NodeIdentity) -> str:
         """Хост ноды (server из storage). Фолбэк без storage/server — провайдер/CRC."""
@@ -417,6 +424,8 @@ class Runner:
                 cleaned = time.monotonic()
             if not self.once and self.vacuum.due(time.time()):
                 self.vacuum.start("schedule")
+            if not self.once and self.amnezia.due(time.time()):
+                self.amnezia.start()
             if self.once and not self._forced and not self._force_requested.is_set():
                 self._service()
                 return

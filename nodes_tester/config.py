@@ -758,7 +758,8 @@ def _singbox(obj) -> SingboxConfig:
 
 BRANCHES = ("router", "clients", "both")
 _SUB_FIELDS = ("tag", "enabled", "branch", "type", "url", "file", "path", "format", "ext",
-               "user_agent", "happ_headers", "send_device", "exclude_names", "outbounds")
+               "user_agent", "happ_headers", "send_device", "exclude_names", "outbounds",
+               "gateway_key", "slots", "min_rating", "exclude_countries")
 
 
 def _subscriptions(obj) -> list[dict]:
@@ -779,11 +780,20 @@ def _subscriptions(obj) -> list[dict]:
         if sub.get("branch", "router") not in BRANCHES:
             raise ConfigError(f"{path}.branch: допустимы {', '.join(BRANCHES)}")
         kind = sub.get("type", "url")
-        if kind not in ("url", "file", "folder", "inline"):
-            raise ConfigError(f"{path}.type: допустимы url, file, folder, inline")
+        if kind not in ("url", "file", "folder", "inline", "amnezia"):
+            raise ConfigError(f"{path}.type: допустимы url, file, folder, inline, amnezia")
         _strings(sub, "exclude_names", path)
         if kind == "inline" and not isinstance(sub.get("outbounds"), list):
             raise ConfigError(f"{path}.outbounds: у inline-подписки нужен список outbound-ов")
+        if kind == "amnezia":
+            if not str(sub.get("url", "")).startswith("vpn://"):
+                raise ConfigError(f"{path}.url: у amnezia-подписки нужна ссылка vpn://")
+            for key in ("path", "gateway_key"):
+                if not _string(sub, key, path, "").strip():
+                    raise ConfigError(f"{path}.{key}: у amnezia-подписки обязательно")
+            _number(sub, "slots", path, None, 1, integer=True)
+            _number(sub, "min_rating", path, None, 0, 100)
+            _strings(sub, "exclude_countries", path)
         out.append(dict(sub))
     return out
 

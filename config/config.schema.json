@@ -157,14 +157,15 @@
               "url",
               "file",
               "folder",
-              "inline"
+              "inline",
+              "amnezia"
             ],
             "default": "url",
-            "description": "Источник: url (или happ://crypt…), file, folder (каталог AWG), inline (свои outbound-ы)."
+            "description": "Источник: url (или happ://crypt…), file, folder (каталог AWG), inline (свои outbound-ы), amnezia (Amnezia Premium: файлы стран выпускает и меняет тестер)."
           },
           "url": {
             "type": "string",
-            "description": "URL подписки, share-ссылка или happ://crypt…"
+            "description": "URL подписки, share-ссылка, happ://crypt… или ссылка vpn:// Amnezia Premium (amnezia)."
           },
           "file": {
             "type": "string",
@@ -172,7 +173,7 @@
           },
           "path": {
             "type": "string",
-            "description": "folder: каталог с конфигами (относительно config.json)."
+            "description": "folder, amnezia: каталог с конфигами (относительно config.json)."
           },
           "format": {
             "type": "string",
@@ -197,6 +198,32 @@
             "type": "boolean",
             "description": "url: отправлять HWID и описание устройства.",
             "default": false
+          },
+          "gateway_key": {
+            "type": "string",
+            "description": "amnezia: файл с публичным ключом шлюза Amnezia (PEM из официального приложения), относительно config.json."
+          },
+          "slots": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "amnezia: сколько файлов стран держать; пусто — все слоты подписки. Свободные слоты остаются приложениям."
+          },
+          "min_rating": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 40,
+            "description": "amnezia: страна с рейтингом ноды ниже порога считается заблокированной и меняется на другую."
+          },
+          "exclude_countries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "ru"
+            ],
+            "description": "amnezia: коды стран, которые не выпускать."
           },
           "exclude_names": {
             "type": "array",
