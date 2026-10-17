@@ -202,11 +202,10 @@ if [ "$ok" = 0 ]; then
 fi
 log "sing-box работает, трафик идёт через TUN напрямую"
 
-# Раз в месяц — VACUUM базы тестера; лог sing-box в RAM очищается, когда перерастёт лимит
-# (sing-box пишет с O_APPEND, монитор тестера после очистки читает файл с начала).
+# Лог sing-box в RAM очищается, когда перерастёт лимит (sing-box пишет с O_APPEND, монитор
+# тестера после очистки читает файл с начала). VACUUM базы делает сам тестер (storage.vacuum).
 CRON=/etc/crontabs/root
 touch "$CRON"
-grep -qF 'nodes-tester vacuum' "$CRON" || echo '0 4 1 * * /usr/bin/nodes-tester vacuum' >> "$CRON"
 grep -qF "$SB_LOG" "$CRON" \
 	|| echo "*/10 * * * * [ -n \"\$(find $SB_LOG -size +${SB_LOG_MAX_KB}k 2>/dev/null)\" ] && : > $SB_LOG" >> "$CRON"
 /etc/init.d/cron enable

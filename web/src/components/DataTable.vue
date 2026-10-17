@@ -4,10 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { crcOf, rowKeys, STANDARD_FILTERS } from '../ux.js'
 import { useTableFilters } from '../filters.js'
 import { flag } from '../format.js'
+import { t, locale } from '../i18n.js'
 import FilterBar from './FilterBar.vue'
 import NodeKey from './NodeKey.vue'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
-  pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:'Нет данных в этом снимке.'},
+  pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:''},
   queryKey:{type:String,default:''}, total:{type:Number,default:null},
   showSearch:{type:Boolean,default:true}, showSort:{type:Boolean,default:true},
   filters:{type:Array,default:null}, extraFilters:{type:Array,default:()=>[]} })
@@ -31,7 +32,7 @@ const filtered = computed(() => {
     rows = [...rows].sort((a,b) => {
       const x=a[field], y=b[field]
       const cmp = x == null ? (y == null ? 0 : 1) : y == null ? -1 :
-        typeof x === 'number' && typeof y === 'number' ? x-y : String(x).localeCompare(String(y),'ru',{numeric:true})
+        typeof x === 'number' && typeof y === 'number' ? x-y : String(x).localeCompare(String(y),locale(),{numeric:true})
       return descending ? -cmp : cmp
     })
   }
@@ -53,7 +54,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
 </script>
 <template>
   <div>
-    <div class="toolbar table-toolbar"><FilterBar :state="filterState" /><label v-if="showSearch">Поиск <input v-model="query" type="search" placeholder="Имя, провайдер, страна, CRC…" /></label><label v-if="showSort">Сортировка<select v-model="sortModel"><option value="">Исходный порядок</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>Показано {{ filtered.length }} из {{ total ?? rows.length }}</span></div>
+    <div class="toolbar table-toolbar"><FilterBar :state="filterState" /><label v-if="showSearch">{{ t('Search') }} <input v-model="query" type="search" :placeholder="t('Name, provider, country, CRC…')" /></label><label v-if="showSort">{{ t('Sort') }}<select v-model="sortModel"><option value="">{{ t('Original order') }}</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>{{ t('Shown {n} of {total}', { n: filtered.length, total: total ?? rows.length }) }}</span></div>
     <div class="wrap">
       <table class="responsive-table">
         <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap,narrow:c.narrow}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
@@ -69,11 +70,10 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
               <b v-else-if="c.strong">{{ cellText(c,row) }}</b><template v-else>{{ cellText(c,row) }}</template>
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td class="l empty" :colspan="columns.length">{{ query || anyFilter ? 'Ничего не найдено. Измените запрос или фильтры.' : empty }}</td></tr>
+          <tr v-if="!filtered.length"><td class="l empty" :colspan="columns.length">{{ query || anyFilter ? t('Nothing found. Change the query or filters.') : empty || t('No data in this snapshot.') }}</td></tr>
         </tbody>
       </table>
-      <div v-if="pages>1" class="pager"><button class="btn" aria-label="Предыдущая страница" :disabled="page === 0" @click="page--">‹</button><span>{{ page+1 }} / {{ pages }}</span><button class="btn" aria-label="Следующая страница" :disabled="page>=pages-1" @click="page++">›</button></div>
+      <div v-if="pages>1" class="pager"><button class="btn" :aria-label="t('Previous page')" :disabled="page === 0" @click="page--">‹</button><span>{{ page+1 }} / {{ pages }}</span><button class="btn" :aria-label="t('Next page')" :disabled="page>=pages-1" @click="page++">›</button></div>
     </div>
-    <details v-if="columns.some(c=>c.note)" class="hint"><summary>Пояснения к показателям</summary><p v-for="c in columns.filter(c=>c.note)" :key="c.key">{{ c.title }}: {{ c.note }}</p></details>
   </div>
 </template>

@@ -19,28 +19,44 @@ try {
   await store.refresh()
   const session = await vite.ssrLoadModule('/src/api.js')
   session.auth.capabilities={mode:'embedded',edit_config:true,node_actions:true,switch:true}
-  for(const [view,path,expected] of [
-    ['Control','/nodes','чтобы открыть карточку'],
-    ['Control','/nodes?q=not-found','Ничего не найдено'],
-    ['NodeDetail','/nodes/abcd1234.0000beef','Нет замеров рейтинга'],
-    ['NodeDetail','/nodes/abcd1234.0000beef','<span class="crc-cred" title="CRC учётных данных">0000beef</span>'],
-    ['NodeDetail','/nodes/abcd1234.0000beef?tab=Действия','disabled'],
-    ['Control','/nodes','<span class="crc-node" title="CRC настроек сервера">abcd1234</span>'],
-    ['Overview','/','Ожидание сроков тестов'],
-    ['Results','/results','Сохранённых результатов нет'],
-    ['History','/history','Последние 200 записей'],
-    ['Config','/subscriptions','Для редактора требуется'],
-    ['Runs','/runs','disabled'],
-    ['Traffic','/traffic','Это не последние 24 часа'],
-    ['Pipeline','/pipeline','Конвейер обновления'],
-    ['Singbox','/singbox','Исходные файлы sing-box'],
+  const i18n = await vite.ssrLoadModule('/src/i18n.js')
+  // Каждая страница — на обоих языках: английский по умолчанию, русский из каталога.
+  for(const [view,path,expected,english] of [
+    ['Control','/nodes','Имя в подписке','Name in the subscription'],
+    ['Control','/nodes?q=not-found','Ничего не найдено','Nothing found'],
+    ['NodeDetail','/nodes/abcd1234.0000beef','Нет замеров рейтинга','No rating measurements'],
+    ['NodeDetail','/nodes/abcd1234.0000beef','<span class="crc-cred" title="CRC учётных данных">0000beef</span>','<span class="crc-cred" title="Credentials CRC">0000beef</span>'],
+    ['NodeDetail','/nodes/abcd1234.0000beef?tab=actions','disabled','disabled'],
+    ['Control','/nodes','<span class="crc-node" title="CRC настроек сервера">abcd1234</span>','<span class="crc-node" title="Server settings CRC">abcd1234</span>'],
+    ['Overview','/','Ожидание сроков тестов','Waiting for test deadlines'],
+    ['Results','/results','Сохранённых результатов нет','No saved results'],
+    ['History','/history','Активные ноды по группам','Active nodes by group'],
+    ['Config','/subscriptions','Для редактора требуется','The editor requires'],
+    ['Runs','/runs','disabled','disabled'],
+    ['Traffic','/traffic','Сохранённый период','Stored period'],
+    ['Pipeline','/pipeline','Конвейер обновления','Update pipeline'],
+    ['Singbox','/singbox','Исходные файлы sing-box','sing-box source files'],
   ]) {
     const page = (await vite.ssrLoadModule('/src/views/'+view+'.vue')).default
-    const router=createRouter({history:createMemoryHistory(),routes:[{path:'/nodes/:crc',component:page},{path:'/:rest(.*)*',component:page}]})
-    const app=createSSRApp({render:()=>h(RouterView)});app.use(router);await router.push(path);await router.isReady()
-    const html=await renderToString(app)
-    assert(html.includes(expected),view+': expected '+expected)
-    assert(!html.includes('YOUR-CLASH-API-SECRET'))
+    for (const [code, text] of [['ru', expected], ['en', english]]) {
+      i18n.setLang(code)
+      const router=createRouter({history:createMemoryHistory(),routes:[{path:'/nodes/:crc',component:page},{path:'/:rest(.*)*',component:page}]})
+      const app=createSSRApp({render:()=>h(RouterView)});app.use(router);await router.push(path);await router.isReady()
+      const html=await renderToString(app)
+      assert(html.includes(text),view+' ('+code+'): expected '+text)
+      assert(!html.includes('YOUR-CLASH-API-SECRET'))
+      if (code === 'en') assert(!/[А-Яа-яЁё]/.test(html.replace('Снимок SQLite','')), view+': Cyrillic in the English page')
+    }
     console.log('Rendered '+path+' OK')
   }
+  // Справка: страница на обоих языках со схемой (готовый SVG) и ссылками внутри справки.
+  const help = await vite.ssrLoadModule('/src/help.js')
+  for (const [code, title] of [['ru', 'Группы и кандидаты'], ['en', 'Groups and candidates']]) {
+    const doc = await help.loadHelp('groups', code)
+    assert.equal(doc.title, title)
+    assert(doc.html.includes('<figure class="diagram"><svg'), 'groups ('+code+'): diagram is not rendered')
+    assert(doc.html.includes('data-help="switching#"'), 'groups ('+code+'): link inside the help')
+    assert(doc.headings.some(h => h.id === 'reserve'), 'groups ('+code+'): anchor')
+  }
+  console.log('Rendered help OK')
 } finally {store.stopSnapshot();await vite.close()}

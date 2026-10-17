@@ -1,27 +1,29 @@
+**English** | [Русский](README.ru.md)
+
 # nodes_admin
 
-Оркестратор работает внутри процесса `nodes_tester`.
-Он не импортирует Runner: при создании получает только хуки окна применения.
+The orchestrator runs inside the `nodes_tester` process.
+It does not import the Runner: on creation it gets only the hooks of the apply window.
 
-`orchestrator.py` запускает allowlist-команду `nodes-tester pipeline router|clients`, хранит
-историю в `pipeline.db` и журналы в `pipeline/runs/` каталога данных. По умолчанию задания
-в `config.json` (`pipeline.router`, `pipeline.clients`) выключены. После рестарта пропущенный запуск выполняется один раз;
-новое расписание, включённое в админке, начинает действовать с будущего слота.
+`orchestrator.py` runs the allowlisted command `nodes-tester pipeline router|clients`, keeps
+the history in `pipeline.db` and the logs in `pipeline/runs/` of the data directory. By default the jobs
+in `config.json` (`pipeline.router`, `pipeline.clients`) are off. After a restart a missed run executes once;
+a new schedule enabled in the admin panel takes effect from a future slot.
 
-`rules.py` берёт список URL и локальных источников из `singbox/rules.json` каталога
-конфигурации. Файлы заменяются атомарно только после успешной непустой загрузки и при
-изменении байтов. Ошибка одного правила сохраняет его прежнюю версию и не останавливает
-остальные. `base.json`, `rules.json`, локальные `rules/*.json` и клиентские базы создаются
-или загружаются в разделе «Файлы sing-box». Двоичные `.srs` задаются по URL.
-Изменение `base.json` ставит маркер перезапуска при следующем применении; изменённые `.srs`
-и source-наборы sing-box версии 1.10 и новее перечитывает сам.
+`rules.py` takes the list of URLs and local sources from `singbox/rules.json` of the configuration
+directory. Files are replaced atomically only after a successful non-empty download and when
+the bytes changed. An error of one rule keeps its previous version and does not stop
+the others. `base.json`, `rules.json`, local `rules/*.json` and client bases are created
+or uploaded in the “sing-box files” section. Binary `.srs` are set by URL.
+A change of `base.json` sets a restart marker for the next apply; sing-box 1.10 and newer rereads changed `.srs`
+and source sets itself.
 
-`merge.py` склеивает конфиги sing-box на чистом JSON вместо `sing-box merge`: база выше всех,
-пресеты по приоритету, одинаковые элементы схлопываются, конфликт тегов — ошибка. `presets.py`
-проверяет пресеты и собирает из них, базы и `nodes.json` итоговый конфиг; для клиентской ветки
-(`assemble --client-settings`) она склеивает базу клиента, `whnodes.json` и клиентские пресеты,
-заменяя локальные наборы правил роутера на `remote` с адресом из `clients/settings.json`.
+`merge.py` merges sing-box configs on plain JSON instead of `sing-box merge`: the base is above all,
+presets go by priority, identical elements collapse, a tag conflict is an error. `presets.py`
+checks the presets and builds the resulting config from them, the base and `nodes.json`; for the client branch
+(`assemble --client-settings`) it merges the client base, `whnodes.json` and client presets,
+replacing local router rule sets with `remote` with the address from `clients/settings.json`.
 
-HTTP-маршруты находятся в `dashboard/api_pipeline.py` и `dashboard/api_singbox.py`.
-Запуск и редактирование требуют токен; история и журналы также закрыты токеном, так как
-могут содержать адреса подписок. Запись файлов использует revision и историю версий.
+The HTTP routes are in `dashboard/api_pipeline.py` and `dashboard/api_singbox.py`.
+Starting and editing require the token; the history and logs are also behind the token, since
+they may contain subscription addresses. File writes use a revision and version history.

@@ -29,7 +29,7 @@ test('network or server failure keeps the remembered token for a retry', async()
   globalThis.fetch=async()=>{ throw new TypeError('Failed to fetch') }
   await login('kept',true)
   assert.equal(auth.verified,false);assert.equal(getToken(),'kept');assert.equal(stored.get('nt_admin_token'),'kept')
-  assert.match(auth.error,/Нет связи/)
+  assert.match(auth.error,/No connection/)
   globalThis.fetch=async()=>response({error:'boom'},500)
   await login('kept',true)
   assert.equal(stored.get('nt_admin_token'),'kept')

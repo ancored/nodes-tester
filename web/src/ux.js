@@ -1,17 +1,21 @@
-export const TEST_NAMES = { connectivity: 'Соединение', latency: 'Задержка', jitter: 'Джиттер / потери',
-  download: 'Скорость / троттлинг', reachability: 'Доступность сайтов', heavy_download: 'Тяжёлая загрузка',
-  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', upstream: 'Прокси через ноду', whitelist: 'Белый список' }
+import { t } from './i18n.js'
+// Словари названий: значения — переводы, берутся при каждом обращении (смена языка видна сразу).
+const translated = table => Object.defineProperties({}, Object.fromEntries(Object.entries(table)
+  .map(([k, text]) => [k, { get: text, enumerable: true }])))
+export const TEST_NAMES = translated({ connectivity: () => t('Connection'), latency: () => t('Latency'), jitter: () => t('Jitter / loss'),
+  download: () => t('Speed / throttling'), reachability: () => t('Site reachability'), heavy_download: () => t('Heavy download'),
+  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), whitelist: () => t('Whitelist') })
 // Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
-export const TEST_UNITS = { latency: 'мс', jitter: 'мс / %', download: 'Мбит/с', heavy_download: 'Мбит/с' }
+export const TEST_UNITS = translated({ latency: () => t('ms'), jitter: () => t('ms / %'), download: () => t('Mbit/s'), heavy_download: () => t('Mbit/s') })
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).
-export const CHECK_NAMES = { country: 'Страна выхода', ip_type: 'Тип выходного IP', geo_consistent: 'Страна IP по базам',
-  gemini: 'Google AI', openai: 'OpenAI', anthropic: 'Claude AI', upstream: 'Прокси через ноду', heavy: 'Тяжёлая загрузка', whitelist: 'Белые списки' }
+export const CHECK_NAMES = translated({ country: () => t('Exit country'), ip_type: () => t('Exit IP type'), geo_consistent: () => t('IP country by databases'),
+  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), heavy: () => t('Heavy download'), whitelist: () => t('Whitelists') })
 export const checkNames = list => (list || []).map(c => CHECK_NAMES[c] || c).join(', ')
 export function verdictMark(v) { return v === '1' ? '✓' : v === '0' ? '✗' : '?' }
 export function verdictClass(v) { return v === '1' ? 'good' : v === '0' ? 'bad' : 'mut' }
-export const testTitle = t => (TEST_NAMES[t] || t) + (TEST_UNITS[t] ? ', ' + TEST_UNITS[t] : '')
-export const PHASES = { stopped: 'Остановлен', initializing: 'Подготовка', testing: 'Проверка ноды',
-  waiting: 'Ожидание сроков тестов', apply_wait: 'Ожидание применения конфига' }
+export const testTitle = name => (TEST_NAMES[name] || name) + (TEST_UNITS[name] ? ', ' + TEST_UNITS[name] : '')
+export const PHASES = translated({ stopped: () => t('Stopped'), initializing: () => t('Preparing'), testing: () => t('Checking a node'),
+  waiting: () => t('Waiting for test deadlines'), apply_wait: () => t('Waiting for the config to be applied') })
 export function getPath(obj,path) { return path.split('.').reduce((v,k) => v?.[k],obj) }
 export function setPath(obj,path,value) {
   const keys = path.split('.'), last = keys.pop(); let part = obj
@@ -28,12 +32,13 @@ export function changedPaths(a,b,prefix = '') {
   }
   return [prefix]
 }
-export function nodeFlags(n) {
-  if (n.wh_only) return ['Только белые списки']      // клиентская ветвь: тестер ноду не ведёт
-  return [n.present == null ? 'Присутствие неизвестно' : +n.present ? 'В списке тестера' : 'Нет в текущем списке',
-    n.score == null ? 'Нет замеров рейтинга' : 'Рейтинг '+Number(n.score).toFixed(1),
-    +n.banned ? 'Исключена вручную' : '', n.gstate === 'garbage' ? 'Карантин' : n.gstate === 'backoff' ? 'Пауза проверок' : '',
-    +n.active ? 'Выбрана переключателем' : '', n.reserve ? 'Резерв: ' + n.reserve : ''].filter(Boolean)
+// state: только состояние — без рейтинга и резерва (у них в таблице свои столбцы).
+export function nodeFlags(n, { state = false } = {}) {
+  if (n.wh_only) return [t('Whitelists only')]      // клиентская ветвь: тестер ноду не ведёт
+  return [n.present == null ? t('Presence unknown') : +n.present ? t('In the tester list') : t('Not in the current list'),
+    state ? '' : n.score == null ? t('No rating measurements') : t('Rating {score}', { score: Number(n.score).toFixed(1) }),
+    +n.banned ? t('Excluded manually') : '', n.gstate === 'garbage' ? t('Quarantined') : n.gstate === 'backoff' ? t('Checks paused') : '',
+    +n.active ? t('Selected by the switcher') : '', !state && n.reserve ? t('Reserve: {groups}', { groups: n.reserve }) : ''].filter(Boolean)
 }
 // Ключ ноды в теге: [node_crc.cred_crc] — CRC настроек сервера и CRC учётных данных.
 const NODE_KEY = /^(.*?)([0-9a-f]{8})\.([0-9a-f]{8})(\]?)\s*$/i
@@ -84,12 +89,32 @@ export function rowKeys(rows) {
 // Первые столбцы таблиц нод — одинаково везде (образец — «Результаты»): провайдер, протокол
 // столбиком, ключ в две строки (ссылка на карточку), флаг страны. crc и country — имена полей строки.
 export function nodeColumns({ crc = 'crc', country = 'country' } = {}) {
-  return [{ key: 'provider', title: 'Провайдер', l: true }, { key: 'protocol', title: 'Протокол', l: true },
-    { key: crc, title: 'Нода', l: true, nowrap: true }, { key: country, title: 'Страна', head: '', l: true, narrow: true }]
+  return [{ key: 'provider', title: t('Provider'), l: true }, { key: 'protocol', title: t('Protocol'), l: true },
+    { key: crc, title: t('Node'), l: true, nowrap: true }, { key: country, title: t('Country'), head: '', l: true, narrow: true }]
 }
 export const STANDARD_FILTERS = [
-  { key: 'country', title: 'Страна', get: r => (r.country ?? r.cc)?.toUpperCase?.() },
-  { key: 'reserve', title: 'Резерв', get: r => String(r.reserve || '').split(',').filter(Boolean) },
-  { key: 'protocol', title: 'Протокол' },
-  { key: 'provider', title: 'Провайдер' },
+  { key: 'country', get title() { return t('Country') }, get: r => (r.country ?? r.cc)?.toUpperCase?.() },
+  { key: 'reserve', get title() { return t('Reserve') }, get: r => String(r.reserve || '').split(',').filter(Boolean) },
+  { key: 'protocol', get title() { return t('Protocol') } },
+  { key: 'provider', get title() { return t('Provider') } },
 ]
+// Значения по умолчанию из config.schema.json: путь поля → default. Элементы массивов — «путь[]»
+// (subscriptions[].enabled), $ref на определения раскрываются. Единственный источник умолчаний для
+// подсказок в формах: схема ставится рядом с config.json и совпадает с загрузчиком (тест).
+export function schemaDefaults(schema) {
+  const out = {}, defs = schema?.definitions || {}
+  const resolve = node => node?.$ref ? { ...defs[node.$ref.split('/').pop()], ...node } : node || {}
+  function walk(node, path) {
+    node = resolve(node)
+    if (path && 'default' in node) out[path] = node.default
+    for (const [key, sub] of Object.entries(node.properties || {})) walk(sub, path ? path + '.' + key : key)
+    if (node.items && typeof node.items === 'object') walk(node.items, path + '[]')
+  }
+  walk(schema, '')
+  return out
+}
+// Подсказка поля: действующее по умолчанию значение строкой (пусто — подсказки нет).
+export function defaultText(value) {
+  if (value == null || value === '') return ''
+  return Array.isArray(value) ? value.join(', ') : String(value)
+}

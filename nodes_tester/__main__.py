@@ -45,7 +45,7 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--vacuum", action="store_true",
-        help="выполнить VACUUM БД и выйти (тяжёлый, для cron раз в месяц)",
+        help="выполнить VACUUM БД и выйти (обычно его делает сам тестер по storage.vacuum)",
     )
     args = parser.parse_args(argv)
 
@@ -65,7 +65,7 @@ def main(argv=None) -> int:
         try:
             st.vacuum()
             print("VACUUM выполнен.")
-        except Exception as exc:  # noqa: BLE001 — БД занята/ошибка: не роняем cron трейсбеком
+        except Exception as exc:  # noqa: BLE001 — БД занята/ошибка: понятное сообщение вместо трейсбека
             print(f"VACUUM не выполнен: {exc}", file=sys.stderr)
             return 1
         finally:

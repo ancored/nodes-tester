@@ -2,8 +2,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api.js'
 import { CHECK_NAMES } from '../ux.js'
+import { t } from '../i18n.js'
 import JsonField from './JsonField.vue'
-const props=defineProps({doc:{type:Object,required:true},checks:{type:Array,default:()=>[]},ipKinds:{type:Array,default:()=>[]},builtin:{type:Object,default:()=>({})}})
+import Msg from './Msg.vue'
+import HelpButton from './HelpButton.vue'
+const props=defineProps({doc:{type:Object,required:true},checks:{type:Array,default:()=>[]},ipKinds:{type:Array,default:()=>[]},builtin:{type:Object,default:()=>({})},reserveDefault:{type:Number,default:null}})
 const emit=defineEmits(['changed','valid'])
 // Живое состояние групп работающего тестера (по сохранённому конфигу, не по черновику формы).
 const live=ref({})
@@ -11,17 +14,17 @@ onMounted(async()=>{ try{ live.value=Object.fromEntries((await api.get('/groups'
 function liveText(g){
   const st=live.value[g.tag]
   if(!st) return ''
-  const now=st.active ? 'активна '+st.active : st.fallback ? 'кандидатов нет — на '+st.fallback : 'нода не выбрана'
-  return `Сейчас: ${now} · кандидатов ${st.candidates} из ${st.members} · резерв ${st.reserve.length}`
+  const now=st.active ? t('active {node}',{node:st.active}) : st.fallback ? t('no candidates, on {outbound}',{outbound:st.fallback}) : t('no node selected')
+  return t('Now: {now} · {candidates} of {members} candidates · reserve {reserve}',{now,candidates:st.candidates,members:st.members,reserve:st.reserve.length})
 }
-const KIND_NAMES={residential:'домашний',mobile:'мобильный',hosting:'дата-центр',proxy:'прокси'}
-const COUNTRY_FIELDS=[['countries','Страны (ISO-коды)'],['regions','Регионы'],['exclude_countries','Кроме стран'],['exclude_regions','Кроме регионов']]
+const KIND_NAMES={get residential(){return t('residential')},get mobile(){return t('mobile')},get hosting(){return t('data centre')},get proxy(){return t('proxy')}}
+const COUNTRY_FIELDS=computed(()=>[['countries',t('Countries (ISO codes)')],['regions',t('Regions')],['exclude_countries',t('Except countries')],['exclude_regions',t('Except regions')]])
 const BUILTIN=['eu','us','ru','other']
 const groups=computed(()=>props.doc.groups)
 const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.regions || {})])])
 function changed(){emit('changed')}
 function add(){(props.doc.groups ||= []).push({tag:''});changed()}
-function remove(i){if(window.confirm(`Удалить группу ${props.doc.groups[i].tag || i+1}?`)){props.doc.groups.splice(i,1);changed()}}
+function remove(i){if(window.confirm(t('Delete group {group}?',{group:props.doc.groups[i].tag || i+1}))){props.doc.groups.splice(i,1);changed()}}
 function move(i,d){const g=props.doc.groups;const j=i+d;if(j<0||j>=g.length)return;[g[i],g[j]]=[g[j],g[i]];changed()}
 function flag(g,key,dflt){return g[key] ?? dflt}
 function setFlag(g,key,e){g[key]=e.target.checked;changed()}
@@ -49,35 +52,34 @@ function unknown(g,key){
 }
 function fallbackText(g){
   const direct=flag(g,'direct_fallback',false)
-  if(flag(g,'strict',false))return direct ? 'без кандидатов — direct-out' : 'без кандидатов — block-out: трафик группы блокируется'
-  return direct ? 'без кандидатов — failsafe-out; не отвечает и он — тестер сам переключит группу на direct-out' : 'без кандидатов — failsafe-out (лучшая нода по urltest)'
+  if(flag(g,'strict',false))return direct ? t('without candidates: direct-out') : t('without candidates: block-out, the group traffic is blocked')
+  return direct ? t('without candidates: failsafe-out; if it does not respond either, the tester switches the group to direct-out') : t('without candidates: failsafe-out (the best node by urltest)')
 }
 function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else delete props.doc.regions;changed()}
 </script>
 <template>
   <section class="panel">
-    <h2>Группы нод</h2>
-    <p class="help-text">Каждая группа — selector <code>{tag}-auto-out</code>, в котором все ноды. Активную ноду выбирает тестер среди прошедших обязательные проверки группы; желательные проверки повышают приоритет. Нестрогая группа без кандидатов переключается на общий <code>failsafe-out</code>, строгая — на <code>block-out</code>, чтобы трафик не ушёл через неподходящую ноду.</p>
-    <p v-if="!groups?.length" class="notice">Группы не заданы: сборка создаст одну группу <code>all</code>.</p>
+    <h2>{{ t('Node groups') }}<HelpButton topic="subscriptions#groups" /></h2>
+    <p v-if="!groups?.length" class="notice"><Msg :text="t('No groups defined: the build will create a single group {all}.')"><template #all><code>all</code></template></Msg></p>
     <template v-if="groups">
       <div v-for="(g,i) in groups" :key="i" class="panel">
-        <h3>{{ g.tag || 'Новая группа' }}<span v-if="g.tag" class="mut"> · {{ g.tag }}-auto-out · {{ fallbackText(g) }}</span></h3>
-        <p v-if="liveText(g)" class="mut break">{{ liveText(g) }}<template v-if="live[g.tag].top.length"> · первые кандидаты: {{ live[g.tag].top.map(c=>c.node+' ('+c.score+')').join(', ') }}</template></p>
+        <h3>{{ g.tag || t('New group') }}<span v-if="g.tag" class="mut"> · {{ g.tag }}-auto-out · {{ fallbackText(g) }}</span></h3>
+        <p v-if="liveText(g)" class="mut break">{{ liveText(g) }}<template v-if="live[g.tag].top.length"> · {{ t('first candidates') }}: {{ live[g.tag].top.map(c=>c.node+' ('+c.score+')').join(', ') }}</template></p>
         <div class="form-grid">
-          <label>Тег группы (латиница в нижнем регистре, цифры, _)<input :value="g.tag" @input="g.tag=$event.target.value.trim();changed()" /></label>
-          <label>Кандидатов в резерве<input type="number" min="0" :value="g.reserve" placeholder="Как в настройках" @input="setReserve(g,$event)" /></label>
-          <label class="check"><input type="checkbox" :checked="flag(g,'strict',false)" @change="setFlag(g,'strict',$event)" /> Строгая: без подходящей ноды — блокировать</label>
-          <label class="check"><input type="checkbox" :checked="flag(g,'direct_fallback',false)" @change="setFlag(g,'direct_fallback',$event)" /> Разрешить прямой выход (direct-out)</label>
-          <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> Входит в global-auto-out</label>
+          <label>{{ t('Group tag (lowercase Latin letters, digits, _)') }}<input :value="g.tag" @input="g.tag=$event.target.value.trim();changed()" /></label>
+          <label>{{ t('Reserve candidates') }}<input type="number" min="0" :value="g.reserve" :placeholder="reserveDefault ?? ''" :title="t('Empty: as in the settings (selection.reserve)')" @input="setReserve(g,$event)" /></label>
+          <label class="check"><input type="checkbox" :checked="flag(g,'strict',false)" @change="setFlag(g,'strict',$event)" /> {{ t('Strict: block when no node fits') }}</label>
+          <label class="check"><input type="checkbox" :checked="flag(g,'direct_fallback',false)" @change="setFlag(g,'direct_fallback',$event)" /> {{ t('Allow direct outbound (direct-out)') }}</label>
+          <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> {{ t('Part of global-auto-out') }}</label>
         </div>
         <table class="checks">
           <tr v-for="check in checks" :key="check">
             <td>{{ CHECK_NAMES[check] || check }}</td>
-            <td><select :value="mode(g,check)" @change="setMode(g,check,$event.target.value)"><option value="">не учитывать</option><option value="require">обязательна</option><option value="prefer">желательна</option></select></td>
+            <td><select :value="mode(g,check)" @change="setMode(g,check,$event.target.value)"><option value="">{{ t('ignored') }}</option><option value="require">{{ t('required') }}</option><option value="prefer">{{ t('preferred') }}</option></select></td>
             <td>
               <div v-if="check==='country' && mode(g,check)" class="form-grid">
-                <label v-for="[key,label] in COUNTRY_FIELDS" :key="key">{{ label }}<input :value="(params(g,check)[key] || []).join(', ')" placeholder="через запятую" @change="setParam(g,check,key,listValue($event))" />
-                  <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? 'Нет такого региона' : 'Нужен двухбуквенный ISO-код' }}: {{ unknown(g,key).join(', ') }}</small></label>
+                <label v-for="[key,label] in COUNTRY_FIELDS" :key="key">{{ label }}<input :value="(params(g,check)[key] || []).join(', ')" :placeholder="t('comma-separated')" @change="setParam(g,check,key,listValue($event))" />
+                  <small v-if="unknown(g,key).length" class="bad">{{ key.endsWith('regions') ? t('No such region') : t('A two-letter ISO code is required') }}: {{ unknown(g,key).join(', ') }}</small></label>
               </div>
               <div v-else-if="check==='ip_type' && mode(g,check)" class="toolbar">
                 <label v-for="kind in ipKinds" :key="kind" class="check"><input type="checkbox" :checked="(params(g,check).kinds || []).includes(kind)" @change="toggleKind(g,kind,$event.target.checked)" /> {{ KIND_NAMES[kind] || kind }}</label>
@@ -86,19 +88,17 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           </tr>
         </table>
         <div class="toolbar">
-          <button class="btn sm" :disabled="i===0" @click="move(i,-1)">Выше</button>
-          <button class="btn sm" :disabled="i===groups.length-1" @click="move(i,1)">Ниже</button>
-          <button class="btn sm" @click="remove(i)">Удалить группу</button>
+          <button class="btn sm" :disabled="i===0" @click="move(i,-1)">{{ t('Up') }}</button>
+          <button class="btn sm" :disabled="i===groups.length-1" @click="move(i,1)">{{ t('Down') }}</button>
+          <button class="btn sm" @click="remove(i)">{{ t('Delete group') }}</button>
         </div>
       </div>
-      <p class="help-text">Регионы: {{ regionList.join(', ') }}. Порядок групп — порядок в конфиге и в global-auto-out. Страна выхода берётся из замера соединения, а не из названия ноды у провайдера.</p>
     </template>
-    <div class="toolbar"><button class="btn" @click="add">Добавить группу</button></div>
+    <div class="toolbar"><button class="btn" @click="add">{{ t('Add group') }}</button></div>
   </section>
   <section class="panel">
-    <h2>Регионы</h2>
-    <p class="help-text">Регион — именованный список стран для условий групп. Встроенные: eu — {{ (builtin.eu || []).join(', ') }}; us — us; ru — ru; other — страны вне eu, us и ru. Встроенный регион можно переопределить, указав его здесь; свои регионы добавляются так же.</p>
-    <JsonField label="Свои и переопределённые регионы" note='Объект: регион → список стран. Например: {"asia": ["jp", "sg", "kr"]}.' :model-value="doc.regions || {}" @update:model-value="setRegions" @valid="emit('valid',$event)" />
+    <h2>{{ t('Regions') }}<HelpButton topic="subscriptions#regions" /></h2>
+    <JsonField :label="t('Custom and overridden regions')" :note="t('Object: region → list of countries. For example: {example}.', { example: '{&quot;asia&quot;: [&quot;jp&quot;, &quot;sg&quot;, &quot;kr&quot;]}' })" :model-value="doc.regions || {}" @update:model-value="setRegions" @valid="emit('valid',$event)" />
   </section>
 </template>
 <style scoped>

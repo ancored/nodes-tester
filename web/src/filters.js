@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { STANDARD_FILTERS } from './ux.js'
+import { locale } from './i18n.js'
 
 // Единый блок фильтров таблиц: страна, группа, протокол, провайдер (+ свои поля).
 // Фильтр: {key, title, get?(row) → значение или массив, label?(value)}. Выбор хранится
@@ -14,7 +15,7 @@ export function useTableFilters(rows, specs, prefix = '') {
   const filters = computed(() => (specs.value ?? STANDARD_FILTERS)
     .map(f => ({ ...f, get: f.get || (r => r[f.key]) }))
     .map(f => ({ ...f, options: [...new Set(rows.value.flatMap(r => list(f.get(r))))]
-      .sort((a, b) => a.localeCompare(b, 'ru', { numeric: true })) }))
+      .sort((a, b) => a.localeCompare(b, locale(), { numeric: true })) }))
     .filter(f => f.options.length > 1 || value(f)))
   const any = computed(() => filters.value.some(value))
   const go = patch => router.replace({ query: { ...route.query, ...patch, [prefix + 'page']: undefined } })

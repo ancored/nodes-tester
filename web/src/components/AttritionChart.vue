@@ -2,6 +2,7 @@
 // График динамики выбытия (порт attritionChart из server.py): по дням две колонки —
 // появилось (added, зелёный) и удалено из подписки (removed, красный), последние 30 дней.
 import { computed } from 'vue'
+import { t } from '../i18n.js'
 
 const props = defineProps({ rows: { type: Array, default: () => [] } })
 
@@ -19,8 +20,8 @@ const chart = computed(() => {
   rows.forEach((r, i) => {
     const x = pad + i * gw
     const a = +r.added || 0, rm = +r.removed || 0, g = +r.garbage || 0
-    bars.push({ x, y: y(a), w: bw, h: H - pad - y(a), fill: 'var(--good)', title: `${r.day}: появилось ${a}` })
-    bars.push({ x: x + bw + 1, y: y(rm), w: bw, h: H - pad - y(rm), fill: 'var(--bad)', title: `${r.day}: удалено ${rm}, в карантин ${g}` })
+    bars.push({ x, y: y(a), w: bw, h: H - pad - y(a), fill: 'var(--good)', title: t('{day}: appeared {n}', { day: r.day, n: a }) })
+    bars.push({ x: x + bw + 1, y: y(rm), w: bw, h: H - pad - y(rm), fill: 'var(--bad)', title: t('{day}: removed {n}, to quarantine {q}', { day: r.day, n: rm, q: g }) })
   })
   const step = Math.ceil(rows.length / 8) || 1
   const labels = rows
@@ -33,9 +34,9 @@ const chart = computed(() => {
 <template>
   <div class="wrap" style="padding: 12px 14px">
     <div class="legend">
-      <b class="good">■</b> появилось &nbsp; <b class="bad">■</b> удалено <small>(по дням)</small>
+      <b class="good">■</b> {{ t('appeared') }} &nbsp; <b class="bad">■</b> {{ t('removed') }} <small>{{ t('(by day)') }}</small>
     </div>
-    <div v-if="!chart" class="empty">нет данных</div>
+    <div v-if="!chart" class="empty">{{ t('no data') }}</div>
     <div v-else style="overflow-x: auto">
       <svg :viewBox="`0 0 ${chart.W} ${chart.H}`" :width="chart.W" :height="chart.H" style="max-width: 100%">
         <line :x1="chart.pad" :y1="chart.H - chart.pad" :x2="chart.W - chart.pad" :y2="chart.H - chart.pad" stroke="var(--line)" />

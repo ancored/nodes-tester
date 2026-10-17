@@ -1,6 +1,7 @@
 """Источники подписок → узлы sing-box (dict, tag = имя из подписки).
 
-Источник — URL, локальный файл, ссылка happ://crypt… или каталог файлов (type=folder).
+Источник — URL, локальный файл, ссылка happ://crypt… или каталог файлов (type=folder; type=amnezia —
+каталог, который наполняет ротация стран Amnezia Premium).
 Содержимое распознаётся само: share-ссылки построчно, base64 от них, Clash/mihomo YAML
 (proxies), JSON sing-box (outbounds) или JSON-конфиги Xray. Сбой или пустота → FetchError: fetch пометит
 подписку упавшей и подставит её прошлые ноды.
@@ -47,7 +48,7 @@ class Context:
 
 
 def kind_of(sub):
-    if sub.get("type") in ("folder", "inline"):
+    if sub.get("type") in ("folder", "inline", "amnezia"):
         return sub["type"]
     if sub.get("file"):
         return "file"
@@ -67,7 +68,7 @@ def fetch_subscription(sub, ctx):
     if kind == "inline":
         # Свои ноды из config.json: outbound-ы как есть, имя — их tag.
         return [dict(ob) for ob in sub.get("outbounds") or []]
-    if kind == "folder":
+    if kind in ("folder", "amnezia"):          # amnezia: файлы стран выпускает тестер (amnezia_rotation)
         nodes = _from_folder(sub, ctx)
     elif kind == "file":
         nodes = _from_file(_resolve(sub["file"], ctx), ctx)

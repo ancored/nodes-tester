@@ -1,55 +1,57 @@
-# Модель безопасности роутера с sing-box
+**English** | [Русский](SECURITY_MODEL.ru.md)
 
-[О проекте](../README.md) · [Сборка конфига](CONFIG_ASSEMBLY.md) · [Совместимость sing-box](SING_BOX_COMPATIBILITY.md) · [Админка](USAGE.md)
+# Security model of a router with sing-box
 
-Здесь описана схема, под которую написан nodes-tester: домашний роутер OpenWrt с sing-box, через
-который выходят и устройства локальной сети, и удалённые клиенты. nodes-tester не создаёт эти
-правила за пользователя — они живут в базе и пресетах sing-box (см. [сборку конфига](CONFIG_ASSEMBLY.md)).
-Документ объясняет, от чего схема защищает, на каких допущениях держится и что остаётся открытым.
+[About the project](../README.md) · [Config assembly](CONFIG_ASSEMBLY.md) · [sing-box compatibility](SING_BOX_COMPATIBILITY.md) · [Admin panel](USAGE.md)
 
-Примеры используют `192.168.1.0/24` для LAN, `eth0` для LAN и `eth1` для WAN. Подставьте свои значения.
+This document describes the setup nodes-tester is written for: a home OpenWrt router with sing-box, through
+which both local network devices and remote clients go out. nodes-tester does not create these
+rules for the user: they live in the sing-box base and presets (see [config assembly](CONFIG_ASSEMBLY.md)).
+The document explains what the setup protects against, which assumptions it relies on and what stays open.
 
-## Топология
+The examples use `192.168.1.0/24` for the LAN, `eth0` for the LAN and `eth1` for the WAN. Put in your own values.
+
+## Topology
 
 ```text
-Клиенты с собственным sing-box (TUN, свой DNS, свои правила зон)
-   │  туннель с аутентификацией (naive, vless+reality)
+Clients with their own sing-box (TUN, own DNS, own zone rules)
+   │  authenticated tunnel (naive, vless+reality)
    ▼
-Роутер OpenWrt + sing-box (TUN, auto_route/auto_redirect)  ◄── устройства LAN без клиента
-   ├── зарубежные ноды из подписок: {group}-auto-out → нода
-   └── direct-out (WAN) и direct-lan (LAN)
+OpenWrt router + sing-box (TUN, auto_route/auto_redirect)  ◄── LAN devices without a client
+   ├── foreign nodes from subscriptions: {group}-auto-out → node
+   └── direct-out (WAN) and direct-lan (LAN)
 ```
 
-- Каждый хоп резолвит имена сам (TUN + `hijack-dns`, без FakeIP): DNS-запрос приложения
-  перехватывается, движок резолвит его по `dns.rules` и запоминает пару «домен — IP»; приложение
-  соединяется по IP, маршрут выбирается по домену из кэша, и на следующий хоп уходит IP, а не имя.
-  `action: resolve` и `domain_strategy` для этого не нужны. У DNS-серверов задан `detour`, поэтому
-  запрос выходит там же, где пойдёт трафик зоны, и ответ соответствует стране выхода.
-- Исключение — тестер: он ходит через SOCKS (`socks5h`) и передаёт имя хоста, которое резолвит уже
-  выбранная нода. Так замер отражает то, что получит пользователь этой ноды, включая её DNS и гео.
-- Домены самих нод и DNS-серверов резолвятся через отдельный `bootstrap` (DoH на IP-адрес).
-- `route.final` — зарубежная группа (`global-auto-out`); прямой выход — только по явным правилам.
+- Each hop resolves names itself (TUN + `hijack-dns`, no FakeIP): the DNS query of an application
+  is captured, the engine resolves it by `dns.rules` and remembers the “domain — IP” pair; the application
+  connects by IP, the route is chosen by the domain from the cache, and the next hop gets the IP, not the name.
+  `action: resolve` and `domain_strategy` are not needed for this. DNS servers have `detour` set, so
+  the query exits where the zone traffic goes, and the answer matches the exit country.
+- The exception is the tester: it goes through SOCKS (`socks5h`) and passes the host name, which the already
+  chosen node resolves. So the measurement reflects what a user of this node gets, including its DNS and geo.
+- The domains of the nodes and DNS servers themselves are resolved through a separate `bootstrap` (DoH to an IP address).
+- `route.final` is a foreign group (`global-auto-out`); the direct outbound is used only by explicit rules.
 
-## Модель доверия
+## Trust model
 
-Исходный принцип: зарубежные ноды — расходуемый ресурс. Их адреса «сгорают», если засветятся
-перед системами блокировок, поэтому доступ к ним выдаётся только доверенным источникам, а всё
-неизвестное уходит напрямую.
+The starting principle: foreign nodes are an expendable resource. Their addresses “burn” if they are exposed
+to blocking systems, so access to them is given only to trusted sources, and everything
+unknown goes directly.
 
-| Источник трафика | Доверие | Куда идёт |
+| Traffic source | Trust | Where it goes |
 |---|---|---|
-| Inbound с аутентификацией (`naive-in`, `vless-in`, по `auth_user`) | доверенный | на ноды; пользователь задаёт зону (`auth_user` → группа) |
-| LAN из доверенного сегмента (статические адреса DHCP, напр. `192.168.1.0/25`) | доверенный | по правилам зон, `final` — ноды |
-| Прочий LAN (динамический пул, напр. `192.168.1.128/25`) | недоверенный | `direct-out` |
+| Authenticated inbound (`naive-in`, `vless-in`, by `auth_user`) | trusted | to the nodes; the user sets the zone (`auth_user` → group) |
+| LAN from the trusted segment (static DHCP addresses, e.g. `192.168.1.0/25`) | trusted | by zone rules, `final` is the nodes |
+| Other LAN (dynamic pool, e.g. `192.168.1.128/25`) | untrusted | `direct-out` |
 
-- **Аутентификация — сильная граница**, адрес в LAN — слабая. Доверенный сегмент — для устройств,
-  которым нужны ноды, но которые не умеют аутентифицироваться (телевизор, ПК без клиента).
-  Телефоны и ноутбуки со своим sing-box держатся в недоверенном пуле: наружу они ходят по своему
-  туннелю, а их «голый» трафик (например, изолированного профиля Android) уходит напрямую.
-- **Безопасный выбор по умолчанию для неизвестного устройства LAN — прямой выход.** Гость или
-  новое устройство не получает доступ к платным нодам и не светит их адреса.
-- Правило недоверенного LAN стоит в маршрутах и зеркально в DNS — иначе DNS недоверенного устройства
-  ушёл бы через ноду:
+- **Authentication is a strong boundary**, a LAN address is a weak one. The trusted segment is for devices
+  that need the nodes but cannot authenticate (a TV, a PC without a client).
+  Phones and laptops with their own sing-box stay in the untrusted pool: they go out through their own
+  tunnel, and their “bare” traffic (for example, of an isolated Android profile) goes directly.
+- **The safe default for an unknown LAN device is the direct outbound.** A guest or
+  a new device does not get access to the paid nodes and does not expose their addresses.
+- The untrusted LAN rule is in the routes and mirrored in DNS; otherwise the DNS of an untrusted device
+  would go through a node:
 
 ```json
 {
@@ -62,22 +64,22 @@
 }
 ```
 
-  В `dns.rules` — то же условие с `"server": "<прямой DNS>"`.
-- Доверие по `source_ip` зависит от статической раздачи адресов и подделывается в LAN; жёстче —
-  привязка MAC↔IP на файрволе. В sing-box 1.14 есть `source_mac_address`; переход на него убирает
-  зависимость от DHCP, но MAC в LAN тоже подделывается.
-- Правила, которые должны действовать только для доверенных (например, проверочный адрес вроде
-  `ifconfig.me` через отдельный выход), ставятся **после** правила недоверенного LAN, иначе они
-  обходят модель.
-- IPv6 в LAN без перехвата выключен: правила доверия написаны для IPv4, а `strategy: ipv4_only`
-  ограничивает только DNS-ответы, не транспорт.
+  In `dns.rules` it is the same condition with `"server": "<direct DNS>"`.
+- Trust by `source_ip` depends on static address assignment and can be spoofed in the LAN; a MAC↔IP
+  binding on the firewall is stricter. sing-box 1.14 has `source_mac_address`; switching to it removes
+  the dependency on DHCP, but a MAC in the LAN can be spoofed too.
+- Rules that must apply only to trusted sources (for example, a check address like
+  `ifconfig.me` through a separate outbound) go **after** the untrusted LAN rule, otherwise they
+  bypass the model.
+- IPv6 in the LAN without capture is off: the trust rules are written for IPv4, and `strategy: ipv4_only`
+  limits only DNS answers, not the transport.
 
 ## Kill switch
 
-Пока sing-box работает, трафик доверенного LAN перехватывается до форварда (TCP — redirect, UDP —
-TUN). При остановке, рестарте или падении sing-box снимает свои правила, и тот же трафик пошёл бы
-напрямую через провайдера с реальным IP. Kill switch закрывает это окно: отдельная таблица
-nftables, загружаемая до сети, запрещает форвард доверенного сегмента и всего IPv6 из LAN в WAN.
+While sing-box runs, the trusted LAN traffic is captured before forwarding (TCP by redirect, UDP by
+TUN). When sing-box stops, restarts or crashes, it removes its rules, and the same traffic would go
+directly through the provider with the real IP. The kill switch closes this window: a separate
+nftables table, loaded before the network, forbids forwarding the trusted segment and all IPv6 from the LAN to the WAN.
 
 `/etc/killswitch.nft`:
 
@@ -99,7 +101,7 @@ table inet killswitch {
 
 ```sh
 #!/bin/sh /etc/rc.common
-# Стартует до сети (network=20) и sing-box (99), чтобы при загрузке не было окна.
+# Starts before the network (network=20) and sing-box (99), so there is no window at boot.
 START=18
 STOP=91
 
@@ -119,108 +121,112 @@ chmod +x /etc/init.d/killswitch
 /etc/init.d/killswitch start
 ```
 
-- Таблица своя: fw4 перезаписывает только `inet fw4`, sing-box — только `inet sing-box`.
-- `reject`, а не `drop`: приложения сразу видят отказ, а не ждут таймаута.
-- Недоверенный сегмент под правило не попадает — по модели он и так ходит напрямую.
-- Аварийное снятие: `/etc/init.d/killswitch stop`. Админка показывает, загружена ли таблица и
-  сколько пакетов отбито, и включает или выключает службу (см. [`nodes_tester`](../nodes_tester/README.md#sing-box-остановка-и-killswitch)).
-- Ненулевой счётчик при работающем sing-box — повод проверить, не идёт ли часть трафика мимо
-  перехвата.
-- Удалённые клиенты защищаются на своих устройствах: на Android — «Постоянная VPN» и «Блокировать
-  подключения без VPN».
+- The table is its own: fw4 rewrites only `inet fw4`, sing-box only `inet sing-box`.
+- `reject`, not `drop`: applications see the refusal right away instead of waiting for a timeout.
+- The untrusted segment is not covered by the rule: by the model it goes directly anyway.
+- Emergency removal: `/etc/init.d/killswitch stop`. The admin panel shows whether the table is loaded and
+  how many packets were blocked, and turns the service on or off (see [`nodes_tester`](../nodes_tester/README.md#sing-box-stop-and-killswitch)).
+- A non-zero counter while sing-box is running is a reason to check whether some traffic bypasses
+  the capture.
+- Remote clients are protected on their own devices: on Android with “Always-on VPN” and “Block
+  connections without VPN”.
 
-## Угрозы и ответы
+## Threats and responses
 
-Схема рассчитана на сеть с DPI и блокировками на стороне провайдера (ТСПУ в РФ).
+The setup is meant for a network with DPI and blocking on the provider side (TSPU in Russia).
 
-Опасность оценивается по последствиям для пользователя, а не по вероятности:
+The danger is rated by the consequences for the user, not by probability:
 
-| Опасность | Последствия |
+| Danger | Consequences |
 |---|---|
-| очень высокая | блокировка аккаунта; реальный IP виден сервису, которому не должен; потеря доступа к нужным сервисам или интернету; компрометация роутера, управления или секретов |
-| средняя | финансовые потери; признаки использования VPN; ухудшение приватности; нестабильная работа или временная деградация части маршрутов |
-| низкая | потеря отдельной ноды или источника нод при наличии резерва — система переживает это сама |
+| very high | account ban; the real IP is visible to a service that must not see it; loss of access to the needed services or the internet; compromise of the router, control or secrets |
+| medium | financial losses; signs of VPN use; worse privacy; unstable work or temporary degradation of some routes |
+| low | loss of a single node or node source when there is a reserve: the system survives it on its own |
 
-| Угроза | Опасность | Ответ |
+| Threat | Danger | Response |
 |---|---|---|
-| Приложения российских сервисов сравнивают свой видимый IP с IP других запросов и сообщают о VPN | средняя | на клиентах такие приложения целиком идут `direct` (правило по `package_name` выше правил нод): все их запросы приходят с одного IP, расхождения нет |
-| Приложения собирают список установленных программ, включая VPN-клиенты | средняя | на Android такие приложения ставятся в изолированный профиль (Knox, рабочий профиль) без VPN-клиента; VPN основного профиля его не покрывает, трафик приходит на роутер «голым» из недоверенного пула и уходит `direct` — это ожидаемо, а не утечка |
-| Приложение, исключённое из VPN (per-app-proxy или изолированный профиль), привязывает сокет к `tun0` (`SO_BINDTODEVICE`) и выходит через туннель; Android не сообщает sing-box владельца (`INVALID_UID`), правило по `package_name` не срабатывает, и трафик ушёл бы в `final` с IP ноды | средняя; очень высокая, если трафик не должен выходить с реального IP | первым правилом клиента соединение без определённого пакета → `direct-out`: `{"package_name_regex": [".*"], "invert": true, "outbound": "direct-out"}`. Не `reject`: факт VPN так не скрыть, важно не показать IP ноды и расхождение адресов. Требует клиента, который определяет пакет соединений, — иначе весь трафик уйдёт напрямую; включать после проверки на конкретном устройстве. Режим «Блокировать подключения без VPN» лишает исключённые приложения сети совсем |
-| Туннель клиента упал, и трафик к заблокированному или геозависимому сервису ушёл напрямую с реальным IP | очень высокая | на Android — «Постоянная VPN» и «Блокировать подключения без VPN»; на ноутбуке — локальный kill switch файрволом (пока не реализован, см. ниже) |
-| Сервис блокирует или ограничивает доступ по стране выхода (AI-сервисы, Google) | очень высокая | отдельная группа нод с проверкой «глазами сервиса» (Google, OpenAI, Claude), без расхождения страны выходного IP по базе и с приоритетом домашних и мобильных IP, пресеты AI-зоны; см. [`nodes_tester`](../nodes_tester/README.md) и пресеты в [`config/singbox/presets`](../config/singbox/presets) |
-| Блокируется целый протокол или транспорт | средняя | ноды разных протоколов и провайдеров в общих группах; клиенты входят на роутер двумя inbound-ами с разным транспортом (naive, vless+reality) |
-| Отдельная тарификация зарубежного трафика у провайдера клиента | средняя | клиент отправляет в туннель только то, что требует прокси, и туннель идёт на домашний (российский) IP; на зарубежную ноду трафик выводит роутер |
-| Точку входа клиентов блокируют по симметрии трафика: у промежуточной ноды multi-hop VPN в РФ исходящий объём равен входящему | очень высокая | клиенты входят на собственный домашний роутер, а не на промежуточную ноду: трафик клиентов смешан с обычным трафиком дома, поэтому входящий и исходящий объёмы не совпадают |
-| QUIC не снифится, домен не определяется, поток уходит в `final` мимо зоны | средняя; очень высокая для чувствительной зоны | UDP/443 к доменам и IP-наборам зоны → `reject`, клиент откатывается на TCP |
-| Сайты недоступны с иностранных IP (российские, белорусские) | очень высокая | `geosite`/`geoip` RU и BY → `direct-out` |
-| Торренты, RDP, видеосвязь через ноды: нагрузка, жалобы провайдеру ноды, задержки | средняя | `protocol: bittorrent/rdp`, наборы трекеров и видеосвязи → `direct-out` |
-| Реклама, трекеры, взрослый контент | средняя | наборы → `reject` в маршрутах и `NXDOMAIN` в DNS |
-| Блокировка нод провайдером, троттлинг частых проверок | низкая | тестер обходит ноды по хостам вразнобой, держит карантин и ограничивает тяжёлые проверки; см. [`nodes_tester`](../nodes_tester/README.md) |
-| Нода жива, но деградирует (задержки, потери, троттлинг) или переключения идут слишком часто | средняя | история замеров, рейтинг, карантин; ротация не чаще `min_dwell` |
-| Подписка упала или вернула мусор | низкая; средняя без резервных источников | last-good ноды источника держатся `stale_max_hours` (48 ч), guard сравнивает общее число нод с прошлой сборкой; см. [`nodes_fetch`](../nodes_fetch/README.md) |
-| Отказ целого поставщика нод | низкая | несколько провайдеров в общих группах, выбор из объединённого пула |
-| Плохой конфиг ломает интернет всего дома | очень высокая | конвейер проверяет кандидат `sing-box check`, применяет с проверкой связности и откатом |
+| Apps of Russian services compare their visible IP with the IP of other requests and report a VPN | medium | on clients such apps go `direct` entirely (a rule by `package_name` above the node rules): all their requests come from one IP, there is no mismatch |
+| Apps collect the list of installed programs, including VPN clients | medium | on Android such apps are installed into an isolated profile (Knox, work profile) without a VPN client; the VPN of the main profile does not cover it, the traffic reaches the router “bare” from the untrusted pool and goes `direct`: this is expected, not a leak |
+| An app excluded from the VPN (per-app proxy or an isolated profile) binds its socket to `tun0` (`SO_BINDTODEVICE`) and goes out through the tunnel; Android does not tell sing-box the owner (`INVALID_UID`), the `package_name` rule does not match, and the traffic would go to `final` with the node IP | medium; very high if the traffic must not leave with the real IP | the first client rule sends a connection without a determined package → `direct-out`: `{"package_name_regex": [".*"], "invert": true, "outbound": "direct-out"}`. Not `reject`: it does not hide the fact of a VPN; what matters is not to show the node IP and an address mismatch. It needs a client that determines the package of connections, otherwise all traffic goes directly; enable it after checking on the particular device. The “Block connections without VPN” mode takes the network away from excluded apps entirely |
+| The client tunnel went down, and traffic to a blocked or geo-dependent service went directly with the real IP | very high | on Android, “Always-on VPN” and “Block connections without VPN”; on a laptop, a local kill switch with the firewall (not implemented yet, see below) |
+| A service blocks or limits access by the exit country (AI services, Google) | very high | a separate node group checked “through the eyes of the service” (Google, OpenAI, Claude), without a mismatch of the exit IP country by the database and with priority for residential and mobile IPs, AI zone presets; see [`nodes_tester`](../nodes_tester/README.md) and the presets in [`config/singbox/presets`](../config/singbox/presets) |
+| A whole protocol or transport is blocked | medium | nodes of different protocols and providers in shared groups; clients enter the router through two inbounds with different transports (naive, vless+reality) |
+| Separate billing of foreign traffic by the client's provider | medium | the client sends into the tunnel only what needs a proxy, and the tunnel goes to the home (Russian) IP; the router takes the traffic out to a foreign node |
+| The client entry point is blocked by traffic symmetry: an intermediate multi-hop VPN node in Russia sends out as much as it receives | very high | clients enter their own home router, not an intermediate node: their traffic is mixed with the regular home traffic, so the incoming and outgoing volumes do not match |
+| QUIC is not sniffed, the domain is not detected, the flow goes to `final` past the zone | medium; very high for a sensitive zone | UDP/443 to the domains and IP sets of the zone → `reject`, the client falls back to TCP |
+| Sites are unavailable from foreign IPs (Russian, Belarusian) | very high | RU and BY `geosite`/`geoip` → `direct-out` |
+| Torrents, RDP, video calls through nodes: load, complaints to the node provider, latency | medium | `protocol: bittorrent/rdp`, tracker and video call sets → `direct-out` |
+| Ads, trackers, adult content | medium | sets → `reject` in routes and `NXDOMAIN` in DNS |
+| The provider blocks nodes, throttles frequent checks | low | the tester visits nodes by host in a mixed order, keeps a quarantine and limits heavy checks; see [`nodes_tester`](../nodes_tester/README.md) |
+| A node is alive but degrades (latency, loss, throttling), or switches happen too often | medium | measurement history, rating, quarantine; rotation not more often than `min_dwell` |
+| A subscription went down or returned garbage | low; medium without reserve sources | the last-good nodes of a source are kept for `stale_max_hours` (48 h), the guard compares the total number of nodes with the previous build; see [`nodes_fetch`](../nodes_fetch/README.md) |
+| A whole node supplier fails | low | several providers in shared groups, choice from the combined pool |
+| A bad config breaks the internet of the whole home | very high | the pipeline checks the candidate with `sing-box check`, applies it with a connectivity check and rollback |
 
-Исследования, из которых взяты угрозы со стороны приложений и регулирования:
+Research the app-side and regulatory threats are taken from:
 [RKS Global — VPN Detection](https://rks.global/ru/research/vpn-detection/),
-[аудит российских Android-приложений](https://habr.com/ru/amp/publications/1081580/),
-[разбор MAX](https://habr.com/ru/articles/1006666/),
-[тарификация зарубежного трафика (The Moscow Times, 23.09.2026)](https://ru.themoscowtimes.com/2026/09/23/posle-viborov-v-dumu-vlasti-poruchili-vvesti-dlya-rossiyan-platu-za-vihod-v-mirovoi-internet-a206769).
+[an audit of Russian Android apps](https://habr.com/ru/amp/publications/1081580/),
+[an analysis of MAX](https://habr.com/ru/articles/1006666/),
+[billing of foreign traffic (The Moscow Times, 23.09.2026)](https://ru.themoscowtimes.com/2026/09/23/posle-viborov-v-dumu-vlasti-poruchili-vvesti-dlya-rossiyan-platu-za-vihod-v-mirovoi-internet-a206769).
 
-## Что схема не закрывает
+## What the setup does not cover
 
-- **Плоская сеть.** На неуправляемом коммутаторе все устройства LAN в одном L2-сегменте, трафик между
-  ними идёт мимо роутера. Изолировать недоверенное устройство (например, рабочий ноутбук) можно только
-  через VLAN 802.1Q на управляемом коммутаторе, отдельный интерфейс и зону fw4 на роутере плюс правило в
-  sing-box: `auto_redirect` проксирует соединения от имени роутера, поэтому forward-правила fw4 их не
-  видят.
-- **IPv6.** Kill switch запрещает весь IPv6-форвард из LAN. Таблица `inet sing-box` режет IPv6 в
-  output/prerouting, поэтому для IPv6 на WAN нужны исключения NDP и DHCPv6. Раздача IPv6 в LAN без
-  перехвата — путь утечки мимо туннеля.
-- **DNS приложений.** Браузеры и ОС с собственным DoH обходят DNS-движок sing-box: имя резолвится
-  внешним сервером, маршрут выбирается только по IP. Закрывается локальным DoH-сервером, который
-  заворачивает такие запросы в sing-box, или запретом DoH в политиках браузера.
-- **Резолв доменов нод.** `bootstrap` по DoH скрывает запросы от провайдера; системный резолвер
-  роутера (dnsmasq → DNS провайдера) видит только то, что роутер резолвит сам.
-- **Доверие по адресу.** Устройство, вручную занявшее адрес доверенного сегмента, получит его права.
-- **Админка и API.** Токен администратора и секрет API-сервиса дают полный контроль над выходом.
-  Не выставляйте их в интернет; доступ — из LAN или через туннель.
-- **Секреты в конфигах.** База, клиентские конфиги и подписки содержат пароли, UUID, ключи Reality,
-  секретные пути раздачи. Перед публикацией фрагментов (баг-репорты, issue) их нужно заменить.
-- **Раздача клиентских конфигов** по секретным путям защищена только длиной пути и TLS; утёкшая
-  ссылка даёт полный клиентский конфиг.
-- **Kill switch ноутбука.** Аналог андроидного «Блокировать подключения без VPN» для Windows —
-  [`scripts/windows/killswitch.ps1`](../scripts/windows/killswitch.ps1) (`on`/`off`/`status`, от администратора):
-  исходящая политика брандмауэра Block, разрешены ядро sing-box (в GUI — служба `sing-box-daemon`), TUN-адаптер,
-  DHCP и локальная подсеть кроме DNS; прочие разрешающие исходящие правила на время отключаются, `off` их
-  возвращает. Пока ядро не запущено, сети нет; страница входа в гостевой Wi-Fi открывается только после `off`.
+- **A flat network.** On an unmanaged switch all LAN devices are in one L2 segment, traffic between
+  them bypasses the router. An untrusted device (for example, a work laptop) can be isolated only
+  with 802.1Q VLANs on a managed switch, a separate interface and an fw4 zone on the router plus a rule in
+  sing-box: `auto_redirect` proxies connections on behalf of the router, so the fw4 forward rules do not
+  see them.
+- **IPv6.** The kill switch forbids all IPv6 forwarding from the LAN. The `inet sing-box` table cuts IPv6 in
+  output/prerouting, so IPv6 on the WAN needs NDP and DHCPv6 exceptions. Handing out IPv6 in the LAN without
+  capture is a leak path past the tunnel.
+- **Application DNS.** Browsers and operating systems with their own DoH bypass the sing-box DNS engine: the name is resolved
+  by an external server, the route is chosen by IP only. It is closed by a local DoH server that
+  wraps such queries into sing-box, or by forbidding DoH in the browser policies.
+- **Resolving node domains.** `bootstrap` over DoH hides the queries from the provider; the router system
+  resolver (dnsmasq → provider DNS) sees only what the router resolves itself.
+- **Trust by address.** A device that manually takes an address of the trusted segment gets its rights.
+- **Admin panel and API.** The administrator token and the API service secret give full control over the exit.
+  Do not expose them to the internet; access only from the LAN or through a tunnel.
+- **Secrets in configs.** The base, client configs and subscriptions contain passwords, UUIDs, Reality keys,
+  secret distribution paths. They must be replaced before publishing fragments (bug reports, issues).
+- **Amnezia Premium.** The `vpn://` link holds the subscription `api_key`, the country files hold AWG private
+  keys; the tester writes the files with rights 0600. The gateway is reached over plain HTTP, and the request is
+  protected only by the gateway RSA key: take it only from the official AmneziaVPN app, a substituted key
+  gives the `api_key` to whoever is on the path.
+- **Client config distribution** over secret paths is protected only by the path length and TLS; a leaked
+  link gives the full client config.
+- **Laptop kill switch.** The Windows counterpart of the Android “Block connections without VPN” is
+  [`scripts/windows/killswitch.ps1`](../scripts/windows/killswitch.ps1) (`on`/`off`/`status`, as administrator):
+  the outgoing firewall policy is Block, allowed are the sing-box core (in the GUI, the `sing-box-daemon` service), the TUN adapter,
+  DHCP and the local subnet except DNS; other allowing outgoing rules are disabled for the time being, `off`
+  brings them back. While the core is not running there is no network; a guest Wi-Fi login page opens only after `off`.
 
-## Ядро и эксплуатация
+## Core and operations
 
-- **XHTTP и AmneziaWG** есть только в [Leadaxe/sing-box-lx](https://github.com/Leadaxe/sing-box-lx);
-  в официальном sing-box их нет. См. [совместимость](SING_BOX_COMPATIBILITY.md).
-- **Дедлок при переключении вложенного selector** с `interrupt_exist_connections: true`
-  ([Leadaxe/sing-box-lx#20](https://github.com/Leadaxe/sing-box-lx/issues/20)): все новые соединения и
-  DNS зависали до рестарта. Исправлено в `v1.14.0-lx.38`. На более старых сборках ставьте
-  `interrupt_exist_connections: false` в `pipeline.router.selector` файла `config.json`.
-- **Паника naive-inbound на UDP-over-TCP поверх HTTP/2** (`Write called after Handler finished`) роняла
-  весь процесс ([SagerNet/sing-box#4249](https://github.com/SagerNet/sing-box/issues/4249)). Исправлено
-  в [SagerNet/sing-box#4287](https://github.com/SagerNet/sing-box/pull/4287), есть в `1.14.1-lx.8` и
-  новее. На старых ядрах — `"network": "tcp"` на naive-inbound.
-- **`bootstrap` типа `local` под TUN + `hijack-dns`** даёт таймауты (петля через собственный перехват).
-  Используйте DoH на IP-адрес.
-- **Петля DNS при проверке связности:** домен проверки (`www.gstatic.com`) должен резолвиться через
-  `bootstrap` первым DNS-правилом, иначе при мёртвой группе не работает и проверка.
-- **Интерфейс выхода:** при одном WAN надёжнее явный `route.default_interface` (WAN), чем
-  `auto_detect_interface`. Прямой выход в LAN — отдельный `direct-lan` с `bind_interface` на LAN.
-  Пересматривать при PPPoE, резервном WAN или включении IPv6.
-- **Бинарь sing-box** запускается от root и должен принадлежать root (в архиве релиза владелец
+- **XHTTP and AmneziaWG** exist only in [Leadaxe/sing-box-lx](https://github.com/Leadaxe/sing-box-lx);
+  the official sing-box does not have them. See [compatibility](SING_BOX_COMPATIBILITY.md).
+- **A deadlock when switching a nested selector** with `interrupt_exist_connections: true`
+  ([Leadaxe/sing-box-lx#20](https://github.com/Leadaxe/sing-box-lx/issues/20)): all new connections and
+  DNS hung until a restart. Fixed in `v1.14.0-lx.38`. On older builds set
+  `interrupt_exist_connections: false` in `pipeline.router.selector` of `config.json`.
+- **A naive inbound panic on UDP-over-TCP over HTTP/2** (`Write called after Handler finished`) brought
+  the whole process down ([SagerNet/sing-box#4249](https://github.com/SagerNet/sing-box/issues/4249)). Fixed
+  in [SagerNet/sing-box#4287](https://github.com/SagerNet/sing-box/pull/4287), present in `1.14.1-lx.8` and
+  newer. On older cores use `"network": "tcp"` on the naive inbound.
+- **A `bootstrap` of type `local` under TUN + `hijack-dns`** gives timeouts (a loop through its own capture).
+  Use DoH to an IP address.
+- **A DNS loop in the connectivity check:** the check domain (`www.gstatic.com`) must be resolved through
+  `bootstrap` by the first DNS rule, otherwise the check does not work when the group is dead either.
+- **Outbound interface:** with one WAN an explicit `route.default_interface` (WAN) is more reliable than
+  `auto_detect_interface`. The direct exit to the LAN is a separate `direct-lan` with `bind_interface` on the LAN.
+  Revisit it with PPPoE, a backup WAN or when IPv6 is enabled.
+- **The sing-box binary** runs as root and must be owned by root (in the release archive the owner is
   `uid 1001`).
-- **Обновление ядра без потери связи:** скачать релиз и `SHA256SUMS`, проверить сумму, проверить
-  build-теги (`with_xhttp`, `with_awg` и др. в `sing-box version`), прогнать `sing-box check` рабочего
-  конфига новым бинарём, сохранить прежний бинарь, заменить атомарно (`mv`), перезапустить и при
-  неудаче вернуть прежний. Единственный надёжный признак «работает» — реальный трафик через
-  туннель: порты и API отвечают и при мёртвой маршрутизации. Для рискованных замен — сторож
-  `setsid sh -c 'sleep N; [ -f /tmp/ok ] || откат'`, взведённый до замены.
-- **Порядок при переходе:** сначала обновить nodes-tester и применить конфиг, потом ядро — скрипт
-  обновления ядра проверяет рабочий конфиг.
+- **Updating the core without losing connectivity:** download the release and `SHA256SUMS`, verify the sum, check the
+  build tags (`with_xhttp`, `with_awg` and others in `sing-box version`), run `sing-box check` of the working
+  config with the new binary, keep the previous binary, replace it atomically (`mv`), restart and on
+  failure bring the previous one back. The only reliable sign that it works is real traffic through the
+  tunnel: ports and the API respond even with dead routing. For risky replacements use a watchdog
+  `setsid sh -c 'sleep N; [ -f /tmp/ok ] || rollback'`, armed before the replacement.
+- **Order when upgrading:** first update nodes-tester and apply the config, then the core: the core
+  update script checks the working config.

@@ -1,4 +1,5 @@
 // Форматтеры значений (перенос логики из dashboard/server.py: B/T/DUR/D/score-цвета).
+import { t, locale } from './i18n.js'
 
 export function bytes(n) {
   n = +n || 0
@@ -10,11 +11,11 @@ export function bytes(n) {
 
 export function timeHMS(e) {
   if (!e) return ''
-  return new Date(e * 1000).toLocaleTimeString('ru-RU', { hour12: false })
+  return new Date(e * 1000).toLocaleTimeString(locale(), { hour12: false })
 }
 
 export function dateTime(e) {
-  return e ? new Date(e * 1000).toLocaleString('ru-RU') : 'Нет данных'
+  return e ? new Date(e * 1000).toLocaleString(locale()) : t('No data')
 }
 
 // Длительность в человекочитаемом виде (д/ч/м) — порт DUR.
@@ -23,7 +24,7 @@ export function dur(s) {
   const d = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
   const m = Math.floor((s % 3600) / 60)
-  return d ? `${d}д ${h}ч` : h ? `${h}ч ${m}м` : `${m}м`
+  return d ? t('{d}d {h}h', { d, h }) : h ? t('{h}h {m}m', { h, m }) : t('{m}m', { m })
 }
 
 // Короткая дата DD/MM (или '–') — порт D.

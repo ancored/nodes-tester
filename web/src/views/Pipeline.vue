@@ -2,14 +2,18 @@
 import { computed, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api, auth, can } from '../api.js'
+import { t, locale } from '../i18n.js'
+import HelpButton from '../components/HelpButton.vue'
 
 const state = ref(null), runs = ref([]), schedule = ref(null), revision = ref('')
 const error = ref(''), pollError = ref(''), logError = ref(''), notice = ref(''), log = ref(''), logOffset = ref(0), viewedRun = ref('')
 const followLive = ref(true)
 const saving = ref(false), busy = ref(false), dirty = ref(false), conflicted = ref(false)
 const times = ref({ router: '', clients: '' })
-const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
-const modeLabel = { router: 'роутер', clients: 'клиенты', fetch: 'опрос подписок', apply: 'база и правила', 'apply-clients': 'клиентские правила' }
+const statusLabel = { running: t('running (run)'), ok: t('succeeded'), error: t('error'), busy: t('busy'), timeout: t('timeout'), interrupted: t('interrupted') }
+const modeLabel = { router: t('router'), clients: t('clients'), fetch: t('subscription fetch'), apply: t('base and rules'), 'apply-clients': t('client rules') }
+const triggerLabel = { schedule: t('scheduled'), manual: t('manually'), rebuild: t('rebuild on degradation') }
+const when = ts => new Date(ts * 1000).toLocaleString(locale())
 let timer = null, polling = false, selection = 0, disposed = false
 
 const live = computed(() => state.value?.current)
@@ -55,13 +59,13 @@ async function readLog() {
 async function launch(mode, dryRun) {
   if (!dryRun && !window.confirm(
     mode === 'router'
-      ? 'Применить конфигурацию роутера? sing-box может перезапуститься, а соединения — оборваться.'
-      : 'Собрать и опубликовать клиентские конфигурации?')) return
+      ? t('Apply the router configuration? sing-box may restart and connections may drop.')
+      : t('Build and publish the client configurations?'))) return
   busy.value = true; error.value = ''; notice.value = ''
   try {
     const result = await api.post('/pipeline/run', { mode, dry_run: dryRun })
     followLive.value = true; selectRun(result.run_id)
-    notice.value = dryRun ? 'Проверка запущена. Результат появится в журнале.' : 'Применение запущено. Следите за журналом.'
+    notice.value = dryRun ? t('The check has started. The result will appear in the log.') : t('Applying has started. Watch the log.')
     await poll()
   } catch (e) { error.value = e.message }
   finally { busy.value = false }
@@ -73,7 +77,7 @@ async function saveSchedule() {
   for (const mode of ['router', 'clients']) {
     const values = times.value[mode].split(',').map(x => x.trim()).filter(Boolean)
     if (values.some(x => !/^([01]\d|2[0-3]):[0-5]\d$/.test(x)) || new Set(values).size !== values.length) {
-      error.value = `Укажите для раздела «${modeLabel[mode]}» время в формате HH:MM через запятую, без повторов.`; return
+      error.value = t('Set the times for “{mode}” as HH:MM separated by commas, without repeats.', { mode: modeLabel[mode] }); return
     }
     next.jobs[mode].times = values
   }
@@ -81,7 +85,7 @@ async function saveSchedule() {
   try {
     const response = await api.put('/pipeline/schedule', next, { 'If-Match': revision.value })
     revision.value = response.revision; setEditor(next)
-    notice.value = 'Расписание сохранено. Оно действует сразу.'
+    notice.value = t('The schedule is saved. It takes effect immediately.')
     await poll()
   } catch (e) {
     error.value = e.message
@@ -89,7 +93,7 @@ async function saveSchedule() {
   } finally { saving.value = false }
 }
 async function reloadSchedule() {
-  if (dirty.value && !window.confirm('Отбросить несохранённое расписание?')) return
+  if (dirty.value && !window.confirm(t('Discard the unsaved schedule?'))) return
   try { await loadSchedule(); error.value = '' } catch (e) { error.value = e.message }
 }
 function showRun(row) {
@@ -98,67 +102,64 @@ function showRun(row) {
 }
 onMounted(async () => { await poll(); if (!disposed) timer = setInterval(poll, 2000) })
 onBeforeUnmount(() => { disposed = true; clearInterval(timer); auth.dirty = false })
-onBeforeRouteLeave(() => !dirty.value || window.confirm('Отбросить несохранённое расписание?'))
+onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard the unsaved schedule?')))
 </script>
 
 <template>
   <section class="panel">
-    <h2>Конвейер обновления</h2>
-    <p class="help-text">Режим «Роутер» загружает подписки, собирает ноды и правила, затем применяет конфигурацию к роутеру. Режим «Клиенты» собирает отдельные клиентские конфигурации. Проверка создаёт промежуточные файлы и может скачивать подписки, но не применяет их.</p>
-    <p v-if="!auth.verified" class="notice">Войдите с токеном администратора, чтобы видеть журнал и управлять конвейером.</p>
-    <p v-else-if="!can('pipeline')" class="notice">Управление недоступно: нужен работающий тестер с токеном админки и команда nodes-tester в PATH.</p>
+    <h2>{{ t('Update pipeline') }}<HelpButton topic="pipeline#run" /></h2>
+    <p v-if="!auth.verified" class="notice">{{ t('Log in with the administrator token to see the log and control the pipeline.') }}</p>
+    <p v-else-if="!can('pipeline')" class="notice">{{ t('Control is unavailable: it needs a running tester with an admin token and the nodes-tester command in PATH.') }}</p>
     <template v-if="can('pipeline')">
       <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
-      <p v-if="pollError" class="notice bad" role="alert">{{ pollError }}. Опрос повторится автоматически.</p>
+      <p v-if="pollError" class="notice bad" role="alert">{{ pollError }}. {{ t('Polling will be retried automatically.') }}</p>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       <div v-for="mode in ['router', 'clients']" :key="mode" class="panel">
-        <h3>{{ mode === 'router' ? 'Роутер' : 'Клиенты' }}</h3>
-        <p>Следующий запуск: {{ state?.next_run?.[mode] ? new Date(state.next_run[mode] * 1000).toLocaleString('ru-RU') : 'не запланирован' }}</p>
+        <h3>{{ mode === 'router' ? t('Router') : t('Clients') }}</h3>
+        <p>{{ t('Next run: {time}', { time: state?.next_run?.[mode] ? when(state.next_run[mode]) : t('not scheduled') }) }}</p>
         <div class="actions">
-          <button class="btn" :disabled="busy || !!live" @click="launch(mode, true)">Проверить (dry-run)</button>
-          <button class="btn" :disabled="busy || !!live" @click="launch(mode, false)">Применить</button>
+          <button class="btn" :disabled="busy || !!live" @click="launch(mode, true)">{{ t('Check (dry run)') }}</button>
+          <button class="btn" :disabled="busy || !!live" @click="launch(mode, false)">{{ t('Apply') }}</button>
         </div>
       </div>
-      <p role="status">{{ live ? `Идёт ${modeLabel[live.mode] || live.mode}${live.dry_run ? ' · проверка' : ' · применение'}` : 'Сейчас конвейер не выполняется' }}</p>
+      <p role="status">{{ live ? t('Running: {mode} · {action}', { mode: modeLabel[live.mode] || live.mode, action: live.dry_run ? t('check') : t('apply') }) : t('The pipeline is not running now') }}</p>
       <div class="toolbar">
-        <h3>Журнал</h3>
-        <button v-if="live && viewedRun !== live.id" class="btn" @click="showRun(live)">К текущему прогону</button>
+        <h3>{{ t('Log') }}</h3><HelpButton topic="pipeline#log" />
+        <button v-if="live && viewedRun !== live.id" class="btn" @click="showRun(live)">{{ t('To the current run') }}</button>
       </div>
-      <p v-if="selectedRun" class="field-note">{{ new Date(selectedRun.started * 1000).toLocaleString('ru-RU') }} · {{ modeLabel[selectedRun.mode] || selectedRun.mode }} · {{ selectedRun.dry_run ? 'проверка' : 'применение' }} · {{ statusLabel[selectedRun.status] || selectedRun.status }}</p>
-      <p v-if="logError" class="notice bad" role="alert">{{ logError }}. Загрузка журнала повторится автоматически.</p>
-      <pre class="log pipeline-log" aria-live="polite">{{ log || (viewedRun ? 'Журнал пока пуст.' : 'Выберите прогон из истории.') }}</pre>
-      <h3>История</h3>
+      <p v-if="selectedRun" class="field-note">{{ when(selectedRun.started) }} · {{ modeLabel[selectedRun.mode] || selectedRun.mode }} · {{ selectedRun.dry_run ? t('check') : t('apply') }} · {{ statusLabel[selectedRun.status] || selectedRun.status }}</p>
+      <p v-if="logError" class="notice bad" role="alert">{{ logError }}. {{ t('Loading the log will be retried automatically.') }}</p>
+      <pre class="log pipeline-log" aria-live="polite">{{ log || (viewedRun ? t('The log is empty so far.') : t('Choose a run from the history.')) }}</pre>
+      <h3>{{ t('History') }}<HelpButton topic="pipeline#history" /></h3>
       <div v-if="runs.length" class="wrap pipeline-history">
-        <table class="responsive-table" aria-label="Последние 20 прогонов конвейера">
-          <thead><tr><th class="l">Начало</th><th class="l">Режим</th><th class="l">Действие</th><th class="l">Запуск</th><th class="l">Статус</th><th class="l">Журнал</th></tr></thead>
+        <table class="responsive-table" :aria-label="t('The last 20 pipeline runs')">
+          <thead><tr><th class="l">{{ t('Start') }}</th><th class="l">{{ t('Mode') }}</th><th class="l">{{ t('Action') }}</th><th class="l">{{ t('Trigger') }}</th><th class="l">{{ t('Status') }}</th><th class="l">{{ t('Log') }}</th></tr></thead>
           <tbody>
             <tr v-for="row in runs" :key="row.id" :class="{ selected: row.id === viewedRun }">
-              <td class="l" data-label="Начало">{{ new Date(row.started * 1000).toLocaleString('ru-RU') }}</td>
-              <td class="l" data-label="Режим">{{ modeLabel[row.mode] || row.mode }}</td>
-              <td class="l" data-label="Действие">{{ row.dry_run ? 'проверка' : 'применение' }}</td>
-              <td class="l" data-label="Запуск">{{ row.trigger === 'schedule' ? 'по расписанию' : row.trigger === 'manual' ? 'вручную' : row.trigger === 'rebuild' ? 'пересборка по деградации' : row.trigger || '—' }}</td>
-              <td class="l" data-label="Статус"><span :class="{ good: row.status === 'ok', bad: ['error', 'timeout', 'interrupted'].includes(row.status) }">{{ statusLabel[row.status] || row.status }}</span></td>
-              <td class="l" data-label="Журнал"><button class="btn sm" :aria-pressed="row.id === viewedRun" :aria-label="'Журнал прогона от ' + new Date(row.started * 1000).toLocaleString('ru-RU')" @click="showRun(row)">{{ row.id === viewedRun ? 'Открыт' : 'Открыть' }}</button></td>
+              <td class="l" :data-label="t('Start')">{{ when(row.started) }}</td>
+              <td class="l" :data-label="t('Mode')">{{ modeLabel[row.mode] || row.mode }}</td>
+              <td class="l" :data-label="t('Action')">{{ row.dry_run ? t('check') : t('apply') }}</td>
+              <td class="l" :data-label="t('Trigger')">{{ triggerLabel[row.trigger] || row.trigger || '—' }}</td>
+              <td class="l" :data-label="t('Status')"><span :class="{ good: row.status === 'ok', bad: ['error', 'timeout', 'interrupted'].includes(row.status) }">{{ statusLabel[row.status] || row.status }}</span></td>
+              <td class="l" :data-label="t('Log')"><button class="btn sm" :aria-pressed="row.id === viewedRun" :aria-label="t('Log of the run at {time}', { time: when(row.started) })" @click="showRun(row)">{{ row.id === viewedRun ? t('Opened') : t('Open') }}</button></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p v-if="!runs.length">Прогонов пока нет.</p>
+      <p v-if="!runs.length">{{ t('No runs yet.') }}</p>
     </template>
   </section>
   <section v-if="can('pipeline') && schedule" class="panel">
-    <h2>Ежедневное расписание</h2>
-    <p class="help-text">Время роутера. Новое расписание начинает действовать после сохранения; пропущенные после перезапуска задания выполняются один раз.</p>
-    <p class="notice">Если этот конвейер уже запускает cron, удалите строку <code>nodes-tester pipeline</code> из crontab после включения расписания здесь. Иначе один из совпавших запусков получит статус «занято».</p>
+    <h2>{{ t('Daily schedule') }}<HelpButton topic="pipeline#schedule" /></h2>
     <div v-for="mode in ['router', 'clients']" :key="mode" class="panel">
-      <label class="check"><input v-model="schedule.jobs[mode].enabled" type="checkbox" @change="edit" /> {{ mode === 'router' ? 'Роутер' : 'Клиенты' }}</label>
-      <label>Время HH:MM через запятую <input v-model="times[mode]" type="text" placeholder="03:00, 15:00" @input="edit" /></label>
+      <label class="check"><input v-model="schedule.jobs[mode].enabled" type="checkbox" @change="edit" /> {{ mode === 'router' ? t('Router') : t('Clients') }}</label>
+      <label>{{ t('Times HH:MM, comma-separated') }} <input v-model="times[mode]" type="text" placeholder="03:00, 15:00" @input="edit" /></label>
     </div>
-    <label>Тайм-аут прогона, с <input v-model.number="schedule.timeout" type="number" min="1" max="86400" @input="edit" /></label>
-    <p v-if="conflicted" class="notice bad" role="alert">Файл изменился в другом окне. Перечитайте расписание перед сохранением.</p>
+    <label>{{ t('Run timeout, s') }} <input v-model.number="schedule.timeout" type="number" min="1" max="86400" @input="edit" /></label>
+    <p v-if="conflicted" class="notice bad" role="alert">{{ t('The file changed in another window. Reload the schedule before saving.') }}</p>
     <div class="actions">
-      <button class="btn" :disabled="!dirty || saving || conflicted" @click="saveSchedule">Сохранить расписание</button>
-      <button class="btn" @click="reloadSchedule">Перечитать файл</button>
+      <button class="btn" :disabled="!dirty || saving || conflicted" @click="saveSchedule">{{ t('Save schedule') }}</button>
+      <button class="btn" @click="reloadSchedule">{{ t('Reload file') }}</button>
     </div>
   </section>
 </template>

@@ -27,7 +27,7 @@ from naming import node_key
 from .fileio import read_json
 
 RAW_VERSION = 1
-SOURCE_KINDS = ("url", "file", "folder", "happ")
+SOURCE_KINDS = ("url", "file", "folder", "happ", "inline", "amnezia")
 
 
 class RawFormatError(ValueError):

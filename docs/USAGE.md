@@ -1,82 +1,93 @@
-# Админка и повседневная работа
+**English** | [Русский](USAGE.ru.md)
 
-[О проекте](../README.md) · [Первый запуск на OpenWrt](../openwrt/README.md)
+# Admin panel and everyday work
 
-Руководство относится к пакету [`v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). Обновление исходников на компьютере не обновляет установленный пакет.
+[About the project](../README.md) · [First run on OpenWrt](../openwrt/README.md) · [Help](help/README.md)
+
+This guide is an overview. Every page and block of the admin panel, with flowcharts of the algorithms, is explained in the
+[help](help/README.md); in the admin panel it opens by the **?** icon next to a page title or in the corner of a block.
+
+The guide applies to package [`v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). Updating the sources on a computer does not update the installed package.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">
   <source media="(prefers-color-scheme: light)" srcset="screenshots/nodes-light.png">
-  <img alt="Список нод с состоянием, рейтингом и фильтрами" src="screenshots/nodes-light.png">
+  <img alt="Node list with state, rating and filters" src="screenshots/nodes-light.png">
 </picture>
 
-Скриншоты обновлены для версии 0.3.4, включая [группы, предпросмотр, пресеты и действия с нодой](screenshots/README.md#группы-правила-и-действия). Полная галерея доступна в [`docs/screenshots`](screenshots/README.md).
+The screenshots were updated for version 0.3.4, including [groups, preview, presets and node actions](screenshots/README.md#groups-rules-and-actions). The full gallery is in [`docs/screenshots`](screenshots/README.md).
 
-## Где что искать
+## Where to find what
 
-| Задача | Раздел |
+| Task | Section |
 |---|---|
-| Проверить состояние базы, тестера и выбор групп | Обзор |
-| Найти ноду, понять ограничения, посмотреть измерения или выполнить действие | Ноды, затем карточка |
-| Сравнить рейтинг, результаты и качество провайдеров | Подразделы «Нод» |
-| Настроить источники и узнать, как применить их | Подписки и сборка |
-| Запустить обновление, настроить расписание, открыть журнал | Конвейер |
-| Включить пресет, проверить сборку и применить базу с правилами | Правила |
-| Изменить базу sing-box, правила или клиентские файлы | Файлы sing-box |
-| Запустить тестирование, посмотреть этап тестера и журнал | Проверки |
-| Разобрать историю выбора групп | Переключения |
-| Посмотреть пользовательский трафик за сохранённый период | Трафик |
-| Настроить API sing-box, SOCKS, тесты, переключение и хранение | Настройки |
-| Открыть официальную панель API-сервиса sing-box | sing-box dashboard (последний пункт меню) |
+| Check the state of the database, the tester and the group choice | Overview |
+| Find a node, understand its restrictions, see measurements or run an action | Nodes, then the card |
+| Compare the rating, results and provider quality | Subsections of “Nodes” |
+| Configure sources and find out how to apply them | Subscriptions and build |
+| Start an update, set the schedule, open the log | Pipeline |
+| Enable a preset, check the build and apply the base with rules | Rules |
+| Change the sing-box base, rules or client files | sing-box files |
+| Start testing, see the tester stage and log | Checks |
+| Go through the group choice history | Switches |
+| See user traffic over the stored period | Traffic |
+| Configure the sing-box API, SOCKS, tests, switching, storage and database maintenance | Settings |
+| Open the official sing-box API service panel | sing-box dashboard (last menu item) |
 
-Поиск, сортировка, фильтры и страницы таблиц сохраняются в адресе. Автообновление не сбрасывает их. Карточка ноды связана с результатами и событиями по ключу `node_crc.cred_crc`, поэтому переименование тега не разрывает историю; части ключа показаны разными цветами — настройки сервера и учётные данные.
+Search, sorting, filters and table pages are kept in the address. Auto-refresh does not reset them. The node card is tied to results and events by the `node_crc.cred_crc` key, so renaming a tag does not break the history; the key parts are shown in different colours: server settings and credentials.
 
-## Доступ
+The interface is in English and Russian. By default it follows the browser language; the choice in the “Language” list at the bottom of the menu is remembered on the device.
 
-Нажмите «Войти для управления» и введите токен из `admin.token` рабочего `config.json`. При установке пакета он создаётся автоматически. Это не секрет API sing-box. Админка проверит токен на сервере; одного ввода строки недостаточно для доступа к действиям.
+## Access
 
-Токен хранится только до закрытия страницы, если не включить «Запомнить на этом устройстве». Эта опция сохраняет его в localStorage. «Выйти» удаляет сохранённый токен и закрывает редактор. Не включайте запоминание на чужом компьютере; используйте доверенную сеть или HTTPS, не выставляйте админку напрямую в интернет.
+Press “Log in to manage” and enter the token from `admin.token` of the working `config.json`. The package installation creates it automatically. It is not the sing-box API secret. The admin panel checks the token on the server; typing a string alone does not give access to actions.
 
-Пункт меню «sing-box dashboard» открывает официальную панель API-сервиса sing-box в новой вкладке. Админка отдаёт её статику с `{api.url}/dashboard/` по адресу `/sing-box-dashboard/`, поэтому у API-сервиса должен быть задан `dashboard`. После входа администратора админка сама записывает адрес и секрет `api` в настройки панели в браузере, и панель открывается без ввода секрета. Без входа панель спросит адрес и секрет сама. Секрет попадает в localStorage браузера; на чужом компьютере не входите или удалите сервер в настройках панели.
+The token is kept only until the page is closed unless “Remember on this device” is on. This option stores it in localStorage. “Log out” deletes the stored token and closes the editor. Do not enable remembering on someone else's computer; use a trusted network or HTTPS, do not expose the admin panel directly to the internet.
 
-Отдельный `python3 -m dashboard` читает БД и позволяет редактировать файлы по токену, но не управляет Runner, не запускает тестирование и не показывает живой журнал. Админка сообщает этот режим отдельно.
+The “sing-box dashboard” menu item opens the official panel of the sing-box API service in a new tab. The admin panel serves its static files from `{api.url}/dashboard/` at `/sing-box-dashboard/`, so the API service must have `dashboard` set. After the administrator logs in, the admin panel writes the `api` address and secret into the panel settings in the browser itself, and the panel opens without entering the secret. Without logging in the panel asks for the address and secret itself. The secret ends up in the browser localStorage; on someone else's computer do not log in, or delete the server in the panel settings.
 
-## Настройки и подписки
+A separate `python3 -m dashboard` reads the database and lets you edit files with the token, but does not control the Runner, does not start testing and does not show the live log. The admin panel reports this mode separately.
 
-Все настройки хранятся в одном файле `config.json` (описание полей — [CONFIG.md](CONFIG.md)). Его
-редактируют две страницы: «Подписки и сборка» и «Настройки». Длительности пишутся строками, как в
-sing-box: `30s`, `5m`, `3h`, `2d`.
+## Settings and subscriptions
 
-«Настройки» содержит формы подключения к sing-box, тестера, ротации и монитора, админки и
-хранения, уведомлений и типа выходного IP. Остальные поля доступны в расширенном JSON.
+All settings are stored in one file, `config.json` (field reference: [CONFIG.md](CONFIG.md)). It is
+edited on two pages: “Subscriptions and build” and “Settings”. Durations are written as strings, as in
+sing-box: `30s`, `5m`, `3h`, `2d`. An empty field means the default value: it is shown in grey
+and is not written to the file.
 
-«Подписки и сборка» разделена на ветви «Роутер» и «Клиенты». Во вкладке «Источники подписок» —
-подписки ветви: URL/happ, файл, папка AWG или свои ноды (outbound-ы sing-box), поле «Ветвь»
-(роутер, клиенты или обе) и исключение нод по подстроке имени. URL и секреты скрыты по умолчанию.
-Во вкладке «Сборка и группы» — расписание и фильтры ветви, параметры групп sing-box и, для роутера,
-группы с проверками и регионы.
+“Settings” has forms for the connection to sing-box, the tester, rotation and the monitor, the admin panel and
+storage, notifications and the exit IP type. The “Database maintenance” block below them shows the
+database size, the last `VACUUM` (when, size before and after) and the next run by the `storage.vacuum`
+schedule, and has a “Run now” button. Other fields are available in the advanced JSON.
 
-Группа — селектор `{tag}-auto-out`, в котором все ноды; активную ноду выбирает тестер. Под настройками группы показано её текущее состояние: активная нода или запасной выход, число кандидатов, резерв. То же — в блоке «Группы» на «Обзоре», а вкладка «Группы» карточки ноды показывает по каждой группе, кандидат ли нода, и вердикты проверок с возрастом результата. Для каждой
-проверки (страна выхода, тип IP, совпадение страны по базам, Google AI, OpenAI, Claude, тяжёлая
-загрузка) группа указывает «обязательна», «желательна» или «не учитывать». Нода без свежего успеха
-обязательной проверки не может стать активной; желательные поднимают ноду в очереди. Строгая группа
-без подходящей ноды блокирует свой трафик (`block-out`), нестрогая переходит на `failsafe-out`.
+“Subscriptions and build” is split into the “Router” and “Clients” branches. The “Subscription sources” tab has
+the subscriptions of the branch: URL/happ, file, AWG folder, Amnezia Premium (the tester issues and replaces the
+country files, see [CONFIG.md](CONFIG.md#amnezia-premium)) or own nodes (sing-box outbounds), the “Branch” field
+(router, clients or both) and excluding nodes by a name substring. URLs and secrets are hidden by default.
+The “Build and groups” tab has the schedule and filters of the branch, sing-box group parameters and, for the router,
+groups with checks and regions.
 
-XHTTP и AWG рассчитаны на `sing-box-lx`. Обычное ядро не примет созданный для них конфиг. Для
-обычного sing-box исключите протоколы `xhttp` и `wg` в фильтрах ветви. Подробности приведены в
-[руководстве по совместимости](SING_BOX_COMPATIBILITY.md).
+A group is a selector `{tag}-auto-out` with all nodes; the tester picks the active node. Below the group settings its current state is shown: the active node or the fallback outbound, the number of candidates, the reserve. The same is in the “Groups” block of the “Overview”, and the “Groups” tab of the node card shows for each group whether the node is a candidate, and the check verdicts with the age of the result. For each
+check (exit country, IP type, country match by databases, Google AI, OpenAI, Claude, heavy
+download) the group sets “required”, “preferred” or “ignored”. A node without a fresh success of a
+required check cannot become active; preferred ones move the node up the queue. A strict group
+without a suitable node blocks its traffic (`block-out`), a non-strict one goes to `failsafe-out`.
 
-Перед сохранением нажмите «Просмотреть изменения», проверьте список полей и подтвердите запись. Кнопка показывает список полей; проверка содержимого на сервере происходит при сохранении. Если файл изменили в другом окне или по SSH, сохранение будет отклонено до перечитывания. Навигация, перечитывание и закрытие страницы предупреждают о несохранённом черновике; черновик не является резервной копией.
+XHTTP and AWG are meant for `sing-box-lx`. The regular core will not accept the config created for them. For
+the regular sing-box exclude the `xhttp` and `wg` protocols in the branch filters. Details are in the
+[compatibility guide](SING_BOX_COMPATIBILITY.md).
 
-После сохранения админка на OpenWrt сама перезапускает тестер и сообщает, когда он снова ответил: на несколько секунд останавливаются мониторинг и прогон, соединения пользователей не рвутся. Пока идёт конвейер, перезапуска не будет — админка попросит сделать его позже. Вручную:
+Before saving press “Review changes”, check the list of fields and confirm the write. The button shows the list of fields; the server checks the content when saving. If the file was changed in another window or over SSH, saving is rejected until you reload. Navigation, reloading and closing the page warn about an unsaved draft; the draft is not a backup.
+
+After saving, the admin panel on OpenWrt restarts the tester itself and reports when it responds again: monitoring and the checks stop for a few seconds, user connections are not dropped. While the pipeline runs there is no restart; the admin panel asks to do it later. Manually:
 
 ```sh
 /etc/init.d/nodes-tester restart
 ```
 
-У каждой подписки показано состояние последней загрузки: число нод, время последней удачной загрузки, ошибка, а также разница с действующим конфигом: сколько нод подписки в sing-box сейчас и сколько даст следующая сборка (новые и ушедшие доступы). Если панель присылает метаданные, видны название, израсходованный трафик, срок действия и сообщение провайдера. HWID роутера для панелей с лимитом устройств указан под списком подписок; happ-подписки отправляют его всегда, URL-подписки — с флажком «Отправлять HWID». Для ссылок `happ://crypt…` нужны ключи приложения Happ: они в nodes-tester не входят и скачиваются из источника на панели «Ключи Happ» (по умолчанию — `src/keys.rs` проекта hpwnr на GitHub). Источник можно заменить своим URL или путём к файлу на роутере.
+Each subscription shows the state of the last fetch: the number of nodes, the time of the last successful fetch, the error, and the difference with the active config: how many subscription nodes are in sing-box now and how many the next build gives (new and gone accesses). If the panel sends metadata, the title, used traffic, expiry and the provider message are shown. The router HWID for panels with a device limit is shown below the list of subscriptions; happ subscriptions always send it, URL subscriptions only with the “Send the HWID” checkbox. `happ://crypt…` links need the keys of the Happ app: they are not part of nodes-tester and are downloaded from the source in the “Happ keys” panel (by default `src/keys.rs` of the hpwnr project on GitHub). The source can be replaced with your own URL or a path to a file on the router.
 
-Сохранение не скачивает подписки и не применяет конфигурацию к sing-box. После изменения подписок, фильтров или списка групп откройте «Конвейер», выполните проверку ветки, прочитайте журнал и примените результат. Если встроенный конвейер недоступен, используйте команды на роутере из раздела ниже. Изменения проверок групп, рейтинга и переключения пересборки не требуют: их применяет перезапуск тестера. Изменения клиентской ветки применяются запуском режима «Клиенты» и не затрагивают sing-box роутера.
+Saving does not fetch subscriptions and does not apply the configuration to sing-box. After changing subscriptions, filters or the list of groups open “Pipeline”, run a check of the branch, read the log and apply the result. If the embedded pipeline is unavailable, use the commands on the router from the section below. Changes of group checks, the rating and switching do not need a rebuild: a tester restart applies them. Changes of the client branch are applied by running the “Clients” mode and do not touch the router sing-box.
 
 <table>
   <tr>
@@ -84,39 +95,39 @@ XHTTP и AWG рассчитаны на `sing-box-lx`. Обычное ядро н
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="screenshots/subscriptions.png">
         <source media="(prefers-color-scheme: light)" srcset="screenshots/subscriptions-light.png">
-        <img alt="Редактор источников подписок" src="screenshots/subscriptions-light.png">
+        <img alt="Subscription source editor" src="screenshots/subscriptions-light.png">
       </picture>
     </td>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="screenshots/config.png">
         <source media="(prefers-color-scheme: light)" srcset="screenshots/config-light.png">
-        <img alt="Настройки тестера и подключения" src="screenshots/config-light.png">
+        <img alt="Tester and connection settings" src="screenshots/config-light.png">
       </picture>
     </td>
   </tr>
   <tr>
-    <td><strong>Подписки и сборка</strong>: источники и проверка изменений.</td>
-    <td><strong>Настройки</strong>: подключение, проверки, автоматика и хранение.</td>
+    <td><strong>Subscriptions and build</strong>: sources and reviewing changes.</td>
+    <td><strong>Settings</strong>: connection, checks, automation and storage.</td>
   </tr>
 </table>
 
-## Как обновляются подписки и конфиги
+## How subscriptions and configs are updated
 
-Роутерная ветка выполняет шаги по порядку:
+The router branch runs the steps in order:
 
-1. Загружает подписки ветви `router` из `config.json` в `<data_dir>/raw/router.json`. Если источник временно недоступен, загрузчик может сохранить его последние исправные ноды (last-good). Защита `min_ratio` не даёт заменить raw-файл резко сократившимся набором: конвейер продолжает работу с прежним raw и отмечает это в журнале.
-2. Собирает `<data_dir>/nodes.json` по разделам `pipeline.router` и `groups`. Затем обновляет правила из `singbox/rules.json`: двоичные `.srs` скачивает по URL, локальные JSON-источники берёт из `singbox/rules/`.
-3. Объединяет фрагмент с `singbox/base.json` и проверяет кандидат командой `sing-box check`. Ошибка оставляет рабочий конфиг на месте.
-4. Заменяет итоговый конфиг и перезапускает sing-box, только если итоговый файл изменился. Изменённые `.srs` и локальные source-наборы sing-box версии 1.10 и новее перечитывает без перезапуска. Проверка связности после применения возвращает предыдущий конфиг, если рабочая группа не отвечает.
+1. Fetches the subscriptions of the `router` branch from `config.json` into `<data_dir>/raw/router.json`. If a source is temporarily unavailable, the loader can keep its last working nodes (last-good). The `min_ratio` guard does not let a sharply shrunk set replace the raw file: the pipeline continues with the previous raw and notes it in the log.
+2. Builds `<data_dir>/nodes.json` by the `pipeline.router` and `groups` sections. Then updates the rules from `singbox/rules.json`: binary `.srs` are downloaded by URL, local JSON sources are taken from `singbox/rules/`.
+3. Merges the fragment with `singbox/base.json` and checks the candidate with `sing-box check`. An error leaves the working config in place.
+4. Replaces the resulting config and restarts sing-box only if the resulting file changed. sing-box 1.10 and newer rereads changed `.srs` and local source sets without a restart. The connectivity check after applying brings back the previous config if the working group does not respond.
 
-На время роутерного применения тестер приостанавливает проверки и переключение. После завершения конвейера пауза сохраняется ещё 120 секунд. При работе через тот же прокси перезапуск sing-box может ненадолго прервать доступ к админке и SSH.
+While the router branch is being applied, the tester pauses checks and switching. After the pipeline finishes, the pause lasts another 120 seconds. When you work through the same proxy, a sing-box restart may briefly interrupt access to the admin panel and SSH.
 
-Клиентская ветка загружает подписки ветви `clients`, собирает `whnodes.json` и объединяет его с базами `singbox/clients/base_<name>.json` по списку `clients.list` и включёнными клиентскими пресетами `singbox/clients/presets/`. Каждый конфиг перед публикацией проходит `sing-box check`. Готовые файлы, например `alice.json` и `bob.json`, попадают в `/etc/sing-box-clients/`. Настроенный отдельно веб-сервер раздаёт их клиентам по ссылкам; сам nodes-tester веб-сервер для этих файлов не настраивает. Файлы из `singbox/clients/publish/` копируются туда как есть, без объединения. Клиентская ветка не перезапускает роутерный sing-box.
+The client branch fetches the subscriptions of the `clients` branch, builds `whnodes.json` and merges it with the `singbox/clients/base_<name>.json` bases by the `clients.list` list and the enabled client presets `singbox/clients/presets/`. Each config passes `sing-box check` before publishing. The ready files, for example `alice.json` and `bob.json`, go to `/etc/sing-box-clients/`. A separately configured web server serves them to clients by links; nodes-tester itself does not configure a web server for these files. Files from `singbox/clients/publish/` are copied there as is, without merging. The client branch does not restart the router sing-box.
 
-## Конвейер
+## Pipeline
 
-После входа с токеном откройте «Конвейер», выберите ветку `router` или `clients` и нажмите «Проверить» (`--dry-run`). Проверка скачивает источники и пишет промежуточные файлы в каталог данных. Для роутера она собирает кандидат и выполняет `sing-box check`, но не обновляет правила, не заменяет рабочий конфиг и не перезапускает sing-box. Для клиентов результат пишется отдельно, без публикации. Изучите журнал, затем нажмите «Применить» или выполните на роутере:
+After logging in with the token open “Pipeline”, choose the `router` or `clients` branch and press “Check” (`--dry-run`). The check downloads the sources and writes intermediate files to the data directory. For the router it builds the candidate and runs `sing-box check`, but does not update the rules, does not replace the working config and does not restart sing-box. For the clients the result is written separately, without publishing. Study the log, then press “Apply” or run on the router:
 
 ```sh
 nodes-tester pipeline router --dry-run
@@ -125,89 +136,89 @@ nodes-tester pipeline clients --dry-run
 nodes-tester pipeline clients
 ```
 
-В этом же разделе задаётся время суток для каждой ветки по часам роутера (`pipeline.router.at`, `pipeline.clients.at`). Оба задания изначально выключены. Для запуска каждые три часа укажите `00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00`. После включения новое расписание действует со следующего времени запуска. При перезапуске тестера пропущенное задание выполняется один раз. Одновременно может идти только один конвейер, в том числе при запуске из терминала. Без встроенного расписания конвейер можно запускать из cron (`nodes-tester pipeline router` в `/etc/crontabs/root`), но не одновременно с ним.
+The same section sets the time of day for each branch by the router clock (`pipeline.router.at`, `pipeline.clients.at`). Both jobs are off initially. To run every three hours set `00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00`. After enabling, the new schedule takes effect from the next start time. When the tester restarts, a missed job runs once. Only one pipeline can run at a time, including runs from the terminal. Without the built-in schedule the pipeline can be run from cron (`nodes-tester pipeline router` in `/etc/crontabs/root`), but not together with it.
 
-История показывает ветку, ручной или плановый запуск, начало, конец и результат; откройте запись для полного журнала. Значение `ok` означает успех, `error` сообщает об ошибке, `busy` показывает занятость конвейера (код 75), `timeout` указывает на превышение времени. Статус `interrupted` появляется, если после сбоя процесса нет подтверждённого кода завершения. Лимит времени — `pipeline.timeout`, по умолчанию `30m`. Подписки роутера опрашиваются чаще сборки: `pipeline.fetch.every` (по умолчанию `3h`, `0s` — выключить; поле «Опрашивать подписки роутера каждые» в «Подписках и сборке») обновляет только сырые ноды и состояние подписок — sing-box не трогается; в истории такие запуски отмечены как «опрос подписок». Плановая сборка, наступившая во время опроса, дожидается его окончания. Журналы лежат в `<data_dir>/pipeline/runs/`, история хранится в `<data_dir>/pipeline.db`. Храните `data_dir` на постоянном носителе.
+The history shows the branch, manual or scheduled start, start, end and result; open a record for the full log. `ok` means success, `error` reports an error, `busy` shows that the pipeline was busy (code 75), `timeout` means the time limit was exceeded. The `interrupted` status appears if there is no confirmed exit code after a process failure. The time limit is `pipeline.timeout`, `30m` by default. Router subscriptions are polled more often than the build: `pipeline.fetch.every` (`3h` by default, `0s` turns it off; the “Poll router subscriptions every” field in “Subscriptions and build”) updates only raw nodes and the subscription state, sing-box is not touched; in the history such runs are marked as “subscription fetch”. A scheduled build that comes during a fetch waits for it to finish. Logs are in `<data_dir>/pipeline/runs/`, the history is stored in `<data_dir>/pipeline.db`. Keep `data_dir` on persistent storage.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/pipeline.png">
   <source media="(prefers-color-scheme: light)" srcset="screenshots/pipeline-light.png">
-  <img alt="Конвейер: ручной запуск, расписание и история" src="screenshots/pipeline-light.png">
+  <img alt="Pipeline: manual run, schedule and history" src="screenshots/pipeline-light.png">
 </picture>
 
-Тестер проверяет ноды, у которых истёк срок годности тестов. «Запустить тестирование сейчас» в разделе «Проверки» проверяет все доступные тестеру ноды, не дожидаясь сроков; эта кнопка не обновляет подписки. Пока тестирование по запросу идёт, повторный запрос недоступен.
+The tester checks nodes whose test results have expired. “Run testing now” in the “Checks” section checks all nodes available to the tester without waiting for the deadlines; this button does not update subscriptions. While on-demand testing runs, another request is unavailable.
 
-## Файлы sing-box
+## sing-box files
 
-В разделе «Файлы sing-box» загрузите или отредактируйте `base.json`, `rules.json`, локальные `rules/*.json` и клиентские базы `clients/base_alice.json`, `clients/base_bob.json`. Перед записью `base.json` сервер объединяет его с существующим `nodes.json` и выполняет `sing-box check`; сначала соберите `nodes.json`, если его ещё нет. `rules.json` задаёт, какие правила обновлять: двоичные `.srs` допускаются только по HTTP(S) URL, а локальный источник должен быть JSON-файлом в формате source rule-set из `rules/`. Готовые файлы в `clients/publish/` публикуются без сборки.
+In the “sing-box files” section upload or edit `base.json`, `rules.json`, local `rules/*.json` and the client bases `clients/base_alice.json`, `clients/base_bob.json`. Before writing `base.json` the server merges it with the existing `nodes.json` and runs `sing-box check`; build `nodes.json` first if there is none yet. `rules.json` sets which rules to update: binary `.srs` are allowed only by HTTP(S) URL, and a local source must be a JSON file in the source rule-set format from `rules/`. Ready files in `clients/publish/` are published without a build.
 
-Редактор показывает прошлые версии файла и позволяет восстановить выбранную. Перед сохранением он проверяет, не изменился ли файл после открытия страницы. Сохранение исходника не запускает конвейер: проверьте нужные ветки через dry-run и примените их отдельно. При изменении только правил перезапуск для sing-box 1.10 и новее не нужен; на старом ядре новые локальные rule-set будут прочитаны при следующем перезапуске.
+The editor shows previous versions of the file and lets you restore the chosen one. Before saving it checks whether the file changed after the page was opened. Saving a source does not start the pipeline: check the needed branches with a dry run and apply them separately. If only the rules change, sing-box 1.10 and newer needs no restart; an old core reads new local rule sets at the next restart.
 
 <table>
   <tr>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-light.png"><img alt="Редактор исходных файлов sing-box" src="screenshots/singbox-light.png"></picture></td>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox-rules.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-rules-light.png"><img alt="Редактор источников правил sing-box" src="screenshots/singbox-rules-light.png"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-light.png"><img alt="sing-box source file editor" src="screenshots/singbox-light.png"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox-rules.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-rules-light.png"><img alt="sing-box rule source editor" src="screenshots/singbox-rules-light.png"></picture></td>
   </tr>
-  <tr><td>База, клиентские файлы и история версий.</td><td>Источники правил и локальные JSON-файлы.</td></tr>
+  <tr><td>Base, client files and version history.</td><td>Rule sources and local JSON files.</td></tr>
 </table>
 
-## Правила sing-box
+## sing-box rules
 
-Схема сборки итогового конфига: [CONFIG_ASSEMBLY.md](CONFIG_ASSEMBLY.md).
+How the resulting config is assembled: [CONFIG_ASSEMBLY.md](CONFIG_ASSEMBLY.md).
 
-Правила маршрутизации и DNS собираются из пресетов — отдельных файлов `presets/*.json` в
-«Файлах sing-box». Пресет содержит всё, чего нет в базе: свои правила маршрута и DNS,
-DNS-серверы и наборы правил. Например, пресет `zone-us` направляет пользователя `us` и домены
-`us-domains` в выход `us-out`, а их DNS — в `dns-us`; выход `us-out` объявляет пресет `out-us`
-из группы `us-auto-out`. Для работы нужны группа `us` и inbound с пользователем `us` в базе.
+Routing and DNS rules are built from presets: separate `presets/*.json` files in
+“sing-box files”. A preset holds everything the base lacks: its own route and DNS rules,
+DNS servers and rule sets. For example, the `zone-us` preset sends the `us` user and the
+`us-domains` domains to the `us-out` outbound, and their DNS to `dns-us`; the `us-out` outbound is declared by the `out-us` preset
+from the `us-auto-out` group. It needs the `us` group and an inbound with the `us` user in the base.
 
-Раздел «Правила» показывает пресеты по приоритету: название, описание, нужные группы и
-переключатель. При переключении сервер собирает итоговый конфиг из базы, `nodes.json` и
-включённых пресетов и выполняет `sing-box check`; если проверка не прошла, файл не
-меняется, а причина показывается на странице. Работающий sing-box меняет только кнопка
-«Применить»: она копирует базу, собирает конфиг, перезапускает sing-box при изменениях и
-проверяет связность; журнал выводится на странице. «Проверить сборку» делает то же без
-изменений. При возврате на страницу она показывает статус и журнал последнего прогона
-`apply`; полная история — в «Конвейере».
+The “Rules” section shows the presets by priority: title, description, required groups and
+a switch. When switched, the server builds the resulting config from the base, `nodes.json` and
+the enabled presets and runs `sing-box check`; if the check fails, the file does not
+change and the reason is shown on the page. Only the “Apply” button changes the running sing-box:
+it copies the base, builds the config, restarts sing-box on changes and
+checks connectivity; the log is shown on the page. “Check the build” does the same without
+changes. When you come back to the page it shows the status and log of the last `apply`
+run; the full history is in “Pipeline”.
 
-Вкладка «Клиенты» в том же разделе показывает пресеты `singbox/clients/presets/` — общие для
-всех клиентов из `clients.list`. Переключатель проверяет конфиг каждого клиента (база,
-`whnodes.json`, включённые пресеты) через `sing-box check`. «Собрать клиентов» публикует конфиги
-по текущему `whnodes.json`, не загружая подписки (`nodes-tester pipeline apply-clients`);
-«Проверить сборку» собирает их в отдельный каталог без публикации. Локальные наборы правил
-пресетов клиент получает по адресу раздачи: задайте его в `clients/settings.json`
-(`{"rules_url": "https://…/"}`), иначе такой пресет не соберётся; подробности — в
-[сборке конфига](CONFIG_ASSEMBLY.md#пресеты-клиентов).
+The “Clients” tab in the same section shows the `singbox/clients/presets/` presets, shared by
+all clients from `clients.list`. The switch checks the config of each client (base,
+`whnodes.json`, enabled presets) with `sing-box check`. “Build clients” publishes the configs
+from the current `whnodes.json` without fetching subscriptions (`nodes-tester pipeline apply-clients`);
+“Check the build” builds them into a separate directory without publishing. A client gets the local rule sets
+of presets from the distribution address: set it in `clients/settings.json`
+(`{"rules_url": "https://…/"}`), otherwise such a preset will not build; details are in
+[config assembly](CONFIG_ASSEMBLY.md#client-presets).
 
-Порядок правил задаёт `priority` (меньше — выше); `priorities` переопределяет его для
-отдельного пути, например `{"dns.rules": 150}` ставит DNS-правила пресета в другое место.
-Пресет может содержать любые разделы конфига и сам объявляет нужные ему DNS-серверы и наборы
-правил: одинаковые объекты из разных пресетов схлопываются, а тот же тег с другим содержимым
-— ошибка. Метаданные хранятся в ключе `_preset` и в итоговый конфиг не попадают. Как идёт
-склейка — в [`CONFIG_ASSEMBLY.md`](CONFIG_ASSEMBLY.md#склейка). Готовые пресеты — в
-`/usr/share/nodes-tester/examples/singbox/presets/`, их каталог — в
-[библиотеке пресетов](CONFIG_ASSEMBLY.md#библиотека-пресетов).
+The rule order is set by `priority` (lower goes first); `priorities` overrides it for
+a single path, for example `{"dns.rules": 150}` puts the DNS rules of the preset elsewhere.
+A preset may contain any config sections and declares the DNS servers and rule sets it needs
+itself: identical objects from different presets collapse, and the same tag with different content
+is an error. Metadata is kept in the `_preset` key and does not get into the resulting config. How
+merging works is in [`CONFIG_ASSEMBLY.md`](CONFIG_ASSEMBLY.md#merging). Ready presets are in
+`/usr/share/nodes-tester/examples/singbox/presets/`, their catalogue is in the
+[preset library](CONFIG_ASSEMBLY.md#preset-library).
 
-## Как читать состояние и действовать
+## How to read the state and act
 
-Страна в таблицах показана флагом, код — во всплывающей подсказке. В «Результатах» колонка «IP» показывает значком, кому принадлежит выходной IP ноды: здание — дата-центр, телефон — мобильная сеть, дом — домашний провайдер; маска — IP известен как VPN или прокси. Флаг под значком — база относит IP к другой стране, чем показал тест соединения. Красные значки хуже для AI-сервисов; наведите курсор, чтобы увидеть IP и сеть. Последние колонки — Google AI, OpenAI и Claude AI: галка — сервис доступен, крест — нет, «?» — сбой сети, действует прошлый результат; под отметкой Google AI — страна, которой Google видит ноду. Протокол показан по частям, каждая на своей строке.
+The country in tables is shown as a flag, the code is in the tooltip. In “Results” the “IP” column shows with an icon who owns the exit IP of the node: a building is a data centre, a phone a mobile network, a house a residential provider; a mask means the IP is known as a VPN or proxy. A flag below the icon means the database puts the IP in a different country than the connection test showed. Red icons are worse for AI services; hover to see the IP and the network. The last columns are Google AI, OpenAI and Claude AI: a tick means the service is available, a cross that it is not, “?” a network failure, the previous result stays; below the Google AI mark is the country in which Google sees the node. The protocol is shown in parts, each on its own line.
 
-На «Обзоре» блок «sing-box» показывает, работает ли sing-box, и позволяет его остановить и запустить. Остановка — аварийный выход, если sing-box сломал сеть. Что будет с устройствами LAN, зависит от службы killswitch роутера: если она загружена, защищённые её правилами устройства остаются без интернета, пока sing-box не запустят; без неё трафик идёт напрямую через провайдера. Блок показывает, загружены ли правила killswitch и сколько пакетов отбито, и позволяет включить или выключить службу. Пока sing-box остановлен из админки, конвейер не применяет новый конфиг. Уведомления в Telegram или webhook настраиваются в «Настройках».
+On the “Overview” the “sing-box” block shows whether sing-box is running and lets you stop and start it. Stopping is an emergency exit if sing-box broke the network. What happens to LAN devices depends on the router killswitch service: if it is loaded, the devices protected by its rules stay without internet until sing-box is started; without it, traffic goes directly through the provider. The block shows whether the killswitch rules are loaded and how many packets were blocked, and lets you turn the service on or off. While sing-box is stopped from the admin panel, the pipeline does not apply a new config. Telegram or webhook notifications are configured in “Settings”.
 
-Таблицы фильтруются выпадающими списками: страна, группа, протокол, провайдер и поля конкретной таблицы (состояние, статус, причина). Группы берутся из текущего `nodes.json`: в каждой группе все ноды, активной нода становится по проверкам группы. Список тестера, качество, ограничения и выбор переключателя показывают разные стороны состояния ноды. Отсутствие замеров не означает провал. Рейтинг оценивается по шкале от 0 до 100, его факторы нормированы от 0 до 1; физические значения смотрите в результатах с датой собственного замера. «Результаты» показывают последний результат каждого теста, время замеров — в карточке ноды.
+Tables are filtered by drop-down lists: country, group, protocol, provider and fields of the particular table (state, status, reason). Groups are taken from the current `nodes.json`: each group has all nodes, a node becomes active by the group checks. The tester list, quality, restrictions and the switcher choice show different sides of the node state. Missing measurements do not mean a failure. The rating is on a scale from 0 to 100, its factors are normalised from 0 to 1; see the physical values in the results with the date of their own measurement. “Results” shows the latest result of each test, measurement times are in the node card.
 
-«Все ноды» — ноды текущих подписок роутера. Новые ноды появляются в течение минуты после применения конфига, без замеров, и тестер сразу проверяет их. Ушедшие из подписок ноды остаются только в «Архиве»; их карточка открывается оттуда. Столбец «Имя в подписке» и карточка показывают исходное имя ноды у провайдера; прочерк — имени нет (например, AWG из файлов).
+“All nodes” are the nodes of the current router subscriptions. New nodes appear within a minute after the config is applied, without measurements, and the tester checks them right away. Nodes gone from subscriptions stay only in the “Archive”; their card opens from there. The “Name in the subscription” column and the card show the original node name at the provider; a dash means there is no name (for example, AWG from files).
 
-В карточке ноды доступны действия с подтверждением:
+The node card has actions with confirmation:
 
-- «Исключить»: бессрочно пропускать следующие проверки до снятия исключения. Это не удаление из подписки и не немедленная смена текущего селектора.
-- «В карантин»: отложить проверки на настроенный срок `cooldown.garbage_hours`. При отключённом cooldown действие недоступно.
-- «Снять ограничение»: вернуть ноду в очередь проверки. Это не подтверждает исправность ноды.
-- «Выбрать в группе»: сделать ноду активной в выбранной группе сейчас. Список содержит только группы, где нода — допустимый кандидат (положительный рейтинг, пройденные обязательные тесты группы, нет ограничений). Автоматика продолжает работать и впоследствии может изменить выбор.
+- “Exclude”: skip the next checks indefinitely until the exclusion is removed. It is not a removal from the subscription and not an immediate change of the current selector.
+- “Quarantine”: postpone checks for the configured period `selection.quarantine.duration`.
+- “Lift restriction”: put the node back into the check queue. It does not confirm that the node works.
+- “Select in group”: make the node active in the chosen group now. The list has only groups where the node is a valid candidate (positive rating, passed required tests of the group, no restrictions). Automation keeps working and may change the choice later.
 
-Обзор отражает состояние переключателя, не независимую проверку селекторов sing-box. История содержит последние 200 записей с датой, группой, причиной и предыдущей нодой; значок у причины различает аварийную замену, аварию без замены, смену по качеству, ротацию, первый и ручной выбор, failsafe. Последняя запись группы не обязательно показывает её текущую активную ноду; авария без замены не считается успешным переключением.
+The overview reflects the switcher state, not an independent check of the sing-box selectors. The history has the last 200 records with the date, group, reason and previous node; the icon by the reason distinguishes an emergency replacement, an emergency without a replacement, a change by quality, rotation, the first and the manual choice, failsafe. The last record of a group does not necessarily show its current active node; an emergency without a replacement is not a successful switch.
 
-Пользовательский трафик показан за доступный сохранённый период; тестовый трафик из него исключён. Отдельный блок показывает расход тестера за последние 24 часа: измеренные байты загрузочных тестов и выборку живых соединений. Эти показатели могут пересекаться, поэтому складывать их нельзя. Агрегаты по провайдерам, странам, протоколам и нодам строятся из всех сохранённых строк и фильтруются по стране, группе, протоколу и провайдеру; топ назначений содержит до 50 строк. Счётчики назначений накопительные. Журнал можно приостановить и отфильтровать; после длинной паузы часть старых строк может исчезнуть из серверного буфера.
+User traffic is shown for the available stored period; test traffic is excluded from it. A separate block shows the tester usage for the last 24 hours: the measured bytes of download tests and a sample of live connections. These figures may overlap, so they must not be added up. Aggregates by providers, countries, protocols and nodes are built from all stored rows and are filtered by country, group, protocol and provider; the top of destinations has up to 50 rows. Destination counters are cumulative. The log can be paused and filtered; after a long pause some old lines may drop out of the server buffer.
 
 <table>
   <tr>
@@ -215,39 +226,39 @@ DNS-серверы и наборы правил. Например, пресет 
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="screenshots/node-card.png">
         <source media="(prefers-color-scheme: light)" srcset="screenshots/node-card-light.png">
-        <img alt="Карточка ноды с результатами проверок" src="screenshots/node-card-light.png">
+        <img alt="Node card with check results" src="screenshots/node-card-light.png">
       </picture>
     </td>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="screenshots/lifecycle.png">
         <source media="(prefers-color-scheme: light)" srcset="screenshots/lifecycle-light.png">
-        <img alt="Ограничения и качество нод" src="screenshots/lifecycle-light.png">
+        <img alt="Node restrictions and quality" src="screenshots/lifecycle-light.png">
       </picture>
     </td>
   </tr>
   <tr>
-    <td><strong>Карточка ноды</strong>: свежесть измерений, трафик, события и действия.</td>
-    <td><strong>Ограничения и качество</strong>: пауза, карантин и состояние провайдеров.</td>
+    <td><strong>Node card</strong>: measurement freshness, traffic, events and actions.</td>
+    <td><strong>Restrictions and quality</strong>: pause, quarantine and provider state.</td>
   </tr>
 </table>
 
-## Если что-то не работает
+## If something does not work
 
-| Симптом | Что проверить |
+| Symptom | What to check |
 |---|---|
-| Админка не открывается | Сервис, `admin.enabled`, адрес/порт, LAN-доступ, `logread -e nodes-tester` |
-| Токен не принимается | Токен действующего конфига; после изменения нужен перезапуск |
-| База отсутствует или отключена | `storage.enabled`, путь `storage.db_file`, запуск тестера |
-| Ошибка чтения или старые данные | Ошибку в шапке; устаревший снимок не подтверждает текущее состояние |
-| Нет замеров | Тестовый selector, журнал, `storage.store_results` |
-| Новых нод нет после сохранения | Выполнены ли загрузка, сборка и применение к sing-box |
-| Конвейер занят, код 75 | Дождитесь текущего запуска; проверьте историю и журнал. Одновременный запуск заблокирован |
-| `timeout` | Проверьте последнюю стадию в журнале и лимит `pipeline.timeout`; оркестратор завершает группу процессов после защитного ожидания |
-| Ошибка `sing-box check` | Проверьте базу, итоговый кандидат и совместимость протоколов с установленным ядром. Рабочий конфиг не заменён |
-| После применения пропала связность | Прочитайте журнал проверки и отката. Конвейер возвращает предыдущий конфиг, если запрос через рабочую группу не проходит |
-| Выбор в группе недоступен | Проверенный токен, встроенный Runner, switching, нода — кандидат хотя бы одной группы |
+| The admin panel does not open | The service, `admin.enabled`, address/port, LAN access, `logread -e nodes-tester` |
+| The token is not accepted | The token of the active config; a change needs a restart |
+| The database is missing or off | The `storage.path` path, the tester start |
+| Read error or old data | The error in the header; a stale snapshot does not confirm the current state |
+| No measurements | The test selector, the log |
+| No new nodes after saving | Whether fetch, build and apply to sing-box were done |
+| Pipeline busy, code 75 | Wait for the current run; check the history and the log. Simultaneous runs are blocked |
+| `timeout` | Check the last stage in the log and the `pipeline.timeout` limit; the orchestrator ends the process group after a safety wait |
+| `sing-box check` error | Check the base, the resulting candidate and protocol compatibility with the installed core. The working config was not replaced |
+| Connectivity lost after applying | Read the log of the check and the rollback. The pipeline brings back the previous config if a request through the working group fails |
+| Selecting in a group is unavailable | A verified token, the embedded Runner, switching, the node is a candidate of at least one group |
 
-Перед обновлением пакета используйте `nodes-tester backup --stable`. Если нужна предыдущая версия, проверьте снимок командой `nodes-tester rollback --check`, затем выполните `nodes-tester rollback`. Порядок и состав снимка описаны в [инструкции по обновлению](../openwrt/README.md#6-обновить-пакет).
+Before updating the package use `nodes-tester backup --stable`. If you need the previous version, check the snapshot with `nodes-tester rollback --check`, then run `nodes-tester rollback`. The order and contents of the snapshot are described in the [update guide](../openwrt/README.md#6-update-the-package).
 
-В [Issues](https://github.com/ancored/nodes-tester/issues) укажите версии OpenWrt, пакета и sing-box, действие и короткую обезличенную ошибку. Удалите URL подписок, ключи, токены и приватные адреса.
+In [Issues](https://github.com/ancored/nodes-tester/issues) give the OpenWrt, package and sing-box versions, the action and a short anonymised error. Remove subscription URLs, keys, tokens and private addresses.

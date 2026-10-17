@@ -38,6 +38,19 @@ def _storage_node(app: App, crc: str, action: str):
 def register(app: App) -> None:
     open_read = app.read_open
 
+    # --- VACUUM базы тестера: состояние и запуск вручную ----------------
+
+    @app.route("GET", "/api/storage/vacuum", needs_token=True)
+    def vacuum_state(app, req):
+        return _runner(app).vacuum.state()
+
+    @app.route("POST", "/api/storage/vacuum", needs_token=True)
+    def vacuum_run(app, req):
+        r = _runner(app)
+        if not r.vacuum.start("manual"):
+            raise HttpError(409, "VACUUM уже выполняется")
+        return {"ok": True, **r.vacuum.state()}
+
     # --- Карантин / снятие / бан ноды (по CRC) --------------------------
 
     @app.route("POST", "/api/nodes/{crc}/quarantine", needs_token=True)

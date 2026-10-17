@@ -1,129 +1,136 @@
+**English** | [Русский](README.ru.md)
+
 # dashboard
 
-`dashboard` служит HTTP-бэкендом веб-админки. Он отдаёт собранный Vue SPA, читает SQLite,
-проверяет токен администратора и подключает API просмотра, конфигурации и управления.
+`dashboard` is the HTTP backend of the web admin panel. It serves the built Vue SPA, reads SQLite,
+checks the administrator token and connects the viewing, configuration and control APIs.
 
-Пользовательская работа с интерфейсом описана в [`docs/USAGE.md`](../docs/USAGE.md).
-Этот файл описывает границы Python-модуля.
+Everyday work with the interface is described in [`docs/USAGE.md`](../docs/USAGE.md).
+This file describes the boundaries of the Python module.
 
-Скриншоты всех разделов в светлой и тёмной теме находятся в
+Screenshots of all sections in the light and dark themes are in
 [`docs/screenshots`](../docs/screenshots/README.md).
 
-## Два режима
+## Two modes
 
-### Встроенный
+### Embedded
 
-При `admin.enabled: true` сервер создаётся внутри `nodes_tester.Runner`. Ему доступны
-Runner, Switcher, Scoreboard и Storage. В этом режиме работают:
+With `admin.enabled: true` the server is created inside `nodes_tester.Runner`. It has access to the
+Runner, Switcher, Scoreboard and Storage. In this mode the following work:
 
-- статус тестера;
-- тестирование всех нод по запросу, не дожидаясь сроков годности;
-- живой журнал;
-- бан, карантин и снятие ограничений;
-- ручной выбор ноды в группе;
-- чтение и запись `config.json`.
+- the tester status;
+- on-demand testing of all nodes without waiting for the result lifetimes;
+- the live log;
+- ban, quarantine and lifting restrictions;
+- manual choice of a node in a group;
+- `VACUUM` of the database on demand;
+- reading and writing `config.json`.
 
-### Отдельный процесс
+### Separate process
 
 ```sh
 python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 ```
 
-Отдельный процесс открывает базу для чтения и может редактировать `config.json` по токену, но не имеет живого Runner. Управление тестированием, журналом и селекторами в таком
-режиме недоступно.
+A separate process opens the database for reading and can edit `config.json` with the token, but has no live Runner. Control of testing, the log and selectors is
+unavailable in this mode.
 
-## Доступ
+## Access
 
-Большинство читающих API доступны без токена только при `admin.public_read: true`. История
-конвейера, его журналы и исходные файлы sing-box всегда требуют токен: в них могут быть
-адреса подписок и другие рабочие данные. Запись и действия
-всегда требуют заголовок `X-Admin-Token`, равный `admin.token`. Пустой токен отключает
-операции изменения.
+Most reading APIs are available without the token only with `admin.public_read: true`. The pipeline
+history, its logs and the sing-box source files always require the token: they may contain
+subscription addresses and other working data. Writes and actions
+always require the `X-Admin-Token` header equal to `admin.token`. An empty token turns off
+modifying operations.
 
-Админку следует публиковать только в доверенной сети или через HTTPS с дополнительной
-защитой. Она показывает эксплуатационные данные, а редактор подписок работает с их URL.
+Publish the admin panel only in a trusted network or over HTTPS with additional
+protection. It shows operational data, and the subscription editor works with their URLs.
 
 ## API
 
-| Группа | Маршруты | Назначение |
+| Group | Routes | Purpose |
 |---|---|---|
-| Сессия | `/api/capabilities`, `/api/session` | режим сервера и проверка доступа |
-| Данные | `/api/data`, `/api/rating`, `/api/results` и другие срезы | чтение SQLite и состояния |
-| Конфиг | `/api/config`, `/api/config/sections`, `/api/config/schema` | чтение и атомарная запись `config.json` (подписки, группы, тестер, конвейер — один файл): весь файл по ревизии или только изменённые разделы |
-| Варианты формы | `/api/config/subscription-options` | варианты User-Agent, заголовки Happ, HWID установки, имена проверок и типов IP, встроенные регионы, состояние подписок из raw (`sources`) |
-| Группы | `/api/groups`, `/api/nodes/{crc}/groups` | состояние групп (активная нода или запасной выход, кандидаты, резерв); проверки групп для ноды с временем результатов |
-| Карточка | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | история рейтинга; JSON ноды, строки для `node_crc` и `cred_crc`, пути учётных данных (details требует токен) |
-| Ноды | `/api/nodes/{crc}/...` | бан, карантин и снятие ограничений |
-| Переключение | `/api/groups/{group}/switch` | ручной выбор кандидата; 409 содержит `code` и `allowed_groups` |
-| Runner | `/api/status`, `/api/run/tests`, `/api/logs` | состояние, тестирование по запросу и журнал |
-| sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, включение и выключение службы killswitch роутера (только OpenWrt) |
-| Уведомления | `POST /api/notify/test` | тестовое сообщение по настройкам работающего процесса |
-| Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
-| Файлы sing-box и пресеты | `/api/singbox/files/...`, `/api/singbox/presets` | ограниченный список JSON-файлов, проверка итоговой сборки при записи базы и пресетов, revision и 20 прошлых версий, удаление пресетов |
+| Session | `/api/capabilities`, `/api/session` | server mode and access check |
+| Data | `/api/data`, `/api/rating`, `/api/results` and other slices | reading SQLite and state |
+| Config | `/api/config`, `/api/config/sections`, `/api/config/schema` | reading and atomic writing of `config.json` (subscriptions, groups, tester, pipeline in one file): the whole file by revision or only changed sections; the schema gives the default values for form hints |
+| Form options | `/api/config/subscription-options` | User-Agent options, Happ headers, the installation HWID, names of checks and IP types, built-in regions, subscription state from raw (`sources`) |
+| Groups | `/api/groups`, `/api/nodes/{crc}/groups` | group state (active node or fallback outbound, candidates, reserve); group checks for a node with result times |
+| Card | `/api/nodes/{crc}/score-history`, `/api/nodes/{crc}/details` | rating history; node JSON, the strings for `node_crc` and `cred_crc`, credential paths (details requires the token) |
+| Nodes | `/api/nodes/{crc}/...` | ban, quarantine and lifting restrictions |
+| Switching | `/api/groups/{group}/switch` | manual choice of a candidate; 409 contains `code` and `allowed_groups` |
+| Runner | `/api/status`, `/api/run/tests`, `/api/logs` | state, on-demand testing and the log |
+| Database | `GET /api/storage/vacuum`, `POST /api/storage/vacuum` | the result of the last `VACUUM`, the next run by schedule, the database size; a manual start (token) |
+| sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | state, emergency stop and start, turning the router killswitch service on and off (OpenWrt only) |
+| Notifications | `POST /api/notify/test` | a test message with the settings of the running process |
+| Pipeline | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | schedule, start and history; all routes require the token |
+| sing-box files and presets | `/api/singbox/files/...`, `/api/singbox/presets` | a limited list of JSON files, a check of the resulting build when the base and presets are written, revision and 20 previous versions, deleting presets |
 
-`/api/data` сохранён как общий агрегат для совместимости. Раздельные read-маршруты удобнее
-для отдельных экранов и диагностики.
+`/api/data` is kept as a shared aggregate for compatibility. Separate read routes are more convenient
+for individual screens and diagnostics.
 
-Срез `traffic` отдаёт `traffic_test_download_24h`: сумму `downloaded` из результатов
-`download` и `heavy_download` за последние 24 часа. Это измеренные байты тела ответов,
-без служебного трафика и других тестов. `traffic_tester_totals` — весь трафик тестера за
-сохранённый период из точного учёта соединений (`storage.traffic`).
+The `traffic` slice gives `traffic_test_download_24h`: the sum of `downloaded` from the results of
+`download` and `heavy_download` over the last 24 hours. These are the measured bytes of response bodies,
+without service traffic and other tests. `traffic_tester_totals` is all tester traffic over the
+stored period from the exact connection accounting (`storage.traffic`).
 
-## Работа с файлами
+API messages and server errors are in Russian for now; the interface itself is translated on the client.
 
-Редактор проверяет `config.json` тем же загрузчиком, что тестер и конвейер
-(`nodes_tester.config.parse_config`): неизвестное поле или неверное значение отклоняется с путём
-поля. Запись выполняется во временный файл с `fsync` и атомарной заменой, права `0600`
-сохраняются.
+## File handling
 
-Форма сохраняет только изменённые разделы верхнего уровня (`POST /api/config/sections`): сервер
-сверяет их с тем, что было открыто, и отклоняет запись, только если по SSH или в другом окне
-изменили те же разделы. Расширенный JSON сохраняется целиком по маркеру версии файла.
+The editor checks `config.json` with the same loader as the tester and the pipeline
+(`nodes_tester.config.parse_config`): an unknown field or a wrong value is rejected with the field
+path. The write goes to a temporary file with `fsync` and an atomic replacement, permissions `0600`
+are kept.
 
-Страницы «Подписки и сборка» и «Настройки» редактируют один документ. На первой — подписки по
-ветвям (`router`, `clients`), раздел `pipeline` и группы с проверками, на второй — тестер,
-выбор нод, админка, хранение и уведомления. Неизвестные поля и переопределения сохраняются.
+The form saves only the changed top-level sections (`POST /api/config/sections`): the server
+compares them with what was opened and rejects the write only if the same sections were changed over SSH or in another
+window. The advanced JSON is saved as a whole by the file version marker.
 
-Для обычных URL можно выбрать стандартный браузерный User-Agent, `curl`, `clashmeta`
-или свою строку. Он используется только при HTTP-загрузке. Для Happ crypt-crypt5
-редактируется набор `happ_headers`, включая его собственный User-Agent; значения
-по умолчанию берутся непосредственно из загрузчика, отдельный `user_agent` игнорируется.
+The “Subscriptions and build” and “Settings” pages edit one document. The first has subscriptions by
+branch (`router`, `clients`), the `pipeline` section and groups with checks, the second the tester,
+node choice, the admin panel, storage and notifications. Unknown fields and overrides are kept. An empty
+field is not written: the default value from `config.schema.json` applies and is shown in grey.
 
-Сохранение не запускает загрузку подписок, сборку и применение sing-box. Встроенный тестер после
-сохранения перезапускается сам (`/etc/init.d/nodes-tester restart` отвязанным процессом), кроме времени
-работы конвейера; ответ PUT содержит `restarting` и, если перезапуска нет, `restart_note`. В пакете OpenWrt raw хранится в `/opt/nodes-tester/raw/router.json` и
-`clients.json`, результат сборки — `nodes.json` и `whnodes.json` в том же каталоге данных.
+For regular URLs you can choose the standard browser User-Agent, `curl`, `clashmeta`
+or your own string. It is used only for HTTP downloads. For Happ crypt-crypt5
+the `happ_headers` set is edited, including its own User-Agent; the default
+values come directly from the loader, a separate `user_agent` is ignored.
 
-JSON в карточке берётся из `nodes.json`; если фрагмента там нет, доступная
-часть восстанавливается из tag и payload SQLite с пояснением об отсутствующих полях.
-Ключ ноды и JSON показываются двумя цветами: настройки сервера (`node_crc`) и учётные данные
-(`cred_crc`); поля вне ключа (`tag`, `domain_resolver`) без цвета. Ниже — обе строки, которые
-хешируются, и проверка ключа. История рейтинга показывает все сохранённые замеры ноды с датой и временем. График показывает последние 24 значения.
+Saving does not start fetching subscriptions, building and applying sing-box. The embedded tester
+restarts itself after saving (`/etc/init.d/nodes-tester restart` as a detached process), except while
+the pipeline runs; the PUT answer contains `restarting` and, if there is no restart, `restart_note`. In the OpenWrt package the raw is stored in `/opt/nodes-tester/raw/router.json` and
+`clients.json`, the build result is `nodes.json` and `whnodes.json` in the same data directory.
 
-## Статика и маршрутизация
+The JSON in the card is taken from `nodes.json`; if the fragment is not there, the available
+part is restored from the tag and the SQLite payload with a note about the missing fields.
+The node key and JSON are shown in two colours: server settings (`node_crc`) and credentials
+(`cred_crc`); fields outside the key (`tag`, `domain_resolver`) have no colour. Below are both strings that
+are hashed and the key check. The rating history shows all saved measurements of the node with the date and time. The chart shows the last 24 values.
 
-`webapp.py` реализует небольшой HTTP-каркас на стандартной библиотеке Python:
+## Static files and routing
 
-- маршруты по методу и шаблону пути;
-- JSON-ответы и проверку размера тела;
-- авторизацию API;
-- безопасную раздачу файлов из `dashboard/static`;
-- SPA fallback только для URL без расширения.
+`webapp.py` implements a small HTTP framework on the Python standard library:
 
-Исходники интерфейса находятся в [`web`](../web/README.md). В репозиторий и пакет попадает
-результат сборки `dashboard/static`.
+- routes by method and path template;
+- JSON answers and a body size check;
+- API authorisation;
+- safe serving of files from `dashboard/static`;
+- SPA fallback only for URLs without an extension.
 
-## Карта кода
+The interface sources are in [`web`](../web/README.md). The repository and the package get
+the build result `dashboard/static`.
 
-| Файл | Ответственность |
+## Code map
+
+| File | Responsibility |
 |---|---|
-| `server.py` | сборка приложения, подключение API и запуск сервера |
-| `webapp.py` | HTTP-каркас, маршрутизация, токен и статика |
-| `data.py` | запросы и агрегаты из SQLite |
-| `api_read.py` | читающие маршруты |
-| `api_control.py` | действия над нодами, группами и Runner |
-| `api_config.py` | чтение, проверка и запись `config.json`, варианты формы |
-| `api_session.py` | возможности режима и проверка сессии |
-| `api_pipeline.py` | запуск, расписание и история конвейера |
-| `api_singbox.py` | ограниченный редактор исходных файлов sing-box |
-| `static/` | собранный Vue SPA |
+| `server.py` | building the application, connecting the APIs and starting the server |
+| `webapp.py` | HTTP framework, routing, token and static files |
+| `data.py` | SQLite queries and aggregates |
+| `api_read.py` | reading routes |
+| `api_control.py` | actions on nodes, groups, the Runner and `VACUUM` |
+| `api_config.py` | reading, checking and writing `config.json`, form options |
+| `api_session.py` | mode capabilities and session check |
+| `api_pipeline.py` | pipeline start, schedule and history |
+| `api_singbox.py` | a limited editor of the sing-box source files |
+| `static/` | the built Vue SPA |

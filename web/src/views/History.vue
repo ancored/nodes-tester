@@ -3,9 +3,11 @@ import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
 import { dateTime } from '../format.js'
 import { crcOf } from '../ux.js'
+import { t } from '../i18n.js'
 import NodeKey from '../components/NodeKey.vue'
 import DataTable from '../components/DataTable.vue'
 import ReasonIcon from '../components/ReasonIcon.vue'
+import HelpButton from '../components/HelpButton.vue'
 const s=useSnapshot()
 const activeRegions=computed(()=>s.data.runner?.regions || [])
 const rows=computed(()=>{
@@ -16,25 +18,25 @@ const rows=computed(()=>{
     return {...r,groups:[r.region],reason_key:r.stuck ? 'emergency-stuck' : r.reason,current_choice:current}
   })
 })
-const reasons={manual:'Ручной выбор',rotation:'Плановая ротация',quality:'Смена по качеству',emergency:'Аварийная замена',
-  'emergency-stuck':'Авария: замена не найдена',failsafe:'Кандидатов нет — запасной выход',initial:'Первый выбор',init:'Первый выбор'}
-const reasonText=v=>reasons[v] || v || 'Не записана'
-const reasonFilters=[{key:'region',title:'Группа'},{key:'reason',title:'Причина',get:r=>reasonText(r.reason_key)}]
+const reasons={manual:t('Manual choice'),rotation:t('Scheduled rotation'),quality:t('Change by quality'),emergency:t('Emergency replacement'),
+  'emergency-stuck':t('Emergency: no replacement found'),failsafe:t('No candidates: fallback outbound'),initial:t('First choice'),init:t('First choice')}
+const reasonText=v=>reasons[v] || v || t('Not recorded')
+const reasonFilters=[{key:'region',title:t('Group')},{key:'reason',title:t('Reason'),get:r=>reasonText(r.reason_key)}]
 const keyOf=tag=>crcOf({node:tag || ''})
 const columns=[
-  {key:'ts',title:'Дата и время',fmt:dateTime,l:true},{key:'region',title:'Группа',l:true},
-  {key:'tag',title:'Выбранная нода',l:true,slot:true},
-  {key:'prev',title:'Предыдущая нода',l:true,slot:true},{key:'reason_key',title:'Причина',l:true,slot:true},
-  {key:'current_choice',title:'Активная нода',fmt:v=>v ? '● Активна' : '—',cls:v=>v ? 'good' : ''},
+  {key:'ts',title:t('Date and time'),fmt:dateTime,l:true},{key:'region',title:t('Group'),l:true},
+  {key:'tag',title:t('Selected node'),l:true,slot:true},
+  {key:'prev',title:t('Previous node'),l:true,slot:true},{key:'reason_key',title:t('Reason'),l:true,slot:true},
+  {key:'current_choice',title:t('Active node'),fmt:v=>v ? '● ' + t('Active') : '—',cls:v=>v ? 'good' : ''},
 ]
 </script>
 <template>
-  <section class="panel"><h2>Активные ноды по группам</h2>
-    <p v-for="r in activeRegions" :key="r.region" class="break"><b>{{ r.region }}</b> · <span class="badge good">Активна</span> {{ r.active }}</p>
-    <p v-if="!activeRegions.length">Активные ноды не выбраны или их состояние недоступно.</p>
-    <p class="mut">{{ s.data.runner ? 'Текущий выбор подключённого переключателя. В таблице выделена последняя запись для каждой активной ноды.' : 'В отдельном режиме живой выбор групп недоступен; история ниже остаётся доступной.' }}</p>
+  <section class="panel"><h2>{{ t('Active nodes by group') }}<HelpButton topic="switches#active" /></h2>
+    <p v-for="r in activeRegions" :key="r.region" class="break"><b>{{ r.region }}</b> · <span class="badge good">{{ t('Active') }}</span> {{ r.active }}</p>
+    <p v-if="!activeRegions.length">{{ t('No active nodes are selected or their state is unavailable.') }}</p>
+    <p v-if="!s.data.runner" class="mut">{{ t('Live group choice is unavailable in standalone mode; the history below is still available.') }}</p>
   </section>
-  <p class="hint">Последние 200 записей. При работающем тестере зелёным выделена последняя запись для текущей активной ноды каждой группы. При аварии без замены новое переключение не произошло.</p>
+  <h2>{{ t('History') }}<HelpButton topic="switches#history" /></h2>
   <DataTable :rows="rows" :columns="columns" :extra-filters="reasonFilters" :page-size="20" :row-class="r=>r.current_choice ? 'active' : ''">
     <template v-for="k in ['tag','prev']" :key="k" #[`cell-${k}`]="{row}">
       <RouterLink v-if="keyOf(row[k])" :to="'/nodes/'+keyOf(row[k])" class="break"><NodeKey :text="row[k]" /></RouterLink>

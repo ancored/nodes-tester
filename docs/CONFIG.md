@@ -1,50 +1,52 @@
+**English** | [Русский](CONFIG.ru.md)
+
 # config.json
 
-[О проекте](../README.md) · [Сборка конфига sing-box](CONFIG_ASSEMBLY.md) · [Админка](USAGE.md) · [Модель безопасности](SECURITY_MODEL.md)
+[About the project](../README.md) · [sing-box config assembly](CONFIG_ASSEMBLY.md) · [Admin panel](USAGE.md) · [Security model](SECURITY_MODEL.md)
 
-Все настройки nodes-tester хранятся в одном файле `config.json`: подписки, группы и их проверки,
-тестер, рейтинг, переключение, конвейер, админка и уведомления. Формат устроен как `config.json`
-самого sing-box:
+All nodes-tester settings are stored in one file, `config.json`: subscriptions, groups and their checks,
+the tester, the rating, switching, the pipeline, the admin panel and notifications. The format follows the `config.json`
+of sing-box itself:
 
-- разделы верхнего уровня — по сущностям; группы и подписки — массивы объектов с `tag`;
-- длительности — строками: `"250ms"`, `"5s"`, `"1h30m"`, `"30d"`;
-- скорость и объём — числами с единицей в имени поля: `_mbps`, `_mb`;
-- значения по умолчанию в файл писать не нужно;
-- неизвестное поле — ошибка с путём: `groups[1].require.gemeni: неизвестное поле (есть: anthropic, country, …)`.
+- top-level sections are by entity; groups and subscriptions are arrays of objects with `tag`;
+- durations are strings: `"250ms"`, `"5s"`, `"1h30m"`, `"30d"`;
+- speed and size are numbers with the unit in the field name: `_mbps`, `_mb`;
+- default values do not need to be written to the file; the admin panel shows them in grey in empty form fields;
+- an unknown field is an error with its path: `groups[1].require.gemeni: unknown field (available: anthropic, country, …)`.
 
-В пакете OpenWrt файл лежит в `/etc/nodes-tester/config.json` с правами `0600`: в нём URL подписок
-и токены. Рядом — `config.schema.json` для подсказок в редакторе (`"$schema": "config.schema.json"`).
-Каталог данных (`nodes.json`, `whnodes.json`, `stats.db`, `raw/`) задаётся `data_dir` в
-`/etc/config/nodes-tester`, по умолчанию `/opt/nodes-tester`.
+In the OpenWrt package the file is `/etc/nodes-tester/config.json` with permissions `0600`: it holds subscription URLs
+and tokens. Next to it is `config.schema.json` for editor hints (`"$schema": "config.schema.json"`).
+The data directory (`nodes.json`, `whnodes.json`, `stats.db`, `raw/`) is set by `data_dir` in
+`/etc/config/nodes-tester`, `/opt/nodes-tester` by default.
 
-Изменения вступают в силу после перезапуска тестера: админка на OpenWrt делает его сама после
-сохранения, вручную — `/etc/init.d/nodes-tester restart`. Соединения пользователей при этом не рвутся. Подписки, фильтры и структура групп меняют `nodes.json` и попадают в
-sing-box только со следующей сборкой конвейера.
+Changes take effect after the tester restarts: the admin panel on OpenWrt does it itself after
+saving, manually: `/etc/init.d/nodes-tester restart`. User connections are not dropped. Subscriptions, filters and the group structure change `nodes.json` and reach
+sing-box only with the next pipeline build.
 
-## Минимальный конфиг
+## Minimal config
 
 ```json
 {
-  "api": { "secret": "<секрет API-сервиса sing-box>" },
+  "api": { "secret": "<sing-box API service secret>" },
   "subscriptions": [
-    { "tag": "PROV", "url": "https://<подписка>" }
+    { "tag": "PROV", "url": "https://<subscription>" }
   ],
   "groups": [
     { "tag": "all" }
   ],
-  "admin": { "token": "<токен админки>" }
+  "admin": { "token": "<admin panel token>" }
 }
 ```
 
-## Полный пример
+## Full example
 
-Значения по умолчанию показаны, чтобы были видны все поля.
+Default values are shown so that all fields are visible.
 
 ```json
 {
   "$schema": "config.schema.json",
 
-  "api": { "url": "http://127.0.0.1:9090", "secret": "<секрет>", "timeout": "5s" },
+  "api": { "url": "http://127.0.0.1:9090", "secret": "<secret>", "timeout": "5s" },
 
   "subscriptions": [
     { "tag": "LUNA", "url": "https://<…>", "user_agent": "clashmeta" },
@@ -64,8 +66,8 @@ sing-box только со следующей сборкой конвейера.
     "reachability": { "urls": ["https://www.google.com/generate_204"], "timeout": "8s", "workers": 8 },
     "for_region": {
       "ru": {
-        "latency": { "url": "https://<адрес в РФ>" },
-        "download": { "url": "https://<адрес в РФ>" }
+        "latency": { "url": "https://<address in Russia>" },
+        "download": { "url": "https://<address in Russia>" }
       }
     }
   },
@@ -168,13 +170,14 @@ sing-box только со следующей сборкой конвейера.
     }
   },
 
-  "storage": { "path": "results/stats.db", "retention": "30d", "traffic": { "enabled": true, "poll": "5s", "flush": "1m" } },
+  "storage": { "path": "results/stats.db", "retention": "30d", "traffic": { "enabled": true, "poll": "5s", "flush": "1m" },
+               "vacuum": { "every": "30d", "at": "04:00" } },
 
-  "admin": { "enabled": true, "listen": "192.168.1.1", "port": 8088, "token": "<токен>", "public_read": true, "refresh": "10s" },
+  "admin": { "enabled": true, "listen": "192.168.1.1", "port": 8088, "token": "<token>", "public_read": true, "refresh": "10s" },
 
   "notify": {
-    "name": "<имя роутера>",
-    "telegram": { "token": "<токен бота>", "chat_id": "<chat_id>" },
+    "name": "<router name>",
+    "telegram": { "token": "<bot token>", "chat_id": "<chat_id>" },
     "events": ["switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"],
     "switch_reasons": ["emergency", "emergency-stuck"],
     "expiry_warning": "3d"
@@ -191,97 +194,122 @@ sing-box только со следующей сборкой конвейера.
 
 ## api
 
-API-сервис sing-box 1.14 (`services[]` с `"type": "api"` в конфиге sing-box). Через него тестер
-переключает селекторы и читает счётчики трафика.
+The sing-box 1.14 API service (`services[]` with `"type": "api"` in the sing-box config). Through it the tester
+switches selectors and reads traffic counters.
 
-| Поле | Тип | По умолчанию | Описание |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `url` | строка | `http://127.0.0.1:9090` | Адрес API |
-| `secret` | строка | — | Секрет API |
-| `timeout` | длительность | `5s` | Тайм-аут запроса |
+| `url` | string | `http://127.0.0.1:9090` | API address |
+| `secret` | string | — | API secret |
+| `timeout` | duration | `5s` | Request timeout |
 
 ## subscriptions
 
-Источники нод. Сборка (`nodes_config`) берёт все ноды подписок своей ветви; что из них активировать,
-решает тестер по проверкам групп. Страна в названии ноды у провайдера не используется.
+Node sources. The build (`nodes_config`) takes all nodes of the subscriptions of its branch; which of them to activate
+is decided by the tester by the group checks. The country in the provider's node name is not used.
 
-| Поле | Тип | По умолчанию | Описание |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `tag` | строка | — | Имя провайдера, уникальное; первая часть тегов нод |
-| `enabled` | bool | `true` | Использовать подписку |
-| `branch` | `router` · `clients` · `both` | `router` | Ветвь сборки: `nodes.json` роутера, `whnodes.json` клиентов или обе |
-| `type` | `url` · `file` · `folder` · `inline` | `url` | Вид источника |
-| `url` | строка | — | URL подписки, share-ссылка или `happ://crypt…` |
-| `file` | строка | — | `file`: путь к файлу подписки (относительно `config.json`) |
-| `path`, `format`, `ext` | строки | — | `folder`: каталог, формат (`awg`) и расширение файлов (`.conf`) |
-| `outbounds` | массив | — | `inline`: свои outbound-ы sing-box; тег им задаёт сборка |
-| `user_agent` | строка | Safari | User-Agent HTTP-загрузки: `curl`, `clashmeta` или своя строка |
-| `happ_headers` | объект | набор Happ | `happ://`: заголовки поверх набора по умолчанию |
-| `send_device` | bool | `false` | URL-подписка: отправлять HWID и описание устройства |
-| `exclude_names` | список строк | — | Не брать ноды, в имени которых есть подстрока |
+| `tag` | string | — | Provider name, unique; the first part of node tags |
+| `enabled` | bool | `true` | Use the subscription |
+| `branch` | `router` · `clients` · `both` | `router` | Build branch: router `nodes.json`, client `whnodes.json` or both |
+| `type` | `url` · `file` · `folder` · `inline` · `amnezia` | `url` | Source kind |
+| `url` | string | — | Subscription URL, share link, `happ://crypt…` or the Amnezia Premium `vpn://` link |
+| `file` | string | — | `file`: path to the subscription file (relative to `config.json`) |
+| `path`, `format`, `ext` | strings | — | `folder`: directory, format (`awg`) and file extension (`.conf`); `amnezia`: directory of the country files |
+| `gateway_key` | string | — | `amnezia`: file with the public key of the Amnezia gateway (PEM), relative to `config.json` |
+| `slots` | integer | all slots | `amnezia`: how many country files to keep |
+| `min_rating` | number | `40` | `amnezia`: a country whose node keeps a lower rating is replaced |
+| `exclude_countries` | list of strings | `["ru"]` | `amnezia`: country codes that are not issued |
+| `outbounds` | array | — | `inline`: your own sing-box outbounds; the build sets their tags |
+| `user_agent` | string | Safari | User-Agent of the HTTP download: `curl`, `clashmeta` or your own string |
+| `happ_headers` | object | Happ set | `happ://`: headers on top of the default set |
+| `send_device` | bool | `false` | URL subscription: send the HWID and device description |
+| `exclude_names` | list of strings | — | Skip nodes whose name contains the substring |
 
-HWID роутера хранится в `device.json`, ключи `happ://crypt…` — в `happ-keys.json`; оба лежат рядом с
-`config.json` и создаются автоматически.
+The router HWID is stored in `device.json`, the `happ://crypt…` keys in `happ-keys.json`; both are next to
+`config.json` and are created automatically.
+
+### Amnezia Premium
+
+A subscription with `type: "amnezia"` takes the `vpn://` link of Amnezia Premium and keeps AmneziaWG files of
+countries in `path` (`<country code>.conf`, rights 0600). The files are issued by the tester through the Amnezia gateway
+(`gw.amnezia.org`, with `pipeline.fetch.proxy` if it is set) once every 3 hours:
+
+- a country whose node keeps a rating below `min_rating` for 6 hours is considered blocked: its file is revoked and
+  deleted, and the country is not issued while others remain;
+- free places, up to `slots` and the free slots of the subscription, get random countries not issued before; when
+  none are left, blocked countries are tried again, starting from the one blocked longest ago;
+- a file whose server was updated after the issue is issued anew.
+
+If all rated countries are below the threshold at once, the cause is not the countries (the protocol is blocked or the
+network is down), and nothing is replaced. Countries issued elsewhere (no file in `path`) are not touched: a new issue
+would break that file. The memory of the tried and blocked countries is `state.json` in `path`; delete a country from
+`blocked` to allow it again. New files reach sing-box with the next subscription poll and router build.
+
+The gateway key is not part of the project. It is the `-----BEGIN PUBLIC KEY-----` block in the official AmneziaVPN
+app: for example, in `lib/<abi>/libAmneziaVPN_<abi>.so` of the Android APK. The application has two keys; the
+working one is accepted by the gateway, the other one gets HTTP 500.
 
 ## tests
 
-Замеры рейтинга: `connectivity`, `latency`, `jitter`, `download`, `reachability`. Тестер
-проверяет ноду, когда истёк срок годности её замера (см.
-[сроки годности](../nodes_tester/README.md#сроки-годности)). Поля задают сроки, адреса и тайм-ауты;
-не заданные берутся из кода теста, `timeout` — из `tester.request_timeout`.
+Rating measurements: `connectivity`, `latency`, `jitter`, `download`, `reachability`. The tester
+checks a node when its measurement has expired (see
+[result lifetimes](../nodes_tester/README.md#result-lifetimes)). The fields set lifetimes, addresses and timeouts;
+unset ones come from the test code, `timeout` from `tester.request_timeout`.
 
-У каждого теста `ttl` (по умолчанию `3h`) и `ttl_jitter` (по умолчанию десятая часть `ttl`):
-результат живёт от `ttl − ttl_jitter` до `ttl`. Срок задаётся для теста целиком, в `for_region` его нет.
+Each test has `ttl` (`3h` by default) and `ttl_jitter` (a tenth of `ttl` by default):
+a result lives from `ttl − ttl_jitter` to `ttl`. The lifetime is set for the whole test, `for_region` does not have it.
 
-| Тест | Поля |
+| Test | Fields |
 |---|---|
-| `connectivity` | `service` (`cloudflare` по умолчанию) — сервис выходного IP и страны; `timeout` |
+| `connectivity` | `service` (`cloudflare` by default): the exit IP and country service; `timeout` |
 | `latency` | `url`, `timeout` |
 | `jitter` | `url`, `samples`, `interval`, `timeout` |
 | `download` | `url`, `duration`, `window_mb`, `timeout` |
 | `reachability` | `urls`, `timeout`, `workers` |
 
-`for_region` — поля тестов для нод с выходом в регионе (по измеренной стране). Блок пишется либо
-внутри теста (`"latency": {"for_region": {"ru": {"url": "…"}}}`), либо общим разделом
-`tests.for_region.<регион>.<тест>`.
+`for_region` holds test fields for nodes with an exit in the region (by the measured country). The block is written either
+inside the test (`"latency": {"for_region": {"ru": {"url": "…"}}}`) or as a shared section
+`tests.for_region.<region>.<test>`.
 
 ## checks
 
-Проверки с вердиктом «да / нет / неизвестно» и сроком годности `ttl`; `ttl_jitter` (по
-умолчанию десятая часть `ttl`) укорачивает срок на случайную долю, чтобы вердикты нод не истекали
-разом. Здесь — значения по умолчанию; группа ссылается на проверку по имени в `require` или
+Checks with a “yes / no / unknown” verdict and a lifetime `ttl`; `ttl_jitter` (a tenth of
+`ttl` by default) shortens the lifetime by a random share so that node verdicts do not expire
+at once. These are the defaults; a group refers to a check by name in `require` or
 `prefer`.
 
-| Проверка | Что проверяет | Поля и умолчания |
+| Check | What it checks | Fields and defaults |
 |---|---|---|
-| `country` | страна выхода по замеру соединения | `ttl` `24h` |
-| `ip_type` | тип выходного IP по ip-api: `residential`, `mobile`, `hosting`, `proxy` | `ttl` `24h`, `url`, `timeout` `10s`, `via_tester` `true` |
-| `geo_consistent` | страна IP по базе совпадает с измеренной | `ttl` `24h` |
-| `gemini`, `openai`, `anthropic` | доступ к AI-сервису | `ttl` `24h`, `attempts` `3`, `timeout` |
-| `upstream` | проходит ли через ноду вышестоящий прокси — outbound sing-box типа `socks` с `detour` на группу | `ttl` `6h`, `outbound` (обязателен, если проверка есть в группе), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
-| `heavy` | тяжёлая закачка кандидатов резерва; медленнее `min_mbps` — провал | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2`, `min_mbps` `5` |
-| `whitelist` | пропустит ли ноду режим белых списков: IP сервера в IP-списке и SNI в списке доменов (домен и поддомены); без TLS — достаточно IP | `ttl` `24h`, `ip_list`, `sni_list` (текстовые списки [ru-mobile-whitelist](https://github.com/ancored/ru-mobile-whitelist)), `dns` `dns-ru`, `timeout` `10s` |
+| `country` | exit country by the connection measurement | `ttl` `24h` |
+| `ip_type` | exit IP type by ip-api: `residential`, `mobile`, `hosting`, `proxy` | `ttl` `24h`, `url`, `timeout` `10s`, `via_tester` `true` |
+| `geo_consistent` | the IP country by the database matches the measured one | `ttl` `24h` |
+| `gemini`, `openai`, `anthropic` | access to the AI service | `ttl` `24h`, `attempts` `3`, `timeout` |
+| `upstream` | whether an upstream proxy works through the node: a sing-box outbound of type `socks` with `detour` to the group | `ttl` `6h`, `outbound` (required if the check is in a group), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
+| `heavy` | a heavy download of reserve candidates; slower than `min_mbps` is a failure | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2`, `min_mbps` `5` |
+| `whitelist` | whether the whitelist mode lets the node through: the server IP is in the IP list and the SNI in the domain list (domain and subdomains); without TLS the IP is enough | `ttl` `24h`, `ip_list`, `sni_list` (text lists of [ru-mobile-whitelist](https://github.com/ancored/ru-mobile-whitelist)), `dns` `dns-ru`, `timeout` `10s` |
 
-`whitelist` — локальная проверка (тестер раз в 5 минут смотрит, у каких нод истёк вердикт), трафик через ноду не идёт. Домен сервера ноды резолвится
-DoH-запросом к серверу `dns`: тегу DNS-сервера `type: https` из работающего конфига sing-box
-(`singbox.config`), её группе `type: group` (серверы `https` по очереди) или URL; не нашлось — Cloudflare
-`1.1.1.1` (Quad9 требует HTTP/2). Системный резолвер роутера не используется: он отправил бы имя ноды
-провайдеру.
+`whitelist` is a local check (every 5 minutes the tester looks for nodes with an expired verdict); no traffic goes through the node. The node server domain is resolved
+with a DoH request to the `dns` server: a tag of a `type: https` DNS server from the running sing-box config
+(`singbox.config`), its `type: group` group (the `https` servers in turn) or a URL; if none is found, Cloudflare
+`1.1.1.1` (Quad9 requires HTTP/2). The router system resolver is not used: it would send the node name to the
+provider.
 
-`upstream` нужен, когда выход идёт через группу цепочкой — например, SOCKS со статическим IP
-(`"detour": "ai-auto-out"`). Нода может быть жива, но не пускать соединения на порт прокси, или сам прокси
-не принимает её IP; тогда выход мёртв, хотя остальные проверки ноду пропускают. Резерв через ноду проходит
-SOCKS5-рукопожатие с сервером `outbound` (логин и пароль — из работающего конфига sing-box) и запрашивает
-`url`; нода проходит, если удались все попытки.
+`upstream` is needed when the exit goes through a group as a chain, for example a SOCKS proxy with a static IP
+(`"detour": "ai-auto-out"`). A node may be alive but not allow connections to the proxy port, or the proxy itself
+does not accept its IP; then the exit is dead even though the other checks pass the node. The reserve completes
+the SOCKS5 handshake with the `outbound` server through the node (login and password from the running sing-box config) and requests
+`url`; the node passes if all attempts succeed.
 
-Дорогие проверки (AI, `heavy`) тестер запускает только для нод, уже прошедших дешёвые: gate и
-обязательную страну группы.
+The tester runs expensive checks (AI, `heavy`) only for nodes that already passed the cheap ones: the gate and
+the required country of the group.
 
 ## regions
 
-Именованные списки стран для условий групп и `for_region` тестов. Встроенные: `eu` (страны Европы),
-`us`, `ru` и `other` — всё, что не попало в `eu`, `us` и `ru`. Встроенный регион можно
-переопределить.
+Named lists of countries for group conditions and `for_region` of tests. Built-in: `eu` (European countries),
+`us`, `ru` and `other`: everything not in `eu`, `us` and `ru`. A built-in region can be
+overridden.
 
 ```json
 "regions": { "us": ["us", "ca"], "asia": ["jp", "sg", "kr"] }
@@ -289,200 +317,205 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 
 ## groups
 
-Группа — селектор sing-box `{tag}-auto-out`. В нём все ноды ветви `router`, запасной выход и, при
-`direct_fallback`, `direct-out`. Активную ноду выбирает тестер.
+A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router` branch, the fallback outbound and, with
+`direct_fallback`, `direct-out`. The tester picks the active node.
 
-| Поле | Тип | По умолчанию | Описание |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `tag` | строка | — | Латиница в нижнем регистре, цифры, `_`; не `global`, `nodes`, `failsafe` |
-| `strict` | bool | `false` | Без кандидатов — `block-out` (трафик группы блокируется), а не `failsafe-out` |
-| `direct_fallback` | bool | `false` | Добавить `direct-out`; строгая группа без кандидатов уходит на него вместо `block-out` |
-| `in_global` | bool | `true` | Входит в `global-auto-out` |
-| `reserve` | число | `selection.reserve` | Кандидатов в резерве |
-| `tier_floor` | число | `selection.tier_floor` | Рейтинг ниже — ярус после всех остальных нод группы |
-| `require` | объект | — | Обязательные проверки: без свежего успеха нода не кандидат |
-| `prefer` | объект | — | Желательные проверки: успехи поднимают ноду в очереди выбора |
+| `tag` | string | — | Lowercase Latin letters, digits, `_`; not `global`, `nodes`, `failsafe` |
+| `strict` | bool | `false` | Without candidates: `block-out` (the group traffic is blocked) instead of `failsafe-out` |
+| `direct_fallback` | bool | `false` | Add `direct-out`; a strict group without candidates goes to it instead of `block-out` |
+| `in_global` | bool | `true` | Part of `global-auto-out` |
+| `reserve` | number | `selection.reserve` | Reserve candidates |
+| `tier_floor` | number | `selection.tier_floor` | A lower rating puts the node into a tier after all other nodes of the group |
+| `require` | object | — | Required checks: without a fresh success the node is not a candidate |
+| `prefer` | object | — | Preferred checks: successes move the node up the choice queue |
 
-Проверка внутри группы — объект, обычно пустой (`"gemini": {}`). В нём можно задать свой `ttl`, а
-у `country` и `ip_type` — условия:
+A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl`, and
+`country` and `ip_type` can set conditions:
 
-- `country`: `countries`, `regions`, `exclude_countries`, `exclude_regions` (ISO-коды и имена регионов);
-- `ip_type`: `kinds` — допустимые типы IP.
+- `country`: `countries`, `regions`, `exclude_countries`, `exclude_regions` (ISO codes and region names);
+- `ip_type`: `kinds`, the allowed IP types.
 
-Кандидат группы проходит gate, имеет рейтинг больше нуля, не стоит на паузе или в карантине, а все
-проверки `require` у него свежие и успешные. Среди кандидатов первыми идут ноды с успехами по
-`prefer`, затем — по рейтингу.
+A group candidate passes the gate, has a rating above zero, is not paused or quarantined, and all its
+`require` checks are fresh and successful. Among the candidates, nodes with successes in
+`prefer` go first, then by rating.
 
-Нет кандидатов: нестрогая группа переключается на общий `failsafe-out` (urltest по всем нодам), строгая —
-на `block-out`, а при `direct_fallback` — на `direct-out`. `failsafe-out` монитор наблюдает как ноду:
-провал зонда `monitor.fails` раз подряд — нестрогая группа с `direct_fallback` уходит на `direct-out`, а
-когда `failsafe-out` снова отвечает, возвращается на него. `block-out` берётся из `base.json` sing-box
-(`{"type": "block", "tag": "block-out"}`). Без раздела `groups` создаётся одна группа `all`.
+No candidates: a non-strict group switches to the shared `failsafe-out` (urltest over all nodes), a strict one
+to `block-out`, and with `direct_fallback` to `direct-out`. The monitor watches `failsafe-out` as a node:
+when the probe fails `monitor.fails` times in a row, a non-strict group with `direct_fallback` goes to `direct-out`, and
+when `failsafe-out` responds again, it comes back to it. `block-out` is taken from the sing-box `base.json`
+(`{"type": "block", "tag": "block-out"}`). Without a `groups` section a single group `all` is created.
 
 ## rating
 
-Сглаживание, пороги и веса рейтинга нод.
+Smoothing, thresholds and weights of the node rating.
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `alpha` | `0.3` | Сглаживание EWMA |
-| `flap_lambda` | `0.5` | Штраф за флапы |
-| `availability.floor`, `availability.full` | `0.7`, `0.9` | Доступность, ниже которой рейтинг 0, и доступность полного рейтинга |
+| `alpha` | `0.3` | EWMA smoothing |
+| `flap_lambda` | `0.5` | Penalty for flapping |
+| `availability.floor`, `availability.full` | `0.7`, `0.9` | Availability at or below which the rating is halved (factor 0.5), and the availability of the full rating (factor 1) |
 | `thresholds.latency` | `150ms` / `1.5s` | TTFB: `good`, `bad` |
-| `thresholds.jitter` | `15ms` / `250ms` | Джиттер: `good`, `bad` |
-| `thresholds.loss_gate_percent` | `50` | Потери, при которых нода не проходит gate, % |
-| `thresholds.download_mbps` | `2` / `25` | Скорость: `min`, `target` |
-| `thresholds.throttle` | `0.3` / `0.9` | Троттлинг: `bad`, `good` |
-| `thresholds.variation` | `0.1` / `0.8` | Разброс: `good`, `bad` |
-| `weights` | см. пример | Веса составляющих: `reliability`, `consistency`, `throttle`, `jitter`, `latency`, `throughput` |
+| `thresholds.jitter` | `15ms` / `250ms` | Jitter: `good`, `bad` |
+| `thresholds.loss_gate_percent` | `50` | Loss at which the node fails the gate, % |
+| `thresholds.download_mbps` | `2` / `25` | Speed: `min`, `target` |
+| `thresholds.throttle` | `0.3` / `0.9` | Throttling: `bad`, `good` |
+| `thresholds.variation` | `0.1` / `0.8` | Variation: `good`, `bad` |
+| `weights` | see the example | Weights of the components: `reliability`, `consistency`, `throttle`, `jitter`, `latency`, `throughput` |
 
 ## selection
 
-Выбор активной ноды в группах.
+Choosing the active node in groups.
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `reserve` | `3` | Кандидатов в резерве группы (проверенных обязательными проверками и `heavy`) |
-| `quality_margin` | `15` | На сколько баллов кандидат должен быть лучше для замены по качеству |
-| `reserve_margin` | `quality_margin` | На сколько баллов нода должна быть лучше худшего кандидата резерва (того же яруса), чтобы занять его место |
-| `confirm_cycles` | `2` | Сколько замеров подряд (активной ноды или лидера резерва) подтверждать замену по качеству |
-| `comfort_floor` | `50` | Выше этого рейтинга активную ноду по качеству не меняют |
-| `tier_floor` | `75` | Рейтинг ниже — ярус после всех остальных нод группы: слабая нода, прошедшая приоритетные проверки (`prefer`), не обходит сильные, которые их не прошли |
-| `cooldown` | `5m` | Пауза между переключениями группы |
-| `host_penalty` | `3h` | Сколько не выбирать хост ноды, которую монитор снял аварией (зонд не прошёл); `0` — без штрафа |
-| `rotation.enabled` | `true` | Плановая ротация |
-| `rotation.interval`, `rotation.jitter` | `3h`, `15m` | Срок ротации и случайный сдвиг; у каждой группы свой срок от её переключения, группы не переключаются разом |
-| `rotation.min_dwell` | `30m` | Минимальное время на ноде |
-| `rotation.min_score` | `55` | Минимальный рейтинг кандидата ротации |
-| `rotation.avoid_recent` | `2` | Не возвращаться к последним N нодам |
-| `rotation.balance` | выключена | Балансировка по трафику; раздел включает её: `window` `24h`, сила осей `provider` `1.0`, `country` `1.0`, `protocol` `0.3` |
-| `quarantine.after_skips` | `32` | После n-го провала подряд нода не проверяется 2^(n-1) сроков `connectivity`; дорос пропуск до N — карантин |
-| `quarantine.duration` | `72h` | Длительность карантина |
-| `quarantine.low_score` | `0` | Больше нуля — карантин и для слабых нод с рейтингом ниже |
+| `reserve` | `3` | Reserve candidates of a group (checked by the required checks and `heavy`) |
+| `quality_margin` | `15` | How many points better a candidate must be for a replacement by quality |
+| `reserve_margin` | `quality_margin` | How many points better a node must be than the worst reserve candidate (of the same tier) to take its place |
+| `confirm_cycles` | `2` | How many measurements in a row (of the active node or the reserve leader) confirm a replacement by quality |
+| `comfort_floor` | `50` | Above this rating the active node is not replaced by quality |
+| `tier_floor` | `75` | A lower rating puts the node into a tier after all other nodes of the group: a weak node that passed the preferred checks (`prefer`) does not overtake strong ones that did not |
+| `cooldown` | `5m` | Pause between switches of a group |
+| `host_penalty` | `3h` | How long not to choose the host of a node that the monitor removed in an emergency (the probe failed); `0` means no penalty |
+| `rotation.enabled` | `true` | Scheduled rotation |
+| `rotation.interval`, `rotation.jitter` | `3h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once |
+| `rotation.min_dwell` | `30m` | Minimum time on a node |
+| `rotation.min_score` | `55` | Minimum rating of a rotation candidate |
+| `rotation.avoid_recent` | `2` | Do not go back to the last N nodes |
+| `rotation.balance` | off | Balancing by traffic; the section turns it on: `window` `24h`, axis strength `provider` `1.0`, `country` `1.0`, `protocol` `0.3` |
+| `quarantine.after_skips` | `32` | After the n-th failure in a row the node is not checked for 2^(n-1) `connectivity` periods; once the skip reaches N, quarantine |
+| `quarantine.duration` | `72h` | Quarantine duration |
+| `quarantine.low_score` | `0` | Above zero: quarantine also for weak nodes with a lower rating |
 
 ## tester
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `socks` | `socks5h://127.0.0.1:2080` | SOCKS inbound тестера; `socks5h` — имя резолвит выбранная нода |
-| `selector` | `nodes-tester` | Селектор тестера в sing-box |
-| `switch_delay` | `1s` | Пауза после переключения селектора тестера |
-| `request_timeout` | `10s` | Тайм-аут запроса теста |
-| `host_gap` | `2m` | Не чаще одного обращения к хосту с другим портом или протоколом |
+| `socks` | `socks5h://127.0.0.1:2080` | Tester SOCKS inbound; with `socks5h` the chosen node resolves the name |
+| `selector` | `nodes-tester` | Tester selector in sing-box |
+| `switch_delay` | `1s` | Pause after switching the tester selector |
+| `request_timeout` | `10s` | Test request timeout |
+| `host_gap` | `2m` | At most one request to a host with another port or protocol within this time |
 
 ## monitor
 
-Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` — внеплановый
-зонд; в логе sing-box за тик `error_burst` ошибок соединений через группу — зонд сразу; провал — повтор
-через `retry`, `fails` провалов подряд — авария и замена. Ошибки читаются из файла `log.output` работающего
-конфига sing-box (`singbox.config`); лог не в файле — сигнал не работает.
+Supervision of active nodes: live traffic flows, the node is alive; quiet for longer than `silence`, an unscheduled
+probe; `error_burst` connection errors through the group in the sing-box log within a tick, a probe right away; a failure, a retry
+after `retry`; `fails` failures in a row, an emergency and a replacement. Errors are read from the `log.output` file of the running
+sing-box config (`singbox.config`); if the log is not in a file, this signal does not work.
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `interval` | `10s` | Тик монитора |
-| `reassert_drift` | `true` | Вернуть выбор селекторов, если его сменили в обход тестера |
-| `silence` | `5m` | Тишина дольше — зонд |
-| `silence_floor_mb` | `0` | МБ за окно, которые считаются трафиком; `0` — `probe.min_mbps × silence` |
-| `probe.url`, `probe.size_mb` | speed.cloudflare.com, `1` | Адрес и объём зонда |
-| `probe.min_mbps`, `probe.timeout` | `1`, `8s` | Минимальная скорость зонда и тайм-аут |
-| `fails` | `2` | Провалов подряд до аварии |
-| `retry` | `30s` | Повтор зонда после провала |
-| `error_burst` | `5` | Ошибок соединений через группу за тик — зонд сразу; `0` — выключено |
+| `interval` | `10s` | Monitor tick |
+| `reassert_drift` | `true` | Bring back the selector choice if it was changed behind the tester's back |
+| `silence` | `5m` | Quiet for longer: a probe |
+| `silence_floor_mb` | `0` | MB per window that count as traffic; `0` means `probe.min_mbps × silence` |
+| `probe.url`, `probe.size_mb` | speed.cloudflare.com, `1` | Probe address and size |
+| `probe.min_mbps`, `probe.timeout` | `1`, `8s` | Minimum probe speed and timeout |
+| `fails` | `2` | Failures in a row before an emergency |
+| `retry` | `30s` | Probe retry after a failure |
+| `error_burst` | `5` | Connection errors through the group per tick: a probe right away; `0` turns it off |
 
 ## pipeline
 
-Конвейер: загрузка подписок (`nodes_fetch`), сборка (`nodes_config`), проверка `sing-box check` и
-применение. Админка запускает его по расписанию `at` или вручную.
+The pipeline: fetching subscriptions (`nodes_fetch`), building (`nodes_config`), `sing-box check` and
+applying. The admin panel runs it by the `at` schedule or manually.
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `timeout` | `30m` | Предел длительности запуска |
-| `fetch.timeout` | `2m` | Тайм-аут загрузки подписки |
-| `fetch.retries` | `3` | Повторов HTTP |
-| `fetch.proxy` | — | Прокси загрузки, например `socks5://127.0.0.1:2080` |
-| `fetch.keep_stale` | `48h` | Сколько держать прошлые ноды упавшей подписки |
-| `fetch.min_ratio` | `0.5` | Нод стало меньше этой доли — `raw` не перезаписывается |
-| `fetch.happ_keys_url` | встроенный | Источник ключей `happ://crypt…` |
-| `fetch.every` | `3h` | Опрашивать подписки роутера отдельно от сборки: только `raw/router.json`, без сборки и применения; отсчёт — от прошлого опроса или сборки роутера. `0s` — подписки опрашивает только сборка |
+| `timeout` | `30m` | Run duration limit |
+| `fetch.timeout` | `2m` | Subscription download timeout |
+| `fetch.retries` | `3` | HTTP retries |
+| `fetch.proxy` | — | Download proxy, for example `socks5://127.0.0.1:2080` |
+| `fetch.keep_stale` | `48h` | How long to keep the previous nodes of a failed subscription |
+| `fetch.min_ratio` | `0.5` | If fewer nodes than this share remain, `raw` is not overwritten |
+| `fetch.happ_keys_url` | built-in | Source of the `happ://crypt…` keys |
+| `fetch.every` | `3h` | Poll router subscriptions separately from the build: only `raw/router.json`, without building and applying; counted from the previous poll or router build. `0s`: subscriptions are polled only by the build |
 
-Ветви `router` (результат — `nodes.json` для sing-box роутера) и `clients` (`whnodes.json` для
-клиентских конфигов) настраиваются одинаково:
+The `router` branch (result: `nodes.json` for the router sing-box) and the `clients` branch (`whnodes.json` for
+client configs) are configured the same way:
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Сборка по расписанию |
-| `at` | `["03:00"]` у `router`, пусто у `clients` | Время запуска, `ЧЧ:ММ` |
-| `exclude_types` | — | Не брать outbound-ы этих типов, например `shadowsocksr` |
-| `exclude_protocols` | — | Не брать протоколы и транспорты: `reality`, `xhttp`, `wg`… |
-| `domain_resolver` | `bootstrap` | Тег DNS-сервера для адресов нод |
-| `selector` | — | Поля selector-ов групп sing-box, например `interrupt_exist_connections` |
-| `urltest` | — | Поля urltest `failsafe-out`: `url`, `interval`, `tolerance`, `idle_timeout` |
-| `rebuild` | см. ниже | Только `router`: пересборка по деградации |
+| `enabled` | `true` | Scheduled build |
+| `at` | `["03:00"]` for `router`, empty for `clients` | Start time, `HH:MM` |
+| `exclude_types` | — | Skip outbounds of these types, for example `shadowsocksr` |
+| `exclude_protocols` | — | Skip protocols and transports: `reality`, `xhttp`, `wg`… |
+| `domain_resolver` | `bootstrap` | DNS server tag for node addresses |
+| `selector` | — | Fields of the sing-box group selectors, for example `interrupt_exist_connections` |
+| `urltest` | — | Fields of the `failsafe-out` urltest: `url`, `interval`, `tolerance`, `idle_timeout` |
+| `rebuild` | see below | `router` only: rebuild on degradation |
 
-Пересборка по деградации (`pipeline.router.rebuild`). Перезапуск sing-box рвёт соединения, поэтому
-тестер просит конвейер собрать конфиг заново, только когда выполнены оба условия: группа без
-кандидатов дольше `degraded_for` (`15m`) или кандидатов меньше резерва + 1 дольше
-`few_candidates_for` (`1h`); и в последнем опросе подписок есть новые доступы, а из мёртвых нод
-конфига ушли из подписок не меньше `gone_share` (`0.3`). Не чаще `min_interval` (`6h`) после прошлой
-сборки роутера и только при `pipeline.router.enabled`. Свежий опрос даёт `fetch.every`; при `0s`
-сравнение идёт с raw последней сборки и пересборка не срабатывает. Каждая пересборка — в журнале и уведомлении `pipeline`.
+Rebuild on degradation (`pipeline.router.rebuild`). A sing-box restart drops connections, so
+the tester asks the pipeline to build the config anew only when both conditions hold: a group has been without
+candidates longer than `degraded_for` (`15m`) or has had fewer candidates than the reserve + 1 longer than
+`few_candidates_for` (`1h`); and the last subscription poll has new accesses, and of the dead nodes of the
+config at least `gone_share` (`0.3`) are gone from the subscriptions. At most once per `min_interval` (`6h`) after the previous
+router build and only with `pipeline.router.enabled`. A fresh poll comes from `fetch.every`; with `0s`
+the comparison is against the raw of the last build and the rebuild does not trigger. Each rebuild goes to the log and a `pipeline` notification.
 
-Фильтры ветви защищают sing-box от outbound-ов, которые он не примет; голые vless и vmess (без TLS и Reality)
-отбрасываются всегда. Клиентская ветвь собирает одну группу `global-auto-out` со всеми нодами и
+Branch filters protect sing-box from outbounds it would not accept; bare vless and vmess (without TLS and Reality)
+are always dropped. The client branch builds a single group `global-auto-out` with all nodes and
 `failsafe-out`.
 
 ## storage
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `path` | `results/stats.db` | Файл SQLite; относительный — от каталога данных |
-| `retention` | `30d` | Сколько хранить историю |
-| `traffic.enabled` | `true` | Собирать пользовательский трафик по нодам |
-| `traffic.poll`, `traffic.flush` | `5s`, `1m` | Опрос счётчиков и запись в БД |
+| `path` | `results/stats.db` | SQLite file; a relative path is from the data directory |
+| `retention` | `30d` | How long to keep the history |
+| `traffic.enabled` | `true` | Collect user traffic by node |
+| `traffic.poll`, `traffic.flush` | `5s`, `1m` | Counter polling and writing to the database |
+| `vacuum.every` | `30d` | Repack the database (`VACUUM`) once per this period; `0s` means manually from the admin panel only |
+| `vacuum.at` | `04:00` | Start time (local) after the period expires |
+
+The result of the last `VACUUM` (the database size before and after) and the “Run now” button are in the admin panel, the
+“Settings” section. The period is counted from the first tester start.
 
 ## admin
 
-Веб-админка, встроенная в процесс тестера.
+The web admin panel built into the tester process.
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Включить админку |
-| `listen` | `0.0.0.0` | Адрес прослушивания; наружу не выставлять |
-| `port` | `8088` | Порт |
-| `token` | — | Токен администратора; пустой — правка и управление выключены |
-| `public_read` | `true` | Просмотр без токена |
-| `refresh` | `10s` | Обновление данных в браузере |
+| `enabled` | `true` | Enable the admin panel |
+| `listen` | `0.0.0.0` | Listen address; do not expose it to the outside |
+| `port` | `8088` | Port |
+| `token` | — | Administrator token; empty turns editing and control off |
+| `public_read` | `true` | Viewing without the token |
+| `refresh` | `10s` | Data refresh in the browser |
 
 ## notify
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Отправлять уведомления |
-| `name` | — | Подпись роутера в начале сообщения |
-| `telegram.token`, `telegram.chat_id` | — | Бот и получатель |
+| `enabled` | `true` | Send notifications |
+| `name` | — | Router signature at the start of the message |
+| `telegram.token`, `telegram.chat_id` | — | Bot and recipient |
 | `webhook.url` | — | POST JSON `{event, text, ts}` |
-| `proxy` | — | Прокси отправки |
-| `via_tester` | `true` | Не прошло напрямую — повторить через SOCKS тестера |
-| `events` | все | `switch`, `failsafe`, `rollback`, `pipeline`, `subscription`, `expiry`, `singbox` |
-| `switch_reasons` | `emergency`, `emergency-stuck` | Причины переключений, о которых сообщать: ещё `init`, `rotation`, `quality`, `manual` |
-| `expiry_warning` | `3d` | Предупреждать о конце подписки заранее |
-| `dedupe` | `1h` | Не повторять одинаковое сообщение чаще |
-| `max_per_hour` | `20` | Предел сообщений в час |
-| `timeout` | `10s` | Тайм-аут отправки |
+| `proxy` | — | Proxy for sending |
+| `via_tester` | `true` | If sending directly failed, retry through the tester SOCKS |
+| `events` | all | `switch`, `failsafe`, `rollback`, `pipeline`, `subscription`, `expiry`, `singbox` |
+| `switch_reasons` | `emergency`, `emergency-stuck` | Switch reasons to report; also `init`, `rotation`, `quality`, `manual` |
+| `expiry_warning` | `3d` | Warn about the subscription end in advance |
+| `dedupe` | `1h` | Do not repeat the same message more often |
+| `max_per_hour` | `20` | Message limit per hour |
+| `timeout` | `10s` | Sending timeout |
 
 ## singbox
 
-Остановка и запуск sing-box и служба kill switch из админки (OpenWrt).
+Stopping and starting sing-box and the kill switch service from the admin panel (OpenWrt).
 
-| Поле | По умолчанию | Описание |
+| Field | Default | Description |
 |---|---|---|
-| `init` | `/etc/init.d/sing-box` | init-скрипт sing-box |
-| `config` | `/etc/sing-box/config.json` | Работающий конфиг: из него `checks.whitelist.dns` берёт DNS-сервер по тегу, `checks.upstream.outbound` — сервер и учётные данные прокси |
-| `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | init-скрипт и таблица nftables `inet` kill switch |
-| `watch` | `5s` | Период сторожа |
-| `down_alert` | `1m` | Уведомить, если sing-box лежит дольше |
+| `init` | `/etc/init.d/sing-box` | sing-box init script |
+| `config` | `/etc/sing-box/config.json` | The running config: `checks.whitelist.dns` takes the DNS server by tag from it, `checks.upstream.outbound` the proxy server and credentials |
+| `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | Init script and the `inet` nftables table of the kill switch |
+| `watch` | `5s` | Watchdog period |
+| `down_alert` | `1m` | Notify if sing-box is down for longer |
 
-## Секреты
+## Secrets
 
-`api.secret`, `admin.token`, `notify.telegram.token` и `subscriptions[].url` дают доступ к sing-box,
-админке, боту и подпискам. Перед публикацией фрагмента конфига замените их.
+`api.secret`, `admin.token`, `notify.telegram.token` and `subscriptions[].url` give access to sing-box,
+the admin panel, the bot and the subscriptions. Replace them before publishing a config fragment.

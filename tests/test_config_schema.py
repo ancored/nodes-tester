@@ -50,6 +50,28 @@ def _objects(schema, path=()):
             yield from _objects(sub, path + (key,))
 
 
+def _defaults(schema, path=()):
+    """(путь, default) полей схемы; элементы массивов не обходятся: их умолчания — у каждого элемента."""
+    for key, sub in schema.get("properties", {}).items():
+        if "default" in sub:
+            yield path + (key,), sub["default"]
+        yield from _defaults(sub, path + (key,))
+
+
+def _effective(cfg, path):
+    """Значение загрузчика по пути схемы или None, если устройство объекта другое (словарь
+    с иными ключами, вложенные пороги рейтинга)."""
+    value = cfg
+    for key in path:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        elif not isinstance(value, dict) and hasattr(value, key):
+            value = getattr(value, key)
+        else:
+            return None
+    return value
+
+
 class ConfigSchemaTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -61,6 +83,21 @@ class ConfigSchemaTest(unittest.TestCase):
                 continue          # корень: "$schema" и разделы — ниже отдельной проверкой
             with self.subTest(path=".".join(map(str, path))):
                 self.assertEqual(set(props), _loader_fields(path))
+
+    def test_schema_defaults_match_loader(self):
+        """Админка показывает умолчания схемы серым в пустых полях: они должны быть правдой."""
+        from nodes_common.units import parse_duration
+        cfg, checked = parse_config({}), 0
+        for path, default in _defaults(self.schema):
+            value = _effective(cfg, path)
+            if value is None:
+                continue
+            with self.subTest(path=".".join(path)):
+                if isinstance(default, str) and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    default = parse_duration(default)
+                self.assertEqual(list(value) if isinstance(value, tuple) else value, default)
+                checked += 1
+        self.assertGreater(checked, 100)
 
     def test_root_sections_match_loader(self):
         try:
@@ -84,11 +121,12 @@ class ConfigSchemaTest(unittest.TestCase):
         self.assertEqual(len(list(validator.iter_errors(bad))), 2)
 
     def test_documented_examples_load(self):
-        with open(os.path.join(_ROOT, "docs", "CONFIG.md"), encoding="utf-8") as fh:
-            blocks = re.findall(r"```json\n(\{.*?)\n```", fh.read(), re.S)
-        self.assertGreaterEqual(len(blocks), 2)          # минимальный и полный пример
-        for block in blocks:
-            parse_config(json.loads(block))
+        for name in ("CONFIG.md", "CONFIG.ru.md"):
+            with self.subTest(doc=name), open(os.path.join(_ROOT, "docs", name), encoding="utf-8") as fh:
+                blocks = re.findall(r"```json\n(\{.*?)\n```", fh.read(), re.S)
+                self.assertGreaterEqual(len(blocks), 2)          # минимальный и полный пример
+                for block in blocks:
+                    parse_config(json.loads(block))
 
 
 if __name__ == "__main__":

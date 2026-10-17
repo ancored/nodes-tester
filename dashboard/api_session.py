@@ -23,6 +23,7 @@ def capabilities(app: App) -> dict:
         "singbox_files": bool(r is not None and getattr(r, "orchestrator", None) is not None and app.token),
         "singbox_control": bool(r is not None and getattr(r, "singbox", None) is not None
                                 and r.singbox.available),
+        "vacuum": bool(r is not None and getattr(r, "vacuum", None) is not None and app.token),
         "notify": bool(r is not None and getattr(r, "notifier", None) is not None and app.token),
         "quarantine_hours": app.cfg.selection.quarantine.duration / 3600,
         "version": __version__, "source_url": f"{SOURCE_URL}/tree/v{__version__}",

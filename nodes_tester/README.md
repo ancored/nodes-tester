@@ -1,36 +1,38 @@
+**English** | [Русский](README.ru.md)
+
 # nodes_tester
 
-`nodes_tester` проверяет уже загруженные в sing-box leaf-ноды, рассчитывает рейтинг,
-управляет автоматическим переключением и сохраняет историю в SQLite.
+`nodes_tester` checks the leaf nodes already loaded into sing-box, computes the rating,
+controls automatic switching and keeps the history in SQLite.
 
-Пакет не загружает подписки и не создаёт конфигурацию sing-box. За это отвечают
-[`nodes_fetch`](../nodes_fetch/README.md) и [`nodes_config`](../nodes_config/README.md).
+The package does not fetch subscriptions and does not create the sing-box configuration. That is the job of
+[`nodes_fetch`](../nodes_fetch/README.md) and [`nodes_config`](../nodes_config/README.md).
 
-## Как проходит проверка
+## How a check works
 
-Для работы нужны:
+It needs:
 
-1. запущенный sing-box 1.14 или новее с API-сервисом (`services[type=api]`);
-2. SOCKS5 inbound, через который идёт тестовый трафик;
-3. плоский selector `nodes-tester`, содержащий leaf-ноды напрямую;
-4. [`config.json`](../docs/CONFIG.md) с адресом API-сервиса (`api`), SOCKS5 тестера (`tester.socks`)
-   и группами (`groups`).
+1. a running sing-box 1.14 or newer with the API service (`services[type=api]`);
+2. a SOCKS5 inbound that carries the test traffic;
+3. a flat selector `nodes-tester` with the leaf nodes as direct members;
+4. [`config.json`](../docs/CONFIG.md) with the API service address (`api`), the tester SOCKS5 (`tester.socks`)
+   and the groups (`groups`).
 
-Прогонов нет: у каждого замера свой срок годности, и Runner проверяет только ноды, у которых
-замеры истекли. Для такой ноды он выполняет цикл:
+There are no passes: each measurement has its own lifetime, and the Runner checks only nodes whose
+measurements have expired. For such a node it runs the cycle:
 
 ```text
-выбрать ноду через API-сервис sing-box
-    -> отправить проверки через SOCKS5
-    -> сохранить сырые результаты
-    -> обновить рейтинг и ограничения
-    -> при необходимости переключить рабочий selector
+select the node through the sing-box API service
+    -> send the checks through SOCKS5
+    -> save the raw results
+    -> update the rating and restrictions
+    -> switch the working selector if needed
 ```
 
-Тестер не поднимает собственное прокси-ядро. Весь трафик проходит через тот sing-box,
-которым управляет через его API-сервис.
+The tester does not start its own proxy core. All traffic goes through the sing-box
+it controls through its API service.
 
-## Запуск
+## Running
 
 ```sh
 python3 -m nodes_tester -c config/config.json
@@ -39,7 +41,7 @@ python3 -m nodes_tester --list-tests
 python3 -m nodes_tester -c config/config.json --vacuum
 ```
 
-На OpenWrt-пакете используются команды:
+The OpenWrt package uses these commands:
 
 ```sh
 nodes-tester tester
@@ -47,80 +49,81 @@ nodes-tester tester --list-tests
 nodes-tester vacuum
 ```
 
-`--once` проверяет все ноды один раз, не дожидаясь сроков, и завершается. `VACUUM` блокирует
-обслуживание базы на время операции, поэтому его лучше запускать редко.
+`--once` checks all nodes once without waiting for the deadlines and exits. `--vacuum` repacks the
+database manually; by the `storage.vacuum` schedule (by default every 30 days at 04:00) the tester
+does it itself; the result and the start button are in the admin panel (“Settings”).
 
-## Выбор нод и порядок обхода
+## Node choice and visiting order
 
-Runner читает участников selector `tester.selector` (по умолчанию `nodes-tester`) — в нём все
-ноды. Leaf-нода должна иметь ключ `[node_crc.cred_crc]` в конце тега; группы и записи без ключа
-пропускаются.
+The Runner reads the members of the `tester.selector` selector (`nodes-tester` by default): it has all
+nodes. A leaf node must have the `[node_crc.cred_crc]` key at the end of its tag; groups and entries without a key
+are skipped.
 
-Страна ноды — только измеренная: её показывает `connectivity` при каждом замере. По ней же
-определяется регион ноды для адресов тестов (`for_region` в разделе `tests`); пока страна не
-измерена, тесты идут по адресам по умолчанию. Название ноды у провайдера не используется.
+The node country is only the measured one: `connectivity` shows it on every measurement. It also
+sets the node region for test addresses (`for_region` in the `tests` section); until the country is
+measured, tests use the default addresses. The provider's node name is not used.
 
-Новый доступ уже известной ноды (провайдер перевыпустил учётные данные, `node_crc` тот же)
-сразу получает её рейтинг, страну и результаты проверок, но gate проходит сам; активность в
-селекторе не наследуется.
+A new access of an already known node (the provider reissued the credentials, `node_crc` is the same)
+gets its rating, country and check results right away, but passes the gate on its own; activity in the
+selector is not inherited.
 
-Хост ноды — адрес сервера (`server`, у WireGuard — адрес первого peer), без порта и провайдера.
-Ноды одного хоста (разные доступы, настройки TLS, порты) отказывают и блокируются вместе: в
-резерве группы по одной ноде на хост и не с хоста активной, ротация и замена по качеству
-не берут ноду хоста активной, авария берёт её, только если других кандидатов нет.
+The node host is the server address (`server`, for WireGuard the address of the first peer), without the port and the provider.
+Nodes of one host (different accesses, TLS settings, ports) fail and get blocked together: the
+group reserve has one node per host and not from the host of the active node, rotation and replacement by quality
+do not take a node of the active host, and an emergency takes one only if there are no other candidates.
 
-Очередь строится с учётом хоста: из нод, которым пора на проверку, следующей берётся нода
-хоста, к которому дольше всего не обращались, а `tester.host_gap` ограничивает частоту
-обращений к одному хосту с разными портами или протоколами. Это снижает вероятность
-ограничений со стороны провайдера и ТСПУ.
+The queue takes the host into account: of the nodes due for a check, the next one is a node of the
+host that has not been contacted for the longest time, and `tester.host_gap` limits how often
+one host is contacted with different ports or protocols. This lowers the chance of
+restrictions by the provider and TSPU.
 
-## Сроки годности
+## Result lifetimes
 
-Каждый замер (`tests.<имя>.ttl`, по умолчанию `3h`) и каждая проверка (`checks.<имя>.ttl`) живут
-свой срок. Срок укорачивается на случайную долю `ttl_jitter` (по умолчанию десятая часть `ttl`):
-доля постоянна для ноды и времени замера, поэтому ноды одного хоста, проверенные подряд, со
-временем расходятся по времени и не истекают пачкой.
+Each measurement (`tests.<name>.ttl`, `3h` by default) and each check (`checks.<name>.ttl`) lives
+for its own period. The period is shortened by a random share `ttl_jitter` (a tenth of `ttl` by default):
+the share is constant for the node and the measurement time, so nodes of one host checked one after another
+spread out in time and do not expire in a batch.
 
-- Нода без замеров (новая) проверяется сразу.
-- Очередь: сначала активные ноды групп и кандидаты резерва с истёкшими замерами, затем
-  остальные — начиная с самого старого результата. При равных сроках (новые ноды) первой идёт
-  нода хоста, к которому дольше всего не обращались. Если очередь не успевает за `ttl`, каждая
-  нода освежается раз в полный обход, а активные и кандидаты — по своему сроку.
-- За одно обращение к ноде идут все её замеры, которым до срока меньше их разброса;
-  `connectivity` — всегда, первым. Без связности остальное не гоняется.
-- Кнопка «Запустить тестирование сейчас» в админке и `--once` проверяют все ноды, не дожидаясь
-  сроков.
+- A node without measurements (a new one) is checked right away.
+- Queue: first the active nodes of groups and reserve candidates with expired measurements, then
+  the rest, starting from the oldest result. With equal deadlines (new nodes) the node of the host
+  that has not been contacted for the longest goes first. If the queue cannot keep up with `ttl`, each
+  node is refreshed once per full round, and the active ones and candidates by their own deadline.
+- One visit to a node runs all its measurements that are closer to their deadline than their spread;
+  `connectivity` always, and first. Without connectivity the rest is not run.
+- The “Run testing now” button in the admin panel and `--once` check all nodes without waiting for
+  the deadlines.
 
-## Замеры и проверки
+## Measurements and checks
 
-Замеры рейтинга (раздел `tests`) выполняются по их срокам годности:
+Rating measurements (the `tests` section) run by their lifetimes:
 
-| Тест | Что измеряет |
+| Test | What it measures |
 |---|---|
-| `connectivity` | факт доступа в интернет, внешний IP, страну и colo |
+| `connectivity` | internet access, the external IP, country and colo |
 | `latency` | TTFB |
-| `jitter` | среднюю, минимальную и максимальную задержку, jitter и потери |
-| `download` | скорость, устойчивость и признаки замедления |
-| `reachability` | доступность набора целей |
+| `jitter` | mean, minimum and maximum latency, jitter and loss |
+| `download` | speed, stability and signs of throttling |
+| `reachability` | availability of a set of targets |
 
-`connectivity` служит GATE: его провал обнуляет итоговый балл.
+`connectivity` is the GATE: its failure zeroes the total score.
 
-Проверки (раздел `checks`) дают вердикт «да / нет / неизвестно» со сроком годности `ttl`:
+Checks (the `checks` section) give a “yes / no / unknown” verdict with a lifetime `ttl`:
 
-| Проверка | Что проверяет | Кто выполняет |
+| Check | What it checks | Who runs it |
 |---|---|---|
-| `country` | страна выхода подходит группе | замер `connectivity` |
-| `ip_type` | тип выходного IP: домашний, мобильный, дата-центр, прокси | тестер раз в 5 минут (ip-api) |
-| `geo_consistent` | страна IP по базе совпадает с измеренной | тестер раз в 5 минут (ip-api) |
-| `gemini`, `openai`, `anthropic` | AI-сервис пускает ноду | резерв |
-| `upstream` | через ноду проходит вышестоящий прокси (outbound с `detour` на группу) | резерв |
-| `heavy` | тяжёлая контрольная загрузка | резерв |
-| `whitelist` | IP сервера и SNI в белых списках мобильного интернета РФ (без TLS — IP) | тестер раз в 5 минут, локально |
+| `country` | the exit country fits the group | the `connectivity` measurement |
+| `ip_type` | exit IP type: residential, mobile, data centre, proxy | the tester every 5 minutes (ip-api) |
+| `geo_consistent` | the IP country by the database matches the measured one | the tester every 5 minutes (ip-api) |
+| `gemini`, `openai`, `anthropic` | the AI service lets the node in | the reserve |
+| `upstream` | an upstream proxy works through the node (an outbound with `detour` to the group) | the reserve |
+| `heavy` | a heavy control download | the reserve |
+| `whitelist` | the server IP and SNI are in the Russian mobile internet whitelists (without TLS, the IP) | the tester every 5 minutes, locally |
 
-Группа ([`groups`](../docs/CONFIG.md#groups)) перечисляет проверки в `require` (обязательные) и
-`prefer` (желательные). Кандидат группы — нода без провала GATE, с рейтингом больше нуля, без
-паузы и карантина и со свежими успехами всех обязательных проверок. Порядок кандидатов: сначала
-меньше непройденных желательных проверок, внутри — по рейтингу. Пример для AI-группы:
+A group ([`groups`](../docs/CONFIG.md#groups)) lists checks in `require` (required) and
+`prefer` (preferred). A group candidate is a node without a GATE failure, with a rating above zero, without
+a pause or quarantine and with fresh successes of all required checks. Candidate order: first
+fewer failed preferred checks, then by rating. An example for an AI group:
 
 ```json
 {
@@ -132,239 +135,249 @@ Runner читает участников selector `tester.selector` (по умо
 }
 ```
 
-Нет ни одного кандидата — группа переключается на запасной выход: нестрогая на `failsafe-out`,
-строгая на `block-out` (трафик группы блокируется), строгая с `direct_fallback` — на `direct-out`.
-Как только кандидат появляется, группа возвращается на него. Пока группа на `failsafe-out`, монитор
-наблюдает его как активную ноду (трафик через выбранную им ноду или зонд через `nodes-tester`):
-`monitor.fails` провалов подряд — нестрогая группа с `direct_fallback` уходит на `direct-out`,
-ответ зонда — возвращается на `failsafe-out`.
+Without a single candidate the group switches to the fallback outbound: a non-strict one to `failsafe-out`,
+a strict one to `block-out` (the group traffic is blocked), a strict one with `direct_fallback` to `direct-out`.
+As soon as a candidate appears, the group comes back to it. While the group is on `failsafe-out`, the monitor
+watches it as the active node (traffic through the node it chose, or a probe through `nodes-tester`):
+after `monitor.fails` failures in a row a non-strict group with `direct_fallback` goes to `direct-out`,
+and when the probe answers it comes back to `failsafe-out`.
 
-Дорогие проверки (AI, `heavy`) тестер запускает только для нод, уже прошедших дешёвые: GATE,
-страну и тип IP группы.
+The tester runs expensive checks (AI, `heavy`) only for nodes that already passed the cheap ones: the GATE,
+the country and the IP type of the group.
 
-Срок ротации у каждой группы свой: `interval` ± `jitter` от её последнего переключения, поэтому группы
-не переключаются разом. Если ротация не состоялась (один кандидат или ни одного, авария без замены, сбой
-API), срок переносится так же: после оценки группы он всегда в будущем.
+Each group has its own rotation deadline: `interval` ± `jitter` from its last switch, so groups
+do not switch at once. If a rotation did not happen (one candidate or none, an emergency without a replacement, an
+API failure), the deadline moves the same way: after the group is evaluated it is always in the future.
 
-Тестер раз в минуту сверяет состав своего селектора в sing-box. Новые ноды сразу попадают в
-базу (в «Все ноды» — без замеров) и в очередь. Ушедшие из подписок ноды из таблиц админки
-пропадают и остаются только в «Архиве».
+Once a minute the tester checks the membership of its selector in sing-box. New nodes go straight into
+the database (into “All nodes”, without measurements) and into the queue. Nodes gone from subscriptions disappear
+from the admin panel tables and stay only in the “Archive”.
 
-Пока конвейер применяет конфиг, тестер ждёт, а замер, попавший на перезапуск sing-box, не
-засчитывается. Так же не засчитывается замер, если sing-box перезапустили в обход админки
-(обновление ядра, конвейер из cron): API sing-box не отвечает или сменился PID процесса — тогда
-тестер выжидает минуту. Нода, которой уже нет в селекторе, пропускается без провала GATE.
+While the pipeline applies a config, the tester waits, and a measurement that hit a sing-box restart is not
+counted. A measurement is also not counted if sing-box was restarted behind the admin panel's back
+(a core update, a pipeline from cron): the sing-box API does not respond or the process PID changed; then
+the tester waits for a minute. A node that is no longer in the selector is skipped without a GATE failure.
 
-### AI-проверки
+### AI checks
 
-`gemini` открывает gemini.google.com `attempts` раз (по умолчанию 3) и берёт из страницы код
-страны, которой Google определил клиента. Нода проходит, только если каждая попытка дала
-HTTP 200 и страну вне запрещённых (RUS, BLR, CHN, HKG, MAC, IRN, PRK, CUB, SYR). Одной попытки
-мало: часть нод выходит то по IPv4, то по IPv6 Cloudflare WARP, и тогда Google видит то
-зарубежную страну, то Россию. Страница тяжёлая, поэтому у проверки свой `timeout` (`20s`).
-Таймаут или обрыв о стране ничего не говорит: если остальные попытки дали разрешённую страну,
-результат неопределённый и прежний вердикт ноды сохраняется; если все попытки упали по сети,
-это провал.
+`gemini` opens gemini.google.com `attempts` times (3 by default) and takes from the page the code of
+the country in which Google placed the client. The node passes only if each attempt gave
+HTTP 200 and a country outside the forbidden ones (RUS, BLR, CHN, HKG, MAC, IRN, PRK, CUB, SYR). One attempt
+is not enough: some nodes exit sometimes over IPv4, sometimes over IPv6 of Cloudflare WARP, and then Google sees
+a foreign country one time and Russia another time. The page is heavy, so the check has its own `timeout` (`20s`).
+A timeout or a drop says nothing about the country: if the other attempts gave an allowed country,
+the result is inconclusive and the previous verdict of the node stays; if all attempts failed on the network,
+it is a failure.
 
-`openai` и `anthropic` устроены так же (`attempts`, `timeout`, `ttl`), но страну не определяют:
-OpenAI и Claude берут её у Cloudflare, а её уже показывает `connectivity`. Проверки смотрят на
-решение самого сервиса. `openai` запрашивает `api.openai.com/compliance/cookie_requirements`:
-из запрещённого региона приходит ошибка `unsupported_country…`. `anthropic` запрашивает
-`api.anthropic.com/v1/models` без ключа: из запрещённого региона приходит ошибка `forbidden`, из
-разрешённого — `authentication_error`. Сайт claude.ai для проверки не годится: IP дата-центров
-получают на нём проверку Cloudflare, которую браузер проходит, а тестер — нет. Нераспознанный
-ответ считается провалом.
+`openai` and `anthropic` work the same way (`attempts`, `timeout`, `ttl`), but do not determine the country:
+OpenAI and Claude take it from Cloudflare, and `connectivity` already shows it. The checks look at the
+decision of the service itself. `openai` requests `api.openai.com/compliance/cookie_requirements`:
+from a forbidden region the error `unsupported_country…` comes back. `anthropic` requests
+`api.anthropic.com/v1/models` without a key: from a forbidden region the error is `forbidden`, from an
+allowed one `authentication_error`. The claude.ai site is not suitable for the check: data centre IPs
+get a Cloudflare challenge there, which a browser passes and the tester does not. An unrecognised
+answer counts as a failure.
 
-Сетевые тесты расходуют трафик. Размеры, URL и таймауты находятся в разделах `tests` и `checks`.
+Network tests use traffic. Sizes, URLs and timeouts are in the `tests` and `checks` sections.
 
-## Рейтинг
+## Rating
 
-Рейтинг строится из нормированных факторов надёжности, устойчивости, замедления, jitter,
-задержки и скорости. Затем применяются EWMA, доступность и штраф за колебания. Состояние
-хранится в таблицах `scores` и `score_history`, а не в CSV.
+The rating is built from the normalised factors of reliability, consistency, throttling, jitter,
+latency and speed. Then EWMA, availability and a flapping penalty are applied. The state
+is stored in the `scores` and `score_history` tables, not in CSV.
 
-Практические следствия:
+Practical consequences:
 
-- `score = 0` может означать провал GATE или отсутствие достаточных scoring-измерений;
-- физические значения скорости и задержки нужно смотреть в `results`;
-- мгновенный балл считается по последнему результату каждого теста ноды, даже если замеры
-  сделаны в разное время;
-- изменение весов и порогов влияет на следующие обновления рейтинга.
+- `score = 0` may mean a GATE failure or a lack of enough scoring measurements;
+- see the physical speed and latency values in `results`;
+- the instant score is computed from the latest result of each test of the node, even if the measurements
+  were taken at different times;
+- changing weights and thresholds affects the next rating updates.
 
-Пороговые значения и веса задаются в разделе `rating`. Их актуальные дефолты находятся в
-[`config.py`](config.py) и [`config/config.example.json`](../config/config.example.json).
-Полная формула и правила интерпретации: [`SCORING.md`](SCORING.md).
+Thresholds and weights are set in the `rating` section. Their current defaults are in
+[`config.py`](config.py) and [`config/config.example.json`](../config/config.example.json).
+The full formula and interpretation rules: [`SCORING.md`](SCORING.md).
 
-## Резерв группы
+## Group reserve
 
-Фоновый процесс ([`reserve.py`](reserve.py)) держит в каждой группе `selection.reserve` (по
-умолчанию 3; у группы — свой `reserve`) проверенных кандидатов на замену активной ноды. Замеры
-тестера только рейтингуют ноды, резерв от них не зависит:
+A background process ([`reserve.py`](reserve.py)) keeps `selection.reserve` (3 by
+default; a group has its own `reserve`) checked candidates in each group to replace the active node. Tester
+measurements only rate nodes, the reserve does not depend on them:
 
-1. Претенденты берутся по ярусу желательных проверок и рейтингу; ноды с рейтингом ниже
-   `selection.rotation.min_score` — в конце. Активная и `avoid_recent` последних в резерв не
-   попадают.
-2. Претендент проходит недостающие обязательные проверки группы, которые выполняет резерв (AI),
-   затем `heavy`. Свежий результат не повторяется. Провал выбивает ноду, и проверяется
-   следующая. Прошедшая нода проходит и желательные AI-проверки группы: их провал только
-   понижает ярус. Отказ сервера загрузки `heavy` (429/5xx, 401/403/404) вердикта не даёт.
-3. После смены активной (ротация, авария, качество) резерв сразу добирается. У членов резерва
-   следим за сроками: истёк срок проверки — она повторяется. Обязательные проверки активной
-   ноды повторяются за 5 минут до истечения; провал или истёкший результат — замена из резерва.
-4. Претенденты кончились — по одной снимается пауза или карантин с нод, которые под
-   ограничением дольше всех, и нода сразу проверяется лёгкими тестами. Не снимаются ноды, которые
-   группе заведомо не подойдут (известная страна выхода не та, свежий провал обязательной
-   проверки), и ноды хостов членов резерва, активной и хостов под штрафом. За круг — не больше
-   трёх снятий на группу, остальные группы не ждут. Провал GATE возвращает ноду в карантин;
-   повторно такая нода снимается не раньше чем через 6 ч. Бан не снимается. Снимать некого, а
-   резерв не набран — новая попытка через 15 минут или при появлении новых нод.
-5. Резерв набран — после каждого замера проверяется, нет ли ноды лучше худшего кандидата: выше
-   ярусом или с рейтингом больше на `selection.reserve_margin`. Такая нода проходит проверки
-   пункта 2 и занимает его место; не прошла — резерв не меняется, а её саму 15 минут не
-   пробуют.
+1. Contenders are taken by the tier of preferred checks and by rating; nodes with a rating below
+   `selection.rotation.min_score` go last. The active node and the last `avoid_recent` ones do not get into
+   the reserve.
+2. A contender passes the missing required checks of the group that the reserve runs (AI),
+   then `heavy`. A fresh result is not repeated. A failure knocks the node out, and the next one
+   is checked. A node that passed also runs the preferred AI checks of the group: their failure only
+   lowers the tier. A refusal of the `heavy` download server (429/5xx, 401/403/404) gives no verdict.
+3. After the active node changes (rotation, emergency, quality) the reserve is refilled right away. For reserve members
+   the deadlines are watched: when a check expires, it is repeated. The required checks of the active
+   node are repeated 5 minutes before they expire; a failure or an expired result means a replacement from the reserve.
+4. When contenders run out, the pause or quarantine is lifted one node at a time from the nodes that have been
+   restricted the longest, and the node is checked with light tests right away. Nodes that
+   certainly will not fit the group (a known wrong exit country, a fresh failure of a required
+   check) and nodes of the hosts of reserve members, the active node and penalised hosts are not lifted. At most three
+   lifts per group per round, other groups do not wait. A GATE failure puts the node back into quarantine;
+   such a node is lifted again no earlier than in 6 h. A ban is not lifted. If there is nobody to lift and
+   the reserve is not full, a new attempt comes in 15 minutes or when new nodes appear.
+5. When the reserve is full, after each measurement it is checked whether there is a node better than the worst candidate: a higher
+   tier or a rating higher by `selection.reserve_margin`. Such a node runs the checks of
+   step 2 and takes its place; if it does not pass, the reserve does not change, and the node itself is not
+   tried for 15 minutes.
 
-Флаг резерва и имя группы видны в админке (рейтинг, жизненный цикл, управление).
+The reserve flag and the group name are shown in the admin panel (rating, lifecycle, control).
 
-## Переключение
+## Switching
 
-Switcher использует рейтинг, ограничения, резерв и текущую активную ноду. Он поддерживает:
+The Switcher uses the rating, restrictions, the reserve and the current active node. It supports:
 
-- аварийную замену недоступной ноды из резерва (резерв пуст — любым прошедшим кандидатом
-  другого хоста). Если ноду снял монитор, её хост `selection.host_penalty` (3 ч) не выбирается
-  ни в резерв, ни на замену;
-- замену по качеству на ноду из резерва, когда перевес держится `confirm_cycles` замеров
-  подряд активной ноды или лидера резерва;
-- периодическую ротацию на ноду из резерва;
-- минимальное время удержания и cooldown;
-- исключение недавно использованных кандидатов;
-- дополнительную балансировку по провайдеру, стране, протоколу и трафику.
+- an emergency replacement of an unavailable node from the reserve (if the reserve is empty, by any passed candidate
+  of another host). If the monitor removed the node, its host is not chosen for `selection.host_penalty` (3 h)
+  either into the reserve or as a replacement;
+- a replacement by quality with a node from the reserve when the advantage holds for `confirm_cycles` measurements
+  in a row of the active node or the reserve leader;
+- periodic rotation to a node from the reserve;
+- a minimum holding time and cooldown;
+- excluding recently used candidates;
+- additional balancing by provider, country, protocol and traffic.
 
-Группа оценивается после каждого замера её активной или резервной ноды (а группа без активной
-или в аварии без замены — после замера любой своей ноды), ротация — по сроку.
+A group is evaluated after each measurement of its active or reserve node (and a group without an active node
+or in an emergency without a replacement, after a measurement of any of its nodes), rotation by its deadline.
 
-Автоматическое переключение меняет боевые selector в sing-box. Плановую ротацию можно
-выключить: `selection.rotation.enabled: false`.
+Automatic switching changes the live selectors in sing-box. Scheduled rotation can be
+turned off: `selection.rotation.enabled: false`.
 
-## Пересборка по деградации
+## Rebuild on degradation
 
-[`rebuild.py`](rebuild.py) на каждом тике монитора проверяет, не пора ли собрать конфиг заново: группа
-без кандидатов дольше `degraded_for` или с кандидатами меньше резерва + 1 дольше `few_candidates_for`,
-и сборка из последнего опроса подписок это исправит (есть новые доступы, а мёртвые ноды конфига ушли
-из подписок). Тогда тестер запускает конвейер `router` с отметкой «пересборка по деградации» — не
-чаще `min_interval` и только при включённой сборке роутера. Поля — `pipeline.router.rebuild`
+On each monitor tick [`rebuild.py`](rebuild.py) checks whether it is time to build the config anew: a group
+has been without candidates longer than `degraded_for` or with fewer candidates than the reserve + 1 longer than `few_candidates_for`,
+and a build from the last subscription poll will fix it (there are new accesses, and the dead nodes of the config are gone
+from the subscriptions). Then the tester starts the `router` pipeline marked “rebuild on degradation”, not
+more often than `min_interval` and only with the router build enabled. The fields are `pipeline.router.rebuild`
 ([CONFIG.md](../docs/CONFIG.md#pipeline)).
 
-## Монитор, пауза и карантин
+## Amnezia Premium countries
 
-Monitor следит за активными нодами между их замерами. При наличии пользовательского трафика
-он считает ноду живой. После периода тишины выполняет короткий SOCKS-зонд. Всплеск ошибок
-соединений через группу в логе sing-box (`monitor.error_burst` за тик) запускает зонд сразу, даже если
-трафик идёт. Провал зонда повторяется через `monitor.retry` (30 с); `fails` провалов подряд запускают
-аварийный выбор. В журнал пишется текст ошибки.
+For subscriptions with `type: "amnezia"` [`amnezia_slots.py`](amnezia_slots.py) once every 3 hours compares the
+country files with the rating of their nodes (a node is found by the server address from the file): it revokes a
+country whose node stays below `min_rating` for 6 hours, fills free places with random new countries (when none are left, with the longest-blocked ones) and issues anew a
+file whose server was updated. The rules are in [CONFIG.md](../docs/CONFIG.md#amnezia-premium); the results
+go to the log and to the `subscription` notification.
 
-После n-го провала GATE подряд нода уходит в паузу на 2^(n−1) сроков `connectivity`. Когда пропуск
-дорастает до `selection.quarantine.after_skips`, нода попадает в карантин на `duration`, затем
-получает одну пробу. Успешный GATE снимает ограничение.
+## Monitor, pause and quarantine
 
-`selection.quarantine.low_score` (по умолчанию 0 — выключено) отправляет в карантин и живые, но слабые
-ноды: рейтинг ниже порога после не менее 3 замеров. Активные ноды не затрагиваются. После
-карантина нода возвращается, если рейтинг по пробе поднялся до порога.
+The Monitor watches the active nodes between their measurements. When there is user traffic,
+it considers the node alive. After a quiet period it runs a short SOCKS probe. A burst of connection
+errors through the group in the sing-box log (`monitor.error_burst` per tick) starts a probe right away, even if
+traffic flows. A failed probe is repeated after `monitor.retry` (30 s); `fails` failures in a row start
+an emergency choice. The error text goes to the log.
 
-Если кандидатов на замену нет, пауза и карантин снимаются по одной ноде процессом резерва
-(см. «Резерв группы»).
+After the n-th GATE failure in a row the node is paused for 2^(n−1) `connectivity` periods. When the skip
+grows to `selection.quarantine.after_skips`, the node goes into quarantine for `duration`, then
+gets one probe. A successful GATE lifts the restriction.
 
-Ручные бан и карантин доступны через админку. Бан не удаляет ноду из подписки и не стирает
-её историю.
+`selection.quarantine.low_score` (0 by default, off) also quarantines live but weak
+nodes: a rating below the threshold after at least 3 measurements. Active nodes are not affected. After
+the quarantine the node comes back if its rating by the probe rose to the threshold.
 
-## Хранение
+If there are no replacement candidates, the pause and quarantine are lifted one node at a time by the reserve process
+(see “Group reserve”).
 
-SQLite (`storage.path`) содержит:
+Manual ban and quarantine are available in the admin panel. A ban does not remove the node from the subscription and does not erase
+its history.
 
-- `nodes` и `endpoints` — текущий состав и сетевые адреса;
-- `results` — сырые результаты проверок;
-- `scores` и `score_history` — текущий рейтинг и история;
-- `traffic` — агрегаты пользовательского трафика;
-- `garbage` — паузы и карантин;
-- `activations`, `switch_state`, `switch_recent`, `switch_activations` — состояние выбора;
-- `node_events` — события жизненного цикла;
-- `meta` — служебные значения.
+## Storage
 
-Очистка по `storage.retention` выполняется периодически. `VACUUM` вынесен в отдельную команду.
-Не копируйте только `stats.db` из работающей WAL-базы: остановите процесс или используйте
+SQLite (`storage.path`) contains:
+
+- `nodes` and `endpoints`: the current membership and network addresses;
+- `results`: raw check results;
+- `scores` and `score_history`: the current rating and its history;
+- `traffic`: user traffic aggregates;
+- `garbage`: pauses and quarantine;
+- `activations`, `switch_state`, `switch_recent`, `switch_activations`: the choice state;
+- `node_events`: lifecycle events;
+- `meta`: service values.
+
+Cleanup by `storage.retention` runs periodically, `VACUUM` by the `storage.vacuum` schedule.
+Do not copy just `stats.db` from a running WAL database: stop the process or use the
 SQLite backup.
 
-Структура таблиц, очистка и резервное копирование описаны в [`STORAGE.md`](STORAGE.md).
+The table structure, cleanup and backups are described in [`STORAGE.md`](STORAGE.md).
 
-## Тип выходного IP
+## Exit IP type
 
-Раз в 5 минут выходные IP нод (`exit_ip` из `connectivity`), для которых нет свежих сведений,
-проверяются одним пакетным запросом к ip-api.com через SOCKS тестера на лучшей здоровой ноде —
-DNS-фильтры (NextDNS и блоклисты) часто блокируют ip-api.com на роутере; при неудаче запрос
-идёт напрямую (`checks.ip_type`: `url`, `ttl`, `ttl_jitter`, `timeout`, `via_tester`). Сведения — ASN, сеть,
-признаки дата-центра, мобильной сети и известного прокси — кэшируются в таблице `ip_info` на
-`ttl`. «Результаты» показывают тип IP (ДЦ, домашний, мобильный) и расхождение страны по базе
-со страной по Cloudflare. На выбор нод они влияют через проверки `ip_type` и `geo_consistent`
-групп.
+Every 5 minutes the exit IPs of nodes (`exit_ip` from `connectivity`) without fresh data
+are checked with one batch request to ip-api.com through the tester SOCKS on the best healthy node:
+DNS filters (NextDNS and blocklists) often block ip-api.com on the router; on failure the request
+goes directly (`checks.ip_type`: `url`, `ttl`, `ttl_jitter`, `timeout`, `via_tester`). The data (ASN, network,
+signs of a data centre, a mobile network and a known proxy) is cached in the `ip_info` table for
+`ttl`. “Results” shows the IP type (DC, residential, mobile) and a mismatch between the country by the database
+and the country by Cloudflare. They affect the node choice through the `ip_type` and `geo_consistent` checks of
+groups.
 
-## Уведомления
+## Notifications
 
-`notify` отправляет сообщения в Telegram (`telegram.token`, `telegram.chat_id`) и/или
-webhook (`webhook.url`, POST JSON `{event, text, ts}`). Собственный трафик роутера часто
-идёт мимо прокси, и Telegram напрямую недоступен: если отправка не прошла, она повторяется
-через SOCKS тестера на лучшей здоровой ноде (`via_tester`, по умолчанию включено); `proxy`
-задаёт свой прокси. События (`events`):
+`notify` sends messages to Telegram (`telegram.token`, `telegram.chat_id`) and/or a
+webhook (`webhook.url`, POST JSON `{event, text, ts}`). The router's own traffic often
+bypasses the proxy, and Telegram is not reachable directly: if sending failed, it is repeated
+through the tester SOCKS on the best healthy node (`via_tester`, on by default); `proxy`
+sets your own proxy. Events (`events`):
 
-| Событие | Когда |
+| Event | When |
 |---|---|
-| `switch` | переключение ноды с причиной из `switch_reasons` (по умолчанию `emergency`, `emergency-stuck`) |
-| `failsafe` | группа ушла на запасной выход: `failsafe-out`, `block-out` или `direct-out` |
-| `rollback` | новый конфиг sing-box не дал связности и был возвращён прежний |
-| `pipeline` | прогон конвейера завершился ошибкой или тайм-аутом |
-| `subscription` | подписка не загрузилась; сообщается, сколько часов осталось до потери прошлых нод |
-| `expiry` | до конца подписки не больше `expiry_warning` или израсходовано ≥ 90 % трафика (раз в сутки) |
-| `singbox` | sing-box остановлен или запущен из админки, переключён killswitch, sing-box не работает дольше `singbox.down_alert` |
+| `switch` | a node switch with a reason from `switch_reasons` (by default `emergency`, `emergency-stuck`) |
+| `failsafe` | a group went to a fallback outbound: `failsafe-out`, `block-out` or `direct-out` |
+| `rollback` | the new sing-box config gave no connectivity and the previous one came back |
+| `pipeline` | a pipeline run ended with an error or a timeout |
+| `subscription` | a subscription failed to fetch; it says how many hours are left before the previous nodes are lost |
+| `expiry` | the subscription ends within `expiry_warning` or ≥ 90 % of the traffic is used (once a day) |
+| `singbox` | sing-box stopped or started from the admin panel, the killswitch toggled, sing-box is down for longer than `singbox.down_alert` |
 
-Отправка идёт фоновым потоком; повтор того же события подавляется на `dedupe`, общий
-предел — `max_per_hour`. Кнопка «Отправить тестовое сообщение» в «Настройках» использует
-настройки работающего процесса.
+Sending runs in a background thread; a repeat of the same event is suppressed for `dedupe`, the overall
+limit is `max_per_hour`. The “Send a test message” button in “Settings” uses the
+settings of the running process.
 
-## sing-box: остановка и killswitch
+## sing-box: stop and killswitch
 
-Раздел `singbox` (только OpenWrt) даёт админке аварийную остановку и запуск sing-box. В режиме
-TUN sing-box при остановке сам снимает маршруты. Пока стоит флаг остановки (в tmpfs),
-`apply-nodes.sh` не применяет конфиг; перезагрузка роутера флаг сбрасывает и запускает sing-box.
+The `singbox` section (OpenWrt only) gives the admin panel an emergency stop and start of sing-box. In TUN
+mode sing-box removes its routes itself when it stops. While the stop flag is set (in tmpfs),
+`apply-nodes.sh` does not apply a config; a router reboot resets the flag and starts sing-box.
 
-Killswitch — отдельная служба роутера (`killswitch.init`, по умолчанию `/etc/init.d/killswitch`),
-которая с загрузки держит постоянную таблицу nftables (`killswitch.table`) и не выпускает LAN в
-интернет мимо sing-box. Правила задаются в самой службе; nodes-tester их не создаёт, а только
-показывает, загружена ли таблица и сколько пакетов отбито, и включает или выключает службу
-(`start` + `enable`, `stop` + `disable`). Если службы нет, переключатель не показывается.
+The killswitch is a separate router service (`killswitch.init`, `/etc/init.d/killswitch` by default)
+that keeps a persistent nftables table (`killswitch.table`) from boot and does not let the LAN reach the
+internet bypassing sing-box. Its rules are set in the service itself; nodes-tester does not create them, it only
+shows whether the table is loaded and how many packets were blocked, and turns the service on or off
+(`start` + `enable`, `stop` + `disable`). Without the service the switch is not shown.
 
-## Встроенная админка
+## Embedded admin panel
 
-При `admin.enabled: true` HTTP-сервер запускается внутри Runner и получает доступ к
-живому статусу, журналу и действиям. Отдельный `python3 -m dashboard` работает без Runner:
-он читает базу и файлы, но не может запустить тестирование или выполнить живое переключение.
+With `admin.enabled: true` the HTTP server starts inside the Runner and gets access to the
+live status, the log and actions. A separate `python3 -m dashboard` works without the Runner:
+it reads the database and files, but cannot start testing or do a live switch.
 
-Пользовательское руководство: [`docs/USAGE.md`](../docs/USAGE.md). Техническое описание:
+User guide: [`docs/USAGE.md`](../docs/USAGE.md). Technical description:
 [`dashboard/README.md`](../dashboard/README.md).
 
-## Карта кода
+## Code map
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `runner.py` | жизненный цикл, очередь по срокам годности, замеры рейтинга, проверки для резерва |
-| `freshness.py` | срок годности результата с разбросом |
-| `reserve.py` | резерв групп: добор и перепроверка кандидатов на замену |
-| `api.py` | управление selector и чтение групп через API-сервис sing-box |
-| `proxy.py` | SOCKS-сессия тестов |
-| `tests/` | отдельные сетевые проверки |
-| `scoring.py` | нормирование одного замера |
-| `scoreboard.py` | EWMA, доступность и сохранение рейтинга |
-| `switcher.py` | авария, качество, ротация и ручной выбор |
-| `monitor.py` | контроль активных нод между замерами |
-| `rebuild.py` | пересборка конфига по деградации |
-| `traffic.py` | точный учёт трафика по потоку соединений |
-| `storage.py` | схема и операции SQLite |
-| `config.py` | загрузка `config.json`: разделы, значения по умолчанию, ошибки с путём поля |
-| `logbuffer.py` | кольцевой буфер журнала для админки |
+| `runner.py` | lifecycle, the queue by result lifetimes, rating measurements, checks for the reserve |
+| `freshness.py` | result lifetime with a spread |
+| `reserve.py` | group reserve: refilling and rechecking replacement candidates |
+| `api.py` | selector control and reading groups through the sing-box API service |
+| `proxy.py` | the SOCKS session of the tests |
+| `tests/` | individual network checks |
+| `scoring.py` | normalising one measurement |
+| `scoreboard.py` | EWMA, availability and saving the rating |
+| `switcher.py` | emergency, quality, rotation and manual choice |
+| `monitor.py` | watching active nodes between measurements |
+| `rebuild.py` | rebuilding the config on degradation |
+| `amnezia_slots.py` | Amnezia Premium countries by the rating |
+| `traffic.py` | exact traffic accounting from the connection stream |
+| `storage.py` | SQLite schema and operations |
+| `vacuum.py` | `VACUUM` of the database by the `storage.vacuum` schedule and from the admin panel |
+| `config.py` | loading `config.json`: sections, default values, errors with the field path |
+| `logbuffer.py` | ring buffer of the log for the admin panel |

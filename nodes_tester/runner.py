@@ -23,6 +23,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from .amnezia_slots import AmneziaSlots
 from .api import ApiClient, ApiError
 from .config import TESTS, Config, region_of
 from .freshness import expires, fresh
@@ -39,10 +40,11 @@ from .storage import Storage
 from .switcher import Switcher
 from .tests import TestContext, get_test_class
 from .traffic import TrafficCollector
+from .vacuum import Vacuum
 from .whitelist import WhitelistCheck
 
 
-# Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, cron).
+# Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, storage.vacuum).
 _CLEANUP_INTERVAL = 24 * 3600
 # Пауза после перезапуска sing-box посреди замера: ядро поднимает наборы правил и
 # inbound-ы, прежде чем замерам можно верить.
@@ -139,6 +141,7 @@ class Runner:
         # живут в БД. Монитору нужен боевой трафик по нодам — поток соединений держим и
         # без записи в БД (storage.traffic выключен).
         self.storage = Storage(cfg.storage)
+        self.vacuum = Vacuum(self.storage, cfg.storage.vacuum)
         self.collector = TrafficCollector(cfg.storage.traffic, self.api,
                                           self.storage if cfg.storage.traffic.enabled else None)
         self.board = Scoreboard(self.storage, cfg.rating)
@@ -155,6 +158,7 @@ class Runner:
         self.reserve = ReserveKeeper(self)
         self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
                                     self.notifier)
+        self.amnezia = AmneziaSlots(cfg, self._ratings_by_server, self.notifier)
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
@@ -223,6 +227,11 @@ class Runner:
         """Адрес сервера ноды из storage (нижний регистр); пусто — неизвестен."""
         ep = self._endpoints.get(node_id)
         return (ep[0] or "").lower() if ep else ""
+
+    def _ratings_by_server(self) -> dict[str, float]:
+        """{адрес сервера: рейтинг} нод с замерами — для стран Amnezia Premium."""
+        return {server: row["score"] for row in self.board.rows.copy().values()
+                if row.get("score") is not None and (server := self._server(row.get("id") or ""))}
 
     def _host_of(self, ident: NodeIdentity) -> str:
         """Хост ноды (server из storage). Фолбэк без storage/server — провайдер/CRC."""
@@ -378,7 +387,7 @@ class Runner:
             self._stop_dashboard()
             if self.orchestrator is not None:
                 self.orchestrator.stop()
-            self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, cron)
+            self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, storage.vacuum)
             self.storage.close()
             self._restore()
             # Вернуть реальные stdout/stderr последними — чтобы хвостовые print
@@ -413,6 +422,10 @@ class Runner:
             if time.monotonic() - cleaned >= _CLEANUP_INTERVAL:
                 self.storage.cleanup()             # единая очистка БД (без VACUUM)
                 cleaned = time.monotonic()
+            if not self.once and self.vacuum.due(time.time()):
+                self.vacuum.start("schedule")
+            if not self.once and self.amnezia.due(time.time()):
+                self.amnezia.start()
             if self.once and not self._forced and not self._force_requested.is_set():
                 self._service()
                 return
