@@ -2,25 +2,27 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, auth, can } from '../api.js'
+import { t, locale } from '../i18n.js'
+import Msg from '../components/Msg.vue'
 
 // Две ветки с одинаковым устройством: роутер (presets/ + nodes.json → sing-box роутера)
 // и клиенты (clients/presets/ + whnodes.json → конфиги из clients.list).
 const BRANCHES = {
   router: {
-    title: 'Роутер', dir: 'presets/', nodes: 'nodes.json', mode: 'apply',
-    check: 'Проверить сборку', apply: 'Применить',
-    confirm: 'Применить базу и включённые пресеты к sing-box? Если конфиг изменился, sing-box перезапустится; без связности вернётся прежний конфиг.',
-    toggled: 'итоговый конфиг прошёл sing-box check. Чтобы изменить работающий sing-box, нажмите «Применить».',
-    empty: 'Правила берутся только из base.json.',
-    applyHelp: 'Проверка собирает конфиг из редактируемой базы и пресетов с текущим nodes.json и прогоняет sing-box check, ничего не меняя. Применение копирует базу, собирает конфиг, перезапускает sing-box только при изменениях и проверяет связность.',
+    title: t('Router'), dir: 'presets/', nodes: 'nodes.json', mode: 'apply',
+    check: t('Check the build'), apply: t('Apply'),
+    confirm: t('Apply the base and enabled presets to sing-box? If the config changed, sing-box restarts; without connectivity the previous config comes back.'),
+    toggled: t('the resulting config passed sing-box check. To change the running sing-box, press “Apply”.'),
+    empty: t('Rules come only from base.json.'),
+    applyHelp: t('A check builds the config from the editable base and presets with the current nodes.json and runs sing-box check without changing anything. Applying copies the base, builds the config, restarts sing-box only on changes and checks connectivity.'),
   },
   clients: {
-    title: 'Клиенты', dir: 'clients/presets/', nodes: 'whnodes.json', mode: 'apply-clients',
-    check: 'Проверить сборку', apply: 'Собрать клиентов',
-    confirm: 'Собрать и опубликовать конфиги клиентов из баз и включённых клиентских пресетов? Подписки не загружаются; клиент, чей конфиг не прошёл sing-box check, остаётся на прежнем.',
-    toggled: 'конфиги всех клиентов прошли sing-box check. Чтобы опубликовать их, нажмите «Собрать клиентов».',
-    empty: 'Правила берутся только из баз клиентов (clients/base_<имя>.json).',
-    applyHelp: 'Проверка собирает конфиги клиентов из баз и включённых пресетов с текущим whnodes.json в отдельный каталог, ничего не публикуя. Сборка публикует их и файлы clients/publish/; конфиг, не прошедший sing-box check, не публикуется.',
+    title: t('Clients'), dir: 'clients/presets/', nodes: 'whnodes.json', mode: 'apply-clients',
+    check: t('Check the build'), apply: t('Build clients'),
+    confirm: t('Build and publish client configs from the bases and enabled client presets? Subscriptions are not fetched; a client whose config fails sing-box check stays on the previous one.'),
+    toggled: t('the configs of all clients passed sing-box check. To publish them, press “Build clients”.'),
+    empty: t('Rules come only from the client bases (clients/base_<name>.json).'),
+    applyHelp: t('A check builds client configs from the bases and enabled presets with the current whnodes.json into a separate directory without publishing anything. The build publishes them and the clients/publish/ files; a config that fails sing-box check is not published.'),
   },
 }
 const route = useRoute()
@@ -30,7 +32,7 @@ const b = computed(() => BRANCHES[branch.value])
 const presets = ref([]), groups = ref(null), clients = ref([]), settings = ref(true)
 const error = ref(''), notice = ref(''), busy = ref(false), loadError = ref('')
 const run = ref(null), log = ref(''), logOffset = ref(0)
-const statusLabel = { running: 'выполняется', ok: 'успешно', error: 'ошибка', busy: 'занято', timeout: 'тайм-аут', interrupted: 'прервано' }
+const statusLabel = { running: t('running (run)'), ok: t('succeeded'), error: t('error'), busy: t('busy'), timeout: t('timeout'), interrupted: t('interrupted') }
 const fileUrl = p => '/singbox/files/' + encodeURIComponent(p)
 let timer = null
 
@@ -49,7 +51,7 @@ async function toggle(item, enabled) {
     const data = doc.data
     data._preset = { ...(data._preset || {}), enabled }
     await api.put(fileUrl(item.path), data, { 'If-Match': doc.revision })
-    notice.value = `«${item.title}» ${enabled ? 'включён' : 'выключен'} в файле; ${b.value.toggled}`
+    notice.value = t(enabled ? '“{title}” is enabled in the file; {result}' : '“{title}” is disabled in the file; {result}', { title: item.title, result: b.value.toggled })
   } catch (e) { error.value = e.message }
   finally { await load(); busy.value = false }
 }
@@ -101,58 +103,58 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 <template>
   <section class="panel">
-    <h2>Правила sing-box</h2>
+    <h2>{{ t('sing-box rules') }}</h2>
     <div class="help-text">
-      <p>Правила маршрутизации и DNS собираются из пресетов, отдельных JSON-файлов. Итоговый конфиг: база + ноды + включённые пресеты по приоритету (меньше — выше). Пресет содержит всё, чего нет в базе: правила, DNS-серверы, наборы правил.</p>
-      <p>У роутера и клиентов свои пресеты: <code>singbox/presets/</code> склеиваются с base.json и nodes.json, <code>singbox/clients/presets/</code> — с базой каждого клиента и whnodes.json. Локальные наборы правил роутера клиент получает по адресу раздачи из <code>clients/settings.json</code>.</p>
-      <p>Переключатель меняет файл пресета; сервер заранее проверяет итоговые конфиги через <code>sing-box check</code> и не сохраняет изменение, если проверка не прошла.</p>
+      <p>{{ t('Routing and DNS rules are built from presets, separate JSON files. The resulting config: base + nodes + enabled presets by priority (lower goes first). A preset holds everything the base lacks: rules, DNS servers, rule sets.') }}</p>
+      <p><Msg :text="t('The router and the clients have their own presets: {router} are merged with base.json and nodes.json, {clients} with the base of each client and whnodes.json. A client gets the local rule sets of the router from the distribution address in {settings}.')"><template #router><code>singbox/presets/</code></template><template #clients><code>singbox/clients/presets/</code></template><template #settings><code>clients/settings.json</code></template></Msg></p>
+      <p><Msg :text="t('The switch changes the preset file; the server checks the resulting configs with {check} beforehand and does not save the change if the check fails.')"><template #check><code>sing-box check</code></template></Msg></p>
     </div>
-    <p v-if="!auth.verified" class="notice">Войдите с токеном администратора.</p>
-    <p v-else-if="!can('singbox_files')" class="notice">Раздел доступен только во встроенной админке с запущенным оркестратором.</p>
+    <p v-if="!auth.verified" class="notice">{{ t('Log in with the administrator token.') }}</p>
+    <p v-else-if="!can('singbox_files')" class="notice">{{ t('The section is available only in the embedded admin panel with a running orchestrator.') }}</p>
   </section>
   <template v-if="can('singbox_files')">
-    <nav class="chips" aria-label="Ветка правил">
+    <nav class="chips" :aria-label="t('Rules branch')">
       <RouterLink v-for="(item, key) in BRANCHES" :key="key" class="chip" :class="{ on: branch === key }"
                   :to="{ path: '/presets', query: key === 'router' ? {} : { branch: key } }">{{ item.title }}</RouterLink>
     </nav>
     <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
     <p v-if="loadError" class="notice bad" role="alert">{{ loadError }}</p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
-    <p v-if="branch === 'clients' && !settings" class="notice bad">Нет <RouterLink :to="{ path: '/singbox', query: { file: 'clients/settings.json' } }">clients/settings.json</RouterLink> с адресом раздачи наборов правил (<code>{"rules_url": "https://…/"}</code>): пресет с локальными наборами правил клиентам не собрать.</p>
+    <p v-if="branch === 'clients' && !settings" class="notice bad"><Msg :text="t('There is no {file} with the rule set distribution address ({example}): a preset with local rule sets cannot be built for clients.')"><template #file><RouterLink :to="{ path: '/singbox', query: { file: 'clients/settings.json' } }">clients/settings.json</RouterLink></template><template #example><code>{"rules_url": "https://…/"}</code></template></Msg></p>
     <section class="panel">
-      <h2>Пресеты · {{ b.title }}</h2>
-      <p v-if="!presets.length" class="mut">Пресетов нет. {{ b.empty }} Создайте файл {{ b.dir }}&lt;имя&gt;.json в «Файлах sing-box».</p>
+      <h2>{{ t('Presets') }} · {{ b.title }}</h2>
+      <p v-if="!presets.length" class="mut">{{ t('No presets.') }} {{ b.empty }} {{ t('Create a file {file} in “sing-box files”.', { file: b.dir + '<name>.json' }) }}</p>
       <div v-if="presets.length" class="wrap">
         <table class="responsive-table presets">
-          <thead><tr><th class="l">Вкл.</th><th class="l">Пресет</th><th>Приоритет</th><th class="l">Нужны группы</th><th class="l">Файл</th></tr></thead>
+          <thead><tr><th class="l">{{ t('On') }}</th><th class="l">{{ t('Preset') }}</th><th>{{ t('Priority') }}</th><th class="l">{{ t('Required groups') }}</th><th class="l">{{ t('File') }}</th></tr></thead>
           <tbody>
             <tr v-for="item in presets" :key="item.name">
-              <td class="l" data-label="Вкл."><input type="checkbox" :checked="item.enabled" :disabled="busy" :aria-label="'Включить ' + item.title" @change="toggle(item, $event.target.checked)" /></td>
-              <td class="l" data-label="Пресет"><b>{{ item.title }}</b><small v-if="item.description" class="cell-note">{{ item.description }}</small></td>
-              <td data-label="Приоритет">{{ item.priority }}<small v-for="(value, path) in item.priorities" :key="path" class="cell-note">{{ path }} {{ value }}</small></td>
-              <td class="l" data-label="Нужны группы">
-                <template v-if="item.requires.groups.length">{{ item.requires.groups.join(', ') }}<small v-if="item.missing_groups?.length" class="cell-note bad">нет в {{ b.nodes }}: {{ item.missing_groups.join(', ') }}</small></template>
+              <td class="l" :data-label="t('On')"><input type="checkbox" :checked="item.enabled" :disabled="busy" :aria-label="t('Enable {title}', { title: item.title })" @change="toggle(item, $event.target.checked)" /></td>
+              <td class="l" :data-label="t('Preset')"><b>{{ item.title }}</b><small v-if="item.description" class="cell-note">{{ item.description }}</small></td>
+              <td :data-label="t('Priority')">{{ item.priority }}<small v-for="(value, path) in item.priorities" :key="path" class="cell-note">{{ path }} {{ value }}</small></td>
+              <td class="l" :data-label="t('Required groups')">
+                <template v-if="item.requires.groups.length">{{ item.requires.groups.join(', ') }}<small v-if="item.missing_groups?.length" class="cell-note bad">{{ t('missing in {file}', { file: b.nodes }) }}: {{ item.missing_groups.join(', ') }}</small></template>
                 <span v-else class="mut">—</span>
               </td>
-              <td class="l" data-label="Файл"><RouterLink :to="{ path: '/singbox', query: { file: item.path } }">{{ item.name }}</RouterLink></td>
+              <td class="l" :data-label="t('File')"><RouterLink :to="{ path: '/singbox', query: { file: item.path } }">{{ item.name }}</RouterLink></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p v-if="presets.some(p => p.missing_groups?.length)" class="notice bad">Недостающие группы включаются в «Подписки и сборка» → «Параметры сборки».</p>
-      <p class="mut">Группы в текущем {{ b.nodes }}: {{ groups ? groups.join(', ') : 'неизвестно' }}.</p>
-      <p v-if="branch === 'clients'" class="mut">Клиенты из clients.list: {{ clients.length ? clients.join(', ') : 'нет' }}.</p>
+      <p v-if="presets.some(p => p.missing_groups?.length)" class="notice bad">{{ t('Missing groups are enabled in “Subscriptions and build” → “Build parameters”.') }}</p>
+      <p class="mut">{{ t('Groups in the current {file}: {groups}.', { file: b.nodes, groups: groups ? groups.join(', ') : t('unknown') }) }}</p>
+      <p v-if="branch === 'clients'" class="mut">{{ t('Clients from clients.list: {clients}.', { clients: clients.length ? clients.join(', ') : t('none') }) }}</p>
     </section>
     <section class="panel">
-      <h2>{{ branch === 'clients' ? 'Сборка клиентов' : 'Применение' }}</h2>
+      <h2>{{ branch === 'clients' ? t('Client build') : t('Applying') }}</h2>
       <div class="actions">
         <button class="btn" :disabled="busy || run?.status === 'running'" @click="launch(true)">{{ b.check }}</button>
         <button class="btn primary" :disabled="busy || run?.status === 'running'" @click="launch(false)">{{ b.apply }}</button>
       </div>
       <p class="help-text">{{ b.applyHelp }}</p>
       <template v-if="run">
-        <p>{{ run.dry_run ? 'Проверка' : (branch === 'clients' ? 'Сборка' : 'Применение') }}<template v-if="run.started"> от {{ new Date(run.started * 1000).toLocaleString('ru-RU') }}</template>: <b>{{ statusLabel[run.status] || run.status }}</b> · <RouterLink to="/pipeline">история в «Конвейере»</RouterLink></p>
-        <pre class="log">{{ log || 'Журнал пуст…' }}</pre>
+        <p>{{ run.dry_run ? t('Check') : (branch === 'clients' ? t('Build') : t('Applying')) }}<template v-if="run.started"> · {{ new Date(run.started * 1000).toLocaleString(locale()) }}</template>: <b>{{ statusLabel[run.status] || run.status }}</b> · <RouterLink to="/pipeline">{{ t('history in the “Pipeline”') }}</RouterLink></p>
+        <pre class="log">{{ log || t('The log is empty…') }}</pre>
       </template>
     </section>
   </template>

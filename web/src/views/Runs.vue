@@ -3,8 +3,9 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { api, auth, can } from '../api.js'
 import { PHASES } from '../ux.js'
 import { dateTime } from '../format.js'
+import { t } from '../i18n.js'
 const status=ref(null), statusErr=ref(''), lines=ref([]), seq=ref(0), logErr=ref(''), busy=ref(false), msg=ref('')
-const paused=ref(false), follow=ref(true), query=ref(''), level=ref('все'), logBox=ref(null)
+const paused=ref(false), follow=ref(true), query=ref(''), level=ref('all'), logBox=ref(null)
 let stTimer, logTimer, statusBusy=false, logsBusy=false, disposed=false
 async function pollStatus() {
   if(statusBusy || auth.capabilities.mode === 'standalone') return
@@ -30,45 +31,45 @@ async function pollLogs() {
 }
 async function runTests() {
   busy.value=true; msg.value=''
-  try {const r=await api.post('/run/tests');msg.value=r.already_queued ? 'Тестирование по запросу уже идёт.' : 'Тестирование запущено: все ноды проверяются, не дожидаясь сроков годности.';await pollStatus()}
+  try {const r=await api.post('/run/tests');msg.value=r.already_queued ? t('On-demand testing is already running.') : t('Testing started: all nodes are checked without waiting for the test deadlines.');await pollStatus()}
   catch(e){msg.value=e.message}
   finally{busy.value=false}
 }
 watch(()=>auth.epoch,()=>{status.value=null;lines.value=[];seq.value=0;statusErr.value='';logErr.value=''})
 watch(()=>auth.verified,()=>{pollStatus();pollLogs()})
 const visible=computed(()=>lines.value.filter(l=>(!query.value || l.line.toLowerCase().includes(query.value.toLowerCase())) &&
-  (level.value === 'все' || (level.value === 'ошибки' ? /ошиб|error|fail|veto|\[!\]/i : /switch|переключ|rotation|ротац/i).test(l.line))))
+  (level.value === 'all' || (level.value === 'errors' ? /ошиб|error|fail|veto|\[!\]/i : /switch|переключ|rotation|ротац/i).test(l.line))))  // i18n-skip: журнал тестера на русском
 onMounted(()=>{pollStatus();pollLogs();stTimer=setInterval(pollStatus,5000);logTimer=setInterval(pollLogs,2000)})
 onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
 </script>
 <template>
   <section class="panel">
-    <h2>Проверки текущих нод sing-box</h2>
-    <p class="help-text">Тестер проверяет ноды, у которых истёк срок годности тестов. Кнопка проверяет все доступные ноды сейчас; подписки она не загружает и настройки не применяет.</p>
-    <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. Опрос продолжится автоматически.</p>
+    <h2>{{ t('Checks of the current sing-box nodes') }}</h2>
+    <p class="help-text">{{ t('The tester checks nodes whose test results have expired. The button checks all available nodes now; it does not fetch subscriptions or apply settings.') }}</p>
+    <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. {{ t('Polling will continue automatically.') }}</p>
     <template v-if="status">
-      <p><b>{{ PHASES[status.progress?.phase] || (status.running ? 'Процесс запущен' : 'Остановлен') }}</b></p>
-      <p class="break" v-if="status.progress?.node">Текущая нода: {{ status.progress.node }}</p>
-      <p v-if="status.request_queued" class="notice">Идёт тестирование по запросу: осталось нод {{ status.forced_left }}.</p>
-      <p v-if="status.wait_until">Текущее ожидание до {{ dateTime(status.wait_until) }}. Срок может измениться.</p>
-      <p>Следующая ротация: {{ dateTime(status.next_rotation) }}.</p>
-      <p>Монитор активных нод: {{ status.monitor ? 'работает' : 'не работает' }} · сбор трафика: {{ status.traffic ? 'работает' : 'не работает' }}</p>
+      <p><b>{{ PHASES[status.progress?.phase] || (status.running ? t('Process running') : t('Stopped')) }}</b></p>
+      <p class="break" v-if="status.progress?.node">{{ t('Current node: {node}', { node: status.progress.node }) }}</p>
+      <p v-if="status.request_queued" class="notice">{{ t('On-demand testing is running: {n} nodes left.', { n: status.forced_left }) }}</p>
+      <p v-if="status.wait_until">{{ t('Current wait until {time}. The deadline may change.', { time: dateTime(status.wait_until) }) }}</p>
+      <p>{{ t('Next rotation: {time}.', { time: dateTime(status.next_rotation) }) }}</p>
+      <p>{{ t('Active node monitor: {monitor} · traffic collection: {traffic}', { monitor: status.monitor ? t('running') : t('not running'), traffic: status.traffic ? t('running') : t('not running') }) }}</p>
     </template>
-    <button class="btn primary" :disabled="busy || !can('run_tests') || !status?.running || !!statusErr || status.request_queued" @click="runTests">Запустить тестирование сейчас</button>
+    <button class="btn primary" :disabled="busy || !can('run_tests') || !status?.running || !!statusErr || status.request_queued" @click="runTests">{{ t('Run testing now') }}</button>
     <p role="status">{{ msg }}</p>
   </section>
   <section>
-    <h2>Журнал тестера</h2>
-    <p class="hint">Показаны последние доступные строки (на странице до 1500). После длительной паузы часть записей может исчезнуть из буфера сервера. Фильтры определяют тип строки по тексту, это не структурированный уровень журнала.</p>
+    <h2>{{ t('Tester log') }}</h2>
+    <p class="hint">{{ t('The latest available lines are shown (up to 1500 on the page). After a long pause some records may drop out of the server buffer. Filters detect the line type by its text; this is not a structured log level.') }}</p>
     <div class="toolbar">
-      <label>Поиск<input type="search" v-model="query" /></label>
-      <label>Строки<select v-model="level"><option>все</option><option>ошибки</option><option>переключения</option></select></label>
-      <button class="btn" @click="paused = !paused">{{ paused ? 'Продолжить чтение' : 'Приостановить чтение' }}</button>
-      <label class="check"><input type="checkbox" v-model="follow" /> Следовать за новыми строками</label>
+      <label>{{ t('Search') }}<input type="search" v-model="query" /></label>
+      <label>{{ t('Lines') }}<select v-model="level"><option value="all">{{ t('all') }}</option><option value="errors">{{ t('errors') }}</option><option value="switches">{{ t('switches') }}</option></select></label>
+      <button class="btn" @click="paused = !paused">{{ paused ? t('Resume reading') : t('Pause reading') }}</button>
+      <label class="check"><input type="checkbox" v-model="follow" /> {{ t('Follow new lines') }}</label>
     </div>
     <p v-if="logErr" class="notice bad">{{ logErr }}</p>
     <div ref="logBox" class="log" @wheel="follow=false">
-      <p v-if="!visible.length" class="mut">Доступных строк с такими условиями нет.</p>
+      <p v-if="!visible.length" class="mut">{{ t('No available lines match these conditions.') }}</p>
       <div v-for="l in visible" :key="l.seq" class="log-line"><span class="mut">{{ dateTime(l.ts) }}</span><span>{{ l.line }}</span></div>
     </div>
   </section>

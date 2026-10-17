@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import * as vue from 'vue'
+import * as i18n from '../src/i18n.js'
 
 // Execute the real component setup with Vue lifecycle hooks and synthetic API responses.
 // The renderer has no browser: these checks cover state and requests, not appearance.
@@ -16,13 +17,15 @@ function mount(view, api, query = {}) {
   const { descriptor } = parse(readFileSync(new URL(`../src/views/${view}.vue`, import.meta.url), 'utf8'))
   const script = compileScript(descriptor, { id: view, genDefaultAs: 'component' })
   const code = script.content.replace(/^import .+ from .+$/gm, '')
-  const component = new Function('vue', 'router', 'apiModule', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'window',
+  const component = new Function('vue', 'router', 'apiModule', 'i18n', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'window',
     `const { computed, onBeforeUnmount, onMounted, ref, watch, toRaw } = vue;
      const { onBeforeRouteLeave, useRoute } = router;
      const { api, auth, can } = apiModule;
+     const { t, tn, locale } = i18n;
+     const Msg = {};
      ${code}
      return component`)(vue, { onBeforeRouteLeave() {}, useRoute: () => ({ query }) },
-      { api, auth: { verified: true, dirty: false }, can: () => true },
+      { api, auth: { verified: true, dirty: false }, can: () => true }, i18n,
       () => 0, () => {}, () => 0, () => {}, { confirm: () => true })
   const app = renderer.createApp({ ...component, render: () => vue.h('div') })
   const instance = app.mount({})

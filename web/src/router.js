@@ -13,26 +13,27 @@ import NodeDetail from './views/NodeDetail.vue'
 import Pipeline from './views/Pipeline.vue'
 import Singbox from './views/Singbox.vue'
 import Presets from './views/Presets.vue'
+// name — имя маршрута и ключ перевода заголовка (t(name)).
 export const sections = [
-  { path: '/', name: 'Обзор', component: Overview },
-  { path: '/nodes', name: 'Ноды', component: Control },
-  { path: '/subscriptions', name: 'Подписки и сборка', component: Config },
-  { path: '/pipeline', name: 'Конвейер', component: Pipeline },
-  { path: '/presets', name: 'Правила', component: Presets },
-  { path: '/singbox', name: 'Файлы sing-box', component: Singbox },
-  { path: '/runs', name: 'Проверки', component: Runs },
-  { path: '/history', name: 'Переключения', component: History },
-  { path: '/traffic', name: 'Трафик', component: Traffic },
-  { path: '/config', name: 'Настройки', component: Config },
+  { path: '/', name: 'Overview', component: Overview },
+  { path: '/nodes', name: 'Nodes', component: Control },
+  { path: '/subscriptions', name: 'Subscriptions and build', component: Config },
+  { path: '/pipeline', name: 'Pipeline', component: Pipeline },
+  { path: '/presets', name: 'Rules', component: Presets },
+  { path: '/singbox', name: 'sing-box files', component: Singbox },
+  { path: '/runs', name: 'Checks', component: Runs },
+  { path: '/history', name: 'Switches', component: History },
+  { path: '/traffic', name: 'Traffic', component: Traffic },
+  { path: '/config', name: 'Settings', component: Config },
 ]
 export const nodeSections = [
-  { path: '/nodes', name: 'Все ноды' },
-  { path: '/rating', name: 'Рейтинг', component: Rating },
-  { path: '/results', name: 'Результаты', component: Results },
-  { path: '/lifecycle', name: 'Ограничения и качество', component: Lifecycle },
-  { path: '/graveyard', name: 'Архив', component: Graveyard },
+  { path: '/nodes', name: 'All nodes' },
+  { path: '/rating', name: 'Rating', component: Rating },
+  { path: '/results', name: 'Results', component: Results },
+  { path: '/lifecycle', name: 'Restrictions and quality', component: Lifecycle },
+  { path: '/graveyard', name: 'Archive', component: Graveyard },
 ]
 export const router = createRouter({ history: createWebHashHistory(), routes: [
-  ...sections, ...nodeSections.slice(1), { path: '/nodes/:crc', name: 'Карточка ноды', component: NodeDetail },
+  ...sections, ...nodeSections.slice(1), { path: '/nodes/:crc', name: 'Node card', component: NodeDetail },
   { path: '/control', redirect: '/nodes' }, { path: '/:pathMatch(.*)*', redirect: '/' },
 ] })

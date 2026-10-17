@@ -168,7 +168,8 @@ sing-box только со следующей сборкой конвейера.
     }
   },
 
-  "storage": { "path": "results/stats.db", "retention": "30d", "traffic": { "enabled": true, "poll": "5s", "flush": "1m" } },
+  "storage": { "path": "results/stats.db", "retention": "30d", "traffic": { "enabled": true, "poll": "5s", "flush": "1m" },
+               "vacuum": { "every": "30d", "at": "04:00" } },
 
   "admin": { "enabled": true, "listen": "192.168.1.1", "port": 8088, "token": "<токен>", "public_read": true, "refresh": "10s" },
 
@@ -439,6 +440,11 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 | `retention` | `30d` | Сколько хранить историю |
 | `traffic.enabled` | `true` | Собирать пользовательский трафик по нодам |
 | `traffic.poll`, `traffic.flush` | `5s`, `1m` | Опрос счётчиков и запись в БД |
+| `vacuum.every` | `30d` | Переупаковывать базу (`VACUUM`) раз в этот срок; `0s` — только вручную из админки |
+| `vacuum.at` | `04:00` | Время запуска (местное) после истечения срока |
+
+Итог последнего `VACUUM` — размер базы до и после — и кнопка «Выполнить сейчас» — в админке, раздел
+«Настройки». Отсчёт срока начинается с первого запуска тестера.
 
 ## admin
 

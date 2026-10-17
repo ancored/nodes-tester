@@ -14,6 +14,7 @@ from tests.helpers import make_config, temp_dir, fresh_nodes_json
 from nodes_tester.config import load_config
 from nodes_tester.logbuffer import LogRing
 from nodes_tester.storage import Storage
+from nodes_tester.vacuum import Vacuum
 from dashboard.server import build_app
 
 
@@ -64,6 +65,7 @@ class ApiControlTest(unittest.TestCase):
                                      "server": "1.2.3.4", "server_port": 443}])
         self.storage.load_nodes(os.path.join(self.tmp, "nodes.json"))
         self.runner = FakeRunner(self.cfg, self.storage)
+        self.runner.vacuum = Vacuum(self.storage, self.cfg.storage.vacuum)
         self.app = build_app(self.cfg, runner=self.runner)
 
     def tearDown(self):
@@ -104,6 +106,18 @@ class ApiControlTest(unittest.TestCase):
         self.assertTrue(json.loads(r.body)["running"])
         self.assertEqual(self._call("POST", "/api/run/tests").status, 200)
         self.assertTrue(self.runner._requested)
+
+    def test_vacuum_state_and_manual_run(self):
+        state = json.loads(self._call("GET", "/api/storage/vacuum").body)
+        self.assertIsNone(state["last"])               # только отсчёт расписания, запусков не было
+        self.assertGreater(state["next"], 0)
+        self.assertEqual(self._call("GET", "/api/storage/vacuum", token="bad").status, 401)
+        self.assertEqual(self._call("POST", "/api/storage/vacuum").status, 200)
+        self.runner.vacuum._thread.join(10)
+        last = json.loads(self._call("GET", "/api/storage/vacuum").body)["last"]
+        self.assertEqual(last["trigger"], "manual")
+        self.assertGreater(last["size_before"], 0)
+        self.assertIn("size_after", last)
 
     def test_logs(self):
         self.runner.log.write("hello\nworld\n")

@@ -5,20 +5,22 @@ import { useSnapshot } from '../store.js'
 import { bytes, dateTime, flag } from '../format.js'
 import DataTable from '../components/DataTable.vue'
 import FilterBar from '../components/FilterBar.vue'
+import Msg from '../components/Msg.vue'
 import { useTableFilters } from '../filters.js'
+import { t } from '../i18n.js'
 
 const s = useSnapshot()
 
 // Агрегаты считаются из строк трафика (traffic_rows), поэтому общие фильтры
 // таблицы — страна, группа, протокол, провайдер — применяются к любому измерению.
 const MEASURES = {
-  'провайдеры': { dim: 'provider', title: 'провайдер', kinds: ['leaf'] },
-  'страны': { dim: 'cc', title: 'страна', kinds: ['leaf'] },
-  'протоколы': { dim: 'protocol', title: 'протокол', kinds: ['leaf'] },
-  'ноды': { dim: 'node', title: 'нода', kinds: ['leaf', 'direct'] },
+  providers: { dim: 'provider', label: t('providers'), title: t('provider'), kinds: ['leaf'] },
+  countries: { dim: 'cc', label: t('countries'), title: t('country'), kinds: ['leaf'] },
+  protocols: { dim: 'protocol', label: t('protocols'), title: t('protocol'), kinds: ['leaf'] },
+  nodes: { dim: 'node', label: t('nodes'), title: t('node'), kinds: ['leaf', 'direct'] },
 }
-const requestedMeasure = useQuery('measure', 'провайдеры')
-const measure = computed({get: () => Object.hasOwn(MEASURES, requestedMeasure.value) ? requestedMeasure.value : 'провайдеры', set: v => requestedMeasure.value = v})
+const requestedMeasure = useQuery('measure', 'providers')
+const measure = computed({get: () => Object.hasOwn(MEASURES, requestedMeasure.value) ? requestedMeasure.value : 'providers', set: v => requestedMeasure.value = v})
 const options = Object.keys(MEASURES)
 const allRows = computed(() => s.data.traffic_rows || [])
 // Опции фильтров — по leaf-нодам; фильтр применяется к строкам до свёртки.
@@ -36,50 +38,50 @@ const trafCols = computed(() => {
   const m = MEASURES[measure.value]
   return [
     { key: m.dim, title: m.title, l: true, fmt: m.dim === 'cc' ? v => flag(v) + ' ' + String(v).toUpperCase() : null },
-    { key: 'up', title: 'исх', fmt: bytes },
-    { key: 'down', title: 'вх', fmt: bytes },
-    { key: 'total', title: 'всего', fmt: bytes },
+    { key: 'up', title: t('out'), fmt: bytes },
+    { key: 'down', title: t('in'), fmt: bytes },
+    { key: 'total', title: t('total'), fmt: bytes },
   ]
 })
 
 const endpoints = computed(() => s.data.endpoints || [])
 const endpCols = [
-  { key: 'provider', title: 'провайдер', l: true },
-  { key: 'source_ip', title: 'источник', l: true },
-  { key: 'dest_host', title: 'назначение', l: true },
-  { key: 'network', title: 'транспорт', l: true },
-  { key: 'up', title: 'исх', fmt: bytes },
-  { key: 'down', title: 'вх', fmt: bytes },
-  { key: 'flows', title: 'соединений' },
+  { key: 'provider', title: t('provider'), l: true },
+  { key: 'source_ip', title: t('source'), l: true },
+  { key: 'dest_host', title: t('destination'), l: true },
+  { key: 'network', title: t('transport'), l: true },
+  { key: 'up', title: t('out'), fmt: bytes },
+  { key: 'down', title: t('in'), fmt: bytes },
+  { key: 'flows', title: t('connections') },
 ]
 </script>
 
 <template>
-  <div v-if="s.loading" class="empty">Загрузка…</div>
-  <div v-else-if="s.error && !s.ready" class="empty bad">Ошибка: {{ s.error }}</div>
+  <div v-if="s.loading" class="empty">{{ t('Loading…') }}</div>
+  <div v-else-if="s.error && !s.ready" class="empty bad">{{ t('Error: {error}', { error: s.error }) }}</div>
   <template v-else>
-    <p class="hint">Пользовательский трафик за весь сохранённый период: {{ dateTime(s.data.traffic_range?.start) }} — {{ dateTime(s.data.traffic_range?.end) }}. Это не последние 24 часа. Трафик тестера исключён; история исчезнувших нод удаляется через {{ s.data.retention_days }} дней после последнего появления. Топ назначений ограничен 50 записями; назначения являются накопительными счётчиками, а не выборкой за указанный период.</p>
+    <p class="hint">{{ t('User traffic over the whole stored period: {start} — {end}. This is not the last 24 hours. Tester traffic is excluded; the history of vanished nodes is deleted {days} days after they were last seen. The top of destinations is limited to 50 records; destinations are cumulative counters, not a sample for this period.', { start: dateTime(s.data.traffic_range?.start), end: dateTime(s.data.traffic_range?.end), days: s.data.retention_days }) }}</p>
     <section class="panel">
-      <h2>Пользовательский трафик</h2>
-      <p v-if="s.data.source?.state !== 'ok'" class="mut">Нет доступной базы измерений.</p>
-      <div v-else class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_user_totals?.[key] || 0) }}</div></div></div>
+      <h2>{{ t('User traffic') }}</h2>
+      <p v-if="s.data.source?.state !== 'ok'" class="mut">{{ t('No measurement database is available.') }}</p>
+      <div v-else class="kpis"><div v-for="[key,label] in [['down',t('Incoming')],['up',t('Outgoing')],['total',t('Total')]]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_user_totals?.[key] || 0) }}</div></div></div>
     </section>
     <section class="panel">
-      <h2>Трафик тестера</h2>
-      <p v-if="s.data.source?.state !== 'ok'" class="mut">Нет доступной базы измерений.</p>
+      <h2>{{ t('Tester traffic') }}</h2>
+      <p v-if="s.data.source?.state !== 'ok'" class="mut">{{ t('No measurement database is available.') }}</p>
       <template v-else>
-        <p v-if="s.data.traffic_tester_range?.start" class="mut">За сохранённый период: {{ dateTime(s.data.traffic_tester_range.start) }} — {{ dateTime(s.data.traffic_tester_range.end) }}</p>
-        <div class="kpis"><div v-for="[key,label] in [['down','Входящий'],['up','Исходящий'],['total','Всего']]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_tester_totals?.[key] || 0) }}</div></div></div>
-        <p>Скачано тестами download и heavy_download за 24 часа: <b>{{ bytes(s.data.traffic_test_download_24h?.down || 0) }}</b> за {{ s.data.traffic_test_download_24h?.tests || 0 }} замеров.</p>
+        <p v-if="s.data.traffic_tester_range?.start" class="mut">{{ t('Over the stored period: {start} — {end}', { start: dateTime(s.data.traffic_tester_range.start), end: dateTime(s.data.traffic_tester_range.end) }) }}</p>
+        <div class="kpis"><div v-for="[key,label] in [['down',t('Incoming')],['up',t('Outgoing')],['total',t('Total')]]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_tester_totals?.[key] || 0) }}</div></div></div>
+        <p><Msg :text="t('Downloaded by the download and heavy_download tests in 24 hours: {bytes} in {n} measurements.', { n: s.data.traffic_test_download_24h?.tests || 0 })"><template #bytes><b>{{ bytes(s.data.traffic_test_download_24h?.down || 0) }}</b></template></Msg></p>
       </template>
     </section>
     <section>
-      <h2>Пользовательский трафик по измерениям</h2>
-      <div class="toolbar"><label>Измерение<select v-model="measure"><option v-for="o in options" :key="o">{{ o }}</option></select></label><FilterBar :state="filterState" /></div>
+      <h2>{{ t('User traffic by dimension') }}</h2>
+      <div class="toolbar"><label>{{ t('Dimension') }}<select v-model="measure"><option v-for="o in options" :key="o" :value="o">{{ MEASURES[o].label }}</option></select></label><FilterBar :state="filterState" /></div>
       <DataTable :rows="trafRows" :columns="trafCols" :filters="[]" :page-size="15" />
     </section>
     <section>
-      <h2>Топ назначений</h2>
+      <h2>{{ t('Top destinations') }}</h2>
       <DataTable :rows="endpoints" :columns="endpCols" :page-size="15" query-key="endpoints_" />
     </section>
   </template>

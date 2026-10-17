@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue'
+import { t } from './i18n.js'
 const KEY = 'nt_admin_token'
 function stored() { try { return localStorage.getItem(KEY) || '' } catch { return '' } }
 const token = ref(stored())
@@ -8,7 +9,7 @@ export function getToken() { return token.value }
 export function setToken(t) { token.value = t || ''; auth.verified = false; auth.epoch++ }
 export function logout() { setToken(''); auth.error = ''; try { localStorage.removeItem(KEY) } catch {} }
 export function requestLogout() {
-  if (auth.dirty && !window.confirm('Есть несохранённые настройки. Выйти и отбросить их?')) return
+  if (auth.dirty && !window.confirm(t('There are unsaved settings. Log out and discard them?'))) return
   logout()
 }
 async function request(method, path, body, headers = {}) {
@@ -20,15 +21,15 @@ async function request(method, path, body, headers = {}) {
     const resp = await fetch('/api' + path, { method, headers, cache: 'no-store', signal: controller.signal,
       body: body !== undefined ? JSON.stringify(body) : undefined })
     let data
-    try { data = await resp.json() } catch { throw new Error('Непонятный ответ сервера') }
+    try { data = await resp.json() } catch { throw new Error(t('Unrecognised server response')) }
     if (!resp.ok) {
       if (resp.status === 401 && current === getToken()) auth.verified = false
       const err = new Error(data.error || 'HTTP ' + resp.status); err.status = resp.status; throw err
     }
     return data
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Сервер не ответил за 12 секунд. Обновите данные.')
-    if (e instanceof TypeError) throw new Error('Нет связи с сервером админки. Проверьте сеть и обновите данные.')
+    if (e.name === 'AbortError') throw new Error(t('The server did not respond within 12 seconds. Refresh the data.'))
+    if (e instanceof TypeError) throw new Error(t('No connection to the admin server. Check the network and refresh the data.'))
     throw e
   } finally { clearTimeout(timeout) }
 }

@@ -39,10 +39,11 @@ from .storage import Storage
 from .switcher import Switcher
 from .tests import TestContext, get_test_class
 from .traffic import TrafficCollector
+from .vacuum import Vacuum
 from .whitelist import WhitelistCheck
 
 
-# Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, cron).
+# Как часто гонять единый cleanup() БД в непрерывном режиме (VACUUM — отдельно, storage.vacuum).
 _CLEANUP_INTERVAL = 24 * 3600
 # Пауза после перезапуска sing-box посреди замера: ядро поднимает наборы правил и
 # inbound-ы, прежде чем замерам можно верить.
@@ -139,6 +140,7 @@ class Runner:
         # живут в БД. Монитору нужен боевой трафик по нодам — поток соединений держим и
         # без записи в БД (storage.traffic выключен).
         self.storage = Storage(cfg.storage)
+        self.vacuum = Vacuum(self.storage, cfg.storage.vacuum)
         self.collector = TrafficCollector(cfg.storage.traffic, self.api,
                                           self.storage if cfg.storage.traffic.enabled else None)
         self.board = Scoreboard(self.storage, cfg.rating)
@@ -378,7 +380,7 @@ class Runner:
             self._stop_dashboard()
             if self.orchestrator is not None:
                 self.orchestrator.stop()
-            self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, cron)
+            self.storage.cleanup()             # финальная очистка (VACUUM — отдельно, storage.vacuum)
             self.storage.close()
             self._restore()
             # Вернуть реальные stdout/stderr последними — чтобы хвостовые print
@@ -413,6 +415,8 @@ class Runner:
             if time.monotonic() - cleaned >= _CLEANUP_INTERVAL:
                 self.storage.cleanup()             # единая очистка БД (без VACUUM)
                 cleaned = time.monotonic()
+            if not self.once and self.vacuum.due(time.time()):
+                self.vacuum.start("schedule")
             if self.once and not self._forced and not self._force_requested.is_set():
                 self._service()
                 return

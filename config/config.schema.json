@@ -1396,7 +1396,10 @@
                 "type": "string",
                 "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
               },
-              "description": "Время запуска, ЧЧ:ММ."
+              "description": "Время запуска, ЧЧ:ММ.",
+              "default": [
+                "03:00"
+              ]
             },
             "exclude_types": {
               "type": "array",
@@ -1547,6 +1550,25 @@
               "default": "1m"
             }
           }
+        },
+        "vacuum": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "every": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Переупаковывать базу (VACUUM) не реже; 0s — только вручную из админки.",
+              "default": "30d"
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "Время запуска, ЧЧ:ММ (местное).",
+              "default": "04:00"
+            }
+          },
+          "description": "VACUUM базы тестера по расписанию; результат и запуск вручную — в админке (Настройки)."
         }
       },
       "description": "База данных."
@@ -1656,7 +1678,16 @@
               "singbox"
             ]
           },
-          "description": "События."
+          "description": "События.",
+          "default": [
+            "switch",
+            "failsafe",
+            "rollback",
+            "pipeline",
+            "subscription",
+            "expiry",
+            "singbox"
+          ]
         },
         "switch_reasons": {
           "type": "array",

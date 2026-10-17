@@ -1,6 +1,7 @@
 <script setup>
 // Горизонтальные бары топа: items [{name, value}], value форматируется fmt().
 import { computed } from 'vue'
+import { t } from '../i18n.js'
 
 const props = defineProps({
   items: { type: Array, default: () => [] },
@@ -17,7 +18,7 @@ const view = computed(() => {
 
 <template>
   <div class="wrap" style="padding: 16px">
-    <div v-if="!view.length" class="empty">нет данных</div>
+    <div v-if="!view.length" class="empty">{{ t('no data') }}</div>
     <div v-else class="bars">
       <div v-for="i in view" :key="i.name" class="bar-row">
         <span class="name" :title="i.name">{{ i.name }}</span>

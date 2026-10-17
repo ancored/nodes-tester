@@ -23,7 +23,7 @@ node_crc — CRC настроек сервера, cred_crc — CRC учётны�
 
 Очистка (cleanup) — единая и согласованная: удаляем ноды с last_seen старше
 storage.retention и КАСКАДОМ все их строки во всех таблицах (по crc). VACUUM —
-отдельно (vacuum(), под cron).
+отдельно (vacuum(), по расписанию storage.vacuum).
 """
 
 from __future__ import annotations
@@ -660,7 +660,7 @@ class Storage:
         согласованно, без сирот (не бывает, что нода удалена из nodes, а её
         активации/трафик остались). Историю ЖИВЫХ нод не трогаем (храним БД).
 
-        VACUUM здесь НЕ выполняется — он отдельным процессом (vacuum(), под cron).
+        VACUUM здесь НЕ выполняется — он отдельно (vacuum(), по расписанию storage.vacuum).
         """
         cutoff = int(time.time() - self.cfg.retention)
         with self._lock:
@@ -694,14 +694,22 @@ class Storage:
                   f"(+ их трафик/результаты/эндпоинты/активации)")
 
     def vacuum(self) -> None:
-        """Отдельный VACUUM (переупаковка БД). Тяжёлый — запускать раз в месяц
-        по cron: `python -m nodes_tester --vacuum -c <config>`.
+        """Отдельный VACUUM (переупаковка БД). Тяжёлый: по расписанию storage.vacuum или
+        кнопкой в админке (nodes_tester.vacuum), вручную — `nodes-tester vacuum`.
 
-        busy_timeout: тестер-сервис держит свою connection и пишет (WAL), поэтому
-        даём VACUUM подождать окна эксклюзивного доступа, а не падать с locked."""
+        busy_timeout: другой процесс может держать свою connection и писать (WAL), поэтому
+        даём VACUUM подождать окна эксклюзивного доступа, а не падать с locked. VACUUM в
+        режиме WAL пишет новую копию базы в журнал — после него журнал сбрасывается в файл
+        и обрезается, иначе место не освобождается до следующей контрольной точки."""
         with self._lock:
             self._db.execute("PRAGMA busy_timeout = 60000")   # ждать активного писателя
             self._db.execute("VACUUM")
+            self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    def size(self) -> int:
+        """Размер базы на диске, байт: файл и журнал WAL."""
+        return sum(os.path.getsize(self.cfg.path + suffix) for suffix in ("", "-wal")
+                   if os.path.exists(self.cfg.path + suffix))
 
 
 def _pack_scores(rows) -> list[tuple]:

@@ -1,20 +1,21 @@
 <script setup>
 // Сворачиваемая легенда статусов нод (словарь — status.js).
 import { STATUSES } from '../status.js'
+import { t } from '../i18n.js'
 
 defineProps({ open: { type: Boolean, default: false } })
 </script>
 
 <template>
   <details class="legend-box" :open="open">
-    <summary>Статусы нод — что значит каждый</summary>
+    <summary>{{ t('Node statuses: what each one means') }}</summary>
     <div class="wrap">
       <table>
         <thead>
           <tr>
-            <th class="l">статус</th>
-            <th class="l">что значит</th>
-            <th class="l">кто ставит</th>
+            <th class="l">{{ t('status') }}</th>
+            <th class="l">{{ t('meaning') }}</th>
+            <th class="l">{{ t('set by') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -27,7 +28,7 @@ defineProps({ open: { type: Boolean, default: false } })
       </table>
     </div>
     <p class="mut note">
-      У ноды может быть несколько признаков одновременно. Все они видны в списке и карточке ноды; эта таблица объясняет термины.
+      {{ t('A node can have several flags at once. All of them are shown in the list and the node card; this table explains the terms.') }}
     </p>
   </details>
 </template>

@@ -63,3 +63,16 @@ test('country codes become flags, other values stay as is', async () => {
   assert.equal(flag('other'), 'other')
   assert.equal(flag(null), '—')
 })
+
+test('form defaults come from the config schema, including array items and $ref', async () => {
+  const { schemaDefaults, defaultText } = await import('../src/ux.js')
+  const schema = { definitions: { duration: { type: 'string' }, flag: { type: 'boolean', default: true } },
+    properties: { api: { properties: { timeout: { $ref: '#/definitions/duration', default: '5s' } } },
+      pipeline: { properties: { router: { properties: { at: { type: 'array', default: ['03:00'] } } } } },
+      groups: { type: 'array', items: { properties: { strict: { default: false }, live: { $ref: '#/definitions/flag' } } } } } }
+  assert.deepEqual(schemaDefaults(schema), { 'api.timeout': '5s', 'pipeline.router.at': ['03:00'],
+    'groups[].strict': false, 'groups[].live': true })
+  assert.equal(defaultText(['03:00', '15:00']), '03:00, 15:00')
+  assert.equal(defaultText(''), '')
+  assert.equal(defaultText(0.5), '0.5')
+})

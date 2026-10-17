@@ -609,10 +609,19 @@ class TrafficConfig:
 
 
 @dataclass
+class VacuumConfig:
+    """VACUUM базы тестера: не реже раза в every, в ближайшее время at (ЧЧ:ММ, местное).
+    every 0 — только вручную из админки."""
+    every: float = 30 * 86400.0
+    at: str = "04:00"
+
+
+@dataclass
 class StorageConfig:
     path: str = "results/stats.db"           # относительный — от каталога данных
     retention: float = 30 * 86400.0
     traffic: TrafficConfig = field(default_factory=TrafficConfig)
+    vacuum: VacuumConfig = field(default_factory=VacuumConfig)
 
     @property
     def retention_days(self) -> float:
@@ -621,14 +630,19 @@ class StorageConfig:
 
 def _storage(obj) -> StorageConfig:
     path, d = "storage", StorageConfig()
-    obj = _fields(obj, path, ("path", "retention", "traffic"))
-    tpath = f"{path}.traffic"
+    obj = _fields(obj, path, ("path", "retention", "traffic", "vacuum"))
+    tpath, vpath = f"{path}.traffic", f"{path}.vacuum"
     traffic = _fields(obj.get("traffic"), tpath, ("enabled", "poll", "flush"))
+    vacuum = _fields(obj.get("vacuum"), vpath, ("every", "at"))
+    at = _string(vacuum, "at", vpath, d.vacuum.at)
+    if not _TIME.fullmatch(at):
+        raise ConfigError(f"{vpath}.at: {at!r} — нужно ЧЧ:ММ")
     return StorageConfig(path=_string(obj, "path", path, d.path),
                          retention=_duration(obj, "retention", path, d.retention),
                          traffic=TrafficConfig(enabled=_bool(traffic, "enabled", tpath, True),
                                                poll=_duration(traffic, "poll", tpath, 5.0),
-                                               flush=_duration(traffic, "flush", tpath, 60.0)))
+                                               flush=_duration(traffic, "flush", tpath, 60.0)),
+                         vacuum=VacuumConfig(every=_duration(vacuum, "every", vpath, d.vacuum.every), at=at))
 
 
 @dataclass
