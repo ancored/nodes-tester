@@ -237,8 +237,9 @@ countries in `path` (`<country code>.conf`, rights 0600). The files are issued b
 (`gw.amnezia.org`, with `pipeline.fetch.proxy` if it is set) once every 3 hours:
 
 - a country whose node keeps a rating below `min_rating` for 6 hours is considered blocked: its file is revoked and
-  deleted, and the country is not issued again;
-- free places, up to `slots` and the free slots of the subscription, get random countries not issued before;
+  deleted, and the country is not issued while others remain;
+- free places, up to `slots` and the free slots of the subscription, get random countries not issued before; when
+  none are left, blocked countries are tried again, starting from the one blocked longest ago;
 - a file whose server was updated after the issue is issued anew.
 
 If all rated countries are below the threshold at once, the cause is not the countries (the protocol is blocked or the

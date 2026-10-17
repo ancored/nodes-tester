@@ -247,14 +247,37 @@ class SlotsTest(unittest.TestCase):
         self.assertEqual(gateway.log, [])
         self.assertEqual(self.files(), ["de", "nl"])
 
-    def test_blocked_countries_are_not_issued_again(self):
-        gateway = FakeGateway(max_devices=7)
-        gateway.countries = ["de", "nl"]
-        sub = self.sub(gateway)
+    def write_state(self, state):
         os.makedirs(os.path.join(self.dir, "awg"), exist_ok=True)
         with open(os.path.join(self.dir, "awg", "state.json"), "w") as fh:
-            json.dump({"blocked": {"de": "2026-10-01"}}, fh)
+            json.dump(state, fh)
+
+    def test_blocked_countries_wait_while_others_remain(self):
+        gateway = FakeGateway(max_devices=1)
+        gateway.countries = ["de", "nl"]
+        sub = self.sub(gateway)
+        self.write_state({"blocked": {"nl": "2026-10-01"}})
         sub.run({})
+        self.assertEqual(self.files(), ["de"])
+
+    def test_no_countries_left_retries_the_oldest_blocked(self):
+        gateway = FakeGateway(max_devices=2)
+        gateway.countries = ["de", "nl", "fi"]
+        sub = self.sub(gateway)
+        self.write_state({"blocked": {"de": "2026-10-05", "nl": "2026-10-01", "fi": "2026-10-03"}})
+        sub.run({})
+        self.assertEqual(self.files(), ["fi", "nl"])
+        self.assertEqual(self.state()["blocked"], {"de": "2026-10-05"})
+
+    def test_country_blocked_now_is_not_retried_at_once(self):
+        gateway = FakeGateway(issued=["nl"], max_devices=2)   # de сервер уже не числит
+        gateway.countries = ["de", "nl"]
+        sub = self.sub(gateway, files=["de", "nl"])
+        ratings = {"de.example": 10.0, "nl.example": 80.0}
+        sub.run(ratings)
+        self.now += amnezia_slots.HOLD
+        sub.run(ratings)
+        self.assertEqual(gateway.log, [("revoke", "de")])
         self.assertEqual(self.files(), ["nl"])
 
     def test_reissues_when_server_was_updated(self):

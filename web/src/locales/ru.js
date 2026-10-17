@@ -830,7 +830,7 @@ export default {
   'all slots': 'все слоты',
   'Replace a country rated below': 'Менять страну с рейтингом ниже',
   'Do not issue countries (comma-separated)': 'Не выпускать страны (через запятую)',
-  'The tester issues country files through the Amnezia gateway and replaces a country whose node keeps a rating below the threshold for 6 hours with a random country not tried before. The gateway key is taken from the official AmneziaVPN app. Slots above the limit stay free for the app.': 'Тестер выпускает файлы стран через шлюз Amnezia и меняет страну, чья нода 6 часов держит рейтинг ниже порога, на случайную, ещё не пробованную. Ключ шлюза берётся из официального приложения AmneziaVPN. Слоты сверх лимита остаются свободными для приложения.',
+  'The tester issues country files through the Amnezia gateway and replaces a country whose node keeps a rating below the threshold for 6 hours with a random country not tried before (when none are left, the longest-blocked one is tried again). The gateway key is taken from the official AmneziaVPN app. Slots above the limit stay free for the app.': 'Тестер выпускает файлы стран через шлюз Amnezia и меняет страну, чья нода 6 часов держит рейтинг ниже порога, на случайную, ещё не пробованную (когда таких нет — снова пробуется самая давно заблокированная). Ключ шлюза берётся из официального приложения AmneziaVPN. Слоты сверх лимита остаются свободными для приложения.',
   'Own nodes (sing-box outbounds)': 'Свои ноды (outbound-ы sing-box)',
   'Download timeout': 'Тайм-аут загрузки',
   'Minimum share of remaining nodes (0–1)': 'Минимальная доля оставшихся нод (0–1)',

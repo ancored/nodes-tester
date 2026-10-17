@@ -4,9 +4,10 @@
 рейтингом их нод (нода находится по адресу сервера из файла):
 
 - страна, чья нода держит рейтинг ниже min_rating дольше HOLD, считается заблокированной: её
-  файл отзывается на шлюзе и удаляется, страна запоминается и больше не выпускается;
+  файл отзывается на шлюзе и удаляется, страна запоминается и не выпускается, пока есть другие;
 - свободные места (не больше slots и свободных слотов подписки) занимают случайные страны:
-  не выпущенные ранее этой подпиской, не заблокированные и не из exclude_countries;
+  не выпущенные ранее этой подпиской, не заблокированные и не из exclude_countries; когда таких нет —
+  заблокированные, начиная с самой давней блокировки (страна снова пробуется);
 - файл, чей сервер обновился после выдачи (worker_last_updated новее last_downloaded),
   выпускается заново — тот же слот, новый ключ.
 
@@ -125,13 +126,17 @@ class Subscription:
                     done.append(f"{cc} перевыпущена: сервер обновился")
             limit = int(self.sub.get("slots") or info.get("max_device_count") or 0)
             free = int(info.get("max_device_count") or 0) - int(info.get("active_device_count") or 0) + len(low)
-            exclude = set(self.sub.get("exclude_countries", EXCLUDE)) | set(state["blocked"]) | set(issued) | set(files)
+            exclude = set(self.sub.get("exclude_countries", EXCLUDE)) | set(issued) | set(files) | set(low)
             pool = [c.get("server_country_code") for c in info.get("available_countries") or []
                     if "awg" in (c.get("available_protocols") or []) and c.get("server_country_code") not in exclude]
             random.shuffle(pool)
+            # Сначала не пробованные; кончились — заблокированные, начиная с самой давней блокировки.
+            pool.sort(key=lambda cc: (cc in state["blocked"], state["blocked"].get(cc, "")))
             for cc in pool[:max(0, min(limit - len(files), free))]:
+                retry = state["blocked"].pop(cc, None)
                 self._write(cc, gateway.issue(cc), state)
-                done.append(f"{cc} выпущена")
+                done.append(f"{cc} выпущена снова (заблокирована {retry}, других стран нет)" if retry
+                            else f"{cc} выпущена")
         except (AmneziaError, OSError) as exc:
             self._say(f"ошибка: {exc}")
         finally:
