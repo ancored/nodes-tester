@@ -4,7 +4,7 @@
 
 `web` contains the sources of the Vue 3 interface. The Python backend is in
 [`dashboard`](../dashboard/README.md), and the user guide is in
-[`docs/USAGE.md`](../docs/USAGE.md).
+[`docs/USAGE.md`](../docs/USAGE.md) and the built-in [help](../docs/help/README.md).
 
 <p align="center">
   <picture>
@@ -57,7 +57,9 @@ the sources and the updated static files together.
 | `src/query.js` | the state of filters, sorting and the page in the URL |
 | `src/status.js` | the single dictionary of node statuses |
 | `src/ux.js` | shared user checks and messages, form defaults from the schema |
-| `src/components/` | table, legend, node actions and other blocks |
+| `src/help.js`, `src/markdown.js` | the built-in help: loading `docs/help`, rendering Markdown, the side panel state |
+| `src/diagrams/` | flowcharts of the help as ready SVG (`npm run diagrams`) |
+| `src/components/` | table, node actions, the help icon and panel and other blocks |
 | `src/views/` | admin panel pages |
 
 The `Pipeline.vue`, `Singbox.vue` and `Presets.vue` pages are available in the embedded admin panel with
@@ -72,6 +74,25 @@ The country in tables is shown as a flag, the code is in the tooltip. The flags 
 “Twemoji Country Flags” font from the `country-flag-emoji-polyfill` package (code: MIT, flag
 images: [Twemoji](https://github.com/twitter/twemoji), CC-BY 4.0); it is part of the build and
 is loaded only by browsers that cannot draw flags themselves (Windows).
+
+## Help
+
+The help text is Markdown in [`docs/help`](../docs/help/README.md): one file per page of the admin panel and pages about how
+nodes-tester works, `name.md` in English and `name.ru.md` in Russian. The build includes them (each page is a separate chunk loaded on
+demand), together with `docs/CONFIG.md`; `src/markdown.js` renders the subset of Markdown the help uses. Links between help files open
+inside the help, links to other documents go to GitHub.
+
+- Sections that pages and blocks refer to have explicit anchors `<a id="…"></a>` before the heading, the same in both languages.
+- `<HelpButton topic="page#anchor" />` puts the **?** icon into a block heading; the page icon comes from the `help` field of the route
+  in `src/router.js`. The icon opens the section in a side panel (`HelpPanel`); the “Help” page has contents and search.
+- Explanations are kept in the help, not on the pages: the interface has field labels, short placeholders and state messages.
+- Flowcharts are `mermaid` blocks in the Markdown: GitHub draws them itself, and the admin panel shows ready SVG without the mermaid
+  library. After changing a flowchart run `npm run diagrams` (Chromium via `playwright-core`: `CHROMIUM_PATH` or the installed
+  Chrome); the SVG take the colours of the admin panel theme.
+
+`tests/help.test.js` checks that every icon and route points to an existing anchor in both languages, that the contents list every
+help page and that every flowchart has its SVG; `tests/test_docs.py` checks the links and that both languages have the same anchors
+and the same number of flowcharts.
 
 ## Two languages
 
@@ -95,4 +116,5 @@ comments and lines marked `i18n-skip`). When you add a string, add its Russian t
 - the interface distinguishes a separate dashboard from the embedded Runner;
 - the administrator token is not put into the URL and can be stored only by an explicit choice;
 - saving subscriptions is not presented as applying new nodes to sing-box;
-- an empty settings field shows the default value from `config.schema.json` in grey and is not written to the file.
+- an empty settings field shows the default value from `config.schema.json` in grey and is not written to the file;
+- explanations are in the help: every page and block has a **?** icon to its section.

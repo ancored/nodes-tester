@@ -355,7 +355,7 @@ Smoothing, thresholds and weights of the node rating.
 |---|---|---|
 | `alpha` | `0.3` | EWMA smoothing |
 | `flap_lambda` | `0.5` | Penalty for flapping |
-| `availability.floor`, `availability.full` | `0.7`, `0.9` | Availability below which the rating is 0, and the availability of the full rating |
+| `availability.floor`, `availability.full` | `0.7`, `0.9` | Availability at or below which the rating is halved (factor 0.5), and the availability of the full rating (factor 1) |
 | `thresholds.latency` | `150ms` / `1.5s` | TTFB: `good`, `bad` |
 | `thresholds.jitter` | `15ms` / `250ms` | Jitter: `good`, `bad` |
 | `thresholds.loss_gate_percent` | `50` | Loss at which the node fails the gate, % |

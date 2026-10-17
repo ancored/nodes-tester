@@ -30,7 +30,9 @@ Manual install:
 
 1. Download the package from the [releases](https://github.com/ancored/nodes-tester/releases).
 2. Follow [installation and first run on OpenWrt](openwrt/README.md).
-3. Open the [guide to the admin panel and everyday work](docs/USAGE.md).
+3. Open the [guide to the admin panel and everyday work](docs/USAGE.md). Every page and block of the admin panel
+   is explained in detail in the [help](docs/help/README.md), with flowcharts of the algorithms; the admin panel shows it
+   by the **?** icons.
 
 Current release: [`v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). It needs sing-box 1.14 or newer with the API service (`services[type=api]`). The release has an `.apk` for OpenWrt 25.x. OpenWrt 24.10 needs a separately built `.ipk`. The package is signed with the project key and is available from the `apk` repository on GitHub Pages; how to add it is described in the [guide](openwrt/README.md).
 
@@ -76,7 +78,7 @@ next to its code:
 | [`naming`](naming/README.md) | node key and protocols |
 | [`scripts/router`](scripts/router/README.md) | apply, check, rollback and the client pipeline |
 
-Also: [config.json](docs/CONFIG.md), [how the sing-box config is assembled](docs/CONFIG_ASSEMBLY.md), [sing-box compatibility](docs/SING_BOX_COMPATIBILITY.md),
+Also: [help](docs/help/README.md), [config.json](docs/CONFIG.md), [how the sing-box config is assembled](docs/CONFIG_ASSEMBLY.md), [sing-box compatibility](docs/SING_BOX_COMPATIBILITY.md),
 [everyday work](docs/USAGE.md), [router security model](docs/SECURITY_MODEL.md)
 and [the OpenWrt package](openwrt/README.md).
 

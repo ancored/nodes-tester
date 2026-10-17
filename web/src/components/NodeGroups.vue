@@ -5,6 +5,7 @@ import { CHECK_NAMES } from '../ux.js'
 import { t } from '../i18n.js'
 import JsonField from './JsonField.vue'
 import Msg from './Msg.vue'
+import HelpButton from './HelpButton.vue'
 const props=defineProps({doc:{type:Object,required:true},checks:{type:Array,default:()=>[]},ipKinds:{type:Array,default:()=>[]},builtin:{type:Object,default:()=>({})},reserveDefault:{type:Number,default:null}})
 const emit=defineEmits(['changed','valid'])
 // Живое состояние групп работающего тестера (по сохранённому конфигу, не по черновику формы).
@@ -58,8 +59,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
 </script>
 <template>
   <section class="panel">
-    <h2>{{ t('Node groups') }}</h2>
-    <p class="help-text"><Msg :text="t('Each group is a selector {selector} with all nodes. The tester picks the active node among those that passed the required checks of the group; preferred checks raise the priority. A non-strict group without candidates switches to the shared {failsafe}, a strict one to {block}, so traffic does not go through an unsuitable node.')"><template #selector><code>{tag}-auto-out</code></template><template #failsafe><code>failsafe-out</code></template><template #block><code>block-out</code></template></Msg></p>
+    <h2>{{ t('Node groups') }}<HelpButton topic="subscriptions#groups" /></h2>
     <p v-if="!groups?.length" class="notice"><Msg :text="t('No groups defined: the build will create a single group {all}.')"><template #all><code>all</code></template></Msg></p>
     <template v-if="groups">
       <div v-for="(g,i) in groups" :key="i" class="panel">
@@ -93,13 +93,11 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           <button class="btn sm" @click="remove(i)">{{ t('Delete group') }}</button>
         </div>
       </div>
-      <p class="help-text">{{ t('Regions: {list}. The order of groups is their order in the config and in global-auto-out. The exit country comes from the connection measurement, not from the node name at the provider.', { list: regionList.join(', ') }) }}</p>
     </template>
     <div class="toolbar"><button class="btn" @click="add">{{ t('Add group') }}</button></div>
   </section>
   <section class="panel">
-    <h2>{{ t('Regions') }}</h2>
-    <p class="help-text">{{ t('A region is a named list of countries for group conditions. Built-in: eu: {eu}; us: us; ru: ru; other: countries outside eu, us and ru. A built-in region can be overridden by defining it here; custom regions are added the same way.', { eu: (builtin.eu || []).join(', ') }) }}</p>
+    <h2>{{ t('Regions') }}<HelpButton topic="subscriptions#regions" /></h2>
     <JsonField :label="t('Custom and overridden regions')" :note="t('Object: region → list of countries. For example: {example}.', { example: '{&quot;asia&quot;: [&quot;jp&quot;, &quot;sg&quot;, &quot;kr&quot;]}' })" :model-value="doc.regions || {}" @update:model-value="setRegions" @valid="emit('valid',$event)" />
   </section>
 </template>

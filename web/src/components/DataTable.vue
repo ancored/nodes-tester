@@ -75,6 +75,5 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
       </table>
       <div v-if="pages>1" class="pager"><button class="btn" :aria-label="t('Previous page')" :disabled="page === 0" @click="page--">‹</button><span>{{ page+1 }} / {{ pages }}</span><button class="btn" :aria-label="t('Next page')" :disabled="page>=pages-1" @click="page++">›</button></div>
     </div>
-    <details v-if="columns.some(c=>c.note)" class="hint"><summary>{{ t('Notes on the metrics') }}</summary><p v-for="c in columns.filter(c=>c.note)" :key="c.key">{{ c.title }}: {{ c.note }}</p></details>
   </div>
 </template>

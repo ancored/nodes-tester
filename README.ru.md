@@ -30,7 +30,9 @@ wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/
 
 1. Скачать пакет из [релизов](https://github.com/ancored/nodes-tester/releases).
 2. Пройти [установку и первый запуск на OpenWrt](openwrt/README.ru.md).
-3. Открыть [руководство по админке и повседневной работе](docs/USAGE.ru.md).
+3. Открыть [руководство по админке и повседневной работе](docs/USAGE.ru.md). Каждая страница и каждый блок админки
+   подробно описаны в [справке](docs/help/README.ru.md), с блок-схемами алгоритмов; админка показывает её по иконкам
+   **?**.
 
 Актуальный релиз: [`v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). Нужен sing-box 1.14 или новее с API-сервисом (`services[type=api]`). В нём есть `.apk` для OpenWrt 25.x. Для OpenWrt 24.10 нужен отдельно собранный `.ipk`. Пакет подписан ключом проекта и доступен из репозитория `apk` на GitHub Pages; подключение описано в [инструкции](openwrt/README.ru.md).
 
@@ -76,7 +78,7 @@ wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/
 | [`naming`](naming/README.ru.md) | ключ ноды и протоколы |
 | [`scripts/router`](scripts/router/README.ru.md) | применение, проверка, откат и клиентский конвейер |
 
-Отдельно: [config.json](docs/CONFIG.ru.md), [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.ru.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.ru.md),
+Отдельно: [справка](docs/help/README.ru.md), [config.json](docs/CONFIG.ru.md), [как собирается конфиг sing-box](docs/CONFIG_ASSEMBLY.ru.md), [совместимость sing-box](docs/SING_BOX_COMPATIBILITY.ru.md),
 [повседневная работа](docs/USAGE.ru.md), [модель безопасности роутера](docs/SECURITY_MODEL.ru.md)
 и [пакет OpenWrt](openwrt/README.ru.md).
 

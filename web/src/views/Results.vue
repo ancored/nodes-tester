@@ -12,7 +12,6 @@ const s=useSnapshot()
 const tests=computed(()=>s.data.results?.tests || [])
 const rows=computed(()=>(s.data.results?.rows || []).filter(r => !r.removed))
 // AI-тесты — узкие колонки: галка, крест или «?» (сеть, вердикт прежний); у Google AI — флаг страны.
-const AI_NOTE=t('Google AI: the country according to Google (flag) and Gemini availability; OpenAI and Claude AI: service availability. ✓ available, ✗ not available, ? network failure, the previous result stays. Only candidates of groups with required tests are checked; hover to see the time and the reason.')
 // Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список.
 const AI={gemini:1,openai:1,anthropic:1,upstream:1,connectivity:1,whitelist:1}
 // Короткие заголовки, чтобы таблица помещалась; полное название — в пояснениях и сортировке.
@@ -25,17 +24,15 @@ function staleCountry(cols) {
     + (r.country_stale ? (r.country_ts ? ' — ' + t('measured {time}', { time: short(r.country_ts) }) : '') + '; ' + t('the last connection failed') : '')
   return cols
 }
-const NOTES={gemini:AI_NOTE,whitelist:t('Whether the mobile internet whitelist mode lets the node through: the server IP is in the IP list and the SNI in the domain list (without TLS the IP is enough). Checked locally once a day; hover to see the addresses and SNI.')}
 const aiMark = c => c.unk ? '?' : c.ok ? '✓' : '✗'
 const aiTitle = c => [c.v, c.title].filter(Boolean).join('\n')
 const columns=computed(()=>[
   ...staleCountry(nodeColumns()),
-  {key:'ip_type',title:t('IP type'),head:'IP',slot:true,narrow:true,note:t('Exit IP by the ip-api.com database: a building is a data centre, a phone a mobile network, a house a residential one; a mask means the IP is known as a VPN/proxy; a flag below means the database puts the IP in a different country than the connection test showed. Red is worse for AI services. Hover for the IP and network (ASN).')},
-  ...tests.value.map(k=>k in AI ? {key:k,title:testTitle(k),head:HEADS[k],slot:true,narrow:true,note:NOTES[k] || null} : {key:k,title:testTitle(k),head:HEADS[k],slot:true,l:true}),
+  {key:'ip_type',title:t('IP type'),head:'IP',slot:true,narrow:true},
+  ...tests.value.map(k=>k in AI ? {key:k,title:testTitle(k),head:HEADS[k],slot:true,narrow:true} : {key:k,title:testTitle(k),head:HEADS[k],slot:true,l:true}),
 ])
 </script>
 <template>
-  <p class="hint">{{ t('The latest result of each test; measurement times are in the node card. The speed multiplier shows throttling; “—” means the test was not measured. A pale flag is the country from a previous measurement: the last connection failed. Click a failure to see the details.') }}</p>
   <DataTable :rows="rows" :columns="columns" :empty="t('No saved results. Check the tester log.')">
     <template #cell-ip_type="{row}"><span v-if="row.ip_kind" class="ip-type" :title="row.ip_title || null"><span><IpTypeIcon :kind="row.ip_kind" /><IpTypeIcon v-if="row.ip_proxy" kind="proxy" /></span><span v-if="row.ip_db_cc" class="bad">{{ flag(row.ip_db_cc) }}</span></span><span v-else class="mut">—</span></template>
     <template v-for="test in tests" :key="test" #[`cell-${test}`]="{row}">

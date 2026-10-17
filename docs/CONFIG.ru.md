@@ -355,7 +355,7 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 |---|---|---|
 | `alpha` | `0.3` | Сглаживание EWMA |
 | `flap_lambda` | `0.5` | Штраф за флапы |
-| `availability.floor`, `availability.full` | `0.7`, `0.9` | Доступность, ниже которой рейтинг 0, и доступность полного рейтинга |
+| `availability.floor`, `availability.full` | `0.7`, `0.9` | Доступность, при которой и ниже которой рейтинг уменьшается вдвое (множитель 0,5), и доступность полного рейтинга (множитель 1) |
 | `thresholds.latency` | `150ms` / `1.5s` | TTFB: `good`, `bad` |
 | `thresholds.jitter` | `15ms` / `250ms` | Джиттер: `good`, `bad` |
 | `thresholds.loss_gate_percent` | `50` | Потери, при которых нода не проходит gate, % |

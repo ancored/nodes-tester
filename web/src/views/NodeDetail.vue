@@ -11,7 +11,7 @@ import Sparkline from '../components/Sparkline.vue'
 import DataTable from '../components/DataTable.vue'
 import { api, auth, can } from '../api.js'
 import { t } from '../i18n.js'
-import Msg from '../components/Msg.vue'
+import HelpButton from '../components/HelpButton.vue'
 const s = useSnapshot(), route = useRoute(), tab = useQuery('tab','state')
 const crc = computed(() => String(route.params.crc).toLowerCase())
 // Ушедшая из подписок нода есть только в архиве: карточка строится по его строке.
@@ -69,28 +69,24 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
   <p v-if="!node" class="notice">{{ t('The node is not found in the current snapshot. Check the database or refresh the data.') }}</p>
   <template v-else>
     <section class="panel">
-      <h2 class="break"><NodeKey :text="node.node" /></h2>
+      <h2 class="break"><NodeKey :text="node.node" /><HelpButton topic="node-card#header" /></h2>
       <p class="break">{{ t('Name in the subscription') }}: {{ node.title || '—' }}</p>
       <div class="chips"><span v-if="node.groups?.length" class="badge">{{ t('Groups') }}: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">{{ t(node.gstate === 'backoff' ? 'Paused until {time}, then the node is checked again.' : 'Quarantined until {time}, then the node is checked again.', { time: dateTime(node.guntil) }) }}</p>
-      <p class="help-text">{{ t('The choice reflects the switcher state. It does not confirm the link to sing-box or current traffic.') }}</p>
     </section>
     <nav class="chips" :aria-label="t('Node card')"><button v-for="[v,label] in TABS" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ label }}</button></nav>
     <section v-if="tab === 'state'" class="panel">
-      <h2>{{ t('Rating change') }}</h2><Sparkline :vals="s.data.score_spark?.[crc] || []" />
-      <p class="help-text">{{ t('The chart shows the last 24 values. All saved measurements are in the table below.') }}</p>
+      <h2>{{ t('Rating change') }}<HelpButton topic="node-card#state" /></h2><Sparkline :vals="s.data.score_spark?.[crc] || []" />
       <p v-if="historyError" class="notice bad">{{ historyError }} <button class="btn" @click="loadDetails">{{ t('Retry loading') }}</button></p>
       <details class="rating-history"><summary>{{ t('Rating measurements') }} · {{ history.length }}</summary>
         <div class="toolbar"><label>{{ t('From date and time') }}<input v-model="historyFrom" type="datetime-local" :max="historyTo || undefined" /></label><label>{{ t('To date and time') }}<input v-model="historyTo" type="datetime-local" :min="historyFrom || undefined" /></label><button v-if="historyFrom || historyTo" class="btn" @click="clearHistoryRange">{{ t('Reset period') }}</button></div>
         <DataTable :rows="filteredHistory" :columns="historyColumns" :page-size="15" query-key="score_" :show-search="false" :show-sort="false" :empty="t('No measurements for the selected period.')" />
       </details>
-      <p class="help-text"><Msg :text="t('The node key has two parts: {server} and {cred}. New credentials from the provider change only the second part: the country, checks and rating stay with the node. A zero rating and missing measurements are shown separately.')"><template #server><span class="crc-node">{{ t('server settings CRC') }}</span></template><template #cred><span class="crc-cred">{{ t('credentials CRC') }}</span></template></Msg></p>
       <details><summary>{{ t('Technical details') }}</summary>
         <p v-if="!can('edit_config')">{{ t('Log in with the administrator token to see the node JSON.') }}</p>
         <p v-if="detailError" class="notice bad">{{ detailError }} <button class="btn" @click="loadDetails">{{ t('Retry loading') }}</button></p>
         <template v-if="detail?.fragment">
             <pre class="node-json"><code><span v-for="(line,i) in jsonLines" :key="i" class="json-line" :class="line.kind ? 'crc-'+line.kind : ''">{{ line.text }}{{ '\n' }}</span></code></pre>
-            <p class="mut"><Msg :text="t('{server} go into the first part of the key, {cred} into the second. Service fields are not part of the CRC.')"><template #server><span class="crc-node">{{ t('Server settings') }}</span></template><template #cred><span class="crc-cred">{{ t('credentials') }}</span></template></Msg></p>
             <p v-if="detail.fragment_source!=='nodes_file'" class="mut">{{ t('The fragment is restored from SQLite; fields excluded from the CRC, except tag, are not stored in the database.') }}</p>
             <p>{{ t('Key check') }}: <b :class="detail.calculated_crc===crc ? 'good' : 'bad'">{{ detail.calculated_crc===crc ? '✓ OK' : '✕ ' + t('Does not match') }}</b><span v-if="detail.calculated_crc!==crc"> — {{ t('recalculated') }} <NodeKey :text="detail.calculated_crc" /></span></p>
             <details><summary>{{ t('CRC32 input strings: exactly what is hashed') }}</summary>
@@ -103,22 +99,24 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
       </details>
     </section>
     <section v-if="tab === 'results'" class="panel">
+      <HelpButton topic="node-card#results" />
       <p v-if="!result">{{ t('No saved results. This does not mean a failed check.') }}</p>
-      <template v-else><p>{{ t('The latest result of each test and the measurement time.') }}</p>
+      <template v-else>
         <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>{{ t('Details') }}</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
       </template>
     </section>
     <section v-if="tab === 'traffic'" class="panel">
+      <HelpButton topic="node-card#traffic" />
       <p v-if="traffic">{{ t('Incoming {down}, outgoing {up} over the stored period {start} — {end}.', { down: bytes(traffic.down), up: bytes(traffic.up), start: dateTime(s.data.traffic_range?.start), end: dateTime(s.data.traffic_range?.end) }) }}</p>
       <p v-else>{{ t('There is no saved user traffic for this node. This does not prove it was not used: check the collection and the retention period.') }}</p><RouterLink to="/traffic">{{ t('All traffic aggregates and the retention period') }}</RouterLink>
     </section>
     <section v-if="tab === 'events'" class="panel">
-      <h2>{{ t('Restrictions and presence') }}</h2><p class="mut">{{ t('Events of this node from the last 500 records of the shared log.') }}</p>
+      <h2>{{ t('Restrictions and presence') }}<HelpButton topic="node-card#events" /></h2>
       <p v-for="(e,i) in events" :key="e.ts+':'+i">{{ dateTime(e.ts) }} · {{ eventNames[e.event] || e.event }} · {{ e.reason === 'manual' ? t('manually by the administrator') : e.reason || t('automatically') }}</p><p v-if="!events.length">{{ t('No events in the available window.') }}</p>
       <h2>{{ t('Switches') }}</h2><p v-for="(e,i) in switches" :key="e.ts+':'+i">{{ dateTime(e.ts) }} · {{ e.region }} · {{ e.reason }}</p><p v-if="!switches.length">{{ t('No records in the last 200 switches.') }}</p>
     </section>
     <section v-if="tab === 'groups'" class="panel">
-      <h2>{{ t('Group checks') }}</h2>
+      <h2>{{ t('Group checks') }}<HelpButton topic="node-card#groups" /></h2>
       <p v-if="nodeGroupsError" class="notice bad">{{ nodeGroupsError }}</p>
       <p v-else-if="!nodeGroups">{{ t('Loading…') }}</p>
       <p v-else-if="!nodeGroups.live">{{ t('No tester connected: the group state is unavailable.') }}</p>
@@ -132,9 +130,8 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
             <span v-for="c in g.checks" :key="c.check" class="check-chip" :title="age(c.ts)"><b :class="verdictClass(c.verdict)">{{ verdictMark(c.verdict) }}</b> {{ CHECK_NAMES[c.check] || c.check }}<span class="mut">{{ c.part === 'prefer' ? ' (' + t('preferred check') + ')' : '' }} · {{ age(c.ts) }}</span></span></td>
         </tr></tbody>
       </table>
-      <p class="help-text">{{ t('A node becomes active in a group only if all required checks are fresh and passed; preferred ones move it up the queue. The age is when the result was obtained.') }}</p>
     </section>
-    <section v-if="tab === 'actions'" class="panel"><NodeActions :node="node" /></section>
+    <section v-if="tab === 'actions'" class="panel"><HelpButton topic="node-card#actions" /><NodeActions :node="node" /></section>
   </template>
 </template>
 

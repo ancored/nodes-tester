@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { api, auth, can } from '../api.js'
 import { t, locale } from '../i18n.js'
 import Msg from '../components/Msg.vue'
+import HelpButton from '../components/HelpButton.vue'
 
 // Две ветки с одинаковым устройством: роутер (presets/ + nodes.json → sing-box роутера)
 // и клиенты (clients/presets/ + whnodes.json → конфиги из clients.list).
@@ -14,7 +15,6 @@ const BRANCHES = {
     confirm: t('Apply the base and enabled presets to sing-box? If the config changed, sing-box restarts; without connectivity the previous config comes back.'),
     toggled: t('the resulting config passed sing-box check. To change the running sing-box, press “Apply”.'),
     empty: t('Rules come only from base.json.'),
-    applyHelp: t('A check builds the config from the editable base and presets with the current nodes.json and runs sing-box check without changing anything. Applying copies the base, builds the config, restarts sing-box only on changes and checks connectivity.'),
   },
   clients: {
     title: t('Clients'), dir: 'clients/presets/', nodes: 'whnodes.json', mode: 'apply-clients',
@@ -22,7 +22,6 @@ const BRANCHES = {
     confirm: t('Build and publish client configs from the bases and enabled client presets? Subscriptions are not fetched; a client whose config fails sing-box check stays on the previous one.'),
     toggled: t('the configs of all clients passed sing-box check. To publish them, press “Build clients”.'),
     empty: t('Rules come only from the client bases (clients/base_<name>.json).'),
-    applyHelp: t('A check builds client configs from the bases and enabled presets with the current whnodes.json into a separate directory without publishing anything. The build publishes them and the clients/publish/ files; a config that fails sing-box check is not published.'),
   },
 }
 const route = useRoute()
@@ -103,12 +102,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 <template>
   <section class="panel">
-    <h2>{{ t('sing-box rules') }}</h2>
-    <div class="help-text">
-      <p>{{ t('Routing and DNS rules are built from presets, separate JSON files. The resulting config: base + nodes + enabled presets by priority (lower goes first). A preset holds everything the base lacks: rules, DNS servers, rule sets.') }}</p>
-      <p><Msg :text="t('The router and the clients have their own presets: {router} are merged with base.json and nodes.json, {clients} with the base of each client and whnodes.json. A client gets the local rule sets of the router from the distribution address in {settings}.')"><template #router><code>singbox/presets/</code></template><template #clients><code>singbox/clients/presets/</code></template><template #settings><code>clients/settings.json</code></template></Msg></p>
-      <p><Msg :text="t('The switch changes the preset file; the server checks the resulting configs with {check} beforehand and does not save the change if the check fails.')"><template #check><code>sing-box check</code></template></Msg></p>
-    </div>
+    <h2>{{ t('sing-box rules') }}<HelpButton topic="rules#presets" /></h2>
     <p v-if="!auth.verified" class="notice">{{ t('Log in with the administrator token.') }}</p>
     <p v-else-if="!can('singbox_files')" class="notice">{{ t('The section is available only in the embedded admin panel with a running orchestrator.') }}</p>
   </section>
@@ -122,7 +116,7 @@ onBeforeUnmount(() => clearTimeout(timer))
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <p v-if="branch === 'clients' && !settings" class="notice bad"><Msg :text="t('There is no {file} with the rule set distribution address ({example}): a preset with local rule sets cannot be built for clients.')"><template #file><RouterLink :to="{ path: '/singbox', query: { file: 'clients/settings.json' } }">clients/settings.json</RouterLink></template><template #example><code>{"rules_url": "https://…/"}</code></template></Msg></p>
     <section class="panel">
-      <h2>{{ t('Presets') }} · {{ b.title }}</h2>
+      <h2>{{ t('Presets') }} · {{ b.title }}<HelpButton topic="rules#list" /></h2>
       <p v-if="!presets.length" class="mut">{{ t('No presets.') }} {{ b.empty }} {{ t('Create a file {file} in “sing-box files”.', { file: b.dir + '<name>.json' }) }}</p>
       <div v-if="presets.length" class="wrap">
         <table class="responsive-table presets">
@@ -146,12 +140,11 @@ onBeforeUnmount(() => clearTimeout(timer))
       <p v-if="branch === 'clients'" class="mut">{{ t('Clients from clients.list: {clients}.', { clients: clients.length ? clients.join(', ') : t('none') }) }}</p>
     </section>
     <section class="panel">
-      <h2>{{ branch === 'clients' ? t('Client build') : t('Applying') }}</h2>
+      <h2>{{ branch === 'clients' ? t('Client build') : t('Applying') }}<HelpButton :topic="branch === 'clients' ? 'rules#clients' : 'rules#apply'" /></h2>
       <div class="actions">
         <button class="btn" :disabled="busy || run?.status === 'running'" @click="launch(true)">{{ b.check }}</button>
         <button class="btn primary" :disabled="busy || run?.status === 'running'" @click="launch(false)">{{ b.apply }}</button>
       </div>
-      <p class="help-text">{{ b.applyHelp }}</p>
       <template v-if="run">
         <p>{{ run.dry_run ? t('Check') : (branch === 'clients' ? t('Build') : t('Applying')) }}<template v-if="run.started"> · {{ new Date(run.started * 1000).toLocaleString(locale()) }}</template>: <b>{{ statusLabel[run.status] || run.status }}</b> · <RouterLink to="/pipeline">{{ t('history in the “Pipeline”') }}</RouterLink></p>
         <pre class="log">{{ log || t('The log is empty…') }}</pre>

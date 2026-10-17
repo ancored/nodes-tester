@@ -7,6 +7,7 @@ import { t } from '../i18n.js'
 import NodeKey from '../components/NodeKey.vue'
 import DataTable from '../components/DataTable.vue'
 import ReasonIcon from '../components/ReasonIcon.vue'
+import HelpButton from '../components/HelpButton.vue'
 const s=useSnapshot()
 const activeRegions=computed(()=>s.data.runner?.regions || [])
 const rows=computed(()=>{
@@ -30,12 +31,12 @@ const columns=[
 ]
 </script>
 <template>
-  <section class="panel"><h2>{{ t('Active nodes by group') }}</h2>
+  <section class="panel"><h2>{{ t('Active nodes by group') }}<HelpButton topic="switches#active" /></h2>
     <p v-for="r in activeRegions" :key="r.region" class="break"><b>{{ r.region }}</b> · <span class="badge good">{{ t('Active') }}</span> {{ r.active }}</p>
     <p v-if="!activeRegions.length">{{ t('No active nodes are selected or their state is unavailable.') }}</p>
-    <p class="mut">{{ s.data.runner ? t('The current choice of the connected switcher. The table highlights the latest record for each active node.') : t('Live group choice is unavailable in standalone mode; the history below is still available.') }}</p>
+    <p v-if="!s.data.runner" class="mut">{{ t('Live group choice is unavailable in standalone mode; the history below is still available.') }}</p>
   </section>
-  <p class="hint">{{ t('The last 200 records. While the tester runs, the latest record for the current active node of each group is highlighted in green. In an emergency without a replacement no new switch happened.') }}</p>
+  <h2>{{ t('History') }}<HelpButton topic="switches#history" /></h2>
   <DataTable :rows="rows" :columns="columns" :extra-filters="reasonFilters" :page-size="20" :row-class="r=>r.current_choice ? 'active' : ''">
     <template v-for="k in ['tag','prev']" :key="k" #[`cell-${k}`]="{row}">
       <RouterLink v-if="keyOf(row[k])" :to="'/nodes/'+keyOf(row[k])" class="break"><NodeKey :text="row[k]" /></RouterLink>

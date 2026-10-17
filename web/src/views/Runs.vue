@@ -4,6 +4,7 @@ import { api, auth, can } from '../api.js'
 import { PHASES } from '../ux.js'
 import { dateTime } from '../format.js'
 import { t } from '../i18n.js'
+import HelpButton from '../components/HelpButton.vue'
 const status=ref(null), statusErr=ref(''), lines=ref([]), seq=ref(0), logErr=ref(''), busy=ref(false), msg=ref('')
 const paused=ref(false), follow=ref(true), query=ref(''), level=ref('all'), logBox=ref(null)
 let stTimer, logTimer, statusBusy=false, logsBusy=false, disposed=false
@@ -44,8 +45,7 @@ onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
 </script>
 <template>
   <section class="panel">
-    <h2>{{ t('Checks of the current sing-box nodes') }}</h2>
-    <p class="help-text">{{ t('The tester checks nodes whose test results have expired. The button checks all available nodes now; it does not fetch subscriptions or apply settings.') }}</p>
+    <h2>{{ t('Checks of the current sing-box nodes') }}<HelpButton topic="runs#status" /></h2>
     <p v-if="statusErr" class="notice bad" role="alert">{{ statusErr }}. {{ t('Polling will continue automatically.') }}</p>
     <template v-if="status">
       <p><b>{{ PHASES[status.progress?.phase] || (status.running ? t('Process running') : t('Stopped')) }}</b></p>
@@ -59,8 +59,7 @@ onUnmounted(()=>{disposed=true;clearInterval(stTimer);clearInterval(logTimer)})
     <p role="status">{{ msg }}</p>
   </section>
   <section>
-    <h2>{{ t('Tester log') }}</h2>
-    <p class="hint">{{ t('The latest available lines are shown (up to 1500 on the page). After a long pause some records may drop out of the server buffer. Filters detect the line type by its text; this is not a structured log level.') }}</p>
+    <h2>{{ t('Tester log') }}<HelpButton topic="runs#log" /></h2>
     <div class="toolbar">
       <label>{{ t('Search') }}<input type="search" v-model="query" /></label>
       <label>{{ t('Lines') }}<select v-model="level"><option value="all">{{ t('all') }}</option><option value="errors">{{ t('errors') }}</option><option value="switches">{{ t('switches') }}</option></select></label>

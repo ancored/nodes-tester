@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, toRaw } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api, auth, can } from '../api.js'
 import { t, locale } from '../i18n.js'
-import Msg from '../components/Msg.vue'
+import HelpButton from '../components/HelpButton.vue'
 
 const state = ref(null), runs = ref([]), schedule = ref(null), revision = ref('')
 const error = ref(''), pollError = ref(''), logError = ref(''), notice = ref(''), log = ref(''), logOffset = ref(0), viewedRun = ref('')
@@ -107,8 +107,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard the unsaved s
 
 <template>
   <section class="panel">
-    <h2>{{ t('Update pipeline') }}</h2>
-    <p class="help-text">{{ t('The “Router” mode fetches subscriptions, builds nodes and rules, then applies the configuration to the router. The “Clients” mode builds separate client configurations. A check creates intermediate files and may download subscriptions, but does not apply them.') }}</p>
+    <h2>{{ t('Update pipeline') }}<HelpButton topic="pipeline#run" /></h2>
     <p v-if="!auth.verified" class="notice">{{ t('Log in with the administrator token to see the log and control the pipeline.') }}</p>
     <p v-else-if="!can('pipeline')" class="notice">{{ t('Control is unavailable: it needs a running tester with an admin token and the nodes-tester command in PATH.') }}</p>
     <template v-if="can('pipeline')">
@@ -125,13 +124,13 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard the unsaved s
       </div>
       <p role="status">{{ live ? t('Running: {mode} · {action}', { mode: modeLabel[live.mode] || live.mode, action: live.dry_run ? t('check') : t('apply') }) : t('The pipeline is not running now') }}</p>
       <div class="toolbar">
-        <h3>{{ t('Log') }}</h3>
+        <h3>{{ t('Log') }}</h3><HelpButton topic="pipeline#log" />
         <button v-if="live && viewedRun !== live.id" class="btn" @click="showRun(live)">{{ t('To the current run') }}</button>
       </div>
       <p v-if="selectedRun" class="field-note">{{ when(selectedRun.started) }} · {{ modeLabel[selectedRun.mode] || selectedRun.mode }} · {{ selectedRun.dry_run ? t('check') : t('apply') }} · {{ statusLabel[selectedRun.status] || selectedRun.status }}</p>
       <p v-if="logError" class="notice bad" role="alert">{{ logError }}. {{ t('Loading the log will be retried automatically.') }}</p>
       <pre class="log pipeline-log" aria-live="polite">{{ log || (viewedRun ? t('The log is empty so far.') : t('Choose a run from the history.')) }}</pre>
-      <h3>{{ t('History') }}</h3>
+      <h3>{{ t('History') }}<HelpButton topic="pipeline#history" /></h3>
       <div v-if="runs.length" class="wrap pipeline-history">
         <table class="responsive-table" :aria-label="t('The last 20 pipeline runs')">
           <thead><tr><th class="l">{{ t('Start') }}</th><th class="l">{{ t('Mode') }}</th><th class="l">{{ t('Action') }}</th><th class="l">{{ t('Trigger') }}</th><th class="l">{{ t('Status') }}</th><th class="l">{{ t('Log') }}</th></tr></thead>
@@ -151,9 +150,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard the unsaved s
     </template>
   </section>
   <section v-if="can('pipeline') && schedule" class="panel">
-    <h2>{{ t('Daily schedule') }}</h2>
-    <p class="help-text">{{ t('Router time. A new schedule takes effect after saving; jobs missed during a restart run once.') }}</p>
-    <p class="notice"><Msg :text="t('If cron already runs this pipeline, remove the {line} line from crontab after enabling the schedule here. Otherwise one of the coinciding runs gets the “busy” status.')"><template #line><code>nodes-tester pipeline</code></template></Msg></p>
+    <h2>{{ t('Daily schedule') }}<HelpButton topic="pipeline#schedule" /></h2>
     <div v-for="mode in ['router', 'clients']" :key="mode" class="panel">
       <label class="check"><input v-model="schedule.jobs[mode].enabled" type="checkbox" @change="edit" /> {{ mode === 'router' ? t('Router') : t('Clients') }}</label>
       <label>{{ t('Times HH:MM, comma-separated') }} <input v-model="times[mode]" type="text" placeholder="03:00, 15:00" @input="edit" /></label>

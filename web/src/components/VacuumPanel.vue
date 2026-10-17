@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { api } from '../api.js'
 import { bytes, dateTime, dur } from '../format.js'
 import { t } from '../i18n.js'
+import HelpButton from './HelpButton.vue'
 const state = ref(null), error = ref(''), busy = ref(false)
 let timer = null
 async function load() {
@@ -23,8 +24,7 @@ onUnmounted(() => clearTimeout(timer))
 </script>
 <template>
   <section class="panel">
-    <h2>{{ t('Database maintenance') }}</h2>
-    <p class="help-text">{{ t('VACUUM repacks the tester database and returns the space freed by deleted history to the disk. It runs by the schedule storage.vacuum (fields above) and from this button.') }}</p>
+    <h2>{{ t('Database maintenance') }}<HelpButton topic="settings#vacuum" /></h2>
     <p v-if="error" class="notice bad" role="alert">{{ error }}</p>
     <dl v-if="state" class="facts">
       <dt>{{ t('Database size now') }}</dt><dd>{{ bytes(state.size) }}</dd>

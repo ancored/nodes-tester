@@ -22,6 +22,5 @@ const columns = [
 ]
 </script>
 <template>
-  <p class="hint">{{ t('These are the nodes of the current router subscriptions; nodes gone from subscriptions are in the “Archive”. Click a node key to open its card with results, history and actions. Client-branch (WH) nodes that the router does not have are not tracked by the tester: they only get the whitelist check and have no card.') }}</p>
   <DataTable :rows="all" :extra-filters="extraFilters" :columns="columns" :page-size="20" :empty="t('No nodes match these conditions. Reset the filters or check the database state on the overview.')" />
 </template>

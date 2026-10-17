@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api, auth, can } from '../api.js'
 import { t, locale } from '../i18n.js'
-import Msg from '../components/Msg.vue'
+import HelpButton from '../components/HelpButton.vue'
 
 const files = ref([]), path = ref('base.json'), text = ref(''), revision = ref('missing')
 const versions = ref([]), error = ref(''), notice = ref(''), dirty = ref(false), conflicted = ref(false), saving = ref(false)
@@ -174,8 +174,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard unsaved file 
 
 <template>
   <section class="panel">
-    <h2>{{ t('sing-box source files') }}</h2>
-    <p class="help-text"><Msg :text="t('The router base, rule sources, presets and client bases live here. Saving changes the source file, not the running sing-box. The base and presets can be applied in {rules} without fetching subscriptions; the full cycle runs in the {pipeline}.')"><template #rules><RouterLink to="/presets">{{ t('“Rules”') }}</RouterLink></template><template #pipeline><RouterLink to="/pipeline">{{ t('“Pipeline”') }}</RouterLink></template></Msg></p>
+    <h2>{{ t('sing-box source files') }}<HelpButton topic="singbox-files#files" /></h2>
     <p v-if="!auth.verified" class="notice">{{ t('Log in with the administrator token.') }}</p>
     <p v-else-if="!can('singbox_files')" class="notice">{{ t('The editor is available only in the embedded admin panel with a running orchestrator.') }}</p>
     <template v-else>
@@ -193,11 +192,9 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard unsaved file 
     </template>
   </section>
   <section v-if="can('singbox_files')" class="panel">
-    <h2>{{ path }}</h2>
-    <p class="help-text">{{ t('Edit the JSON or upload a local file. When base.json and presets (presets/*.json) are saved, the server checks the resulting configuration with sing-box; when client bases, presets (clients/presets/*.json) and clients/settings.json are saved, it checks the config of each client.') }}</p>
+    <h2>{{ path }}<HelpButton topic="singbox-files#editor" /></h2>
     <template v-if="path === 'rules.json'">
-      <h3>{{ t('Rule sources') }}</h3>
-      <p class="help-text">{{ t('The destination is a file name in /etc/sing-box/rules/. A URL is downloaded at run time; a local JSON is uploaded here.') }}</p>
+      <h3>{{ t('Rule sources') }}<HelpButton topic="singbox-files#rules-json" /></h3>
       <p v-if="!rulesValid" class="notice bad">{{ t('Fix the JSON below to edit the rule list.') }}</p>
       <template v-else>
         <div v-for="(item, index) in ruleRows" :key="index" class="rule-row">
@@ -211,7 +208,6 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard unsaved file 
           <button class="btn" @click="removeRule(index)">{{ t('Delete source') }}</button>
         </div>
         <button class="btn" @click="addRule">{{ t('Add source') }}</button>
-        <p class="help-text">{{ t('After changing the list press “Save file”.') }}</p>
       </template>
     </template>
     <label>{{ t('Upload JSON into the draft') }} <input type="file" accept=".json,application/json" @change="upload" /></label>
@@ -222,7 +218,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm(t('Discard unsaved file 
       <button class="btn" @click="select(path)">{{ t('Reload file') }}</button>
       <button v-if="isPreset(path) && revision !== 'missing'" class="btn" :disabled="saving" @click="removePreset">{{ t('Delete preset') }}</button>
     </div>
-    <h3>{{ t('Previous versions') }}</h3>
+    <h3>{{ t('Previous versions') }}<HelpButton topic="singbox-files#versions" /></h3>
     <p v-if="!versions.length">{{ t('No previous versions.') }}</p>
     <div class="versions">
       <div v-for="ts in versions" :key="ts" class="version-row">

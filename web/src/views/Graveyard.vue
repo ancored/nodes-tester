@@ -7,6 +7,7 @@ import DataTable from '../components/DataTable.vue'
 import { nodeColumns } from '../ux.js'
 import Sparkline from '../components/Sparkline.vue'
 import { t } from '../i18n.js'
+import HelpButton from '../components/HelpButton.vue'
 
 const s = useSnapshot()
 const rows = computed(() => s.data.graveyard || [])
@@ -52,7 +53,7 @@ const provCols = [
   { key: 'n', title: t('nodes removed'), strong: true },
   { key: 'life', title: t('median lifetime'), fmt: dur, cls: () => 'num' },
   { key: 'peak', title: t('avg. rating peak'), fmt: (v) => fixed(v, 1), cls: scoreClass },
-  { key: 'alive', title: t('left while working'), note: t('the provider removed a node that still passed the tests') },
+  { key: 'alive', title: t('left while working') },
 ]
 
 const cols = [
@@ -60,13 +61,13 @@ const cols = [
   { key: 'first_seen', title: t('first seen'), fmt: dateDM, cls: () => 'num' },
   { key: 'removed_at', title: t('removed on'), fmt: dateDM, cls: () => 'num' },
   { key: 'lifespan', title: t('lived'), fmt: dur, cls: () => 'num', strong: true },
-  { key: 'spark', title: t('rating'), slot: true, note: t('rating trajectory over the whole lifetime (score_history)') },
+  { key: 'spark', title: t('rating'), slot: true },
   { key: 'peak', title: t('peak'), fmt: (v) => fixed(v, 1), cls: scoreClass },
   { key: 'avg', title: t('avg.'), fmt: (v) => fixed(v, 1), cls: scoreClass },
   { key: 'last', title: t('at the end'), fmt: (v) => fixed(v, 1), cls: scoreClass, strong: true },
   { key: 'garbage_count', title: t('× quarantined') },
   { key: 'cause', title: t('how it left'), l: true, slot: true },
-  { key: 'purge_in', title: t('erased in'), fmt: dur, cls: () => 'mut', note: t('the record is deleted from the database after this time (storage.retention)') },
+  { key: 'purge_in', title: t('erased in'), fmt: dur, cls: () => 'mut' },
 ]
 </script>
 
@@ -74,9 +75,6 @@ const cols = [
   <div v-if="s.loading" class="empty">{{ t('Loading…') }}</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">{{ t('Error: {error}', { error: s.error }) }}</div>
   <template v-else>
-    <p class="mut" style="margin-top: 0">
-      {{ t('Nodes that disappeared from the tester list. The cause may be the subscription or the applied configuration. Their history stays in the database for {days} days after the last presence and is then erased; see the “erased in” column.', { days: s.data.retention_days }) }}
-    </p>
     <div class="kpis">
       <div v-for="k in kpis" :key="k.label" class="kpi">
         <div class="label">{{ k.label }}</div>
@@ -85,12 +83,12 @@ const cols = [
     </div>
 
     <section>
-      <h2>{{ t('Losses by provider') }}</h2>
+      <h2>{{ t('Losses by provider') }}<HelpButton topic="nodes#losses" /></h2>
       <DataTable :rows="byProvider" :columns="provCols" :page-size="10" query-key="providers_" />
     </section>
 
     <section>
-      <h2>{{ t('History of missing nodes') }} <small>{{ t('(recent losses first)') }}</small></h2>
+      <h2>{{ t('History of missing nodes') }} <small>{{ t('(recent losses first)') }}</small><HelpButton topic="nodes#history" /></h2>
       <DataTable :rows="rows" :extra-filters="causeFilters" :columns="cols" :page-size="20" :empty="t('There are no archived nodes in this snapshot.')">
         <template #cell-spark="{ row }"><Sparkline :vals="row.spark" /></template>
         <template #cell-cause="{ row }">

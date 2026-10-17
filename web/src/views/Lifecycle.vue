@@ -4,10 +4,9 @@ import { useSnapshot } from '../store.js'
 import { dateDM, dur, timeHMS, scoreClass, fixed, pct } from '../format.js'
 import DataTable from '../components/DataTable.vue'
 import { nodeColumns } from '../ux.js'
-import StatusLegend from '../components/StatusLegend.vue'
 import { STATUS } from '../status.js'
 import { t } from '../i18n.js'
-import Msg from '../components/Msg.vue'
+import HelpButton from '../components/HelpButton.vue'
 
 const s = useSnapshot()
 
@@ -32,10 +31,10 @@ const garbCols = [
   { key: 'first_seen', title: t('in config since'), fmt: dateDM, cls: () => 'num' },
   { key: 'state', title: t('status'), slot: true },
   { key: 'streak', title: t('failures in a row') },
-  { key: 'garbage_count', title: t('× quarantined'), note: t('how many times it was quarantined over its history') },
+  { key: 'garbage_count', title: t('× quarantined') },
   { key: 'last_garbage', title: t('last quarantine'), fmt: dateDM, cls: () => 'num' },
-  { key: 'in_garbage', title: t('in status'), fmt: dur, cls: () => 'num', note: t('how long the current pause/quarantine episode lasts') },
-  { key: 'until', title: t('next probe'), fmt: nextProbe, note: t('when the pause or quarantine expires') },
+  { key: 'in_garbage', title: t('in status'), fmt: dur, cls: () => 'num' },
+  { key: 'until', title: t('next probe'), fmt: nextProbe },
 ]
 
 // --- Долгожители / выпадающие ---
@@ -46,7 +45,7 @@ const longCols = [
   { key: 'age', title: t('age'), fmt: dur, cls: () => 'num' },
   { key: 'score', title: 'score', fmt: score1, cls: scoreClass, strong: true },
   { key: 'garbage_count', title: t('× quarantined') },
-  { key: 'fails', title: t('pauses+quarantines'), note: t('how many times it went into a pause or quarantine') },
+  { key: 'fails', title: t('pauses+quarantines') },
   { key: 'active', title: 'act', slot: true },
   { key: 'reserve', title: t('reserve'), l: true, fmt: (v) => v || '—' },
 ]
@@ -64,16 +63,13 @@ const dropCols = [
   <div v-if="s.loading" class="empty">{{ t('Loading…') }}</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">{{ t('Error: {error}', { error: s.error }) }}</div>
   <template v-else>
-    <StatusLegend />
-    <p class="mut" style="margin-top: 0"><Msg :text="t('Only nodes present in the tester list. Missing ones are in the {archive}. Presence in the subscription is not checked here directly.')"><template #archive><RouterLink to="/graveyard">{{ t('archive') }}</RouterLink></template></Msg></p>
-
     <section>
-      <h2>{{ t('Provider quality') }}</h2>
+      <h2>{{ t('Provider quality') }}<HelpButton topic="nodes#provider-quality" /></h2>
       <DataTable :rows="qualityRows" :columns="qualCols" :filters="qualityFilters" :page-size="15" query-key="quality_" />
     </section>
 
     <section>
-      <h2>{{ t('Paused and quarantined') }}</h2>
+      <h2>{{ t('Paused and quarantined') }}<HelpButton topic="nodes#paused" /></h2>
       <DataTable :rows="garbageRows" :columns="garbCols" :extra-filters="garbageFilters" :page-size="15" query-key="limits_">
         <template #cell-state="{ row }">
           <b v-if="row.state === 'garbage'" :class="STATUS.quarantine.cls">{{ STATUS.quarantine.label }}</b>
@@ -83,7 +79,7 @@ const dropCols = [
     </section>
 
     <section>
-      <h2>{{ t('Long-lived') }} <small>{{ t('(in service, by age ↓)') }}</small></h2>
+      <h2>{{ t('Long-lived') }} <small>{{ t('(in service, by age ↓)') }}</small><HelpButton topic="nodes#long-lived" /></h2>
       <DataTable :rows="longevity" :columns="longCols" :page-size="12" query-key="long_">
         <template #cell-active="{ row }">
           <b v-if="+row.active === 1" class="good">{{ t('Yes') }}</b>
@@ -92,7 +88,7 @@ const dropCols = [
       </DataTable>
     </section>
     <section>
-      <h2>{{ t('Quick dropouts') }} <small>{{ t('(by time until the 1st quarantine ↑)') }}</small></h2>
+      <h2>{{ t('Quick dropouts') }} <small>{{ t('(by time until the 1st quarantine ↑)') }}</small><HelpButton topic="nodes#dropouts" /></h2>
       <DataTable :rows="dropouts" :columns="dropCols" :page-size="12" query-key="drops_" />
     </section>
   </template>

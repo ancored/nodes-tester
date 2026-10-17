@@ -1,7 +1,9 @@
 """Публичная документация на двух языках: имя.md (английский) и имя.ru.md (русский).
 
 У каждого документа есть пара, в первой строке — переход на другой язык, относительные ссылки
-ведут на существующие файлы и якоря, а ссылки на документы — на версию того же языка.
+ведут на существующие файлы и якоря, а ссылки на документы — на версию того же языка. Справка
+(docs/help) ставит явные якоря <a id="…"> — по ним открываются разделы из админки, поэтому у
+обоих языков набор якорей и число схем одинаковы.
 """
 
 import os
@@ -13,6 +15,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LINK = re.compile(r'(?:\]\(|(?:src|href|srcset)=")([^)"\s]+)')
 _HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.M)
 _CODE = re.compile(r"^```.*?^```", re.M | re.S)
+_ANCHOR = re.compile(r'^<a id="([\w-]+)"></a>\s*$', re.M)
 
 
 def _docs():
@@ -35,7 +38,7 @@ def _anchors(path):
         n = seen.get(slug, 0)
         seen[slug] = n + 1
         out.add(slug if not n else f"{slug}-{n}")
-    return out
+    return out | set(_ANCHOR.findall(text))
 
 
 class DocsTest(unittest.TestCase):
@@ -80,6 +83,19 @@ class DocsTest(unittest.TestCase):
                         self.assertEqual(path.endswith(".ru.md"), russian, "ссылка на документ другого языка")
                         if anchor:
                             self.assertIn(anchor, _anchors(os.path.join(_ROOT, path)), "нет якоря")
+
+    def test_help_languages_have_the_same_anchors_and_diagrams(self):
+        for doc in (d for d in self.english if d.startswith("docs/help/")):
+            texts = []
+            for path in (doc, doc[:-3] + ".ru.md"):
+                with open(os.path.join(_ROOT, path), encoding="utf-8") as fh:
+                    texts.append(fh.read())
+            with self.subTest(doc=doc):
+                en, ru = (_ANCHOR.findall(_CODE.sub("", t)) for t in texts)
+                self.assertTrue(en, "нет якорей <a id>")
+                self.assertEqual(en, ru)
+                self.assertEqual(len(_ANCHOR.findall(texts[0])), len(set(en)), "якорь повторяется")
+                self.assertEqual(*(t.count("```mermaid") for t in texts))
 
 
 if __name__ == "__main__":

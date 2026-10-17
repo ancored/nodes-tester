@@ -34,7 +34,6 @@ const rowClass = (r) => (+r.active === 1 ? 'active' : '')
   <div v-if="s.loading" class="empty">{{ t('Loading…') }}</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">{{ t('Error: {error}', { error: s.error }) }}</div>
   <template v-else>
-    <p class="hint">{{ t('Rating: 0–100. The reliability, consistency, throttling, jitter, latency and speed factors are normalised from 0 to 1: higher is better. These are not raw ms or Mbit/s; those are in “Results”. The rating colour is a rough guide (≤20 / ≥70), not a switching rule.') }}</p>
     <DataTable :rows="rows" :columns="columns" :row-class="rowClass" :page-size="20">
       <template #cell-score="{ row }">
         <b :class="scoreClass(row.score)">{{ (+row.score).toFixed(1) }}</b>

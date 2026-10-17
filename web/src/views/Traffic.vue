@@ -8,6 +8,7 @@ import FilterBar from '../components/FilterBar.vue'
 import Msg from '../components/Msg.vue'
 import { useTableFilters } from '../filters.js'
 import { t } from '../i18n.js'
+import HelpButton from '../components/HelpButton.vue'
 
 const s = useSnapshot()
 
@@ -60,14 +61,14 @@ const endpCols = [
   <div v-if="s.loading" class="empty">{{ t('Loading…') }}</div>
   <div v-else-if="s.error && !s.ready" class="empty bad">{{ t('Error: {error}', { error: s.error }) }}</div>
   <template v-else>
-    <p class="hint">{{ t('User traffic over the whole stored period: {start} — {end}. This is not the last 24 hours. Tester traffic is excluded; the history of vanished nodes is deleted {days} days after they were last seen. The top of destinations is limited to 50 records; destinations are cumulative counters, not a sample for this period.', { start: dateTime(s.data.traffic_range?.start), end: dateTime(s.data.traffic_range?.end), days: s.data.retention_days }) }}</p>
+    <p class="mut">{{ t('Stored period: {start} — {end}', { start: dateTime(s.data.traffic_range?.start), end: dateTime(s.data.traffic_range?.end) }) }}</p>
     <section class="panel">
-      <h2>{{ t('User traffic') }}</h2>
+      <h2>{{ t('User traffic') }}<HelpButton topic="traffic#user" /></h2>
       <p v-if="s.data.source?.state !== 'ok'" class="mut">{{ t('No measurement database is available.') }}</p>
       <div v-else class="kpis"><div v-for="[key,label] in [['down',t('Incoming')],['up',t('Outgoing')],['total',t('Total')]]" :key="key" class="kpi"><div class="label">{{ label }}</div><div class="value">{{ bytes(s.data.traffic_user_totals?.[key] || 0) }}</div></div></div>
     </section>
     <section class="panel">
-      <h2>{{ t('Tester traffic') }}</h2>
+      <h2>{{ t('Tester traffic') }}<HelpButton topic="traffic#tester" /></h2>
       <p v-if="s.data.source?.state !== 'ok'" class="mut">{{ t('No measurement database is available.') }}</p>
       <template v-else>
         <p v-if="s.data.traffic_tester_range?.start" class="mut">{{ t('Over the stored period: {start} — {end}', { start: dateTime(s.data.traffic_tester_range.start), end: dateTime(s.data.traffic_tester_range.end) }) }}</p>
@@ -76,12 +77,12 @@ const endpCols = [
       </template>
     </section>
     <section>
-      <h2>{{ t('User traffic by dimension') }}</h2>
+      <h2>{{ t('User traffic by dimension') }}<HelpButton topic="traffic#dimensions" /></h2>
       <div class="toolbar"><label>{{ t('Dimension') }}<select v-model="measure"><option v-for="o in options" :key="o" :value="o">{{ MEASURES[o].label }}</option></select></label><FilterBar :state="filterState" /></div>
       <DataTable :rows="trafRows" :columns="trafCols" :filters="[]" :page-size="15" />
     </section>
     <section>
-      <h2>{{ t('Top destinations') }}</h2>
+      <h2>{{ t('Top destinations') }}<HelpButton topic="traffic#destinations" /></h2>
       <DataTable :rows="endpoints" :columns="endpCols" :page-size="15" query-key="endpoints_" />
     </section>
   </template>

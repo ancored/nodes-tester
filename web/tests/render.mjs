@@ -22,7 +22,7 @@ try {
   const i18n = await vite.ssrLoadModule('/src/i18n.js')
   // Каждая страница — на обоих языках: английский по умолчанию, русский из каталога.
   for(const [view,path,expected,english] of [
-    ['Control','/nodes','чтобы открыть карточку','to open its card'],
+    ['Control','/nodes','Имя в подписке','Name in the subscription'],
     ['Control','/nodes?q=not-found','Ничего не найдено','Nothing found'],
     ['NodeDetail','/nodes/abcd1234.0000beef','Нет замеров рейтинга','No rating measurements'],
     ['NodeDetail','/nodes/abcd1234.0000beef','<span class="crc-cred" title="CRC учётных данных">0000beef</span>','<span class="crc-cred" title="Credentials CRC">0000beef</span>'],
@@ -30,10 +30,10 @@ try {
     ['Control','/nodes','<span class="crc-node" title="CRC настроек сервера">abcd1234</span>','<span class="crc-node" title="Server settings CRC">abcd1234</span>'],
     ['Overview','/','Ожидание сроков тестов','Waiting for test deadlines'],
     ['Results','/results','Сохранённых результатов нет','No saved results'],
-    ['History','/history','Последние 200 записей','The last 200 records'],
+    ['History','/history','Активные ноды по группам','Active nodes by group'],
     ['Config','/subscriptions','Для редактора требуется','The editor requires'],
     ['Runs','/runs','disabled','disabled'],
-    ['Traffic','/traffic','Это не последние 24 часа','This is not the last 24 hours'],
+    ['Traffic','/traffic','Сохранённый период','Stored period'],
     ['Pipeline','/pipeline','Конвейер обновления','Update pipeline'],
     ['Singbox','/singbox','Исходные файлы sing-box','sing-box source files'],
   ]) {
@@ -49,4 +49,14 @@ try {
     }
     console.log('Rendered '+path+' OK')
   }
+  // Справка: страница на обоих языках со схемой (готовый SVG) и ссылками внутри справки.
+  const help = await vite.ssrLoadModule('/src/help.js')
+  for (const [code, title] of [['ru', 'Группы и кандидаты'], ['en', 'Groups and candidates']]) {
+    const doc = await help.loadHelp('groups', code)
+    assert.equal(doc.title, title)
+    assert(doc.html.includes('<figure class="diagram"><svg'), 'groups ('+code+'): diagram is not rendered')
+    assert(doc.html.includes('data-help="switching#"'), 'groups ('+code+'): link inside the help')
+    assert(doc.headings.some(h => h.id === 'reserve'), 'groups ('+code+'): anchor')
+  }
+  console.log('Rendered help OK')
 } finally {store.stopSnapshot();await vite.close()}

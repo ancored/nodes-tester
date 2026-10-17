@@ -22,7 +22,7 @@ function mount(view, api, query = {}) {
      const { onBeforeRouteLeave, useRoute } = router;
      const { api, auth, can } = apiModule;
      const { t, tn, locale } = i18n;
-     const Msg = {};
+     const Msg = {}, HelpButton = {};
      ${code}
      return component`)(vue, { onBeforeRouteLeave() {}, useRoute: () => ({ query }) },
       { api, auth: { verified: true, dirty: false }, can: () => true }, i18n,

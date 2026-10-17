@@ -2,7 +2,10 @@
 
 # Admin panel and everyday work
 
-[About the project](../README.md) · [First run on OpenWrt](../openwrt/README.md)
+[About the project](../README.md) · [First run on OpenWrt](../openwrt/README.md) · [Help](help/README.md)
+
+This guide is an overview. Every page and block of the admin panel, with flowcharts of the algorithms, is explained in the
+[help](help/README.md); in the admin panel it opens by the **?** icon next to a page title or in the corner of a block.
 
 The guide applies to package [`v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). Updating the sources on a computer does not update the installed package.
 

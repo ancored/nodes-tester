@@ -1,12 +1,13 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { sections, nodeSections } from './router.js'
+import { sections, nodeSections, helpTopic } from './router.js'
 import { useSnapshot, refresh } from './store.js'
 import { auth, login, requestLogout, initSession } from './api.js'
 import { BOX_DASHBOARD, provisionBoxDashboard } from './boxdash.js'
 import { t, lang, setLang, LANGS, locale } from './i18n.js'
-import Msg from './components/Msg.vue'
+import HelpButton from './components/HelpButton.vue'
+import HelpPanel from './components/HelpPanel.vue'
 const s = useSnapshot(), route = useRoute()
 const SOURCE_URL = 'https://github.com/ancored/nodes-tester'
 const token = ref(''), remember = ref(false), showLogin = ref(false), menuOpen = ref(false)
@@ -32,7 +33,7 @@ watch(() => [route.name, lang.value], () => { if (globalThis.document && route.n
     </aside>
     <div class="content">
       <header class="topbar">
-        <h1>{{ t($route.name || '') }}</h1><div class="spacer"></div>
+        <h1>{{ t($route.name || '') }}</h1><HelpButton v-if="helpTopic($route) && $route.path !== '/help'" :topic="helpTopic($route)" /><div class="spacer"></div>
         <small>{{ s.error ? t('No fresh data') : s.generated ? t('Snapshot {time}', { time: s.generated }) : t('Loading…') }}</small>
         <button class="btn" @click="refresh" :aria-label="t('Refresh data')">{{ t('Refresh') }}</button>
         <button v-if="auth.verified" class="btn" @click="requestLogout">{{ t('Log out') }}</button>
@@ -40,16 +41,14 @@ watch(() => [route.name, lang.value], () => { if (globalThis.document && route.n
       </header>
       <main class="main">
         <form v-if="showLogin && !auth.verified" class="panel login" @submit.prevent="enter">
-          <h2>{{ t('Administrator access') }}</h2>
-          <p><Msg :text="t('The token is in {key} of your config.json on the router. It is not the sing-box API secret. Send it only over a trusted network or HTTPS.')"><template #key><code>admin.token</code></template></Msg></p>
+          <h2>{{ t('Administrator access') }}<HelpButton topic="access#login" /></h2>
           <p v-if="auth.capabilities.auth_configured === false" class="notice">{{ t('No token is configured on the server. Set admin.token over SSH and restart the admin panel.') }}</p>
           <label>{{ t('Token') }} <input v-model="token" type="password" autocomplete="off" required /></label>
           <label class="check"><input v-model="remember" type="checkbox" /> {{ t('Remember on this device (localStorage)') }}</label>
           <button class="btn" :disabled="auth.checking">{{ t('Check and log in') }}</button>
         </form>
         <p v-if="auth.error" class="notice bad" role="alert">{{ auth.error }}</p>
-        <p v-if="!auth.verified && !showLogin" class="hint">{{ t('View mode. Log in with the administrator token for settings and actions.') }}</p>
-        <p v-if="auth.capabilities.mode === 'standalone'" class="hint">{{ t('The admin panel runs on its own. Settings are available after logging in; tester control, the log and live selectors are unavailable.') }}</p>
+        <p v-if="auth.capabilities.mode === 'standalone'" class="notice">{{ t('The admin panel runs on its own: tester control, the log and live selectors are unavailable.') }}</p>
         <p v-if="s.error" class="notice bad" role="alert">{{ s.error }}<template v-if="s.ready">. {{ t('Showing a stale snapshot received at {time}.', { time: new Date(s.received).toLocaleString(locale()) }) }}</template></p>
         <p v-if="s.data.source && s.data.source.state !== 'ok'" class="notice">{{ s.data.source.message }}. {{ t('Check the database path (storage.path) in the settings. Empty lists do not prove that there are no nodes.') }}</p>
         <nav v-if="isNodes" class="chips subnav" :aria-label="t('Node details')">
@@ -58,5 +57,6 @@ watch(() => [route.name, lang.value], () => { if (globalThis.document && route.n
         <RouterView :key="$route.path + '|' + lang" />
       </main>
     </div>
+    <HelpPanel />
   </div>
 </template>

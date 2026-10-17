@@ -14,12 +14,7 @@ export default {
   'A JSON object is required': 'Нужен JSON-объект',
   'Server settings CRC': 'CRC настроек сервера',
   'Credentials CRC': 'CRC учётных данных',
-  'Node statuses: what each one means': 'Статусы нод — что значит каждый',
   'status': 'статус',
-  'meaning': 'что значит',
-  'set by': 'кто ставит',
-  'A node can have several flags at once. All of them are shown in the list and the node card; this table explains the terms.':
-    'У ноды может быть несколько признаков одновременно. Все они видны в списке и карточке ноды; эта таблица объясняет термины.',
   'The node will be excluded from checks indefinitely. If it is active, the tester will immediately switch its groups to another node or the fallback outbound.':
     'Нода будет исключена из проверок бессрочно. Если она активна, тестер сразу переключит её группы на другую ноду или запасной выход.',
   'The node will take part in the next checks again.': 'Нода снова сможет участвовать в следующих проверках.',
@@ -64,8 +59,6 @@ export default {
     'без кандидатов — failsafe-out; не отвечает и он — тестер сам переключит группу на direct-out',
   'without candidates: failsafe-out (the best node by urltest)': 'без кандидатов — failsafe-out (лучшая нода по urltest)',
   'Node groups': 'Группы нод',
-  'Each group is a selector {selector} with all nodes. The tester picks the active node among those that passed the required checks of the group; preferred checks raise the priority. A non-strict group without candidates switches to the shared {failsafe}, a strict one to {block}, so traffic does not go through an unsuitable node.':
-    'Каждая группа — selector {selector}, в котором все ноды. Активную ноду выбирает тестер среди прошедших обязательные проверки группы; желательные проверки повышают приоритет. Нестрогая группа без кандидатов переключается на общий {failsafe}, строгая — на {block}, чтобы трафик не ушёл через неподходящую ноду.',
   'No groups defined: the build will create a single group {all}.': 'Группы не заданы: сборка создаст одну группу {all}.',
   'New group': 'Новая группа',
   'first candidates': 'первые кандидаты',
@@ -84,11 +77,7 @@ export default {
   'Up': 'Выше',
   'Down': 'Ниже',
   'Delete group': 'Удалить группу',
-  'Regions: {list}. The order of groups is their order in the config and in global-auto-out. The exit country comes from the connection measurement, not from the node name at the provider.':
-    'Регионы: {list}. Порядок групп — порядок в конфиге и в global-auto-out. Страна выхода берётся из замера соединения, а не из названия ноды у провайдера.',
   'Add group': 'Добавить группу',
-  'A region is a named list of countries for group conditions. Built-in: eu: {eu}; us: us; ru: ru; other: countries outside eu, us and ru. A built-in region can be overridden by defining it here; custom regions are added the same way.':
-    'Регион — именованный список стран для условий групп. Встроенные: eu — {eu}; us — us; ru — ru; other — страны вне eu, us и ru. Встроенный регион можно переопределить, указав его здесь; свои регионы добавляются так же.',
   'Custom and overridden regions': 'Свои и переопределённые регионы',
   'Object: region → list of countries. For example: {example}.': 'Объект: регион → список стран. Например: {example}.',
   'Search': 'Поиск',
@@ -100,7 +89,6 @@ export default {
   'No data in this snapshot.': 'Нет данных в этом снимке.',
   'Previous page': 'Предыдущая страница',
   'Next page': 'Следующая страница',
-  'Notes on the metrics': 'Пояснения к показателям',
   // format.js, api.js
   'No data': 'Нет данных',
   '{d}d {h}h': '{d}д {h}ч',
@@ -112,32 +100,13 @@ export default {
   'No connection to the admin server. Check the network and refresh the data.': 'Нет связи с сервером админки. Проверьте сеть и обновите данные.',
   // status.js
   'missing': 'отсутствует',
-  'Not in the current tester list. The history is kept for storage.retention after the last presence.':
-    'Нет в текущем списке тестера. История хранится в течение storage.retention после последнего присутствия.',
-  'sing-box list': 'список sing-box',
   'excluded manually': 'исключена вручную',
-  'Indefinite exclusion from the next checks. Does not remove the node from the subscription and does not change the current selector immediately.':
-    'Бессрочное исключение из следующих проверок. Не удаляет ноду из подписки и не меняет текущий селектор немедленно.',
-  'administrator': 'администратор',
   'quarantine': 'карантин',
-  'Temporary restriction for selection.quarantine.duration. A new check is possible afterwards.':
-    'Временное ограничение на срок selection.quarantine.duration. Затем возможна повторная проверка.',
-  'tester or administrator': 'тестер или администратор',
   'checks paused': 'пауза проверок',
-  'After a failed basic check the node is not checked for 2^(n−1) connection test periods; once the skip reaches selection.quarantine.after_skips it goes to quarantine.':
-    'После неудачной базовой проверки нода не проверяется 2^(n−1) сроков соединения; дорос пропуск до selection.quarantine.after_skips — карантин.',
-  'tester': 'тестер',
   'selected by the switcher': 'выбрана переключателем',
-  'The last choice of the switcher for the region. It is not a check of the actual sing-box selector or of the connection.':
-    'Последний выбор переключателя по региону. Не является проверкой фактического селектора sing-box или соединения.',
-  'switcher': 'переключатель',
   'positive rating': 'рейтинг положительный',
-  'The node has a positive rating. Whether it can be selected manually is checked by the server as well.':
-    'Есть положительный рейтинг. Возможность ручного выбора дополнительно проверяется сервером.',
   'rating 0': 'рейтинг 0',
-  'The measured rating is zero. See the results and events for the cause.': 'Измеренный рейтинг равен нулю. Причину смотрите в результатах и событиях.',
   'no measurements': 'нет замеров',
-  'There is no saved rating. This does not mean a failed check.': 'Сохранённого рейтинга нет. Это не означает провал проверки.',
   'Had a positive rating at the last presence': 'При последнем присутствии был положительный рейтинг',
   'Had a zero rating at the last presence': 'При последнем присутствии был нулевой рейтинг',
   'was quarantined': 'была в карантине',
@@ -213,16 +182,11 @@ export default {
   'Log out': 'Выйти',
   'Log in to manage': 'Войти для управления',
   'Administrator access': 'Доступ администратора',
-  'The token is in {key} of your config.json on the router. It is not the sing-box API secret. Send it only over a trusted network or HTTPS.':
-    'Токен находится в {key} вашего config.json на роутере. Это не секрет API sing-box. Передавайте его только через доверенную сеть или HTTPS.',
   'No token is configured on the server. Set admin.token over SSH and restart the admin panel.':
     'На сервере токен не настроен. Задайте admin.token через SSH и перезапустите админку.',
   'Token': 'Токен',
   'Remember on this device (localStorage)': 'Запомнить на этом устройстве (localStorage)',
   'Check and log in': 'Проверить и войти',
-  'View mode. Log in with the administrator token for settings and actions.': 'Режим просмотра. Для настроек и действий войдите с токеном администратора.',
-  'The admin panel runs on its own. Settings are available after logging in; tester control, the log and live selectors are unavailable.':
-    'Админка запущена отдельно. Настройки доступны после входа; управление тестером, журнал и живые селекторы недоступны.',
   'Showing a stale snapshot received at {time}.': 'Показан устаревший снимок, полученный {time}.',
   'Check the database path (storage.path) in the settings. Empty lists do not prove that there are no nodes.':
     'Проверьте путь к базе (storage.path) в настройках. Пустые списки не подтверждают отсутствие нод.',
@@ -235,8 +199,6 @@ export default {
   'State': 'Состояние',
   'No measurements': 'Нет замеров',
   'Name in the subscription': 'Имя в подписке',
-  'These are the nodes of the current router subscriptions; nodes gone from subscriptions are in the “Archive”. Click a node key to open its card with results, history and actions. Client-branch (WH) nodes that the router does not have are not tracked by the tester: they only get the whitelist check and have no card.':
-    'Здесь ноды текущих подписок роутера; ушедшие из подписок — в «Архиве». Нажмите на ключ ноды, чтобы открыть карточку с результатами, историей и действиями. Ноды клиентской ветви (WH), которых нет у роутера, тестер не ведёт: у них только проверка белых списков и нет карточки.',
   'No nodes match these conditions. Reset the filters or check the database state on the overview.':
     'Нод с такими условиями нет. Сбросьте фильтры или проверьте состояние базы на обзоре.',
   // views/History.vue
@@ -256,12 +218,8 @@ export default {
   'Active': 'Активна',
   'Active nodes by group': 'Активные ноды по группам',
   'No active nodes are selected or their state is unavailable.': 'Активные ноды не выбраны или их состояние недоступно.',
-  'The current choice of the connected switcher. The table highlights the latest record for each active node.':
-    'Текущий выбор подключённого переключателя. В таблице выделена последняя запись для каждой активной ноды.',
   'Live group choice is unavailable in standalone mode; the history below is still available.':
     'В отдельном режиме живой выбор групп недоступен; история ниже остаётся доступной.',
-  'The last 200 records. While the tester runs, the latest record for the current active node of each group is highlighted in green. In an emergency without a replacement no new switch happened.':
-    'Последние 200 записей. При работающем тестере зелёным выделена последняя запись для текущей активной ноды каждой группы. При аварии без замены новое переключение не произошло.',
   // views/Rating.vue
   'rating': 'рейтинг',
   'selected': 'выбрана',
@@ -275,33 +233,21 @@ export default {
   'history': 'история',
   'samples': 'замеров',
   'Error: {error}': 'Ошибка: {error}',
-  'Rating: 0–100. The reliability, consistency, throttling, jitter, latency and speed factors are normalised from 0 to 1: higher is better. These are not raw ms or Mbit/s; those are in “Results”. The rating colour is a rough guide (≤20 / ≥70), not a switching rule.':
-    'Рейтинг: 0–100. Факторы надёжности, стабильности, троттлинга, джиттера, задержки и скорости нормированы от 0 до 1: больше — лучше. Это не сырые мс или Мбит/с; они в «Результатах». Цвет рейтинга — условный ориентир (≤20 / ≥70), не правило переключения.',
   'Yes': 'Да',
   'No': 'Нет',
   // views/Results.vue
-  'Google AI: the country according to Google (flag) and Gemini availability; OpenAI and Claude AI: service availability. ✓ available, ✗ not available, ? network failure, the previous result stays. Only candidates of groups with required tests are checked; hover to see the time and the reason.':
-    'Google AI — страна по мнению Google (флаг) и доступность Gemini; OpenAI и Claude AI — доступность сервиса. ✓ — доступен, ✗ — нет, ? — сбой сети, действует прошлый результат. Проверяются только кандидаты групп с обязательными тестами; наведите курсор, чтобы увидеть время и причину.',
   'Link': 'Связь',
   'Sites': 'Сайты',
   'Speed, Mbit/s': 'Скорость, Мбит/с',
   'measured {time}': 'по замеру {time}',
   'the last connection failed': 'последнее соединение не прошло',
-  'Whether the mobile internet whitelist mode lets the node through: the server IP is in the IP list and the SNI in the domain list (without TLS the IP is enough). Checked locally once a day; hover to see the addresses and SNI.':
-    'Пропустит ли ноду режим белых списков мобильного интернета: IP сервера в IP-списке и SNI в списке доменов (без TLS — достаточно IP). Проверяется локально раз в сутки; наведите курсор, чтобы увидеть адреса и SNI.',
   'IP type': 'Тип IP',
-  'Exit IP by the ip-api.com database: a building is a data centre, a phone a mobile network, a house a residential one; a mask means the IP is known as a VPN/proxy; a flag below means the database puts the IP in a different country than the connection test showed. Red is worse for AI services. Hover for the IP and network (ASN).':
-    'Выходной IP по базе ip-api.com: здание — дата-центр, телефон — мобильная сеть, дом — домашний; маска — IP известен как VPN/прокси; флаг ниже — база относит IP к другой стране, чем показал тест соединения. Красное хуже для AI-сервисов. Наведите курсор: IP и сеть (ASN).',
-  'The latest result of each test; measurement times are in the node card. The speed multiplier shows throttling; “—” means the test was not measured. A pale flag is the country from a previous measurement: the last connection failed. Click a failure to see the details.':
-    'Последний результат каждого теста; время замеров — в карточке ноды. Множитель скорости показывает троттлинг; «—» — тест не измерялся. Бледный флаг — страна по прошлому замеру: последнее соединение не прошло. Нажмите на провал, чтобы увидеть подробности.',
   'No saved results. Check the tester log.': 'Сохранённых результатов нет. Проверьте журнал тестера.',
   'Not measured': 'Не измерено',
   // views/Runs.vue
   'On-demand testing is already running.': 'Тестирование по запросу уже идёт.',
   'Testing started: all nodes are checked without waiting for the test deadlines.': 'Тестирование запущено: все ноды проверяются, не дожидаясь сроков годности.',
   'Checks of the current sing-box nodes': 'Проверки текущих нод sing-box',
-  'The tester checks nodes whose test results have expired. The button checks all available nodes now; it does not fetch subscriptions or apply settings.':
-    'Тестер проверяет ноды, у которых истёк срок годности тестов. Кнопка проверяет все доступные ноды сейчас; подписки она не загружает и настройки не применяет.',
   'Polling will continue automatically.': 'Опрос продолжится автоматически.',
   'Process running': 'Процесс запущен',
   'Current node: {node}': 'Текущая нода: {node}',
@@ -313,8 +259,6 @@ export default {
   'not running': 'не работает',
   'Run testing now': 'Запустить тестирование сейчас',
   'Tester log': 'Журнал тестера',
-  'The latest available lines are shown (up to 1500 on the page). After a long pause some records may drop out of the server buffer. Filters detect the line type by its text; this is not a structured log level.':
-    'Показаны последние доступные строки (на странице до 1500). После длительной паузы часть записей может исчезнуть из буфера сервера. Фильтры определяют тип строки по тексту, это не структурированный уровень журнала.',
   'Lines': 'Строки',
   'all': 'все',
   'errors': 'ошибки',
@@ -339,8 +283,6 @@ export default {
   'destination': 'назначение',
   'transport': 'транспорт',
   'connections': 'соединений',
-  'User traffic over the whole stored period: {start} — {end}. This is not the last 24 hours. Tester traffic is excluded; the history of vanished nodes is deleted {days} days after they were last seen. The top of destinations is limited to 50 records; destinations are cumulative counters, not a sample for this period.':
-    'Пользовательский трафик за весь сохранённый период: {start} — {end}. Это не последние 24 часа. Трафик тестера исключён; история исчезнувших нод удаляется через {days} дней после последнего появления. Топ назначений ограничен 50 записями; назначения являются накопительными счётчиками, а не выборкой за указанный период.',
   'User traffic': 'Пользовательский трафик',
   'Incoming': 'Входящий',
   'Outgoing': 'Исходящий',
@@ -361,20 +303,13 @@ export default {
   'in config since': 'в конфиге с',
   'failures in a row': 'провалов подряд',
   '× quarantined': '× в карантине',
-  'how many times it was quarantined over its history': 'сколько раз за историю попадала в карантин',
   'last quarantine': 'посл. карантин',
   'in status': 'в статусе',
-  'how long the current pause/quarantine episode lasts': 'сколько длится текущий эпизод паузы/карантина',
   'next probe': 'след. проба',
-  'when the pause or quarantine expires': 'когда истечёт пауза или карантин',
   'age': 'возраст',
   'pauses+quarantines': 'пауз+карантинов',
-  'how many times it went into a pause or quarantine': 'сколько раз уходила в паузу или карантин',
   '1st quarantine': '1-й карантин',
   'until 1st quarantine': 'до 1-го карантина',
-  'Only nodes present in the tester list. Missing ones are in the {archive}. Presence in the subscription is not checked here directly.':
-    'Только ноды, присутствующие в списке тестера. Отсутствующие — в {archive}. Присутствие в подписке не проверяется здесь напрямую.',
-  'archive': 'архиве',
   'Provider quality': 'Качество провайдеров',
   'Paused and quarantined': 'На паузе и в карантине',
   'Long-lived': 'Долгожители',
@@ -391,17 +326,12 @@ export default {
   'median lifetime': 'медиана жизни',
   'avg. rating peak': 'ср. пик рейтинга',
   'left while working': 'ушли рабочими',
-  'the provider removed a node that still passed the tests': 'провайдер убрал ноду, которая ещё проходила тесты',
   'lived': 'прожила',
-  'rating trajectory over the whole lifetime (score_history)': 'траектория рейтинга за всю жизнь (score_history)',
   'peak': 'пик',
   'avg.': 'средн.',
   'at the end': 'в конце',
   'how it left': 'как ушла',
   'erased in': 'сотрётся через',
-  'the record is deleted from the database after this time (storage.retention)': 'через столько запись удалится из БД (storage.retention)',
-  'Nodes that disappeared from the tester list. The cause may be the subscription or the applied configuration. Their history stays in the database for {days} days after the last presence and is then erased; see the “erased in” column.':
-    'Ноды, которые исчезли из списка тестера. Причина может быть в подписке или в применённой конфигурации. Их история хранится в БД ещё {days} дней после последнего присутствия, затем стирается — см. колонку «сотрётся через».',
   'Losses by provider': 'Потери по провайдерам',
   'History of missing nodes': 'История отсутствующих нод',
   '(recent losses first)': '(свежие потери сверху)',
@@ -427,11 +357,6 @@ export default {
   'Token verified': 'Токен проверен',
   'Viewing is available; log in for actions': 'Доступен просмотр; войдите для действий',
   'Fetching data…': 'Получаем данные…',
-  'The stage shows what the tester is doing now. The tester checks only nodes whose test results have expired; details and the log are in {checks}.':
-    'Этап показывает, чем тестер занят сейчас. Тестер проверяет только ноды с истёкшим сроком годности тестов; подробности и журнал — в {checks}.',
-  '“Checks”': '«Проверках»',
-  'This page being available does not confirm that sing-box works. Connection checks are run by the tester; their results are available for each node.':
-    'Доступность этой страницы не подтверждает работу sing-box. Проверки соединения выполняет тестер; их результаты доступны у каждой ноды.',
   'the service is not installed: without sing-box LAN traffic goes directly': 'служба не установлена — без sing-box трафик LAN идёт напрямую',
   'rules loaded · packets blocked: {n}': 'правила загружены · отбито пакетов: {n}',
   'autostart disabled': 'автозапуск выключен',
@@ -441,10 +366,6 @@ export default {
   'Start sing-box': 'Запустить sing-box',
   'Killswitch (router service): do not let LAN bypass sing-box': 'Killswitch (служба роутера): не выпускать LAN мимо sing-box',
   'Log in with the token to control sing-box.': 'Войдите с токеном, чтобы управлять sing-box.',
-  'Stopping sing-box helps to restore the network after a failure. While it is stopped from the admin panel, the pipeline does not apply a new config. A router reboot starts sing-box again.':
-    'Остановка sing-box помогает вернуть сеть при сбое. Пока он остановлен из админки, конвейер не применяет новый конфиг. Перезагрузка роутера снова запускает sing-box.',
-  'The killswitch blocks LAN access to the internet bypassing sing-box. The protected devices are set in the service rules. The switch controls the service and its autostart; loaded rules stay in force. Access to the router is kept.':
-    'Killswitch блокирует выход LAN в интернет мимо sing-box. Защищаемые устройства заданы в правилах службы. Переключатель управляет службой и её автозапуском; загруженные правила действуют постоянно. Доступ к роутеру сохраняется.',
   'Nodes: count and state': 'Ноды: количество и состояние',
   'Traffic over the stored period': 'Трафик за сохранённый период',
   'Traffic data is unavailable.': 'Данные трафика недоступны.',
@@ -453,21 +374,6 @@ export default {
   'Downloaded by tests in 24 hours:': 'Скачано тестами за 24 часа:',
   '{n} measurements; response bodies without network overhead': '{n} замеров; тело ответов без сетевых накладных расходов',
   'User traffic details': 'Подробности пользовательского трафика',
-  'What to configure and where to look': 'Что настраивать и где смотреть',
-  '{settings}: the sing-box API address, secret, SOCKS connection, selector and test plan. A saved config requires a restart.':
-    '{settings}: адрес API sing-box, секрет, SOCKS-подключение, селектор и план тестов. Сохранённый конфиг требует перезапуска.',
-  '{subscriptions}: node sources and groups. After saving, open the {pipeline}, check the build and apply it.':
-    '{subscriptions}: источники и группы нод. После сохранения откройте {pipeline}, проверьте сборку и примените её.',
-  '{files} and {rules}: the base and presets. Saving a file does not change the running sing-box.':
-    '{files} и {rules}: база и пресеты. Сохранение файла не меняет работающий sing-box.',
-  '{checks}: the tester stage and log. The testing button does not update subscriptions.':
-    '{checks}: этап тестера и журнал. Кнопка тестирования не обновляет подписки.',
-  '{nodes}: find a node and open its card with results, restrictions and actions.':
-    '{nodes}: найдите ноду и откройте карточку с результатами, ограничениями и действиями.',
-  '{switches} and {traffic}: how group nodes were chosen and what was used.':
-    '{switches} и {traffic}: как выбирались ноды групп и что использовалось.',
-  'traffic': 'трафик',
-  'First run on OpenWrt over SSH': 'Первый запуск на OpenWrt по SSH',
   'Groups': 'Группы',
   'Unavailable: no Runner connected. History and rating may contain old values.': 'Недоступен: нет подключённого Runner. История и рейтинг могут содержать старые значения.',
   'strict': 'строгая',
@@ -477,9 +383,6 @@ export default {
   'No candidates: the group is on {outbound}': 'Кандидатов нет — группа на {outbound}',
   'No node selected': 'Нода не выбрана',
   'Nodes {members} · candidates {candidates} · reserve {reserve}': 'Нод {members} · кандидатов {candidates} · резерв {reserve}',
-  'The switcher state is shown. The live sing-box selectors are not checked separately here. Groups and their checks are configured in {subscriptions}.':
-    'Показано состояние переключателя. Боевые селекторы sing-box здесь отдельно не проверяются. Группы и их проверки настраиваются в {subscriptions}.',
-  '“Subscriptions and build”': '«Подписках и сборке»',
   // views/NodeDetail.vue
   'active (group)': 'активна',
   'in reserve': 'в резерве',
@@ -502,26 +405,16 @@ export default {
   'The node is not found in the current snapshot. Check the database or refresh the data.': 'Нода не найдена в текущем снимке. Проверьте базу или обновите данные.',
   'Paused until {time}, then the node is checked again.': 'Пауза до {time}, затем нода снова проверяется.',
   'Quarantined until {time}, then the node is checked again.': 'Карантин до {time}, затем нода снова проверяется.',
-  'The choice reflects the switcher state. It does not confirm the link to sing-box or current traffic.':
-    'Выбор отражает состояние переключателя. Он не подтверждает связь с sing-box или текущий трафик.',
   'Rating change': 'Изменение рейтинга',
-  'The chart shows the last 24 values. All saved measurements are in the table below.': 'График показывает последние 24 значения. Все сохранённые замеры доступны в таблице ниже.',
   'Retry loading': 'Повторить загрузку',
   'Rating measurements': 'Замеры рейтинга',
   'From date and time': 'С даты и времени',
   'To date and time': 'По дату и время',
   'Reset period': 'Сбросить период',
   'No measurements for the selected period.': 'За выбранный период замеров нет.',
-  'The node key has two parts: {server} and {cred}. New credentials from the provider change only the second part: the country, checks and rating stay with the node. A zero rating and missing measurements are shown separately.':
-    'Ключ ноды состоит из двух частей: {server} и {cred}. Новые учётные данные от провайдера меняют только вторую часть: страна, проверки и рейтинг остаются у ноды. Нулевой рейтинг и отсутствие замеров показаны отдельно.',
-  'server settings CRC': 'CRC настроек сервера',
-  'credentials CRC': 'CRC учётных данных',
   'Technical details': 'Технические сведения',
   'Log in with the administrator token to see the node JSON.': 'Войдите с токеном администратора, чтобы посмотреть JSON ноды.',
-  '{server} go into the first part of the key, {cred} into the second. Service fields are not part of the CRC.':
-    '{server} входят в первую часть ключа, {cred} — во вторую. Служебные поля не участвуют в CRC.',
   'Server settings': 'Настройки сервера',
-  'credentials': 'учётные данные',
   'The fragment is restored from SQLite; fields excluded from the CRC, except tag, are not stored in the database.':
     'Фрагмент восстановлен из SQLite; исключённые из CRC поля, кроме tag, в базе не сохраняются.',
   'Key check': 'Проверка ключа',
@@ -533,14 +426,12 @@ export default {
   'none': 'нет',
   'The JSON of this node is not saved.': 'JSON этой ноды не сохранён.',
   'No saved results. This does not mean a failed check.': 'Сохранённых результатов нет. Это не означает провал проверки.',
-  'The latest result of each test and the measurement time.': 'Последний результат каждого теста и время замера.',
   'Details': 'Подробности',
   'Incoming {down}, outgoing {up} over the stored period {start} — {end}.': 'Входящий {down}, исходящий {up} за сохранённый период {start} — {end}.',
   'There is no saved user traffic for this node. This does not prove it was not used: check the collection and the retention period.':
     'Для этой ноды нет сохранённого пользовательского трафика. Это не доказывает, что она не использовалась: проверьте сбор и срок хранения.',
   'All traffic aggregates and the retention period': 'Все агрегаты трафика и период хранения',
   'Restrictions and presence': 'Ограничения и присутствие',
-  'Events of this node from the last 500 records of the shared log.': 'События этой ноды из последних 500 записей общего журнала.',
   'manually by the administrator': 'вручную администратором',
   'automatically': 'автоматически',
   'No events in the available window.': 'В доступном окне событий нет.',
@@ -551,8 +442,6 @@ export default {
   'Checks: ✓ passed, ✗ failed, ? no fresh result': 'Проверки: ✓ пройдена, ✗ провалена, ? нет свежего результата',
   'no checks: any working node fits': 'проверок нет — подходит любая работающая нода',
   'preferred check': 'желательная',
-  'A node becomes active in a group only if all required checks are fresh and passed; preferred ones move it up the queue. The age is when the result was obtained.':
-    'Нода становится активной в группе, только если все обязательные проверки свежие и пройдены; желательные поднимают её в очереди. Возраст — когда получен результат.',
   // views/Pipeline.vue
   'running (run)': 'выполняется',
   'succeeded': 'успешно',
@@ -576,8 +465,6 @@ export default {
   'The schedule is saved. It takes effect immediately.': 'Расписание сохранено. Оно действует сразу.',
   'Discard the unsaved schedule?': 'Отбросить несохранённое расписание?',
   'Update pipeline': 'Конвейер обновления',
-  'The “Router” mode fetches subscriptions, builds nodes and rules, then applies the configuration to the router. The “Clients” mode builds separate client configurations. A check creates intermediate files and may download subscriptions, but does not apply them.':
-    'Режим «Роутер» загружает подписки, собирает ноды и правила, затем применяет конфигурацию к роутеру. Режим «Клиенты» собирает отдельные клиентские конфигурации. Проверка создаёт промежуточные файлы и может скачивать подписки, но не применяет их.',
   'Log in with the administrator token to see the log and control the pipeline.': 'Войдите с токеном администратора, чтобы видеть журнал и управлять конвейером.',
   'Control is unavailable: it needs a running tester with an admin token and the nodes-tester command in PATH.':
     'Управление недоступно: нужен работающий тестер с токеном админки и команда nodes-tester в PATH.',
@@ -608,10 +495,6 @@ export default {
   'Open': 'Открыть',
   'No runs yet.': 'Прогонов пока нет.',
   'Daily schedule': 'Ежедневное расписание',
-  'Router time. A new schedule takes effect after saving; jobs missed during a restart run once.':
-    'Время роутера. Новое расписание начинает действовать после сохранения; пропущенные после перезапуска задания выполняются один раз.',
-  'If cron already runs this pipeline, remove the {line} line from crontab after enabling the schedule here. Otherwise one of the coinciding runs gets the “busy” status.':
-    'Если этот конвейер уже запускает cron, удалите строку {line} из crontab после включения расписания здесь. Иначе один из совпавших запусков получит статус «занято».',
   'Times HH:MM, comma-separated': 'Время HH:MM через запятую',
   'Run timeout, s': 'Тайм-аут прогона, с',
   'The file changed in another window. Reload the schedule before saving.': 'Файл изменился в другом окне. Перечитайте расписание перед сохранением.',
@@ -624,25 +507,15 @@ export default {
   'the resulting config passed sing-box check. To change the running sing-box, press “Apply”.':
     'итоговый конфиг прошёл sing-box check. Чтобы изменить работающий sing-box, нажмите «Применить».',
   'Rules come only from base.json.': 'Правила берутся только из base.json.',
-  'A check builds the config from the editable base and presets with the current nodes.json and runs sing-box check without changing anything. Applying copies the base, builds the config, restarts sing-box only on changes and checks connectivity.':
-    'Проверка собирает конфиг из редактируемой базы и пресетов с текущим nodes.json и прогоняет sing-box check, ничего не меняя. Применение копирует базу, собирает конфиг, перезапускает sing-box только при изменениях и проверяет связность.',
   'Build clients': 'Собрать клиентов',
   'Build and publish client configs from the bases and enabled client presets? Subscriptions are not fetched; a client whose config fails sing-box check stays on the previous one.':
     'Собрать и опубликовать конфиги клиентов из баз и включённых клиентских пресетов? Подписки не загружаются; клиент, чей конфиг не прошёл sing-box check, остаётся на прежнем.',
   'the configs of all clients passed sing-box check. To publish them, press “Build clients”.':
     'конфиги всех клиентов прошли sing-box check. Чтобы опубликовать их, нажмите «Собрать клиентов».',
   'Rules come only from the client bases (clients/base_<name>.json).': 'Правила берутся только из баз клиентов (clients/base_<имя>.json).',
-  'A check builds client configs from the bases and enabled presets with the current whnodes.json into a separate directory without publishing anything. The build publishes them and the clients/publish/ files; a config that fails sing-box check is not published.':
-    'Проверка собирает конфиги клиентов из баз и включённых пресетов с текущим whnodes.json в отдельный каталог, ничего не публикуя. Сборка публикует их и файлы clients/publish/; конфиг, не прошедший sing-box check, не публикуется.',
   '“{title}” is enabled in the file; {result}': '«{title}» включён в файле; {result}',
   '“{title}” is disabled in the file; {result}': '«{title}» выключен в файле; {result}',
   'sing-box rules': 'Правила sing-box',
-  'Routing and DNS rules are built from presets, separate JSON files. The resulting config: base + nodes + enabled presets by priority (lower goes first). A preset holds everything the base lacks: rules, DNS servers, rule sets.':
-    'Правила маршрутизации и DNS собираются из пресетов, отдельных JSON-файлов. Итоговый конфиг: база + ноды + включённые пресеты по приоритету (меньше — выше). Пресет содержит всё, чего нет в базе: правила, DNS-серверы, наборы правил.',
-  'The router and the clients have their own presets: {router} are merged with base.json and nodes.json, {clients} with the base of each client and whnodes.json. A client gets the local rule sets of the router from the distribution address in {settings}.':
-    'У роутера и клиентов свои пресеты: {router} склеиваются с base.json и nodes.json, {clients} — с базой каждого клиента и whnodes.json. Локальные наборы правил роутера клиент получает по адресу раздачи из {settings}.',
-  'The switch changes the preset file; the server checks the resulting configs with {check} beforehand and does not save the change if the check fails.':
-    'Переключатель меняет файл пресета; сервер заранее проверяет итоговые конфиги через {check} и не сохраняет изменение, если проверка не прошла.',
   'Log in with the administrator token.': 'Войдите с токеном администратора.',
   'The section is available only in the embedded admin panel with a running orchestrator.': 'Раздел доступен только во встроенной админке с запущенным оркестратором.',
   'Rules branch': 'Ветка правил',
@@ -695,17 +568,9 @@ export default {
   'Client presets': 'Клиентские пресеты',
   'Other': 'Прочее',
   'sing-box source files': 'Исходные файлы sing-box',
-  'The router base, rule sources, presets and client bases live here. Saving changes the source file, not the running sing-box. The base and presets can be applied in {rules} without fetching subscriptions; the full cycle runs in the {pipeline}.':
-    'Здесь хранятся база роутера, источники правил, пресеты и клиентские базы. Сохранение меняет исходный файл, но не работающий sing-box. Базу и пресеты можно применить в {rules} без загрузки подписок; полный цикл запускается в {pipeline}.',
-  '“Rules”': '«Правилах»',
-  '“Pipeline”': '«Конвейере»',
   'The editor is available only in the embedded admin panel with a running orchestrator.': 'Редактор доступен только во встроенной админке с запущенным оркестратором.',
   'New or another path': 'Новый или другой путь',
   'Open or create': 'Открыть или создать',
-  'Edit the JSON or upload a local file. When base.json and presets (presets/*.json) are saved, the server checks the resulting configuration with sing-box; when client bases, presets (clients/presets/*.json) and clients/settings.json are saved, it checks the config of each client.':
-    'Редактируйте JSON или загрузите локальный файл. При сохранении base.json и пресетов (presets/*.json) сервер проверит итоговую конфигурацию через sing-box, при сохранении клиентских баз, пресетов (clients/presets/*.json) и clients/settings.json — конфиг каждого клиента.',
-  'The destination is a file name in /etc/sing-box/rules/. A URL is downloaded at run time; a local JSON is uploaded here.':
-    'Назначение — имя файла в /etc/sing-box/rules/. URL скачивается при запуске; локальный JSON загружается здесь.',
   'Fix the JSON below to edit the rule list.': 'Исправьте JSON ниже, чтобы редактировать список правил.',
   'Destination': 'Назначение',
   'Source': 'Источник',
@@ -714,7 +579,6 @@ export default {
   'Upload a local JSON': 'Загрузить локальный JSON',
   'Delete source': 'Удалить источник',
   'Add source': 'Добавить источник',
-  'After changing the list press “Save file”.': 'После изменений списка нажмите «Сохранить файл».',
   'Upload JSON into the draft': 'Загрузить JSON в черновик',
   'JSON content': 'Содержимое JSON',
   'The file changed in another window. Reload it before saving.': 'Файл изменился в другом окне. Перечитайте его перед сохранением.',
@@ -740,21 +604,16 @@ export default {
   'config.json saved; {note}.': 'config.json сохранён; {note}.',
   'restart the tester': 'перезапустите тестер',
   'Connection to sing-box': 'Соединение с sing-box',
-  'The API controls the selectors, and the SOCKS connection carries the test traffic. The admin panel does not check the connection when saving.':
-    'API управляет селекторами, а SOCKS-соединение служит маршрутом тестового трафика. Админка не проверяет соединение при сохранении.',
   'sing-box API address': 'Адрес API sing-box',
   'sing-box API secret': 'Секрет API sing-box',
   'API timeout': 'Тайм-аут API',
   'Tester SOCKS (socks5h://host:port)': 'SOCKS тестера (socks5h://хост:порт)',
   'Test selector': 'Тестовый селектор',
   'Tester passes': 'Проходы тестера',
-  'The tester measures all nodes; groups choose from them by their own checks (“Subscriptions” → “Build and groups”).':
-    'Тестер замеряет все ноды; группы выбирают из них по своим проверкам (страница «Подписки» → «Сборка и группы»).',
   'Gap between requests to one host': 'Зазор обращений к одному хосту',
   'Check timeout': 'Тайм-аут проверки',
   'Reserve candidates per group': 'Кандидатов в резерве группы',
   'Switching and monitoring': 'Переключение и наблюдение',
-  'Enabling rotation may change the choice of live selectors after the tester restarts.': 'Включение ротации может изменить выбор боевых селекторов после перезапуска тестера.',
   'Rotation': 'Ротация',
   'Rotation interval': 'Интервал ротации',
   'Minimum time on a node': 'Минимальное время на ноде',
@@ -762,8 +621,6 @@ export default {
   'Quarantine duration': 'Длительность карантина',
   'Quarantine after skipped connection periods': 'Карантин после пропуска сроков соединения',
   'Admin panel and storage': 'Админка и хранение',
-  'Changing the token, address or port requires restarting the admin panel. The form edits the file, not the settings of the running process.':
-    'Смена токена, адреса или порта потребует перезапуска админки. Форма редактирует файл, не настройки текущего процесса.',
   'Embedded admin panel': 'Встроенная админка',
   'Listen address': 'Адрес прослушивания',
   'Admin panel port': 'Порт админки',
@@ -773,8 +630,6 @@ export default {
   'Keep history for': 'Хранить историю',
   'Collect user traffic': 'Собирать пользовательский трафик',
   'Notifications': 'Уведомления',
-  'Telegram and/or webhook. New settings take effect after the tester restarts. If sending directly from the router fails (the provider often cuts Telegram), the message goes through the tester on the best healthy node. Node switches with the “rotation” reason are frequent; by default only emergencies are reported.':
-    'Telegram и/или webhook. Новые настройки действуют после перезапуска тестера. Если напрямую с роутера отправить не удалось (Telegram часто режется провайдером), сообщение уходит через тестер на лучшей здоровой ноде. Переключения нод с причиной «ротация» происходят часто — по умолчанию сообщаются только аварийные.',
   'Send notifications': 'Отправлять уведомления',
   'Router signature in the message': 'Подпись роутера в сообщении',
   'Telegram bot token': 'Токен Telegram-бота',
@@ -782,8 +637,6 @@ export default {
   'Webhook URL (POST JSON)': 'Webhook URL (POST JSON)',
   'Proxy for sending (empty: direct)': 'Прокси для отправки (пусто — напрямую)',
   'Warn about the subscription end in advance by': 'Предупреждать о конце подписки за',
-  'The IP type (data centre, residential, mobile) is requested from ip-api.com for the exit IPs of nodes: through the tester on the best healthy node, otherwise directly.':
-    'Тип IP (дата-центр, домашний, мобильный) запрашивается у ip-api.com по выходным IP нод — через тестер на лучшей здоровой ноде, иначе напрямую.',
   'Refresh the data every': 'Обновлять сведения раз в',
   'Request through the tester': 'Запрашивать через тестер',
   'Node switch': 'Переключение ноды',
@@ -830,7 +683,6 @@ export default {
   'all slots': 'все слоты',
   'Replace a country rated below': 'Менять страну с рейтингом ниже',
   'Do not issue countries (comma-separated)': 'Не выпускать страны (через запятую)',
-  'The tester issues country files through the Amnezia gateway and replaces a country whose node keeps a rating below the threshold for 6 hours with a random country not tried before (when none are left, the longest-blocked one is tried again). The gateway key is taken from the official AmneziaVPN app. Slots above the limit stay free for the app.': 'Тестер выпускает файлы стран через шлюз Amnezia и меняет страну, чья нода 6 часов держит рейтинг ниже порога, на случайную, ещё не пробованную (когда таких нет — снова пробуется самая давно заблокированная). Ключ шлюза берётся из официального приложения AmneziaVPN. Слоты сверх лимита остаются свободными для приложения.',
   'Own nodes (sing-box outbounds)': 'Свои ноды (outbound-ы sing-box)',
   'Download timeout': 'Тайм-аут загрузки',
   'Minimum share of remaining nodes (0–1)': 'Минимальная доля оставшихся нод (0–1)',
@@ -840,8 +692,6 @@ export default {
   'Download proxy (empty: direct)': 'Прокси загрузки (пусто — напрямую)',
   'The editor requires a verified administrator token. Log in with the button in the header.': 'Для редактора требуется проверенный токен администратора. Войдите с помощью кнопки в шапке.',
   'Pipeline branch': 'Ветвь конвейера',
-  'Client branch: subscriptions and the build for client configurations (the “Clients” mode in the {pipeline}), the result is {file}. It does not affect the router sing-box.':
-    'Клиентская ветвь: подписки и сборка для клиентских конфигураций (режим «Клиенты» в {pipeline}), результат — {file}. На sing-box роутера не влияет.',
   'Subscription and build sections': 'Разделы подписок и сборки',
   'Subscription sources': 'Источники подписок',
   'Build and groups': 'Сборка и группы',
@@ -855,18 +705,11 @@ export default {
     'Файл настроек отличается от загруженного при старте админки. Перезапуск тестера требуется; применение к текущему процессу не подтверждено.',
   'Defaults are not shown: the config schema is unavailable ({error}).': 'Значения по умолчанию не показаны: схема конфига недоступна ({error}).',
   'Changed fields': 'Изменяемые поля',
-  'Values are hidden so as not to reveal secrets. The server checks the configuration before an atomic write. After saving, the tester restarts by itself: monitoring and testing stop for a few seconds, user connections are not dropped.':
-    'Значения скрыты, чтобы не раскрывать секреты. Сервер проверит конфигурацию перед атомарной записью. После сохранения тестер перезапустится сам: на несколько секунд остановятся мониторинг и тестирование, соединения пользователей не рвутся.',
-  'Subscriptions and groups reach sing-box with the next pipeline build.': 'Подписки и группы попадут в sing-box со следующей сборкой конвейера.',
   'Confirm and save the file': 'Подтвердить и сохранить файл',
   'Saving is blocked: reload the file. Unsaved edits will have to be made again.': 'Сохранение заблокировано: перечитайте файл. Несохранённые правки придётся внести заново.',
-  'Unknown fields and overrides are kept. Changing the form does not replace the whole document with a template. An empty field means the default value (shown in grey) and is not written to the file.':
-    'Неизвестные поля и переопределения сохраняются. Изменение формы не заменяет весь документ шаблоном. Пустое поле — значение по умолчанию (показано серым), в файл оно не пишется.',
   'The JSON contains secrets and full subscription URLs. Do not publish it or send screenshots.': 'JSON содержит секреты и полные URL подписок. Не публикуйте его и не отправляйте снимки экрана.',
   'Advanced configuration JSON': 'Расширенный JSON конфигурации',
   'Show secrets and subscription URLs': 'Показать секреты и URL подписок',
-  'The client branch has a single group {global} with all nodes and a fallback {failsafe}: the client sing-box makes the choice.':
-    'В клиентской ветви одна группа {global} со всеми нодами и запасной {failsafe}: выбор делает sing-box клиента.',
   'Subscription {n}': 'Подписка {n}',
   'new': 'новая',
   'Provider name (unique tag)': 'Название провайдера (уникальный tag)',
@@ -881,8 +724,6 @@ export default {
   'Custom User-Agent': 'Свой User-Agent',
   'Outbounds': 'Outbound-ы',
   'A list of sing-box outbounds. Tags are set by the build: the provider is the subscription tag.': 'Список outbound-ов sing-box. Теги задаёт сборка: провайдер — tag подписки.',
-  'The User-Agent is sent on HTTP downloads (including sub:// with an HTTP link). It is not used for ready share links and local files. The provider may choose the response format by this header. On an empty HTTP response the loader repeats the request with clashmeta.':
-    'User-Agent отправляется при HTTP-загрузке (включая sub:// со ссылкой на HTTP). Для готовых share-ссылок и локальных файлов он не используется. Провайдер может выбирать формат ответа по этому заголовку. При пустом HTTP-ответе загрузчик повторяет запрос с clashmeta.',
   'Default User-Agent': 'User-Agent по умолчанию',
   'Send the HWID and device description (for panels with a device limit)': 'Отправлять HWID и описание устройства (для панелей с лимитом устройств)',
   'Fetched': 'Загружена',
@@ -896,8 +737,6 @@ export default {
   '{n} days left': 'осталось {n} дн.',
   'Provider message': 'Сообщение провайдера',
   'Happ HTTP headers': 'HTTP-заголовки Happ',
-  'The default Happ set is used. A separate user_agent for this type is ignored; the User-Agent is changed here, in happ_headers. Changed values override the standard headers.':
-    'Используется набор Happ по умолчанию. Отдельный user_agent для этого типа игнорируется; User-Agent меняется здесь, в happ_headers. Изменённые значения переопределяют стандартные заголовки.',
   'Overridden': 'Переопределён',
   'Default': 'По умолчанию',
   'Restore default': 'Вернуть по умолчанию',
@@ -906,30 +745,12 @@ export default {
   'Restore the whole default Happ set': 'Вернуть весь набор Happ по умолчанию',
   'Delete subscription': 'Удалить подписку',
   'Add subscription': 'Добавить подписку',
-  'Router HWID for subscription panels: {hwid} (file {file}). It is always sent by happ subscriptions and by URL subscriptions when the checkbox is on. A custom HWID for one subscription is set with the X-Hwid header.':
-    'HWID роутера для панелей подписок: {hwid} (файл {file}). Отправляется happ-подписками всегда, URL-подписками — при включённом флажке. Свой HWID для одной подписки задаётся заголовком X-Hwid.',
   'Happ keys': 'Ключи Happ',
   'Key source': 'Источник ключей',
-  'The keys for decrypting happ://crypt… links belong to the Happ app and are not part of nodes-tester. They are downloaded from the given source (a URL or a path to a keys.rs or JSON file) and stored in {path}; they are refreshed when no key is found for a link.':
-    'Ключи расшифровки ссылок happ://crypt… принадлежат приложению Happ и в nodes-tester не входят. Они скачиваются из указанного источника (URL или путь к файлу keys.rs или JSON) и хранятся в {path}; обновляются, если для ссылки не нашлось ключа.',
   'Download protection': 'Защита загрузки',
-  'When the list shrinks sharply, the fetch guard may keep the previous data. The fetch result is visible in the {pipeline} log.':
-    'При резком уменьшении списка fetch guard может сохранить предыдущие данные. Результат загрузки виден в журнале {pipeline}.',
-  'How changes reach sing-box': 'Как изменения попадают в sing-box',
-  'Subscriptions, build parameters and groups are stored in one {file}; the pipeline and the tester read it.':
-    'Подписки, параметры сборки и группы хранятся в одном {file}; его читают конвейер и тестер.',
-  'The admin panel runs the pipeline on schedule ({router_at}, {clients_at}) or manually in the {pipeline}: fetching subscriptions, building {nodes}, {check}, applying. sing-box restarts only on changes; without connectivity the previous config comes back.':
-    'Админка запускает конвейер по расписанию ({router_at}, {clients_at}) или вручную в {pipeline}: загрузка подписок, сборка {nodes}, {check}, применение. sing-box перезапускается только при изменениях; без связности возвращается прежний конфиг.',
-  'The tester picks up new nodes within a minute; changes of groups and tester settings after its restart.':
-    'Тестер подхватывает новые ноды в течение минуты; изменения групп и настроек тестера — после его перезапуска.',
-  'Pipeline files': 'Файлы конвейера',
-  'Fetched subscriptions are {raw_router} and {raw_clients}, the build result is {nodes} and {whnodes} in the data directory (in the OpenWrt package {dir}, set by data_dir in /etc/config/nodes-tester).':
-    'Загруженные подписки — {raw_router} и {raw_clients}, результат сборки — {nodes} и {whnodes} в каталоге данных (в пакете OpenWrt — {dir}, задаётся data_dir в /etc/config/nodes-tester).',
-  'A separate run: {fetch}, then {config}.': 'Отдельный запуск: {fetch}, затем {config}.',
   'Events:': 'События:',
   'Node switches: reasons': 'Переключения нод — причины:',
   'Send a test message': 'Отправить тестовое сообщение',
-  'The test uses the settings of the running tester (after a restart).': 'Тест использует настройки работающего тестера (после перезапуска).',
   'Database VACUUM every (0s: manually only)': 'VACUUM базы раз в (0s — только вручную)',
   'VACUUM time, HH:MM': 'Время VACUUM, ЧЧ:ММ',
   // components/VacuumPanel.vue
@@ -937,8 +758,6 @@ export default {
     'Выполнить VACUUM сейчас? Пока он идёт (от секунд до нескольких минут), запись в базу ждёт; замеры задерживаются, но не теряются.',
   'on schedule': 'по расписанию',
   'Database maintenance': 'Обслуживание базы',
-  'VACUUM repacks the tester database and returns the space freed by deleted history to the disk. It runs by the schedule storage.vacuum (fields above) and from this button.':
-    'VACUUM переупаковывает базу тестера и возвращает диску место, освобождённое удалённой историей. Запускается по расписанию storage.vacuum (поля выше) и этой кнопкой.',
   'Database size now': 'Размер базы сейчас',
   'Last VACUUM': 'Последний VACUUM',
   'running…': 'выполняется…',
@@ -949,4 +768,16 @@ export default {
   'manually only': 'только вручную',
   'Run now': 'Выполнить сейчас',
   '{n} s': '{n} с',
+  // help: справка
+  'Help': 'Справка',
+  'Open the full help': 'Открыть всю справку',
+  'Close help': 'Закрыть справку',
+  'Help is unavailable: {error}': 'Справка недоступна: {error}',
+  'Help contents': 'Оглавление справки',
+  'Search the help': 'Поиск по справке',
+  'Nothing found.': 'Ничего не найдено.',
+  'The admin panel runs on its own: tester control, the log and live selectors are unavailable.':
+    'Админка запущена отдельно: управление тестером, журнал и живые селекторы недоступны.',
+  'Router HWID: {hwid}': 'HWID роутера: {hwid}',
+  'Stored period: {start} — {end}': 'Сохранённый период: {start} — {end}',
 }
