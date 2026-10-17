@@ -1,11 +1,13 @@
+**English** | [Русский](README.ru.md)
+
 # nodes_common
 
-`nodes_common` содержит общий контракт файлов между стадиями конвейера и безопасные
-операции записи. Модуль не знает о конкретных протоколах или правилах группировки.
+`nodes_common` holds the shared file contract between pipeline stages and safe
+write operations. The module knows nothing about particular protocols or grouping rules.
 
 ## `raw.py`
 
-`raw_nodes.json` — выход [`nodes_fetch`](../nodes_fetch/README.md) и вход
+`raw_nodes.json` is the output of [`nodes_fetch`](../nodes_fetch/README.md) and the input of
 [`nodes_config`](../nodes_config/README.md).
 
 ```json
@@ -19,31 +21,31 @@
 }
 ```
 
-`validate` выполняет обязательную структурную проверку без зависимости от `jsonschema`,
-чтобы работать на минимальном OpenWrt. `nodes_hash` считается от канонического JSON массива
-нод и не зависит от времени загрузки или статусов источников.
+`validate` runs the required structural check without depending on `jsonschema`,
+so that it works on a minimal OpenWrt. `nodes_hash` is computed from the canonical JSON of the node
+array and does not depend on the fetch time or source statuses.
 
-`make_node` отделяет исходное название от настроек outbound: `tag` переходит в `title`, а
-служебные `_`-поля не попадают в артефакт.
+`make_node` separates the original name from the outbound settings: `tag` goes to `title`, and
+service `_` fields do not get into the artefact.
 
 ## `fileio.py`
 
-Общие операции:
+Shared operations:
 
-- `read_json` — чтение UTF-8 JSON;
-- `dumps_json` — единый формат JSON с завершающим переводом строки;
-- `atomic_write_text` — запись во временный файл, `flush`, `fsync` и `os.replace`;
-- `file_lock` — межпроцессная блокировка `<target>.lock` на Linux и Windows;
-- `parse_iso` — даты контракта.
+- `read_json`: reading UTF-8 JSON;
+- `dumps_json`: a single JSON format with a trailing newline;
+- `atomic_write_text`: writing to a temporary file, `flush`, `fsync` and `os.replace`;
+- `file_lock`: an inter-process lock `<target>.lock` on Linux and Windows;
+- `parse_iso`: the dates of the contract.
 
-Атомарная запись гарантирует, что читатель видит старый или новый файл, а не частично
-записанный JSON. Lock не заменяет атомарность: он защищает от двух штатных писателей, а
-атомарная замена защищает читателя и результат при сбое.
+An atomic write guarantees that a reader sees the old or the new file, not a partially
+written JSON. The lock does not replace atomicity: it protects against two regular writers, and the
+atomic replacement protects the reader and the result on a failure.
 
-## Инварианты
+## Invariants
 
-- меняйте версию raw при несовместимом изменении структуры;
-- не добавляйте в raw вычисленные имена и группы;
-- сохраняйте порядок провайдеров и нод;
-- не включайте время и статусы источников в `nodes_hash`;
-- новые поля должны быть отражены в `schemas/raw_nodes.schema.json` и тестах обеих стадий.
+- change the raw version on an incompatible change of the structure;
+- do not add computed names and groups to the raw;
+- keep the order of providers and nodes;
+- do not include time and source statuses in `nodes_hash`;
+- new fields must be reflected in `schemas/raw_nodes.schema.json` and the tests of both stages.

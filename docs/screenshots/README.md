@@ -1,14 +1,16 @@
-# Веб-админка nodes-tester
+**English** | [Русский](README.ru.md)
 
-[О проекте](../../README.md) · [Руководство пользователя](../USAGE.md) ·
-[Устройство dashboard](../../dashboard/README.md)
+# nodes-tester web admin panel
 
-Изображения автоматически переключаются между светлой и тёмной темой GitHub. Нажмите на
-скриншот, чтобы открыть исходный размер.
+[About the project](../../README.md) · [User guide](../USAGE.md) ·
+[How the dashboard works](../../dashboard/README.md)
 
-Галерея снята для интерфейса 0.5.0 на демонстрационных данных. Текущий порядок действий описан в [руководстве](../USAGE.md).
+The images switch automatically between the GitHub light and dark themes. Click a
+screenshot to open it in full size.
 
-## Основные экраны
+The gallery was taken for the 0.5.0 interface on demo data, before the interface became bilingual, so the screenshots show the Russian interface. The current workflow is described in the [guide](../USAGE.md).
+
+## Main screens
 
 <table>
   <tr>
@@ -17,7 +19,7 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="overview.png">
           <source media="(prefers-color-scheme: light)" srcset="overview-light.png">
-          <img alt="Обзор состояния системы" src="overview-light.png">
+          <img alt="System state overview" src="overview-light.png">
         </picture>
       </a>
     </td>
@@ -26,14 +28,14 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="nodes.png">
           <source media="(prefers-color-scheme: light)" srcset="nodes-light.png">
-          <img alt="Все ноды" src="nodes-light.png">
+          <img alt="All nodes" src="nodes-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Обзор</strong><br>Состояние БД и тестера, сводные показатели и выбранные ноды групп.</td>
-    <td><strong>Все ноды</strong><br>Фильтры, поиск, сортировка, рейтинг и переход к карточке.</td>
+    <td><strong>Overview</strong><br>Database and tester state, summary figures and the chosen nodes of the groups.</td>
+    <td><strong>All nodes</strong><br>Filters, search, sorting, rating and a link to the card.</td>
   </tr>
   <tr>
     <td>
@@ -41,7 +43,7 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="node-card.png">
           <source media="(prefers-color-scheme: light)" srcset="node-card-light.png">
-          <img alt="Карточка ноды" src="node-card-light.png">
+          <img alt="Node card" src="node-card-light.png">
         </picture>
       </a>
     </td>
@@ -50,14 +52,14 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="rating.png">
           <source media="(prefers-color-scheme: light)" srcset="rating-light.png">
-          <img alt="Рейтинг нод" src="rating-light.png">
+          <img alt="Node rating" src="rating-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Карточка ноды</strong><br>Состояние, измерения, трафик, события и действия в одном месте.</td>
-    <td><strong>Рейтинг</strong><br>Итоговый балл и нормированные составляющие по группам.</td>
+    <td><strong>Node card</strong><br>State, measurements, traffic, events and actions in one place.</td>
+    <td><strong>Rating</strong><br>The total score and the normalised components by group.</td>
   </tr>
   <tr>
     <td>
@@ -65,7 +67,7 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="results.png">
           <source media="(prefers-color-scheme: light)" srcset="results-light.png">
-          <img alt="Результаты сетевых проверок" src="results-light.png">
+          <img alt="Network check results" src="results-light.png">
         </picture>
       </a>
     </td>
@@ -74,14 +76,14 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="lifecycle.png">
           <source media="(prefers-color-scheme: light)" srcset="lifecycle-light.png">
-          <img alt="Ограничения и качество" src="lifecycle-light.png">
+          <img alt="Restrictions and quality" src="lifecycle-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Результаты</strong><br>Физические метрики с временем каждого измерения, тип выходного IP и доступ к Google AI, OpenAI и Claude.</td>
-    <td><strong>Ограничения и качество</strong><br>Паузы, карантин и сводка по провайдерам.</td>
+    <td><strong>Results</strong><br>Physical metrics with the time of each measurement, the exit IP type and access to Google AI, OpenAI and Claude.</td>
+    <td><strong>Restrictions and quality</strong><br>Pauses, quarantine and a summary by provider.</td>
   </tr>
   <tr>
     <td>
@@ -89,7 +91,7 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="history.png">
           <source media="(prefers-color-scheme: light)" srcset="history-light.png">
-          <img alt="История переключений" src="history-light.png">
+          <img alt="Switch history" src="history-light.png">
         </picture>
       </a>
     </td>
@@ -98,18 +100,18 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="traffic.png">
           <source media="(prefers-color-scheme: light)" srcset="traffic-light.png">
-          <img alt="Статистика трафика" src="traffic-light.png">
+          <img alt="Traffic statistics" src="traffic-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Переключения</strong><br>Когда, почему и на какую ноду переключалась группа.</td>
-    <td><strong>Трафик</strong><br>Доступный период, направления и наиболее используемые ноды.</td>
+    <td><strong>Switches</strong><br>When, why and to which node a group switched.</td>
+    <td><strong>Traffic</strong><br>The available period, directions and the most used nodes.</td>
   </tr>
 </table>
 
-## Настройка и управление
+## Configuration and control
 
 <table>
   <tr>
@@ -118,7 +120,7 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="subscriptions.png">
           <source media="(prefers-color-scheme: light)" srcset="subscriptions-light.png">
-          <img alt="Подписки и сборка" src="subscriptions-light.png">
+          <img alt="Subscriptions and build" src="subscriptions-light.png">
         </picture>
       </a>
     </td>
@@ -127,14 +129,14 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="config.png">
           <source media="(prefers-color-scheme: light)" srcset="config-light.png">
-          <img alt="Настройки nodes-tester" src="config-light.png">
+          <img alt="nodes-tester settings" src="config-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Подписки и сборка</strong><br>Источники, секреты, формы и расширенный JSON.</td>
-    <td><strong>Настройки</strong><br>API sing-box, SOCKS, проверки, переключение, хранение и dashboard.</td>
+    <td><strong>Subscriptions and build</strong><br>Sources, secrets, forms and the advanced JSON.</td>
+    <td><strong>Settings</strong><br>sing-box API, SOCKS, checks, switching, storage and dashboard.</td>
   </tr>
   <tr>
     <td colspan="2">
@@ -142,13 +144,13 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="runs.png">
           <source media="(prefers-color-scheme: light)" srcset="runs-light.png">
-          <img alt="Ход проверок и живой журнал" src="runs-light.png">
+          <img alt="Check progress and the live log" src="runs-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td colspan="2"><strong>Проверки</strong><br>Этап прохода, очередь, последний результат и живой журнал.</td>
+    <td colspan="2"><strong>Checks</strong><br>Tester stage, queue, the last result and the live log.</td>
   </tr>
   <tr>
     <td colspan="2">
@@ -156,19 +158,19 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="pipeline.png">
           <source media="(prefers-color-scheme: light)" srcset="pipeline-light.png">
-          <img alt="Конвейер подписок и конфигураций" src="pipeline-light.png">
+          <img alt="Subscription and configuration pipeline" src="pipeline-light.png">
         </picture>
       </a>
     </td>
   </tr>
-  <tr><td colspan="2"><strong>Конвейер</strong><br>Ручной запуск, расписание, история и журнал.</td></tr>
+  <tr><td colspan="2"><strong>Pipeline</strong><br>Manual run, schedule, history and log.</td></tr>
   <tr>
     <td width="50%">
       <a href="singbox-light.png">
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="singbox.png">
           <source media="(prefers-color-scheme: light)" srcset="singbox-light.png">
-          <img alt="Файлы sing-box" src="singbox-light.png">
+          <img alt="sing-box files" src="singbox-light.png">
         </picture>
       </a>
     </td>
@@ -177,59 +179,59 @@
         <picture>
           <source media="(prefers-color-scheme: dark)" srcset="singbox-rules.png">
           <source media="(prefers-color-scheme: light)" srcset="singbox-rules-light.png">
-          <img alt="Источники правил sing-box" src="singbox-rules-light.png">
+          <img alt="sing-box rule sources" src="singbox-rules-light.png">
         </picture>
       </a>
     </td>
   </tr>
   <tr>
-    <td><strong>Файлы sing-box</strong><br>База, клиентские конфиги и история версий.</td>
-    <td><strong>Источники правил</strong><br>Список загрузок и локальные JSON-файлы.</td>
+    <td><strong>sing-box files</strong><br>Base, client configs and version history.</td>
+    <td><strong>Rule sources</strong><br>The download list and local JSON files.</td>
   </tr>
 </table>
 
-## Группы, правила и действия
+## Groups, rules and actions
 
-### Группы нод
+### Node groups
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="groups.png">
   <source media="(prefers-color-scheme: light)" srcset="groups-light.png">
-  <img alt="Группы нод" src="groups-light.png">
+  <img alt="Node groups" src="groups-light.png">
 </picture>
 
-### Предпросмотр состава групп
+### Group membership preview
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="groups-preview.png">
   <source media="(prefers-color-scheme: light)" srcset="groups-preview-light.png">
-  <img alt="Предпросмотр состава групп" src="groups-preview-light.png">
+  <img alt="Group membership preview" src="groups-preview-light.png">
 </picture>
 
-### Правила и пресеты
+### Rules and presets
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="presets.png">
   <source media="(prefers-color-scheme: light)" srcset="presets-light.png">
-  <img alt="Правила и пресеты" src="presets-light.png">
+  <img alt="Rules and presets" src="presets-light.png">
 </picture>
 
-### Действия с нодой
+### Node actions
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="node-actions.png">
   <source media="(prefers-color-scheme: light)" srcset="node-actions-light.png">
-  <img alt="Действия с нодой" src="node-actions-light.png">
+  <img alt="Node actions" src="node-actions-light.png">
 </picture>
 
-## Мобильный интерфейс
+## Mobile interface
 
 <p align="center">
   <a href="mobile-overview-light.png">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="mobile-overview.png">
       <source media="(prefers-color-scheme: light)" srcset="mobile-overview-light.png">
-      <img alt="Мобильный обзор" src="mobile-overview-light.png" width="360">
+      <img alt="Mobile overview" src="mobile-overview-light.png" width="360">
     </picture>
   </a>
   &nbsp;
@@ -237,9 +239,9 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="mobile-nodes.png">
       <source media="(prefers-color-scheme: light)" srcset="mobile-nodes-light.png">
-      <img alt="Мобильный список нод" src="mobile-nodes-light.png" width="360">
+      <img alt="Mobile node list" src="mobile-nodes-light.png" width="360">
     </picture>
   </a>
 </p>
 
-Интерфейс сохраняет те же разделы и действия, а таблицы перестраиваются для узкого экрана.
+The interface keeps the same sections and actions, and tables are rearranged for a narrow screen.

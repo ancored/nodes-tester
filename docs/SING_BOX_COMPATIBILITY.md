@@ -1,49 +1,51 @@
-# Совместимость с sing-box
+**English** | [Русский](SING_BOX_COMPATIBILITY.ru.md)
 
-[О проекте](../README.md) · [`nodes_fetch`](../nodes_fetch/README.md) · [`nodes_config`](../nodes_config/README.md)
+# sing-box compatibility
 
-## Главное
+[About the project](../README.md) · [`nodes_fetch`](../nodes_fetch/README.md) · [`nodes_config`](../nodes_config/README.md)
 
-Успешный разбор подписки не означает, что полученную ноду примет установленное ядро.
-`nodes_fetch` умеет разбирать XHTTP и AmneziaWG (AWG), но эти расширения рассчитаны на
-[Leadaxe/sing-box-lx](https://github.com/Leadaxe/sing-box-lx). Обычный sing-box их не
-поддерживает.
+## The main point
 
-Если на роутере установлен обычный sing-box, исключите XHTTP и AWG до создания
-`nodes.json`. Иначе итоговый конфиг может не пройти `sing-box check`, а sing-box не примет
-его при перезапуске.
+A successfully parsed subscription does not mean that the installed core accepts the resulting node.
+`nodes_fetch` can parse XHTTP and AmneziaWG (AWG), but these extensions are meant for
+[Leadaxe/sing-box-lx](https://github.com/Leadaxe/sing-box-lx). The regular sing-box does not
+support them.
 
-| Нода | Что создаёт парсер | Требуемое ядро |
+If the router runs the regular sing-box, exclude XHTTP and AWG before `nodes.json` is
+created. Otherwise the resulting config may fail `sing-box check`, and sing-box will not accept
+it on restart.
+
+| Node | What the parser creates | Required core |
 |---|---|---|
-| VLESS или Trojan с XHTTP | `transport.type: "xhttp"` | `sing-box-lx` |
-| AmneziaWG из `.conf` | endpoint `type: "wireguard"` с полями AWG | `sing-box-lx` |
-| Обычный WireGuard | endpoint `type: "wireguard"` без полей AWG | зависит от версии обычного sing-box |
+| VLESS or Trojan with XHTTP | `transport.type: "xhttp"` | `sing-box-lx` |
+| AmneziaWG from `.conf` | endpoint `type: "wireguard"` with AWG fields | `sing-box-lx` |
+| Regular WireGuard | endpoint `type: "wireguard"` without AWG fields | depends on the regular sing-box version |
 
-Версию и возможности ядра всё равно нужно проверять командой `sing-box version` и на
-итоговом объединённом конфиге. Эта таблица описывает расширения, которые добавлены именно
-для `sing-box-lx`.
+The core version and capabilities still need to be checked with `sing-box version` and on
+the resulting merged config. This table describes the extensions added specifically
+for `sing-box-lx`.
 
-## Версия ядра для тестера
+## Core version for the tester
 
-Тестер управляет sing-box через API-сервис (`services[].type = "api"`), который появился в
-sing-box 1.14. Нужна версия 1.14 или новее с включённым сервисом:
+The tester controls sing-box through the API service (`services[].type = "api"`), which appeared in
+sing-box 1.14. Version 1.14 or newer with the service enabled is required:
 
 ```json
 "services": [
   { "type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090,
-    "secret": "<секрет>", "dashboard": true }
+    "secret": "<secret>", "dashboard": true }
 ]
 ```
 
-Через этот сервис тестер выбирает ноды в selector-группах, проверяет связность после
-применения конфига и получает поток событий соединений для точного учёта трафика. Clash API
-(`experimental.clash_api`) не используется. Сервис отдаёт и официальную веб-панель sing-box
-(`dashboard`). Режимы `clash_mode` в правилах работают и без Clash API; после перезапуска
-действует режим `Rule`, пока его не переключат в панели.
+Through this service the tester picks nodes in selector groups, checks connectivity after
+a config is applied and receives the connection event stream for exact traffic accounting. The Clash API
+(`experimental.clash_api`) is not used. The service also serves the official sing-box web panel
+(`dashboard`). `clash_mode` modes in rules work without the Clash API as well; after a restart
+the `Rule` mode is active until it is switched in the panel.
 
-## Где возникает несовместимость
+## Where incompatibility appears
 
-Конвейер разделён на стадии:
+The pipeline is split into stages:
 
 ```text
 config.json (subscriptions)
@@ -51,24 +53,24 @@ config.json (subscriptions)
     -> raw_nodes.json
     -> nodes_config
     -> nodes.json
-    -> склейка с базой и пресетами, sing-box check
+    -> merging with the base and presets, sing-box check
 ```
 
-`nodes_fetch` сохраняет всё, что смог разобрать. Он не знает, какое ядро установлено на
-роутере, и не применяет фильтры сборки. Благодаря этому один raw-файл можно
-использовать для разных целей.
+`nodes_fetch` keeps everything it could parse. It does not know which core is installed on the
+router and does not apply build filters. Thanks to this, one raw file can be
+used for different purposes.
 
-Совместимость с целевым ядром задаёт `nodes_config`. Он вычисляет дескриптор протокола:
+Compatibility with the target core is set by `nodes_config`. It computes the protocol descriptor:
 
-- XHTTP содержит токен `xhttp`, например `vless|xhttp|tls`;
-- WireGuard и AmneziaWG содержат токен `wg`.
+- XHTTP contains the `xhttp` token, for example `vless|xhttp|tls`;
+- WireGuard and AmneziaWG contain the `wg` token.
 
-Затем `exclude_protocols` ветви (`pipeline.router` или `pipeline.clients` в `config.json`)
-удаляет ноды с указанными токенами до переименования, группировки и записи `nodes.json`.
+Then `exclude_protocols` of the branch (`pipeline.router` or `pipeline.clients` in `config.json`)
+removes nodes with the given tokens before renaming, grouping and writing `nodes.json`.
 
-## Обычный sing-box: безопасная настройка
+## Regular sing-box: a safe setup
 
-В `config.json` добавьте фильтр ветви:
+Add the branch filter to `config.json`:
 
 ```json
 "pipeline": {
@@ -77,17 +79,17 @@ config.json (subscriptions)
 }
 ```
 
-Токен `wg` исключает все WireGuard endpoints, включая обычный WireGuard. Если обычный
-WireGuard нужен, а AWG нет, уберите из `subscriptions` источник папки с
-`type: "folder", format: "awg"`. Тогда AWG не попадёт в raw.
-После этого решите отдельно, поддерживает ли ваша версия ядра обычные WireGuard endpoints.
+The `wg` token excludes all WireGuard endpoints, including regular WireGuard. If you need regular
+WireGuard but not AWG, remove the folder source with
+`type: "folder", format: "awg"` from `subscriptions`. Then AWG does not get into the raw file.
+After that decide separately whether your core version supports regular WireGuard endpoints.
 
-Фильтр задаётся только в разделе `pipeline`: `nodes_fetch` фильтров не применяет.
+The filter is set only in the `pipeline` section: `nodes_fetch` does not apply filters.
 
-## sing-box-lx: оставить XHTTP и AWG
+## sing-box-lx: keep XHTTP and AWG
 
-Если установлен `sing-box-lx`, не добавляйте `xhttp` и `wg` в `exclude_protocols`. Для AWG
-добавьте в `subscriptions` источник папки:
+If `sing-box-lx` is installed, do not add `xhttp` and `wg` to `exclude_protocols`. For AWG
+add a folder source to `subscriptions`:
 
 ```json
 {
@@ -99,34 +101,34 @@ WireGuard нужен, а AWG нет, уберите из `subscriptions` ист�
 }
 ```
 
-Каждый `.conf` становится отдельным endpoint. Страну ноды измеряет тестер, имя файла на
-неё не влияет. DNS из файла не переносится,
-потому что DNS настраивается централизованно в sing-box.
+Each `.conf` becomes a separate endpoint. The tester measures the node country; the file name does
+not affect it. DNS from the file is not carried over,
+because DNS is configured centrally in sing-box.
 
-XHTTP извлекается из VLESS и Trojan share-ссылок с `type=xhttp`. Параметры транспорта и
-`extra` переводятся в поля `sing-box-lx`; camelCase ключи XMUX нормализуются в snake_case.
+XHTTP is extracted from VLESS and Trojan share links with `type=xhttp`. Transport parameters and
+`extra` are translated into `sing-box-lx` fields; camelCase XMUX keys are normalised to snake_case.
 
-Версии форка и формата конфигурации должны совпадать. Перед применением всегда проверяйте
-кандидат тем бинарником, который реально запускается на роутере.
+The fork version and the configuration format must match. Before applying always check the
+candidate with the binary that actually runs on the router.
 
-## Перечитывание локальных правил
+## Rereading local rules
 
-После обновления `.srs` и JSON source rule-set в `/etc/sing-box/rules/` sing-box версии 1.10 и новее перечитывает изменённые файлы без перезапуска. Поэтому конвейер перезапускает sing-box только при изменении итогового конфига, `base.json` или при явном принудительном применении. На более старом ядре изменённые локальные правила начнут действовать при следующем перезапуске. Перед настройкой правил проверьте установленную версию командой `sing-box version`.
+After `.srs` and JSON source rule sets in `/etc/sing-box/rules/` are updated, sing-box 1.10 and newer rereads the changed files without a restart. That is why the pipeline restarts sing-box only when the resulting config or `base.json` changed, or on an explicit forced apply. On an older core the changed local rules take effect at the next restart. Check the installed version with `sing-box version` before setting up rules.
 
-## Проверка перед применением
+## Check before applying
 
-Для пакетной установки на OpenWrt:
+For the package installation on OpenWrt:
 
 ```sh
 nodes-tester pipeline router --dry-run
 ```
 
-Этот режим скачивает подписки и собирает кандидат, затем склеивает его с базой и пресетами и выполняет
-`sing-box check`, но не заменяет рабочий конфиг и не перезапускает sing-box. При ошибке
-прочитайте вывод `sing-box check`: неизвестный транспорт XHTTP или неизвестные поля AWG
-означают, что фильтр не включён либо используется неподходящее ядро.
+This mode fetches the subscriptions and builds the candidate, then merges it with the base and presets and runs
+`sing-box check`, but does not replace the working config and does not restart sing-box. On an error
+read the `sing-box check` output: an unknown XHTTP transport or unknown AWG fields
+mean that the filter is not on or an unsuitable core is used.
 
-Для ручного запуска можно отдельно проверить сборку:
+For a manual run the build can be checked separately:
 
 ```sh
 python3 -m nodes_fetch -c config/config.json --branch router -o data/raw/router.json --json
@@ -134,5 +136,5 @@ python3 -m nodes_config -c config/config.json --branch router --raw data/raw/rou
   -o data/nodes.json --check --json
 ```
 
-`nodes_config --check` проверяет только сборку фрагмента. Окончательную совместимость
-подтверждает `sing-box check` после объединения фрагмента с базовым конфигом.
+`nodes_config --check` checks only the fragment build. Final compatibility is
+confirmed by `sing-box check` after the fragment is merged with the base config.

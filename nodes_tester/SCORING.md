@@ -1,81 +1,83 @@
-# Рейтинг нод
+**English** | [Русский](SCORING.ru.md)
 
-[`nodes_tester`](README.md) хранит рейтинг в SQLite и обновляет его после каждого замера ноды.
-Мгновенный балл считается по последнему результату каждого теста ноды: у тестов свои сроки
-годности, поэтому результаты могут быть разного времени.
-Расчёт состоит из трёх частей: GATE, мгновенный балл и агрегация во времени.
+# Node rating
 
-## Источники компонентов
+[`nodes_tester`](README.md) keeps the rating in SQLite and updates it after each measurement of a node.
+The instant score is computed from the latest result of each test of the node: tests have their own
+lifetimes, so the results may be from different times.
+The computation has three parts: the GATE, the instant score and aggregation over time.
 
-Каждый компонент находится в диапазоне от 0 до 1.
+## Component sources
 
-| Компонент | Исходные метрики |
+Each component is in the range from 0 to 1.
+
+| Component | Source metrics |
 |---|---|
-| `latency` | TTFB из `latency` |
-| `jitter` | стандартное отклонение задержки из `jitter` |
-| `consistency` | отношение jitter к средней задержке |
-| `throughput` | `speed_mbps` из `download` |
-| `throttle` | `throttle_ratio` из `download` |
-| `reliability` | потери запросов, `hold_ratio` и доля доступных целей |
+| `latency` | TTFB from `latency` |
+| `jitter` | standard deviation of the latency from `jitter` |
+| `consistency` | ratio of jitter to the mean latency |
+| `throughput` | `speed_mbps` from `download` |
+| `throttle` | `throttle_ratio` from `download` |
+| `reliability` | request loss, `hold_ratio` and the share of reachable targets |
 
-Для метрик «меньше лучше» используется линейная нормализация между хорошим и плохим
-порогом:
+“Lower is better” metrics use linear normalisation between the good and the bad
+threshold:
 
 ```text
 lower_better(x) = clamp((bad - x) / (bad - good), 0, 1)
 ```
 
-Для метрик «больше лучше»:
+“Higher is better” metrics:
 
 ```text
 higher_better(x) = clamp((x - low) / (high - low), 0, 1)
 ```
 
-Пороги находятся в `rating.thresholds`, веса — в `rating.weights` файла `config.json`. Отсутствующий тест не
-получает нулевую оценку: его компонент исключается, а оставшиеся веса нормируются заново.
+The thresholds are in `rating.thresholds`, the weights in `rating.weights` of `config.json`. A missing test does not
+get a zero score: its component is excluded, and the remaining weights are normalised again.
 
 ## Reliability
 
-Надёжность объединяет доступные части:
+Reliability combines the available parts:
 
-| Часть | Базовый вес |
+| Part | Base weight |
 |---|---:|
-| успешные запросы `1 - loss_pct / 100` | 0.5 |
-| удержание загрузки `hold_ratio` | 0.3 |
-| доступные цели `reached / total` | 0.2 |
+| successful requests `1 - loss_pct / 100` | 0.5 |
+| download hold `hold_ratio` | 0.3 |
+| reachable targets `reached / total` | 0.2 |
 
-Если части нет, её вес также исключается и сумма пересчитывается по оставшимся данным.
+If a part is missing, its weight is also excluded and the sum is recomputed from the remaining data.
 
-Ответ тестового сервера `429`, `5xx` или иной явно распознанный HTTP-отказ считается
-нейтральным для пропускной способности: транспорт ответил, но сервис не дал измерение.
-Реальный сетевой провал даёт нулевые транспортные компоненты.
+A `429`, `5xx` or another clearly recognised HTTP refusal of the test server counts as
+neutral for throughput: the transport answered, but the service did not give a measurement.
+A real network failure gives zero transport components.
 
 ## GATE
 
-Мгновенный GATE не проходит, если выполняется хотя бы одно условие:
+The instant GATE fails if at least one condition holds:
 
-- `connectivity` завершился неуспешно;
-- потери `jitter` выше `loss_gate`;
-- `reachability` проверил цели, но не достиг ни одной;
-- все тесты с полем `ok` завершились неуспешно.
+- `connectivity` failed;
+- the `jitter` loss is above `rating.thresholds.loss_gate_percent`;
+- `reachability` checked the targets but reached none;
+- all tests with an `ok` field failed.
 
-При провале GATE итоговый рейтинг текущего состояния сразу равен нулю. EWMA продолжает
-обновляться внутри состояния, но не скрывает текущую недоступность.
+On a GATE failure the resulting rating of the current state is zero right away. EWMA keeps
+updating inside the state, but does not hide the current unavailability.
 
-## Мгновенный балл
+## Instant score
 
-Для прошедшей GATE ноды:
+For a node that passed the GATE:
 
 ```text
 S_run = 100 * sum(weight_i * component_i) / sum(available_weight_i)
 ```
 
-Если scoring-компонентов нет, `S_run` равен нулю. Один `connectivity` подтверждает доступ,
-но не даёт качества для рейтинга.
+If there are no scoring components, `S_run` is zero. `connectivity` alone confirms access
+but gives no quality for the rating.
 
-## Агрегация во времени
+## Aggregation over time
 
-После каждого замера ноды сохраняются:
+After each measurement of a node these are stored:
 
 ```text
 score_ewma = alpha * S_run + (1 - alpha) * previous_score_ewma
@@ -83,46 +85,46 @@ flap       = alpha * abs(S_run - previous_score_ewma) + (1 - alpha) * previous_f
 avail      = alpha * gate + (1 - alpha) * previous_avail
 ```
 
-Доступность превращается в множитель от 0.5 до 1 между `avail_floor` и `avail_full`.
-Итог для прошедшей GATE ноды:
+Availability turns into a factor from 0.5 to 1 between `rating.availability.floor` and `rating.availability.full`.
+The result for a node that passed the GATE:
 
 ```text
 score = clamp(score_ewma * avail_factor - flap_lambda * flap, 0, 100)
 ```
 
-Так единичный хороший замер не полностью перекрывает нестабильную историю, а частые скачки
-получают отдельный штраф.
+So a single good measurement does not fully cover an unstable history, and frequent jumps
+get a separate penalty.
 
-## Тяжёлая загрузка
+## Heavy download
 
-Проверка `heavy` (тяжёлая загрузка) не входит в формулу. Длинную загрузку выполняет процесс резерва для
-кандидатов в резерв группы (см. «Резерв группы» в [README](README.md)): нода попадает в
-резерв, только пройдя её. Результат действует `checks.heavy.ttl` (по умолчанию `6h`), затем у
-членов резерва загрузка повторяется.
+The `heavy` check (heavy download) is not part of the formula. The long download is run by the reserve process for
+reserve candidates of a group (see “Group reserve” in the [README](README.md)): a node gets into the
+reserve only after passing it. The result lasts `checks.heavy.ttl` (`6h` by default), then for
+reserve members the download is repeated.
 
-Неуспех сохраняется как `heavy_ok = 0` и на тот же срок исключает ноду из кандидатов на
-переключение. Если без veto не осталось ни одного кандидата, switcher возвращается к общему
-списку, чтобы группа не осталась без выбора.
+A failure is stored as `heavy_ok = 0` and excludes the node from switching candidates for the same
+period. If no candidate is left without a veto, the switcher falls back to the full
+list so that the group is not left without a choice.
 
-## Где хранятся данные
+## Where the data is stored
 
-- `scores` — текущий снимок, компоненты и EWMA-состояние;
-- `score_history` — точка `score`, `S_run` и GATE на каждый замер ноды;
-- `results` — физические метрики отдельных тестов;
-- `heavy_ok` и `heavy_ts` — состояние тяжёлого veto в `scores`;
-- `reserve` — группы, в резерве которых стоит нода.
+- `scores`: the current snapshot, components and EWMA state;
+- `score_history`: a point of `score`, `S_run` and the GATE for each measurement of a node;
+- `results`: physical metrics of individual tests;
+- `heavy_ok` and `heavy_ts`: the state of the heavy veto in `scores`;
+- `reserve`: the groups whose reserve has the node.
 
-Подробности БД: [`STORAGE.md`](STORAGE.md).
+Database details: [`STORAGE.md`](STORAGE.md).
 
-## Настройка
+## Tuning
 
-Меняйте по одному классу параметров и оценивайте историю нескольких замеров:
+Change one class of parameters at a time and judge by the history of several measurements:
 
-1. Пороги определяют, как физическая метрика превращается в компонент.
-2. Веса определяют относительную важность доступных компонентов.
-3. `alpha` задаёт скорость реакции на новый замер.
-4. `flap_lambda` усиливает или ослабляет штраф за колебания.
-5. `avail_floor` и `avail_full` задают влияние долгосрочной доступности.
+1. Thresholds define how a physical metric becomes a component.
+2. Weights define the relative importance of the available components.
+3. `alpha` sets how fast the rating reacts to a new measurement.
+4. `flap_lambda` strengthens or weakens the flapping penalty.
+5. `rating.availability.floor` and `rating.availability.full` set the effect of long-term availability.
 
-Изменение формулы не пересчитывает старые строки истории. Новые значения постепенно
-обновят текущий снимок через следующие замеры.
+Changing the formula does not recompute old history rows. The new values gradually
+update the current snapshot through the next measurements.

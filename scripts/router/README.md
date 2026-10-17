@@ -1,177 +1,179 @@
+**English** | [Русский](README.ru.md)
+
 # scripts/router
 
-Скрипты связывают Python-стадии с рабочей конфигурацией sing-box на роутере. Они отвечают
-за расписание, правила, merge, проверку кандидата, перезапуск и откат.
+The scripts connect the Python stages with the working sing-box configuration on the router. They are responsible
+for the schedule, rules, merging, the candidate check, the restart and the rollback.
 
-Пакет OpenWrt предоставляет обёртку `nodes-tester`, поэтому вручную вызывать файлы обычно
-не требуется.
+The OpenWrt package provides the `nodes-tester` wrapper, so calling the files manually is usually
+not needed.
 
-## Основной конвейер
+## Main pipeline
 
 ```sh
 nodes-tester pipeline router --dry-run
 nodes-tester pipeline router
 ```
 
-Режим `router` выполняет:
+The `router` mode runs:
 
 ```text
 nodes_fetch
-    -> raw/router.json            (pipeline.sh fetch — только этот шаг)
+    -> raw/router.json            (pipeline.sh fetch: only this step)
     -> nodes_config
     -> nodes.json
     -> update-rules.sh
     -> apply-nodes.sh
 ```
 
-Если guard загрузки вернул код `2`, pipeline сохраняет прошлый raw и продолжает сборку на
-нём. Другие ошибки fetch или config останавливают процесс до изменения рабочего sing-box.
+If the fetch guard returned code `2`, the pipeline keeps the previous raw and continues the build with
+it. Other fetch or config errors stop the process before the working sing-box is changed.
 
-`--dry-run` всё равно загружает источники и пишет промежуточный raw, но итоговый фрагмент
-идёт в отдельный файл. Правила в этом режиме не обновляются. `apply-nodes.sh` объединяет
-фрагмент с базой и запускает `sing-box check`, не заменяя рабочий конфиг.
+`--dry-run` still fetches the sources and writes the intermediate raw, but the resulting fragment
+goes to a separate file. Rules are not updated in this mode. `apply-nodes.sh` merges the
+fragment with the base and runs `sing-box check` without replacing the working config.
 
-Именно dry-run следует использовать для проверки XHTTP и AWG. Обычный sing-box не примет
-расширения `sing-box-lx`, если они не удалены фильтром. Подробности:
+A dry run is exactly what to use to check XHTTP and AWG. The regular sing-box will not accept
+`sing-box-lx` extensions unless a filter removes them. Details:
 [`docs/SING_BOX_COMPATIBILITY.md`](../../docs/SING_BOX_COMPATIBILITY.md).
 
-## Пресеты правил и режим `apply`
+## Rule presets and the `apply` mode
 
-Схема всей сборки: [`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md).
+The scheme of the whole assembly: [`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md).
 
-Правила маршрутизации и DNS можно вынести из `base.json` в пресеты — отдельные JSON-файлы
-`singbox/presets/*.json`. Пресет — фрагмент конфига sing-box (любые разделы) с метаданными
-в ключе `_preset`: `title`, `description`, `enabled`, `priority`, `priorities` и
+Routing and DNS rules can be moved out of `base.json` into presets: separate JSON files
+`singbox/presets/*.json`. A preset is a fragment of a sing-box config (any sections) with metadata
+in the `_preset` key: `title`, `description`, `enabled`, `priority`, `priorities` and
 `requires.groups`.
 
-`apply-nodes.sh` склеивает базу, `nodes.json` и включённые пресеты (`PRESETS_DIR`) своим
-склейщиком (`python3 -m nodes_admin.presets assemble`): база выше всех, пресеты — по
-`priority`, а для путей из `priorities` — по нему; внутри пресета порядок не меняется.
-Одинаковые элементы схлопываются, тот же тег с другим содержимым — ошибка. Подробности —
-[`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md#склейка).
+`apply-nodes.sh` merges the base, `nodes.json` and the enabled presets (`PRESETS_DIR`) with its own
+merger (`python3 -m nodes_admin.presets assemble`): the base is above all, presets go by
+`priority`, and for the paths from `priorities` by that; inside a preset the order does not change.
+Identical elements collapse, the same tag with different content is an error. Details:
+[`docs/CONFIG_ASSEMBLY.md`](../../docs/CONFIG_ASSEMBLY.md#merging).
 
 ```sh
 nodes-tester pipeline apply --dry-run
 nodes-tester pipeline apply
 ```
 
-Режим `apply` не загружает подписки: он копирует `singbox/base.json` и применяет базу и
-пресеты к текущему `nodes.json`. `--dry-run` собирает кандидата из редактируемой базы и
-пресетов и выполняет `sing-box check`, ничего не меняя. Этот же режим запускает страница
-«Правила» в админке. Примеры пресетов: `/usr/share/nodes-tester/examples/singbox/presets/`.
+The `apply` mode does not fetch subscriptions: it copies `singbox/base.json` and applies the base and
+presets to the current `nodes.json`. `--dry-run` builds the candidate from the editable base and
+presets and runs `sing-box check` without changing anything. The “Rules” page of the admin panel
+runs the same mode. Preset examples: `/usr/share/nodes-tester/examples/singbox/presets/`.
 
-## Применение и откат
+## Apply and rollback
 
-`apply-nodes.sh` выполняет следующую последовательность:
+`apply-nodes.sh` runs the following sequence:
 
-1. Склейка базы, `nodes.json` и включённых пресетов во временный файл (`nodes_admin.merge`).
-2. `sing-box check` тем бинарником, который установлен на роутере.
-3. Сравнение списка тегов и итогового файла.
-4. Сохранение предыдущего `config.json`.
-5. Замена конфига и перезапуск только при изменениях итогового конфига. Обновлённые `.srs` и
-   source-наборы в `/etc/sing-box/rules/` sing-box версии 1.10 и новее перечитывает без перезапуска.
-6. Проверка связности: URL-тест боевой группы через API-сервис sing-box (`services[type=api]`).
-7. Автоматический возврат предыдущего конфига при потере связности.
+1. Merging the base, `nodes.json` and the enabled presets into a temporary file (`nodes_admin.merge`).
+2. `sing-box check` with the binary installed on the router.
+3. Comparing the list of tags and the resulting file.
+4. Saving the previous `config.json`.
+5. Replacing the config and restarting only when the resulting config changed. sing-box 1.10 and newer
+   rereads updated `.srs` and source sets in `/etc/sing-box/rules/` without a restart.
+6. A connectivity check: a URL test of the working group through the sing-box API service (`services[type=api]`).
+7. An automatic return of the previous config when connectivity is lost.
 
-Если sing-box остановлен из админки (есть флаг `STOP_FLAG`, по умолчанию
-`/var/run/nodes-tester/singbox-stopped`), применение завершается ошибкой без замены конфига и
-без запуска sing-box.
+If sing-box was stopped from the admin panel (the `STOP_FLAG` flag exists, by default
+`/var/run/nodes-tester/singbox-stopped`), the apply ends with an error without replacing the config and
+without starting sing-box.
 
-Невалидный кандидат не заменяет рабочий файл. Перезапуск может кратко оборвать сеть и SSH,
-если доступ идёт через этот же прокси.
+An invalid candidate does not replace the working file. A restart may briefly drop the network and SSH
+if access goes through the same proxy.
 
-С момента сохранения `config.json.prev` скрипт игнорирует TERM, INT и HUP до завершения
-проверки связности или отката. Оркестратор при таймауте ждёт всю группу процессов до
-300 секунд после TERM и только затем посылает SIGKILL оставшимся процессам. Окно
-применения закрывается после завершения всей группы. Перед установкой на роутер проверьте
-это на тестовой конфигурации: запустите применение с заведомо неработающим кандидатом,
-во время проверки связности отправьте TERM группе конвейера и убедитесь, что скрипт
-вернул прежний `config.json`, перезапустил sing-box и сохранил связность. Автоматический
-локальный тест этой секции не запускается: в скрипте указан абсолютный путь
-`/etc/init.d/sing-box`, а `pidof sing-box` и API-сервис проверяют реальный сервис.
+From the moment `config.json.prev` is saved the script ignores TERM, INT and HUP until the
+connectivity check or the rollback is over. On a timeout the orchestrator waits for the whole process group for up to
+300 seconds after TERM and only then sends SIGKILL to the remaining processes. The apply
+window closes after the whole group has finished. Before installing on a router check
+this on a test configuration: start an apply with a deliberately broken candidate,
+send TERM to the pipeline group during the connectivity check and make sure that the script
+returned the previous `config.json`, restarted sing-box and kept connectivity. There is no automatic
+local test of this section: the script has the absolute path
+`/etc/init.d/sing-box`, and `pidof sing-box` and the API service check the real service.
 
-## Резервная копия и откат
+## Backup and rollback
 
 ```sh
 nodes-tester backup [--stable] [--pkg FILE]
 nodes-tester rollback [-y] [--keep-db] [--check] [SNAPSHOT_DIR]
 ```
 
-`backup-nodes-tester.sh` читает `config_dir` и `data_dir` из `/etc/config/nodes-tester` и
-создаёт `/root/backups/nodes-tester-<дата>/`. Сервис не останавливается.
+`backup-nodes-tester.sh` reads `config_dir` and `data_dir` from `/etc/config/nodes-tester` and
+creates `/root/backups/nodes-tester-<date>/`. The service is not stopped.
 
-| Файл снимка | Содержимое |
+| Snapshot file | Contents |
 |---|---|
-| `files.tar.gz` | `config_dir`, `/etc/config/nodes-tester`, `data_dir` без БД, `/etc/sing-box` |
-| `code.tar.gz` | файлы установленного пакета без конфигов |
-| `stats.db.gz` | копия через SQLite backup API с `integrity_check` |
-| `nodes-tester-<версия>.apk` | пакет из `--pkg` или `/root/packages/` |
-| `crontab.txt`, `enabled.txt` | задачи nodes-tester и автозапуск |
-| `MANIFEST`, `SHA256SUMS`, `rollback.sh` | описание, контрольные суммы и скрипт отката |
+| `files.tar.gz` | `config_dir`, `/etc/config/nodes-tester`, `data_dir` without the database, `/etc/sing-box` |
+| `code.tar.gz` | files of the installed package without configs |
+| `stats.db.gz` | a copy through the SQLite backup API with `integrity_check` |
+| `nodes-tester-<version>.apk` | the package from `--pkg` or `/root/packages/` |
+| `crontab.txt`, `enabled.txt` | nodes-tester jobs and autostart |
+| `MANIFEST`, `SHA256SUMS`, `rollback.sh` | description, checksums and the rollback script |
 
-`--stable` переводит ссылку `/root/backups/nodes-tester-stable` на новый снимок. Её по
-умолчанию использует откат.
+`--stable` moves the `/root/backups/nodes-tester-stable` link to the new snapshot. The rollback
+uses it by default.
 
-`rollback-nodes-tester.sh` проверяет контрольные суммы и архивы. `--check` на этом
-останавливается. Полный откат:
+`rollback-nodes-tester.sh` checks the checksums and archives. `--check` stops
+there. A full rollback:
 
-1. Останавливает сервис и сохраняет текущие файлы, crontab и версию в
-   `/root/backups/failed-<дата>/`.
-2. Переустанавливает пакет из снимка. Без файла пакета возвращает код из `code.tar.gz`,
-   но пакетный менеджер продолжит показывать новую версию.
-3. Возвращает конфиги, данные и, без `--keep-db`, БД снимка.
-4. Заменяет в crontab только строки nodes-tester и восстанавливает автозапуск.
-5. Возвращает конфиг sing-box, если он изменился и проходит `sing-box check`; иначе sing-box
-   не трогает.
-6. Запускает сервис.
+1. Stops the service and saves the current files, crontab and version to
+   `/root/backups/failed-<date>/`.
+2. Reinstalls the package from the snapshot. Without a package file it restores the code from `code.tar.gz`,
+   but the package manager keeps showing the new version.
+3. Restores the configs, data and, without `--keep-db`, the snapshot database.
+4. Replaces only the nodes-tester lines in crontab and restores autostart.
+5. Restores the sing-box config if it changed and passes `sing-box check`; otherwise it leaves sing-box
+   alone.
+6. Starts the service.
 
-Старые снимки не удаляются автоматически.
+Old snapshots are not deleted automatically.
 
-## Клиентская ветка
+## Client branch
 
 ```sh
 nodes-tester pipeline clients --dry-run
 nodes-tester pipeline clients
 ```
 
-Она загружает подписки ветви `clients`, создаёт `whnodes.json` и передаёт его в `build-clients.sh`.
-Нужны собственные базовые конфиги `singbox/clients/base_<name>.json` и `clients.list`.
-Загрузите или отредактируйте клиентские базы в разделе «Файлы sing-box». К базе
-добавляются включённые пресеты `singbox/clients/presets/*.json`; локальные наборы правил в них
-заменяются на `remote` с адресом из `singbox/clients/settings.json`. Каждый конфиг проходит
-`sing-box check`; не прошедший остаётся прежним. Готовые конфиги попадают в
-`/etc/sing-box-clients/`; их ссылки раздаёт настроенный отдельно веб-сервер.
-Файлы из `singbox/clients/publish/` проверяются и копируются как есть только при применении,
-не при dry-run.
+It fetches the subscriptions of the `clients` branch, creates `whnodes.json` and passes it to `build-clients.sh`.
+It needs your own base configs `singbox/clients/base_<name>.json` and `clients.list`.
+Upload or edit the client bases in the “sing-box files” section. The enabled presets
+`singbox/clients/presets/*.json` are added to the base; local rule sets in them
+are replaced with `remote` with the address from `singbox/clients/settings.json`. Each config passes
+`sing-box check`; one that fails stays as before. Ready configs go to
+`/etc/sing-box-clients/`; a separately configured web server serves their links.
+Files from `singbox/clients/publish/` are checked and copied as is only when applying,
+not in a dry run.
 
-Режим `apply-clients` пересобирает клиентов по текущему `whnodes.json`, не загружая подписки:
+The `apply-clients` mode rebuilds the clients from the current `whnodes.json` without fetching subscriptions:
 
 ```sh
 nodes-tester pipeline apply-clients --dry-run
 nodes-tester pipeline apply-clients
 ```
 
-## Файлы
+## Files
 
-| Скрипт | Ответственность |
+| Script | Responsibility |
 |---|---|
-| `pipeline.sh` | последовательность fetch, config и применения для router или clients |
-| `apply-nodes.sh` | merge, check, diff, перезапуск, health-check и откат |
-| `update-rules.sh` | обновление rule-set перед сборкой рабочего конфига |
-| `build-clients.sh` | сборка клиентских конфигураций |
-| `backup-nodes-tester.sh` | снимок пакета, конфигов, данных и БД перед обновлением |
-| `rollback-nodes-tester.sh` | откат пакета и данных на снимок |
+| `pipeline.sh` | the fetch, config and apply sequence for router or clients |
+| `apply-nodes.sh` | merge, check, diff, restart, health check and rollback |
+| `update-rules.sh` | updating rule sets before building the working config |
+| `build-clients.sh` | building client configurations |
+| `backup-nodes-tester.sh` | a snapshot of the package, configs, data and database before an update |
+| `rollback-nodes-tester.sh` | rolling the package and data back to a snapshot |
 
-## Переменные окружения
+## Environment variables
 
-`pipeline.sh` использует:
+`pipeline.sh` uses:
 
-- `PROJECT_DIR`: корень установленного кода;
-- `DATA`: каталог raw и кандидатов;
-- `CFG_ROOT`: каталог `config.json` и `singbox/`;
-- `CONFIG_DIR`: база sing-box, правила и клиентские источники в `singbox/`;
-- `SINGBOX`: каталог исходников sing-box (по умолчанию `$CFG_ROOT/singbox`), пресеты — в `presets/`;
-- `CLIENTS_FILE`: список имён клиентских баз.
+- `PROJECT_DIR`: the root of the installed code;
+- `DATA`: the directory of raw files and candidates;
+- `CFG_ROOT`: the directory of `config.json` and `singbox/`;
+- `CONFIG_DIR`: the sing-box base, rules and client sources in `singbox/`;
+- `SINGBOX`: the directory of the sing-box sources (by default `$CFG_ROOT/singbox`), presets are in `presets/`;
+- `CLIENTS_FILE`: the list of client base names.
 
-Пакетная команда заполняет основные пути из UCI. Без неё действуют пути пакета:
+The package command fills the main paths from UCI. Without it the package paths apply:
 `DATA=/opt/nodes-tester`, `CFG_ROOT=/etc/nodes-tester`.

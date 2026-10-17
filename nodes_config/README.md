@@ -1,119 +1,121 @@
+**English** | [Русский](README.ru.md)
+
 # nodes_config
 
-`nodes_config` превращает `raw_nodes.json` ветви в готовый фрагмент конфигурации sing-box. Это
-вторая стадия конвейера.
+`nodes_config` turns the `raw_nodes.json` of a branch into a ready sing-box configuration fragment. It is the
+second stage of the pipeline.
 
 ```text
-raw_nodes.json + config.json (pipeline.<ветвь>, groups, subscriptions[].exclude_names)
-    -> фильтры против падения sing-box
-    -> имена и ключи [node_crc.cred_crc]
-    -> группы из всех нод
-    -> nodes.json (ветвь router) или whnodes.json (ветвь clients)
+raw_nodes.json + config.json (pipeline.<branch>, groups, subscriptions[].exclude_names)
+    -> filters that keep sing-box from failing
+    -> names and keys [node_crc.cred_crc]
+    -> groups of all nodes
+    -> nodes.json (router branch) or whnodes.json (clients branch)
 ```
 
-Выход содержит `outbounds` и, при наличии WireGuard или AWG, `endpoints`. Фрагмент нужно
-объединить с базовой конфигурацией и проверить тем sing-box, который будет его запускать.
+The output has `outbounds` and, when there is WireGuard or AWG, `endpoints`. The fragment must be
+merged with the base configuration and checked with the sing-box that will run it.
 
-## Запуск
+## Running
 
 ```sh
 python3 -m nodes_config -c config.json --branch router \
   --raw data/raw/router.json -o data/nodes.json --json
 ```
 
-`--raw` можно повторять. Флаг `--check` собирает результат и сравнивает его с текущим файлом,
-но ничего не записывает.
+`--raw` can be repeated. The `--check` flag builds the result and compares it with the current file,
+but writes nothing.
 
-Файл заменяется только при изменении JSON. Запись атомарная и защищена lock-файлом. Сводка
-`--json` содержит `changed`, `written`, добавленные и удалённые теги, хеши raw и число
-отброшенных нод по причинам.
+The file is replaced only when the JSON changes. The write is atomic and protected by a lock file. The
+`--json` summary has `changed`, `written`, the added and removed tags, the raw hashes and the number of
+dropped nodes by reason.
 
-## Порядок обработки
+## Processing order
 
-1. Ноды извлекаются из raw с исходным названием и провайдером.
-2. Применяются `exclude_types` ветви и `exclude_names` подписки.
-3. Голые VLESS и VMess без распознанного транспорта или Reality отбрасываются; применяются
-   `exclude_protocols` ветви.
-4. Нода получает имя, `domain_resolver` и ключ.
-5. Одинаковые доступы схлопываются, ссылки `detour` переводятся на новые имена.
-6. Строятся группы.
-7. WireGuard endpoints отделяются от обычных outbounds.
+1. Nodes are extracted from the raw with their original name and provider.
+2. `exclude_types` of the branch and `exclude_names` of the subscription are applied.
+3. Bare VLESS and VMess without a recognised transport or Reality are dropped; `exclude_protocols`
+   of the branch is applied.
+4. The node gets its name, `domain_resolver` and key.
+5. Identical accesses collapse, `detour` references are moved to the new names.
+6. Groups are built.
+7. WireGuard endpoints are separated from regular outbounds.
 
-Страна нигде не определяется и не фильтруется: её измеряет тестер, и он же решает, какая нода
-подходит группе.
+The country is not determined or filtered anywhere: the tester measures it and decides which node
+fits a group.
 
-## Фильтры
+## Filters
 
-Настройки — в разделе `pipeline.router` или `pipeline.clients` файла
+The settings are in the `pipeline.router` or `pipeline.clients` section of
 [`config.json`](../docs/CONFIG.md#pipeline):
 
-- `exclude_types` сравнивается с `type` outbound, например `shadowsocksr`;
-- `exclude_protocols` сравнивается с токенами дескриптора протокола: `xhttp` ловит
-  `vless|xhttp|tls` и `trojan|xhttp|tls`, `wg` — WireGuard и AWG;
-- `exclude_names` у подписки ищет подстроки в исходном названии ноды.
+- `exclude_types` is compared with the outbound `type`, for example `shadowsocksr`;
+- `exclude_protocols` is compared with the tokens of the protocol descriptor: `xhttp` catches
+  `vless|xhttp|tls` and `trojan|xhttp|tls`, `wg` WireGuard and AWG;
+- `exclude_names` of a subscription looks for substrings in the original node name.
 
-`nodes_fetch` эти фильтры не применяет.
+`nodes_fetch` does not apply these filters.
 
-### Совместимость ядра
+### Core compatibility
 
-XHTTP и AWG предназначены для `sing-box-lx`. Для обычного sing-box:
+XHTTP and AWG are meant for `sing-box-lx`. For the regular sing-box:
 
 ```json
 "pipeline": { "router": { "exclude_protocols": ["xhttp", "wg"] } }
 ```
 
-Токен `wg` удаляет и AWG, и обычные WireGuard endpoints. Подробности и проверка кандидата — в
+The `wg` token removes both AWG and regular WireGuard endpoints. Details and the candidate check are in
 [`docs/SING_BOX_COMPATIBILITY.md`](../docs/SING_BOX_COMPATIBILITY.md).
 
-## Имена и DNS
+## Names and DNS
 
-`domain_resolver` ветви задаёт DNS-сервер для резолва домена ноды; тег должен существовать в
-`dns.servers` базового конфига. Для WireGuard поле не добавляется.
+`domain_resolver` of the branch sets the DNS server for resolving the node domain; the tag must exist in
+`dns.servers` of the base config. For WireGuard the field is not added.
 
 ```text
-{подписка}-{протокол}-out [node_crc.cred_crc]
+{subscription}-{protocol}-out [node_crc.cred_crc]
 
 LUNA-vless|reality-out [b40c2d73.0be1f7a2]
 LUNA-vmess|ws|tls-out [eebdd291.5a1c03de]
 AWG-wg-out [61df49c0.9d2e4b17]
 ```
 
-Страны и подписей в имени нет. Свои ноды (подписка `"type": "inline"`) называются так же, по
-тегу подписки.
+There is no country and no labels in the name. Your own nodes (a `"type": "inline"` subscription) are named the same way, by
+the subscription tag.
 
-Ключ в квадратных скобках — CRC32 настроек сервера и CRC32 учётных данных (см.
-[`naming`](../naming/README.md#ключ-ноды)). Новые учётные данные от провайдера меняют только
-вторую часть. Одинаковый доступ из двух подписок (тот же ключ) остаётся одной нодой.
+The key in square brackets is the CRC32 of the server settings and the CRC32 of the credentials (see
+[`naming`](../naming/README.md#node-key)). New credentials from the provider change only
+the second part. The same access from two subscriptions (the same key) stays one node.
 
-## Группы
+## Groups
 
-Ветвь `router` строит группы из раздела [`groups`](../docs/CONFIG.md#groups). Каждая группа —
-selector `{tag}-auto-out`, в котором **все** ноды; какую активировать, решает тестер по проверкам
-группы. Кроме нод в селекторе запасные члены:
+The `router` branch builds groups from the [`groups`](../docs/CONFIG.md#groups) section. Each group is a
+selector `{tag}-auto-out` with **all** nodes; the tester decides which one to activate by the group
+checks. Besides the nodes, the selector has fallback members:
 
-| Группа | Члены сверх нод | По умолчанию |
+| Group | Members on top of the nodes | Default |
 |---|---|---|
-| нестрогая | `failsafe-out` | `failsafe-out` |
-| нестрогая, `direct_fallback` | `failsafe-out`, `direct-out` | `failsafe-out` |
-| строгая (`strict`) | `block-out` | `block-out` |
-| строгая, `direct_fallback` | `block-out`, `direct-out` | `direct-out` |
+| non-strict | `failsafe-out` | `failsafe-out` |
+| non-strict, `direct_fallback` | `failsafe-out`, `direct-out` | `failsafe-out` |
+| strict (`strict`) | `block-out` | `block-out` |
+| strict, `direct_fallback` | `block-out`, `direct-out` | `direct-out` |
 
-- `failsafe-out` — один urltest по всем нодам для всех нестрогих групп; без нод — `direct-out`.
-- `block-out` и `direct-out` берутся из базового конфига sing-box (`base.json`), например
+- `failsafe-out` is one urltest over all nodes for all non-strict groups; without nodes, `direct-out`.
+- `block-out` and `direct-out` are taken from the sing-box base config (`base.json`), for example
   `{"type": "block", "tag": "block-out"}`.
-- `global-auto-out` — selector групп с `in_global`.
-- `nodes-tester` — плоский selector всех нод для тестера и `failsafe-out`: через него монитор
-  зондирует запасной выход групп.
+- `global-auto-out` is a selector of the groups with `in_global`.
+- `nodes-tester` is a flat selector of all nodes for the tester plus `failsafe-out`: through it the monitor
+  probes the fallback outbound of groups.
 
-Поля `selector` и `urltest` ветви добавляются ко всем selector-ам и к `failsafe-out`.
+The `selector` and `urltest` fields of the branch are added to all selectors and to `failsafe-out`.
 
-Ветвь `clients` строит одну группу: `global-auto-out` со всеми нодами (по умолчанию
-`failsafe-out`) и `failsafe-out` — клиентские конфиги ссылаются только на неё.
+The `clients` branch builds one group: `global-auto-out` with all nodes (`failsafe-out` by
+default) and `failsafe-out`; client configs refer only to it.
 
-## Карта кода
+## Code map
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `__main__.py` | CLI, сравнение и атомарная запись |
-| `build.py` | фильтры, имена, схлопывание доступов, сборка фрагмента |
-| `groups.py` | selector и urltest групп |
+| `__main__.py` | CLI, comparison and atomic write |
+| `build.py` | filters, names, collapsing accesses, building the fragment |
+| `groups.py` | group selectors and urltest |

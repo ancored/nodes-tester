@@ -1,19 +1,21 @@
+**English** | [Русский](README.ru.md)
+
 # nodes_fetch
 
-`nodes_fetch` загружает источники нод и преобразует их в промежуточный
-`raw_nodes.json`. Это первая стадия конвейера. Она не переименовывает ноды, не строит
-группы и не решает, поддерживает ли их установленный sing-box.
+`nodes_fetch` fetches node sources and turns them into the intermediate
+`raw_nodes.json`. It is the first stage of the pipeline. It does not rename nodes, does not build
+groups and does not decide whether the installed sing-box supports them.
 
 ```text
-config.json (subscriptions ветви) + URL, файлы, happ, папки AWG, inline
+config.json (subscriptions of the branch) + URLs, files, happ, AWG folders, inline
     -> nodes_fetch
     -> raw_nodes.json
 ```
 
-Следующая стадия, [`nodes_config`](../nodes_config/README.md), применяет фильтры и создаёт
-фрагмент конфигурации sing-box.
+The next stage, [`nodes_config`](../nodes_config/README.md), applies filters and creates
+a sing-box configuration fragment.
 
-## Запуск
+## Running
 
 ```sh
 python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json
@@ -24,128 +26,128 @@ python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json \
 python3 -m nodes_fetch -c config.json --dry-run --json
 ```
 
-Параметры:
+Options:
 
-| Параметр | Назначение |
+| Option | Purpose |
 |---|---|
-| `-c`, `--config` | `config.json`: подписки и раздел `pipeline.fetch` |
-| `--branch` | `router` (по умолчанию) или `clients`: подписки этой ветви и `both` |
-| `-o`, `--output` | выходной `raw_nodes.json` |
-| `--only TAG` | обновить указанный источник, остальные взять из прошлого raw |
-| `--dry-run` | загрузить и разобрать источники без записи файла |
-| `--force` | записать результат, даже если сработал защитный порог |
-| `--json` | вывести машинную сводку в stdout; обычный журнал остаётся в stderr |
-| `--device`, `--happ-keys` | пути `device.json` и `happ-keys.json` вместо соседних с `config.json` |
+| `-c`, `--config` | `config.json`: subscriptions and the `pipeline.fetch` section |
+| `--branch` | `router` (default) or `clients`: the subscriptions of this branch and `both` |
+| `-o`, `--output` | output `raw_nodes.json` |
+| `--only TAG` | update the given source, take the others from the previous raw |
+| `--dry-run` | fetch and parse the sources without writing the file |
+| `--force` | write the result even if the guard threshold triggered |
+| `--json` | print a machine summary to stdout; the regular log stays in stderr |
+| `--device`, `--happ-keys` | paths of `device.json` and `happ-keys.json` instead of the ones next to `config.json` |
 
-Коды завершения: `0` — успех, `2` — защитная проверка отказалась заменять прошлый raw,
-`1` — ошибка. Запись атомарная и защищена lock-файлом.
+Exit codes: `0` success, `2` the guard check refused to replace the previous raw,
+`1` error. The write is atomic and protected by a lock file.
 
-## Источники
+## Sources
 
-Подписки — раздел [`subscriptions`](../docs/CONFIG.md#subscriptions) файла `config.json`. Каждая
-запись содержит уникальный `tag` и один источник:
+Subscriptions are the [`subscriptions`](../docs/CONFIG.md#subscriptions) section of `config.json`. Each
+entry has a unique `tag` and one source:
 
-- `url`: HTTP(S), отдельная share-ссылка, `sub://` или `happ://`;
-- `file`: локальная текстовая подписка или Clash YAML;
-- `type: "folder"`: каталог файлов, сейчас используется для AWG `.conf`;
-- `type: "inline"`: свои outbound-ы sing-box прямо в `outbounds`.
+- `url`: HTTP(S), a single share link, `sub://` or `happ://`;
+- `file`: a local text subscription or Clash YAML;
+- `type: "folder"`: a directory of files, currently used for AWG `.conf`;
+- `type: "inline"`: your own sing-box outbounds right in `outbounds`.
 
-Поддерживаются `enabled`, `branch`, `user_agent`, `happ_headers` и `send_device`. Относительные
-пути считаются от каталога `config.json`.
+`enabled`, `branch`, `user_agent`, `happ_headers` and `send_device` are supported. Relative
+paths are counted from the `config.json` directory.
 
-### Устройство и заголовки панелей
+### Device and panel headers
 
-Панели с лимитом устройств (Marzban, Remnawave и другие) считают устройством каждый новый
-`X-Hwid`. У установки свой HWID в `device.json` рядом с `config.json`, общий для обеих ветвей
-(`--device` задаёт путь явно). Файл создаётся при первой загрузке случайным.
+Panels with a device limit (Marzban, Remnawave and others) count every new
+`X-Hwid` as a device. The installation has its own HWID in `device.json` next to `config.json`, shared by both branches
+(`--device` sets the path explicitly). The file is created with a random value on the first fetch.
 
-happ-подписки отправляют HWID и описание устройства всегда; `happ_headers` подписки
-переопределяет любой заголовок, включая `X-Hwid`. URL-подписки отправляют их только при
-`send_device: true`: часть панелей меняет ответ или занимает слот устройства.
+happ subscriptions always send the HWID and the device description; `happ_headers` of a subscription
+overrides any header, including `X-Hwid`. URL subscriptions send them only with
+`send_device: true`: some panels change the answer or take a device slot.
 
-Из ответа сохраняются метаданные панели — в `sources[].meta` raw: `Subscription-Userinfo`
+The panel metadata from the answer is kept in `sources[].meta` of the raw: `Subscription-Userinfo`
 (`upload`, `download`, `total`, `expire`), `Profile-Title` (`title`), `Announce`
-(`announce`), `Support-Url`, `Profile-Web-Page-Url`, `Profile-Update-Interval`. Значения
-`base64:…` декодируются. При сбое загрузки остаются метаданные последней удачной.
+(`announce`), `Support-Url`, `Profile-Web-Page-Url`, `Profile-Update-Interval`. `base64:…`
+values are decoded. When a fetch fails, the metadata of the last successful one stays.
 
-Сеть, тайм-аут, HTTP 429 и 5xx повторяются с паузами 2, 10 и 30 с: разовый сбой панели не
-должен оставлять подписку без обновления до следующего прогона.
+Network errors, timeouts, HTTP 429 and 5xx are retried with pauses of 2, 10 and 30 s: a single panel failure
+must not leave a subscription without an update until the next run.
 
-Загрузкой управляет раздел [`pipeline.fetch`](../docs/CONFIG.md#pipeline):
+The fetch is controlled by the [`pipeline.fetch`](../docs/CONFIG.md#pipeline) section:
 
-| Поле | По умолчанию | Назначение |
+| Field | Default | Purpose |
 |---|---:|---|
-| `timeout` | `2m` | общий тайм-аут чтения |
-| `retries` | 3 | повторные HTTP-попытки |
-| `proxy` | — | прокси для загрузки, например `socks5://127.0.0.1:2080` |
-| `keep_stale` | `48h` | сколько можно использовать last-good данные упавшего источника |
-| `min_ratio` | 0.5 | минимальная доля нод относительно прошлого raw |
+| `timeout` | `2m` | overall read timeout |
+| `retries` | 3 | HTTP retries |
+| `proxy` | — | proxy for downloading, for example `socks5://127.0.0.1:2080` |
+| `keep_stale` | `48h` | how long the last-good data of a failed source can be used |
+| `min_ratio` | 0.5 | the minimum share of nodes relative to the previous raw |
 
-Ошибка одного источника не останавливает остальные. Если есть пригодный прошлый raw,
-источник может перейти в состояние `stale`. После сборки guard сравнивает общее число нод
-с прошлым файлом и при резком падении оставляет старый файл целым.
+An error of one source does not stop the others. If there is a usable previous raw,
+the source can go into the `stale` state. After the build the guard compares the total number of nodes
+with the previous file and keeps the old file intact on a sharp drop.
 
 
-## Парсеры
+## Parsers
 
-Парсеры находятся в `nodes_fetch/parsers`: `parse_link` разбирает строку подписки,
-`FOLDER_FORMATS` — каталоги файлов (AWG), `clash.convert` — записи `proxies` Clash/mihomo,
-`xray_json` — JSON-подписка Xray.
+The parsers are in `nodes_fetch/parsers`: `parse_link` parses a subscription line,
+`FOLDER_FORMATS` directories of files (AWG), `clash.convert` the `proxies` entries of Clash/mihomo,
+`xray_json` an Xray JSON subscription.
 
-Поддерживаются VLESS, VMess, Trojan, Shadowsocks (SIP002 и прежний формат), Hysteria,
-Hysteria2, TUIC, AnyTLS, SOCKS, HTTP/HTTPS, WireGuard и AWG. Содержимое подписки
-распознаётся само: share-ссылки построчно, base64 от них, Clash YAML, JSON sing-box или
-JSON-подписка Xray. ShadowsocksR и другие типы, которых нет в sing-box, пропускаются.
+Supported are VLESS, VMess, Trojan, Shadowsocks (SIP002 and the old format), Hysteria,
+Hysteria2, TUIC, AnyTLS, SOCKS, HTTP/HTTPS, WireGuard and AWG. The subscription content
+is recognised automatically: share links line by line, base64 of them, Clash YAML, sing-box JSON or
+an Xray JSON subscription. ShadowsocksR and other types that sing-box does not have are skipped.
 
-JSON-подписку Xray (массив полных конфигов клиента) отдают панели вроде Remnawave, когда
-User-Agent не похож на sing-box или Clash. По конфигу на пункт меню, имя ноды — `remarks`.
-Ноды, которые повторяются в нескольких пунктах («Авто», пункты с резервным сервером),
-берутся один раз с именем пункта, где нода стоит одна. Mux Xray (mux.cool) не переносится.
-Часть панелей выдаёт случайный `short_id` Reality из нескольких допустимых: от загрузки к
-загрузке у такой ноды меняется вторая часть ключа (`cred_crc`), а нода и её история в тестере
-остаются прежними (`node_crc`).
+An Xray JSON subscription (an array of full client configs) is served by panels like Remnawave when
+the User-Agent does not look like sing-box or Clash. There is one config per menu item, the node name is `remarks`.
+Nodes repeated in several items (“Auto”, items with a backup server)
+are taken once with the name of the item where the node stands alone. Xray Mux (mux.cool) is not carried over.
+Some panels give a random Reality `short_id` out of several allowed ones: from fetch to
+fetch such a node changes the second part of its key (`cred_crc`), while the node and its history in the tester
+stay the same (`node_crc`).
 
-Нераспознанная или битая строка пропускается с записью в журнал, подписка из-за неё не
-падает. Если в ссылке нет имени, тегом становится `тип адрес:порт`.
+An unrecognised or broken line is skipped with a log entry; the subscription does not
+fail because of it. If a link has no name, the tag becomes `type address:port`.
 
-## Подписки Happ
+## Happ subscriptions
 
-Ссылка `happ://crypt…/…` содержит зашифрованный адрес подписки. Ключи расшифровки
-принадлежат приложению Happ и в nodes-tester не входят. Они скачиваются из
-`pipeline.fetch.happ_keys_url` config.json — URL или путь к файлу `keys.rs` либо JSON
-`{"crypt": [...], "crypt5": {...}}`. По умолчанию это `src/keys.rs` проекта
-[Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr). Источник меняется в админке на
-вкладке подписок.
+A `happ://crypt…/…` link contains an encrypted subscription address. The decryption keys
+belong to the Happ app and are not part of nodes-tester. They are downloaded from
+`pipeline.fetch.happ_keys_url` of config.json: a URL or a path to a `keys.rs` file or a JSON
+`{"crypt": [...], "crypt5": {...}}`. By default it is `src/keys.rs` of the
+[Omegaplexx/hpwnr](https://github.com/Omegaplexx/hpwnr) project. The source is changed in the admin panel on the
+subscriptions tab.
 
-Ключи кэшируются в `happ-keys.json` рядом с `device.json`. Кэш обновляется, если его нет
-или для ссылки не нашлось ключа, но не чаще раза в 6 часов. Подписка скачивается с
-заголовками мобильного Happ; их можно переопределить в `happ_headers`.
+The keys are cached in `happ-keys.json` next to `device.json`. The cache is refreshed if it is missing
+or no key was found for a link, but not more often than once in 6 hours. The subscription is downloaded with the
+headers of the mobile Happ; they can be overridden in `happ_headers`.
 
-## XHTTP и AWG
+## XHTTP and AWG
 
-`nodes_fetch` намеренно разбирает XHTTP и AWG, даже если на машине установлен обычный
+`nodes_fetch` parses XHTTP and AWG on purpose, even if the machine has the regular
 sing-box:
 
-- XHTTP становится транспортом `type: "xhttp"` у VLESS или Trojan;
-- каждый AWG `.conf` становится WireGuard endpoint с расширенными полями AmneziaWG;
-- имя AWG-файла из двух букв сохраняется как `cc_hint`, например `de.conf` даёт `de`; сборка и
-  тестер его не используют.
+- XHTTP becomes a `type: "xhttp"` transport of VLESS or Trojan;
+- each AWG `.conf` becomes a WireGuard endpoint with the extended AmneziaWG fields;
+- a two-letter AWG file name is kept as `cc_hint`, for example `de.conf` gives `de`; the build and
+  the tester do not use it.
 
-Эти расширения предназначены для `sing-box-lx`. Обычный sing-box их не принимает.
-Парсер не отбрасывает их сам, потому что raw может использоваться несколькими сборками.
+These extensions are meant for `sing-box-lx`. The regular sing-box does not accept them.
+The parser does not drop them itself, because the raw may be used by several builds.
 
-Для обычного sing-box задайте фильтр следующей стадии в `config.json`:
+For the regular sing-box set a filter of the next stage in `config.json`:
 
 ```json
 "pipeline": { "router": { "exclude_protocols": ["xhttp", "wg"] } }
 ```
 
-Подробности, включая различие AWG и обычного WireGuard, приведены в
-[руководстве по совместимости](../docs/SING_BOX_COMPATIBILITY.md).
+Details, including the difference between AWG and regular WireGuard, are in the
+[compatibility guide](../docs/SING_BOX_COMPATIBILITY.md).
 
-## Формат `raw_nodes.json`
+## The `raw_nodes.json` format
 
-Контракт находится в [`nodes_common/raw.py`](../nodes_common/raw.py) и
+The contract is in [`nodes_common/raw.py`](../nodes_common/raw.py) and
 [`schemas/raw_nodes.schema.json`](../schemas/raw_nodes.schema.json).
 
 ```json
@@ -166,19 +168,19 @@ sing-box:
 }
 ```
 
-`outbound` не содержит `tag` и служебные поля с `_`. Исходное имя хранится в `title`.
-`nodes_hash` считается от канонического JSON массива `nodes` и меняется только при смене
-его содержимого.
+`outbound` has no `tag` and no service fields starting with `_`. The original name is kept in `title`.
+`nodes_hash` is computed from the canonical JSON of the `nodes` array and changes only when
+its content changes.
 
-## Карта кода
+## Code map
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `__main__.py` | CLI, lock, guard и атомарная запись |
-| `fetch.py` | подписки ветви из config.json, last-good и итоговая сводка |
-| `sources.py` | URL, файл, папка, inline и happ как источники |
-| `util.py` | HTTP-загрузка подписок |
-| `happ.py` | раскрытие и загрузка happ-подписок |
-| `happ_crypto.py`, `_chacha.py` | расшифровка `happ://crypt…` (RSA, ChaCha20-Poly1305) |
-| `happ_keys.py` | источник и кэш ключей Happ |
-| `parsers/` | share-ссылки, Clash и JSON Xray → объекты sing-box; `_common.py` — адрес, TLS, транспорты, XHTTP |
+| `__main__.py` | CLI, lock, guard and atomic write |
+| `fetch.py` | the subscriptions of the branch from config.json, last-good and the summary |
+| `sources.py` | URL, file, folder, inline and happ as sources |
+| `util.py` | HTTP download of subscriptions |
+| `happ.py` | expanding and downloading happ subscriptions |
+| `happ_crypto.py`, `_chacha.py` | decrypting `happ://crypt…` (RSA, ChaCha20-Poly1305) |
+| `happ_keys.py` | source and cache of the Happ keys |
+| `parsers/` | share links, Clash and Xray JSON → sing-box objects; `_common.py`: address, TLS, transports, XHTTP |

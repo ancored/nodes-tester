@@ -1,68 +1,70 @@
+**English** | [Русский](README.ru.md)
+
 # naming
 
-`naming` — общий источник правил идентичности нод для `nodes_config`, `nodes_tester` и
-дашборда. Он отвечает за протокол, ключ ноды и обратный разбор тега.
+`naming` is the shared source of node identity rules for `nodes_config`, `nodes_tester` and
+the dashboard. It is responsible for the protocol, the node key and parsing a tag back.
 
-Если генератор и тестер используют разные правила, одна физическая нода превращается для
-системы в две разные. Поэтому изменения этого пакета требуют проверки всего конвейера.
+If the generator and the tester used different rules, one physical node would become two different
+ones for the system. That is why changes to this package require checking the whole pipeline.
 
-## Формат имени
+## Name format
 
 ```text
 {provider}-{protocol}-out [node_crc.cred_crc]
 ```
 
-Пример:
+Example:
 
 ```text
 LUNA-vless|grpc|reality-out [8d31a426.0be1f7a2]
 ```
 
-`identity.parse_node` разбирает тег справа налево: протокол — хвост после последнего дефиса,
-поэтому провайдер может содержать дефисы. Страны в имени нет: название у провайдера часто
-не совпадает с реальной страной выхода, поэтому страну измеряет тестер.
+`identity.parse_node` parses a tag from right to left: the protocol is the tail after the last hyphen,
+so the provider may contain hyphens. There is no country in the name: the provider's name often
+does not match the real exit country, so the tester measures the country.
 
-## Дескриптор протокола
+## Protocol descriptor
 
-`protocol.node_protocol` строит значение только из настроек outbound:
+`protocol.node_protocol` builds the value from the outbound settings only:
 
 ```text
 vless + Reality        -> vless|reality
 vless + gRPC + Reality -> vless|grpc|reality
 vmess + WebSocket + TLS -> vmess|ws|tls
 hysteria2              -> hy2
-wireguard или AWG      -> wg
+wireguard or AWG       -> wg
 ```
 
-Этот дескриптор используется в имени и в `exclude_protocols` ветви сборки. Поэтому фильтр
-`xhttp` работает независимо от провайдера, а `wg` охватывает WireGuard и AWG.
+This descriptor is used in the name and in `exclude_protocols` of the build branch. So the
+`xhttp` filter works regardless of the provider, and `wg` covers both WireGuard and AWG.
 
-## Ключ ноды
+## Node key
 
-Outbound делится на две части (`crc.split_payload`):
+An outbound is split into two parts (`crc.split_payload`):
 
-- настройки сервера — тип, адрес, порт, транспорт, TLS/SNI, публичный ключ Reality, `flow`,
-  метод шифрования и т. п.;
-- учётные данные аккаунта — `uuid`, `password`, `auth_str`, `username`, `user`,
-  `private_key`, `private_key_passphrase`, у WireGuard `address` (адрес клиента в туннеле) и
-  `peers[].pre_shared_key`, а также `tls.reality.short_id`.
+- server settings: type, address, port, transport, TLS/SNI, the Reality public key, `flow`,
+  encryption method and so on;
+- account credentials: `uuid`, `password`, `auth_str`, `username`, `user`,
+  `private_key`, `private_key_passphrase`, for WireGuard `address` (the client address in the tunnel) and
+  `peers[].pre_shared_key`, as well as `tls.reality.short_id`.
 
-Пароль `obfs` у Hysteria2 общий для сервера и остаётся в настройках, `peers[].address` у
-WireGuard — адрес сервера, тоже в настройках.
+The Hysteria2 `obfs` password is shared by the server and stays in the settings, WireGuard `peers[].address`
+is the server address, also in the settings.
 
-`crc.node_key` считает CRC32 каждой части от канонического JSON (`crc.canonical`) и
-возвращает ключ `node_crc.cred_crc`. Не входят `tag`, `domain_resolver` и служебные поля с `_`.
+`crc.node_key` computes the CRC32 of each part from the canonical JSON (`crc.canonical`) and
+returns the key `node_crc.cred_crc`. `tag`, `domain_resolver` and service fields starting with `_` are not included.
 
-Ключ связывает ноду в SQLite, URL карточки и истории. Провайдер перевыпустил учётные данные —
-меняется только `cred_crc`: тестер узнаёт ноду по `node_crc` и переносит на новый доступ
-её страну, проверки и рейтинг. Изменение сериализации или списка учётных данных меняет
-ключи всех нод, поэтому требует обновления golden-тестов и сброса БД.
+The key links the node in SQLite, the card URL and the history. When the provider reissues the credentials,
+only `cred_crc` changes: the tester recognises the node by `node_crc` and carries over to the new access
+its country, checks and rating. A change of the serialisation or the list of credentials changes the
+keys of all nodes, so it requires updating the golden tests and resetting the database.
 
-## Файлы
+## Files
 
-| Файл | Ответственность |
+| File | Responsibility |
 |---|---|
-| `identity.py` | `NodeIdentity`, разбор тегов нод |
-| `protocol.py` | дескриптор протокола и определение Reality/TLS |
-| `regions.py` | коды стран ISO alpha-3 → alpha-2 (ответ Google) |
-| `crc.py` | настройки и учётные данные ноды, ключ `node_crc.cred_crc` |
+| `identity.py` | `NodeIdentity`, parsing node tags |
+| `protocol.py` | the protocol descriptor and Reality/TLS detection |
+| `regions.py` | ISO alpha-3 → alpha-2 country codes (Google's answer) |
+| `crc.py` | node settings and credentials, the `node_crc.cred_crc` key |

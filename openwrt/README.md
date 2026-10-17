@@ -1,53 +1,55 @@
-# Установка и первый запуск на OpenWrt
+**English** | [Русский](README.ru.md)
 
-[О проекте](../README.md) · [Админка и повседневная работа](../docs/USAGE.md)
+# Installation and first run on OpenWrt
 
-Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
+[About the project](../README.md) · [Admin panel and everyday work](../docs/USAGE.md)
 
-Инструкция относится к [релизу `v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). Нужен sing-box 1.14 или новее.
+A guide for a new installation next to a running sing-box. If the router already has a manual nodes-tester installation, first save the configs and the database and stop the old service: two instances must not control the same selectors. Do not install the package on top of the old installation blindly.
 
-## Быстрая установка
+The guide applies to [release `v0.6.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.6.0). sing-box 1.14 or newer is required.
 
-На чистом OpenWrt 25.x (нет ни sing-box, ни nodes-tester) всё ставит один скрипт
-[`install.sh`](install.sh). Подписку можно не указывать и добавить потом в админке:
+## Quick install
+
+On a clean OpenWrt 25.x (neither sing-box nor nodes-tester installed) one script installs everything:
+[`install.sh`](install.sh). The subscription is optional and can be added later in the admin panel:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/install.sh | sh -s -- 'https://provider.example/sub/YOUR-TOKEN'
 ```
 
-Скрипт:
+The script:
 
-- скачивает последний релиз [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) под архитектуру
-  роутера, сверяет `SHA256SUMS` и ставит `/usr/bin/sing-box` со службой `/etc/init.d/sing-box`;
-  версию можно задать: `SINGBOX_LX_VERSION=1.14.3-lx.20`; служба поднимает лимит открытых
-  файлов до 65535;
-- подключает ключ и репозиторий пакетов и ставит `nodes-tester`;
-- пишет минимальную базу `singbox/base.json`, которой не нужны подписки: TUN (`auto_route`,
-  `auto_redirect`) перехватывает трафик роутера и LAN, `sniff` и `hijack-dns`, локальная сеть —
-  через `direct-lan`, SOCKS для тестера, API-сервис со случайным секретом. DNS — системный
-  резолвер роутера (`type: local`); dnsmasq исключён из TUN (`exclude_uid`), иначе его запросы к
-  провайдеру зациклились бы. Лог sing-box пишется в `/var/log/sing-box.log`: по нему монитор
-  тестера считает ошибки соединений групп. Единственный пресет `presets/direct.json` отправляет
-  весь трафик напрямую — нод в маршрутах нет, пока вы не добавите свои правила;
-- проверяет связность через TUN (DNS и HTTPS); если её нет, останавливает и выключает sing-box,
-  и сеть работает как до установки;
-- добавляет в cron очистку лога sing-box больше 5 МБ (`/var/log` на OpenWrt — в оперативной
-  памяти); `VACUUM` базы тестер делает сам по `storage.vacuum`;
-- включает тестер и админку на адресе LAN (порт `8088`) и печатает токен администратора;
-- с подпиской сразу выполняет `nodes-tester pipeline router` и включает расписание сборки роутера
-  (`pipeline.router`, 03:00). Без неё — добавьте подписку в «Подписках», нажмите «Применить» в
-  «Конвейере» и включите там расписание.
+- downloads the latest [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) release for the router
+  architecture, verifies `SHA256SUMS` and installs `/usr/bin/sing-box` with the `/etc/init.d/sing-box` service;
+  the version can be set: `SINGBOX_LX_VERSION=1.14.3-lx.20`; the service raises the open files limit
+  to 65535;
+- adds the key and the package repository and installs `nodes-tester`;
+- writes a minimal base `singbox/base.json` that needs no subscriptions: TUN (`auto_route`,
+  `auto_redirect`) captures router and LAN traffic, `sniff` and `hijack-dns`, the local network goes
+  through `direct-lan`, a SOCKS inbound for the tester, the API service with a random secret. DNS is the
+  router system resolver (`type: local`); dnsmasq is excluded from TUN (`exclude_uid`), otherwise its queries
+  to the provider would loop. The sing-box log goes to `/var/log/sing-box.log`: the tester monitor
+  counts group connection errors from it. The only preset `presets/direct.json` sends
+  all traffic directly: there are no nodes in the routes until you add your own rules;
+- checks connectivity through TUN (DNS and HTTPS); without it, stops and disables sing-box,
+  and the network works as before the installation;
+- adds a cron job that empties the sing-box log once it exceeds 5 MB (`/var/log` on OpenWrt is in
+  RAM); the tester runs `VACUUM` of its database itself by `storage.vacuum`;
+- enables the tester and the admin panel on the LAN address (port `8088`) and prints the administrator token;
+- with a subscription, runs `nodes-tester pipeline router` right away and enables the router build schedule
+  (`pipeline.router`, 03:00). Without one, add a subscription in “Subscriptions”, press “Apply” in
+  “Pipeline” and enable the schedule there.
 
-Если sing-box или nodes-tester уже стоят, скрипт ничего не меняет — используйте ручную
-установку ниже. Чтобы трафик шёл через ноды, выключите пресет `direct` и возьмите правила зон и `route.final` из
-[библиотеки пресетов](../docs/CONFIG_ASSEMBLY.md#библиотека-пресетов); kill switch скрипт не ставит (см.
-[модель безопасности](../docs/SECURITY_MODEL.md)).
+If sing-box or nodes-tester is already installed, the script changes nothing: use the manual
+installation below. To send traffic through nodes, turn off the `direct` preset and take the zone rules and `route.final` from the
+[preset library](../docs/CONFIG_ASSEMBLY.md#preset-library); the script does not install a kill switch (see
+the [security model](../docs/SECURITY_MODEL.md)).
 
-## 1. Установить пакет
+## 1. Install the package
 
-Пакет для OpenWrt 25.x подписан ключом проекта. Один раз добавьте открытый ключ и репозиторий
-пакетов; дальше установка и обновление идут обычным `apk`, без `--allow-untrusted`. Команды
-выполняются на роутере (`ssh root@192.168.1.1`, адрес замените своим):
+The OpenWrt 25.x package is signed with the project key. Add the public key and the package repository
+once; after that installation and updates go through regular `apk`, without `--allow-untrusted`. Run
+the commands on the router (`ssh root@192.168.1.1`, use your address):
 
 ```sh
 wget -O /etc/apk/keys/nodes-tester.pem https://raw.githubusercontent.com/ancored/nodes-tester/master/openwrt/nodes-tester.pem
@@ -56,37 +58,37 @@ apk update
 apk add nodes-tester
 ```
 
-Ключ ([`nodes-tester.pem`](nodes-tester.pem), ECDSA P-256) — это решение доверять пакетам
-проекта: `apk` проверяет им подпись индекса и самих пакетов и откажется ставить подменённый или
-повреждённый файл. Проверьте, что скачанный ключ совпадает с ключом в репозитории.
+The key ([`nodes-tester.pem`](nodes-tester.pem), ECDSA P-256) is a decision to trust the project
+packages: `apk` checks the signature of the index and of the packages with it and refuses to install a substituted or
+damaged file. Check that the downloaded key matches the key in the repository.
 
-Без репозитория можно поставить файл из [релиза](https://github.com/ancored/nodes-tester/releases/latest):
-скопируйте его на роутер (`scp -O nodes-tester-<версия>.apk root@192.168.1.1:/tmp/`) и
-выполните `apk add /tmp/nodes-tester-<версия>.apk` — с установленным ключом подпись тоже
-проверяется. `.apk` нельзя ставить на OpenWrt 24.10, где используется `.ipk` собственного
-выпуска; `.ipk` не подписываются.
+Without the repository you can install the file from a [release](https://github.com/ancored/nodes-tester/releases/latest):
+copy it to the router (`scp -O nodes-tester-<version>.apk root@192.168.1.1:/tmp/`) and
+run `apk add /tmp/nodes-tester-<version>.apk`; with the key installed the signature is
+checked as well. The `.apk` cannot be installed on OpenWrt 24.10, which uses an `.ipk` of its own
+build; `.ipk` packages are not signed.
 
-Зависимости Python устанавливаются из фидов OpenWrt; PySocks входит в пакет. Не смешивайте эти зависимости с копиями, установленными через `pip`. Если раньше использовали `pip`, сначала разберите старую установку и восстановите пакетные зависимости.
+Python dependencies are installed from the OpenWrt feeds; PySocks is bundled in the package. Do not mix these dependencies with copies installed through `pip`. If you used `pip` before, first remove the old installation and restore the package dependencies.
 
-Для самостоятельной сборки нужен Docker: из корня исходников выполните `openwrt/build.sh` для SDK по умолчанию либо `openwrt/build.sh mediatek-filogic-24.10.4` для `.ipk`. Результат появится в `dist/`. SDK должен соответствовать версии целевого OpenWrt. Чтобы подписать `.apk` своим ключом, задайте `SIGN_KEY=/путь/private-key.pem` (ключ создаётся командой `openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem`) и положите соответствующий открытый ключ в `/etc/apk/keys/` роутера. `openwrt/publish-repo.sh` выкладывает подписанные пакеты с индексом в ветку `gh-pages`.
+Building it yourself needs Docker: from the source root run `openwrt/build.sh` for the default SDK or `openwrt/build.sh mediatek-filogic-24.10.4` for an `.ipk`. The result appears in `dist/`. The SDK must match the target OpenWrt version. To sign the `.apk` with your own key, set `SIGN_KEY=/path/private-key.pem` (the key is created with `openssl ecparam -name prime256v1 -genkey -noout -out private-key.pem`) and put the matching public key into `/etc/apk/keys/` on the router. `openwrt/publish-repo.sh` publishes the signed packages with an index to the `gh-pages` branch.
 
-## 2. Найти файлы и выбрать хранилище
+## 2. Find the files and choose the storage
 
-| Где | Что настроить |
+| Where | What to configure |
 |---|---|
 | `/etc/config/nodes-tester` | UCI: `main.config_dir`, `main.data_dir`, `tester.enabled` |
-| `/etc/nodes-tester/config.json` | Все настройки: подписки, группы и проверки, тестер, конвейер и расписание, админка ([описание полей](../docs/CONFIG.md)) |
-| `/etc/nodes-tester/singbox/` | База, правила и клиентские файлы sing-box |
-| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Собранные ноды и группы роутера и клиентов |
-| `/opt/nodes-tester/results/stats.db` | Результаты и статистика; создаются при работе |
+| `/etc/nodes-tester/config.json` | All settings: subscriptions, groups and checks, tester, pipeline and schedule, admin panel ([field reference](../docs/CONFIG.md)) |
+| `/etc/nodes-tester/singbox/` | sing-box base, rules and client files |
+| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Built nodes and groups of the router and the clients |
+| `/opt/nodes-tester/results/stats.db` | Results and statistics; created while running |
 
-Это пути по умолчанию. Если меняете их в UCI, скорректируйте дальнейшие команды и связанные пути в JSON. `data_dir` должен быть на постоянном носителе; `/tmp` и `/var` на OpenWrt находятся в RAM. На роутере с небольшим флешем используйте подходящий USB-носитель.
+These are the default paths. If you change them in UCI, adjust the commands below and the related paths in JSON. `data_dir` must be on persistent storage; `/tmp` and `/var` on OpenWrt are in RAM. On a router with a small flash use a suitable USB drive.
 
-Установщик создаёт `config.json` из шаблона со случайным `admin.token`. Сервис пока выключен. `config.json` и `singbox/` входят в список сохраняемых при обновлении конфигов пакета; проверьте их содержимое перед первым применением.
+The installer creates `config.json` from the template with a random `admin.token`. The service is off for now. `config.json` and `singbox/` are in the package list of configs kept on update; check their content before the first apply.
 
-## 3. Настроить подписку и собрать ноды
+## 3. Configure the subscription and build the nodes
 
-В разделе `subscriptions` файла `config.json` оставьте свои источники; удалите демонстрационные URL и записи, которыми не пользуетесь. Минимальный пример:
+In the `subscriptions` section of `config.json` keep your sources; remove the demo URLs and entries you do not use. A minimal example:
 
 ```json
 "subscriptions": [
@@ -94,25 +96,25 @@ apk add nodes-tester
 ]
 ```
 
-`tag` задаёт уникальное имя провайдера в интерфейсе. Подписок может быть несколько; также поддерживаются `happ://`, локальные файлы, папки AWG и свои outbound-ы (`"type": "inline"`). Все URL и ключи остаются только на роутере.
+`tag` sets the unique provider name in the interface. There can be several subscriptions; `happ://`, local files, AWG folders and your own outbounds (`"type": "inline"`) are supported as well. All URLs and keys stay on the router only.
 
-Проверьте `pipeline.router.domain_resolver`: по умолчанию это `bootstrap`, такой DNS-тег должен существовать в вашей конфигурации sing-box. Фильтры сборки задаются там же, в `pipeline.router`.
+Check `pipeline.router.domain_resolver`: it is `bootstrap` by default, and such a DNS tag must exist in your sing-box configuration. Build filters are set in the same place, in `pipeline.router`.
 
-### Выбрать совместимое ядро
+### Choose a compatible core
 
-Парсер сохраняет XHTTP и AmneziaWG. Эти ноды требуют `sing-box-lx`; обычный sing-box их не
-принимает. Если используется обычное ядро, добавьте в `config.json`:
+The parser keeps XHTTP and AmneziaWG. These nodes require `sing-box-lx`; the regular sing-box does not
+accept them. With the regular core add to `config.json`:
 
 ```json
 "pipeline": { "router": { "exclude_protocols": ["xhttp", "wg"] } }
 ```
 
-`wg` исключает и AWG, и обычный WireGuard. Варианты настройки и порядок проверки описаны
-в [руководстве по совместимости](../docs/SING_BOX_COMPATIBILITY.md). До применения всегда
-запускайте `nodes-tester pipeline router --dry-run`: он выполняет `sing-box check` тем
-ядром, которое установлено на роутере.
+`wg` excludes both AWG and regular WireGuard. The options and the check order are described
+in the [compatibility guide](../docs/SING_BOX_COMPATIBILITY.md). Before applying always
+run `nodes-tester pipeline router --dry-run`: it runs `sing-box check` with the
+core installed on the router.
 
-Скачайте подписки и соберите фрагмент, пока не меняя рабочий sing-box:
+Fetch the subscriptions and build the fragment without changing the running sing-box yet:
 
 ```sh
 mkdir -p /opt/nodes-tester/raw
@@ -120,67 +122,67 @@ nodes-tester fetch -c /etc/nodes-tester/config.json --branch router -o /opt/node
 nodes-tester config -c /etc/nodes-tester/config.json --branch router --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
 ```
 
-Проверьте отчёт обеих команд: источники, ошибки и число собранных нод. При отказе защитной проверки fetch возвращает код `2` и сохраняет предыдущий raw; это не новое успешное обновление. Не продолжайте первый запуск с пустой или неудачно загруженной подпиской.
+Check the report of both commands: sources, errors and the number of built nodes. When the guard check fails, fetch returns code `2` and keeps the previous raw; this is not a new successful update. Do not continue the first run with an empty or failed subscription.
 
-`nodes.json` содержит `outbounds` и, для соответствующих протоколов, `endpoints`. Он не является полной конфигурацией sing-box. В нём селекторы групп `{tag}-auto-out` из раздела `groups` (в каждой все ноды), `global-auto-out`, запасной `failsafe-out` и плоский тестовый селектор `nodes-tester`. Строгие группы ссылаются на `block-out`, а `direct_fallback` — на `direct-out`: эти outbound-ы должны быть в базе sing-box (`{"type": "block", "tag": "block-out"}`, `{"type": "direct", "tag": "direct-out"}`).
+`nodes.json` contains `outbounds` and, for the protocols that need them, `endpoints`. It is not a complete sing-box configuration. It has the group selectors `{tag}-auto-out` from the `groups` section (each with all nodes), `global-auto-out`, the fallback `failsafe-out` and the flat test selector `nodes-tester`. Strict groups refer to `block-out`, and `direct_fallback` to `direct-out`: these outbounds must be in the sing-box base (`{"type": "block", "tag": "block-out"}`, `{"type": "direct", "tag": "direct-out"}`).
 
-## 4. Подключить фрагмент к sing-box
+## 4. Connect the fragment to sing-box
 
-Сделайте резервную копию рабочей конфигурации. Добавьте содержимое `outbounds`/`endpoints` из фрагмента в неё без повторяющихся тегов или объедините фрагмент со своей базой через `sing-box merge`. Не заменяйте весь рабочий конфиг одним `nodes.json`.
+Back up the working configuration. Add the `outbounds`/`endpoints` from the fragment to it without duplicate tags, or merge the fragment with your base using `sing-box merge`. Do not replace the whole working config with `nodes.json` alone.
 
-Для тестера нужны три элемента:
+The tester needs three things:
 
-- API-сервис sing-box 1.14 с секретом, доступный тестеру. Он же отдаёт веб-панель sing-box:
+- The sing-box 1.14 API service with a secret, reachable by the tester. It also serves the sing-box web panel:
 
   ```json
   "services": [
     { "type": "api", "tag": "api", "listen": "127.0.0.1", "listen_port": 9090,
-      "secret": "<секрет>", "dashboard": true }
+      "secret": "<secret>", "dashboard": true }
   ]
   ```
 
-  Для панели из LAN укажите в `listen` адрес роутера, например `192.168.1.1`.
-  `experimental.clash_api` тестеру не нужен.
-- SOCKS inbound для проверок, например:
+  For the panel from the LAN set `listen` to the router address, for example `192.168.1.1`.
+  The tester does not need `experimental.clash_api`.
+- A SOCKS inbound for the checks, for example:
 
   ```json
   { "type": "socks", "tag": "nodes-tester-in", "listen": "127.0.0.1", "listen_port": 2080 }
   ```
 
-- Правило в начале `route.rules`, отправляющее этот inbound в созданный селектор:
+- A rule at the beginning of `route.rules` sending this inbound to the created selector:
 
   ```json
   { "inbound": ["nodes-tester-in"], "outbound": "nodes-tester" }
   ```
 
-Сам `nodes-tester` уже создан сборщиком: все проверяемые ноды должны быть его прямыми членами, без вложенных тестовых селекторов. Пользовательский трафик оставьте на рабочих группах; не направляйте его в тестовый selector, который будет постоянно переключаться.
+`nodes-tester` itself is already created by the builder: all checked nodes must be its direct members, without nested test selectors. Keep user traffic on the working groups; do not send it to the test selector, which switches all the time.
 
-Проверьте итоговый файл своей версией sing-box перед перезапуском, например `sing-box check -c /etc/sing-box/config.json`. Примените его обычным для своей установки способом и убедитесь, что пользовательский трафик продолжает работать. Поддержка протоколов зависит от установленной сборки sing-box; список парсеров подписок не гарантирует поддержку ядром.
+Check the resulting file with your sing-box version before the restart, for example `sing-box check -c /etc/sing-box/config.json`. Apply it the usual way for your installation and make sure user traffic keeps working. Protocol support depends on the installed sing-box build; the list of subscription parsers does not guarantee support in the core.
 
-### Подготовить конвейер
+### Prepare the pipeline
 
-`nodes-tester pipeline router` собирает конфиг из `/etc/nodes-tester/singbox/base.json` и обновляет правила по `/etc/nodes-tester/singbox/rules.json`. Загрузите свои файлы через раздел «Файлы sing-box» или положите их в каталог `singbox/` по SSH. Двоичные `.srs` указывайте в `rules.json` по URL. Проверьте, что база содержит ваши рабочие группы и настройки маршрутизации.
+`nodes-tester pipeline router` builds the config from `/etc/nodes-tester/singbox/base.json` and updates the rules by `/etc/nodes-tester/singbox/rules.json`. Upload your files in the “sing-box files” section or put them into the `singbox/` directory over SSH. Give binary `.srs` files in `rules.json` by URL. Check that the base contains your working groups and routing settings.
 
-В разделе «Конвейер» сначала нажмите «Проверить» и изучите журнал, затем «Применить». Те же команды доступны по SSH: `nodes-tester pipeline router --dry-run` и `nodes-tester pipeline router`. Сохранение файла в редакторе не применяет его к sing-box. Расписание выключено до явного включения. Подробный порядок для обеих веток приведён в [руководстве](../docs/USAGE.md#как-обновляются-подписки-и-конфиги).
+In the “Pipeline” section press “Check” first and study the log, then “Apply”. The same commands are available over SSH: `nodes-tester pipeline router --dry-run` and `nodes-tester pipeline router`. Saving a file in the editor does not apply it to sing-box. The schedule is off until you enable it. The detailed order for both branches is in the [guide](../docs/USAGE.md#how-subscriptions-and-configs-are-updated).
 
-## 5. Настроить тестер и включить админку
+## 5. Configure the tester and enable the admin panel
 
-В `/etc/nodes-tester/config.json` проверьте обязательные поля:
+In `/etc/nodes-tester/config.json` check the required fields:
 
-| Поле | Что указать |
+| Field | What to set |
 |---|---|
-| `api.url`, `api.secret` | Адрес и секрет API-сервиса sing-box (`services[type=api]`) |
-| `tester.socks` | SOCKS из предыдущего шага, по умолчанию `socks5h://127.0.0.1:2080` |
-| `tester.selector` | `nodes-tester` (по умолчанию) |
-| `groups` | Группы sing-box и их проверки, по умолчанию одна группа `all` |
-| `admin.enabled` | `true` для веб-интерфейса |
-| `admin.listen`, `admin.port` | Адрес интерфейса LAN роутера и порт, по умолчанию `8088` |
+| `api.url`, `api.secret` | Address and secret of the sing-box API service (`services[type=api]`) |
+| `tester.socks` | SOCKS from the previous step, `socks5h://127.0.0.1:2080` by default |
+| `tester.selector` | `nodes-tester` (default) |
+| `groups` | sing-box groups and their checks, a single group `all` by default |
+| `admin.enabled` | `true` for the web interface |
+| `admin.listen`, `admin.port` | Router LAN interface address and port, `8088` by default |
 
-Сохраните созданный установщиком `admin.token`. Ограничьте доступ к порту админки локальной сетью; при `public_read: true` просмотр статистики доступен без токена. Для закрытого просмотра задайте `false`. Не открывайте порт в WAN.
+Keep the `admin.token` created by the installer. Restrict access to the admin port to the local network; with `public_read: true` statistics can be viewed without the token. For private viewing set `false`. Do not open the port to WAN.
 
-Тестер сам выбирает активную ноду в каждой группе по её проверкам, а монитор возвращает выбор, если его сменили в обход. Плановую ротацию можно выключить: `selection.rotation.enabled: false`. Проверки скачивают тестовые файлы: проверьте расходы трафика. Полный перечень настроек — в [описании config.json](../docs/CONFIG.md).
+The tester itself picks the active node in each group by its checks, and the monitor brings the choice back if it was changed behind its back. Scheduled rotation can be turned off: `selection.rotation.enabled: false`. Checks download test files: watch the traffic usage. The full list of settings is in the [config.json reference](../docs/CONFIG.md).
 
-Запустите сервис:
+Start the service:
 
 ```sh
 uci set nodes-tester.tester.enabled=1
@@ -189,13 +191,13 @@ uci commit nodes-tester
 logread -e nodes-tester
 ```
 
-Откройте `http://192.168.1.1:8088/` с учётом выбранных адреса и порта. Для управления введите в шапке `admin.token` из своего конфига. Результаты появятся по мере проверок; большой набор нод и межхостовые паузы требуют времени.
+Open `http://192.168.1.1:8088/` with your address and port. For control enter `admin.token` from your config in the header. Results appear as checks run; a large set of nodes and pauses between requests to one host take time.
 
-## 6. Обновить пакет
+## 6. Update the package
 
-Перед обновлением сделайте снимок текущей версии. Храните файлы установленных пакетов в
-`/root/packages/`: снимок кладёт туда найденный пакет своей версии, и откат переустанавливает
-именно его.
+Before updating take a snapshot of the current version. Keep the files of installed packages in
+`/root/packages/`: the snapshot puts the package of its version found there, and the rollback reinstalls
+exactly that one.
 
 ```sh
 mkdir -p /root/packages
@@ -207,37 +209,37 @@ apk upgrade nodes-tester
 logread -e nodes-tester
 ```
 
-Переход с 0.4.x на 0.5.0 автоматически не выполняется: настройки переехали в единый
-`config.json` ([описание](../docs/CONFIG.md)), прежние `config-main`/`config-wh`, `pipeline.json` и
-`user_nodes.json` версия 0.5.0 не читает. Соберите `config.json` до перезапуска тестера. База
-рейтинга начнётся заново: прежняя остаётся рядом как `stats.db.v1-<дата>`.
+The upgrade from 0.4.x to 0.5.0 is not automatic: the settings moved into a single
+`config.json` ([reference](../docs/CONFIG.md)); version 0.5.0 does not read the former `config-main`/`config-wh`, `pipeline.json` and
+`user_nodes.json`. Build `config.json` before restarting the tester. The rating database
+starts anew: the old one stays next to it as `stats.db.v1-<date>`.
 
-В 0.6.0 тестер работает без прогонов, по срокам годности тестов (`tests.<имя>.ttl`). Перед
-перезапуском уберите из `config.json` поля `tester.follow_rotation` и `tester.pause`, если они
-заданы: новая версия их не принимает. Паузы нод, отсчитанные в прогонах, не переносятся — такие
-ноды проверяются сразу после запуска.
+In 0.6.0 the tester works without passes, by test result lifetimes (`tests.<name>.ttl`). Before
+the restart remove the `tester.follow_rotation` and `tester.pause` fields from `config.json` if they
+are set: the new version does not accept them. Node pauses counted in passes are not carried over; such
+nodes are checked right after the start.
 
-Без подключённого репозитория скачайте файл из релиза в `/root/packages/` и выполните
-`apk add /root/packages/nodes-tester-<новая версия>.apk`.
+Without the repository download the file from the release into `/root/packages/` and run
+`apk add /root/packages/nodes-tester-<new version>.apk`.
 
-После `apk add` обязательно перезапустите тестер вручную: пакет не делает этого сам.
+After `apk add` always restart the tester manually: the package does not do it itself.
 
-Снимок попадает в `/root/backups/nodes-tester-<дата>/`: конфиги, данные без БД, конфиг
-sing-box, онлайн-копия `stats.db`, задачи cron и файл пакета. Рабочие конфиги пакетный
-менеджер при обновлении сохраняет. Если он оставил `/etc/config/nodes-tester.apk-new`,
-сравните его с текущим файлом и удалите.
+The snapshot goes to `/root/backups/nodes-tester-<date>/`: configs, data without the database, the sing-box
+config, an online copy of `stats.db`, cron jobs and the package file. The package manager keeps working
+configs on update. If it left `/etc/config/nodes-tester.apk-new`,
+compare it with the current file and delete it.
 
-Откат на снимок `--stable`:
+Rollback to the `--stable` snapshot:
 
 ```sh
 nodes-tester rollback --check
 nodes-tester rollback
 ```
 
-Откат останавливает сервис, переустанавливает пакет из снимка, возвращает конфиги, БД и
-задачи cron, затем запускает сервис. Конфиг sing-box возвращается, только если изменился и
-проходит `sing-box check`. Состояние до отката сохраняется в `/root/backups/failed-<дата>/`.
-Ключ `--keep-db` оставляет текущую БД. Подробности:
-[`scripts/router/README.md`](../scripts/router/README.md#резервная-копия-и-откат).
+The rollback stops the service, reinstalls the package from the snapshot, restores configs, the database and
+cron jobs, then starts the service. The sing-box config is restored only if it changed and
+passes `sing-box check`. The state before the rollback is kept in `/root/backups/failed-<date>/`.
+`--keep-db` keeps the current database. Details:
+[`scripts/router/README.md`](../scripts/router/README.md#backup-and-rollback).
 
-Дальше: [где смотреть результаты, как менять настройки и обновлять ноды](../docs/USAGE.md).
+Next: [where to see results, how to change settings and update nodes](../docs/USAGE.md).
