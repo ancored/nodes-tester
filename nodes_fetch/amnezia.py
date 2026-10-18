@@ -61,7 +61,7 @@ def rsa_public_key(pem: str) -> tuple[int, int]:
     try:
         der = base64.b64decode(body, validate=True)
         _, start, end = _tlv(der, 0)
-        (_, _, _), (tag, bits, stop) = list(_children(der, start, end))[:2]
+        _, (tag, bits, stop) = list(_children(der, start, end))[:2]
         if tag != 0x03:
             raise ValueError
         key = der[bits + 1:stop]                          # BIT STRING без счётчика лишних бит
@@ -123,12 +123,9 @@ def wireguard_keypair() -> tuple[str, str]:
 # --- Шлюз -----------------------------------------------------------------------------
 
 class Gateway:
-    def __init__(self, link: str, gateway_key: str, url: str = GATEWAY, timeout=_TIMEOUT,
-                 proxies=None):
+    def __init__(self, link: str, gateway_key: str, proxies=None):
         self.sub = decode_link(link)
         self.key = rsa_public_key(gateway_key)
-        self.url = url.rstrip("/") + "/"
-        self.timeout = timeout
         self.proxies = proxies
         self.installation = str(uuid.uuid4())
 
@@ -150,7 +147,7 @@ class Gateway:
                 "api_payload": base64.b64encode(_aes.encrypt_cbc(
                     json.dumps(self._payload(**fields)).encode(), key, iv)).decode()}
         try:
-            resp = requests.post(self.url + "v1/" + method, json=body, timeout=self.timeout,
+            resp = requests.post(GATEWAY + "v1/" + method, json=body, timeout=_TIMEOUT,
                                  proxies=self.proxies, allow_redirects=False,
                                  headers={"X-Client-Request-ID": str(uuid.uuid4())})
         except requests.RequestException as exc:

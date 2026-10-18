@@ -6,9 +6,10 @@ import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright-core'
 import { diagrams } from '../src/markdown.js'
+import { fileURLToPath } from 'node:url'
 
-const HELP = new URL('../../docs/help/', import.meta.url).pathname
-const OUT = new URL('../src/diagrams/', import.meta.url).pathname
+const HELP = fileURLToPath(new URL('../../docs/help/', import.meta.url))
+const OUT = fileURLToPath(new URL('../src/diagrams/', import.meta.url))
 const MERMAID = createRequire(import.meta.url).resolve('mermaid/dist/mermaid.min.js')
 
 const wanted = new Map()

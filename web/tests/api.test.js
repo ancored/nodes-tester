@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+// Ожидаемые сообщения — английские: язык системы (navigator в Node) на них не влияет.
+Object.defineProperty(globalThis, 'navigator', { value: { language: 'en', languages: ['en'] }, configurable: true })
 const stored = new Map()
 globalThis.localStorage = { getItem:k=>stored.get(k), setItem:(k,v)=>stored.set(k,v), removeItem:k=>stored.delete(k) }
 const { auth, login, logout, can, getToken, api, retrySession } = await import('../src/api.js')

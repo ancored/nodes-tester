@@ -5,7 +5,7 @@ import os
 import sqlite3
 import unittest
 
-from nodes_tester.config import VacuumConfig
+from nodes_tester.config import ConfigError, VacuumConfig, parse_config
 from nodes_tester.storage import Storage
 from nodes_tester.vacuum import Vacuum, next_due
 from tests.helpers import temp_dir
@@ -28,6 +28,15 @@ class NextDueTest(unittest.TestCase):
         self.assertEqual(next_due(last, 30 * 86400, "04:00"), _ts(2026, 10, 31, 4, 0))
         self.assertEqual(next_due(last, 30 * 86400, "03:00"), _ts(2026, 11, 1, 3, 0))
         self.assertEqual(next_due(_ts(2026, 10, 1, 4, 30), 86400, "04:00"), _ts(2026, 10, 3, 4, 0))
+
+
+class ConfigTest(unittest.TestCase):
+    def test_vacuum_fields(self):
+        cfg = parse_config({"storage": {"vacuum": {"every": "7d", "at": "03:30"}}}).storage.vacuum
+        self.assertEqual((cfg.every, cfg.at), (7 * 86400, "03:30"))
+        for bad in ({"at": "4:00"}, {"at": "24:00"}, {"every": "soon"}, {"when": 1}):
+            with self.subTest(bad=bad), self.assertRaises(ConfigError):
+                parse_config({"storage": {"vacuum": bad}})
 
 
 class VacuumTest(unittest.TestCase):

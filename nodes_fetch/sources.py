@@ -68,7 +68,7 @@ def fetch_subscription(sub, ctx):
     if kind == "inline":
         # Свои ноды из config.json: outbound-ы как есть, имя — их tag.
         return [dict(ob) for ob in sub.get("outbounds") or []]
-    if kind in ("folder", "amnezia"):          # amnezia: файлы стран выпускает тестер (amnezia_rotation)
+    if kind in ("folder", "amnezia"):          # amnezia: файлы стран выпускает тестер (amnezia_slots)
         nodes = _from_folder(sub, ctx)
     elif kind == "file":
         nodes = _from_file(_resolve(sub["file"], ctx), ctx)

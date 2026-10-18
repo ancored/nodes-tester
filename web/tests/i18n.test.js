@@ -2,15 +2,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const stored = new Map()
 globalThis.localStorage = { getItem: k => stored.get(k), setItem: (k, v) => stored.set(k, v), removeItem: k => stored.delete(k) }
 const { t, tn, setLang, lang, browserLang } = await import('../src/i18n.js')
 const { default: ru } = await import('../src/locales/ru.js')
 
-const SRC = new URL('../src/', import.meta.url).pathname
+const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const files = dir => readdirSync(dir).flatMap(f => statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)])
-const sources = files(SRC).filter(f => /\.(vue|js)$/.test(f) && !f.includes('/locales/'))
+const sources = files(SRC).filter(f => /\.(vue|js)$/.test(f) && !/[\\/]locales[\\/]/.test(f))
   .map(f => ({ file: f.slice(SRC.length), text: readFileSync(f, 'utf8') }))
 const QUOTED = String.raw`'((?:[^'\\]|\\.)*)'`
 const unescape = s => s.replace(/\\(.)/g, '$1')

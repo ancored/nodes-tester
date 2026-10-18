@@ -136,6 +136,16 @@ class GatewayTest(unittest.TestCase):
             amnezia.Gateway(link(), PEM).account_info()
         self.assertEqual(err.exception.status, 409)
 
+    def test_plain_json_error_and_network_failure(self):
+        plain = mock.Mock(status_code=403, content=b'{"http_status": 403, "message": "expired"}')
+        with mock.patch("requests.post", return_value=plain), self.assertRaises(amnezia.AmneziaError) as err:
+            amnezia.Gateway(link(), PEM).account_info()
+        self.assertEqual(err.exception.status, 403)
+        self.assertIn("expired", str(err.exception))
+        with mock.patch("requests.post", side_effect=amnezia.requests.ConnectionError("reset")),                 self.assertRaises(amnezia.AmneziaError) as err:
+            amnezia.Gateway(link(), PEM).account_info()
+        self.assertIn("недоступен", str(err.exception))
+
 
 def conf(server):
     return (f"[Interface]\nPrivateKey = cHJpdmF0ZQ==\nAddress = 10.8.1.2/32\n"
@@ -206,7 +216,9 @@ class SlotsTest(unittest.TestCase):
         self.assertIn("de", files)
         self.assertNotIn("ru", files)                    # exclude_countries по умолчанию
         self.assertEqual(sorted(self.state()["issued"]), sorted(set(files) - {"de"}))
-        self.assertEqual(oct(os.stat(os.path.join(self.dir, "awg", files[-1] + ".conf")).st_mode & 0o777), "0o600")
+        if os.name == "posix":                            # права файлов — только POSIX
+            self.assertEqual(oct(os.stat(os.path.join(self.dir, "awg", files[-1] + ".conf")).st_mode & 0o777),
+                             "0o600")
 
     def test_does_not_take_countries_issued_elsewhere(self):
         gateway = FakeGateway(issued=["de", "nl", "fi", "se", "dk"], max_devices=7)
@@ -280,10 +292,46 @@ class SlotsTest(unittest.TestCase):
         self.assertEqual(gateway.log, [("revoke", "de")])
         self.assertEqual(self.files(), ["nl"])
 
+    def test_gateway_failure_keeps_files_and_state(self):
+        gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
+        gateway.account_info = mock.Mock(side_effect=amnezia.AmneziaError("account_info: шлюз недоступен"))
+        sub = self.sub(gateway, files=["de", "nl"])
+        self.assertEqual(sub.run({"de.example": 10.0, "nl.example": 80.0}), [])
+        self.assertEqual(self.files(), ["de", "nl"])
+        self.assertEqual(self.state()["low_since"], {"de": self.now})   # отсчёт HOLD не теряется
+
     def test_reissues_when_server_was_updated(self):
         gateway = FakeGateway(issued=["de"], max_devices=1, worker={"de": "2026-10-10T00:00:00Z"})
         self.sub(gateway, files=["de"]).run({})
         self.assertEqual(gateway.log, [("issue", "de")])
+
+
+class SchedulerTest(unittest.TestCase):
+    def test_only_enabled_router_subscriptions_run_on_schedule(self):
+        base = {"type": "amnezia", "url": link(), "path": "awg", "gateway_key": "gw.pem"}
+        cfg = parse_config({"subscriptions": [
+            {**base, "tag": "A"}, {**base, "tag": "B", "enabled": False},
+            {**base, "tag": "C", "branch": "clients"}, {"tag": "D", "url": "https://x"}]})
+        cfg.path = os.path.join(tmp(self), "config.json")
+        now = [1000.0]
+        notifier = mock.Mock()
+        slots = amnezia_slots.AmneziaSlots(cfg, lambda: {"x": 50.0}, notifier, log=lambda m: None,
+                                           clock=lambda: now[0])
+        self.assertEqual([s.tag for s in slots.subs], ["A"])
+        self.assertFalse(slots.due(now[0] + amnezia_slots.FIRST_CHECK - 1))
+        self.assertTrue(slots.due(now[0] + amnezia_slots.FIRST_CHECK))
+        with mock.patch.object(amnezia_slots.Subscription, "run", return_value=["de выпущена"]) as run:
+            slots.start()
+            slots._thread.join(10)
+        run.assert_called_once_with({"x": 50.0})
+        notifier.send.assert_called_once_with("subscription", "Amnezia A: de выпущена.", key="amnezia-A")
+        self.assertFalse(slots.due(now[0] + amnezia_slots.FIRST_CHECK))
+        self.assertTrue(slots.due(now[0] + amnezia_slots.CHECK_EVERY))
+
+    def test_no_amnezia_subscriptions_never_due(self):
+        cfg = parse_config({})
+        cfg.path = os.path.join(tmp(self), "config.json")
+        self.assertFalse(amnezia_slots.AmneziaSlots(cfg, dict).due(float("inf")))
 
 
 class ConfigTest(unittest.TestCase):

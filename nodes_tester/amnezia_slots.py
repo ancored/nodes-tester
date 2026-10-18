@@ -31,6 +31,8 @@ from nodes_common.fileio import atomic_write_private, dumps_json
 from nodes_fetch.amnezia import AmneziaError, Gateway
 from nodes_fetch.parsers import awg
 
+from .config import branch_subscriptions
+
 CHECK_EVERY = 3 * 3600.0
 FIRST_CHECK = 600.0                     # после старта тестера: рейтинг успевает загрузиться
 HOLD = 6 * 3600.0
@@ -124,8 +126,9 @@ class Subscription:
                 if c.get("worker_last_updated", "") > c.get("last_downloaded", "~"):
                     self._write(cc, gateway.issue(cc), state)
                     done.append(f"{cc} перевыпущена: сервер обновился")
-            limit = int(self.sub.get("slots") or info.get("max_device_count") or 0)
-            free = int(info.get("max_device_count") or 0) - int(info.get("active_device_count") or 0) + len(low)
+            max_devices = int(info.get("max_device_count") or 0)
+            limit = int(self.sub.get("slots") or max_devices)
+            free = max_devices - int(info.get("active_device_count") or 0) + len(low)
             exclude = set(self.sub.get("exclude_countries", EXCLUDE)) | set(issued) | set(files) | set(low)
             pool = [c.get("server_country_code") for c in info.get("available_countries") or []
                     if "awg" in (c.get("available_protocols") or []) and c.get("server_country_code") not in exclude]
@@ -150,7 +153,6 @@ class AmneziaSlots:
     """Расписание сверок в тестере: фоновый поток раз в CHECK_EVERY."""
 
     def __init__(self, cfg, ratings, notifier=None, log=print, clock=time.time):
-        from .config import branch_subscriptions
         base_dir = os.path.dirname(cfg.path)
         self.subs = [Subscription(s, base_dir, cfg.pipeline.fetch.proxy, log, clock)
                      for s in branch_subscriptions(cfg.subscriptions, "router")

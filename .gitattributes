@@ -9,3 +9,12 @@ scripts/router/** text eol=lf
 
 # PowerShell-скрипты для Windows — CRLF
 *.ps1 text eol=crlf
+
+# Документация и исходники админки — только LF: справка разбирается построчно, ключ схемы mermaid —
+# хэш её текста (с CRLF схемы не находятся, SVG не совпадают с собранными)
+*.md  text eol=lf
+*.js  text eol=lf
+*.mjs text eol=lf
+*.vue text eol=lf
+*.svg text eol=lf
+*.html text eol=lf
