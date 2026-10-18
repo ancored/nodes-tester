@@ -7,11 +7,14 @@ import shutil
 import tempfile
 import unittest
 import zlib
+from types import SimpleNamespace
 from unittest import mock
 
 from nodes_fetch import _aes, amnezia, sources
+from nodes_fetch.parsers import awg
 from nodes_tester import amnezia_slots
 from nodes_tester.config import ConfigError, parse_config
+from nodes_tester.runner import Runner
 
 # Тестовый ключ RSA-2048 (только для тестов).
 PEM = """-----BEGIN PUBLIC KEY-----
@@ -147,9 +150,9 @@ class GatewayTest(unittest.TestCase):
         self.assertIn("недоступен", str(err.exception))
 
 
-def conf(server):
+def conf(server, port=51820):
     return (f"[Interface]\nPrivateKey = cHJpdmF0ZQ==\nAddress = 10.8.1.2/32\n"
-            f"[Peer]\nPublicKey = cHVibGlj\nEndpoint = {server}:51820\n")
+            f"[Peer]\nPublicKey = cHVibGlj\nEndpoint = {server}:{port}\n")
 
 
 class FakeGateway:
@@ -228,7 +231,7 @@ class SlotsTest(unittest.TestCase):
     def test_low_rating_blocks_country_after_hold(self):
         gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
         sub = self.sub(gateway, files=["de", "nl"])
-        ratings = {"de.example": 10.0, "nl.example": 80.0}
+        ratings = {"de.example:51820": 10.0, "nl.example:51820": 80.0}
         sub.run(ratings)
         self.assertEqual(gateway.log, [])                # ниже порога, но меньше HOLD
         self.now += amnezia_slots.HOLD
@@ -243,19 +246,19 @@ class SlotsTest(unittest.TestCase):
     def test_recovered_rating_resets_hold(self):
         gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
         sub = self.sub(gateway, files=["de", "nl"])
-        sub.run({"de.example": 10.0, "nl.example": 80.0})
+        sub.run({"de.example:51820": 10.0, "nl.example:51820": 80.0})
         self.now += amnezia_slots.HOLD / 2
-        sub.run({"de.example": 60.0, "nl.example": 80.0})
+        sub.run({"de.example:51820": 60.0, "nl.example:51820": 80.0})
         self.now += amnezia_slots.HOLD
-        sub.run({"de.example": 10.0, "nl.example": 80.0})
+        sub.run({"de.example:51820": 10.0, "nl.example:51820": 80.0})
         self.assertEqual(gateway.log, [])
 
     def test_all_countries_low_means_not_the_countries(self):
         gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
         sub = self.sub(gateway, files=["de", "nl"])
-        sub.run({"de.example": 0.0, "nl.example": 5.0})
+        sub.run({"de.example:51820": 0.0, "nl.example:51820": 5.0})
         self.now += amnezia_slots.HOLD
-        sub.run({"de.example": 0.0, "nl.example": 5.0})
+        sub.run({"de.example:51820": 0.0, "nl.example:51820": 5.0})
         self.assertEqual(gateway.log, [])
         self.assertEqual(self.files(), ["de", "nl"])
 
@@ -285,7 +288,7 @@ class SlotsTest(unittest.TestCase):
         gateway = FakeGateway(issued=["nl"], max_devices=2)   # de сервер уже не числит
         gateway.countries = ["de", "nl"]
         sub = self.sub(gateway, files=["de", "nl"])
-        ratings = {"de.example": 10.0, "nl.example": 80.0}
+        ratings = {"de.example:51820": 10.0, "nl.example:51820": 80.0}
         sub.run(ratings)
         self.now += amnezia_slots.HOLD
         sub.run(ratings)
@@ -296,9 +299,22 @@ class SlotsTest(unittest.TestCase):
         gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
         gateway.account_info = mock.Mock(side_effect=amnezia.AmneziaError("account_info: шлюз недоступен"))
         sub = self.sub(gateway, files=["de", "nl"])
-        self.assertEqual(sub.run({"de.example": 10.0, "nl.example": 80.0}), [])
+        self.assertEqual(sub.run({"de.example:51820": 10.0, "nl.example:51820": 80.0}), [])
         self.assertEqual(self.files(), ["de", "nl"])
         self.assertEqual(self.state()["low_since"], {"de": self.now})   # отсчёт HOLD не теряется
+
+    def test_countries_on_one_address_are_told_apart_by_port(self):
+        gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
+        sub = self.sub(gateway)
+        for cc, port in (("de", 1001), ("nl", 1002)):
+            with open(os.path.join(self.dir, "awg", f"{cc}.conf"), "w") as fh:
+                fh.write(conf("gw.example", port))
+        ratings = {"gw.example:1001": 10.0, "gw.example:1002": 80.0}
+        sub.run(ratings)
+        self.now += amnezia_slots.HOLD
+        sub.run(ratings)
+        self.assertEqual(gateway.log[0], ("revoke", "de"))
+        self.assertNotIn(("revoke", "nl"), gateway.log)
 
     def test_reissues_when_server_was_updated(self):
         gateway = FakeGateway(issued=["de"], max_devices=1, worker={"de": "2026-10-10T00:00:00Z"})
@@ -340,6 +356,24 @@ class SchedulerTest(unittest.TestCase):
         cfg = parse_config({})
         cfg.path = os.path.join(tmp(self), "config.json")
         self.assertFalse(amnezia_slots.AmneziaSlots(cfg, dict).due(float("inf")))
+
+
+class EndpointTest(unittest.TestCase):
+    def test_ratings_are_keyed_by_address_and_port(self):
+        runner = SimpleNamespace(
+            board=SimpleNamespace(rows={"a": {"id": "a", "score": 70.0}, "b": {"id": "b", "score": 20.0},
+                                        "c": {"id": "c", "score": None}, "d": {"id": "d", "score": 50.0}}),
+            _endpoints={"a": ("GW.example", 1001), "b": ("gw.example", 1002), "c": ("gw.example", 1003)})
+        self.assertEqual(Runner._ratings_by_endpoint(runner), {"gw.example:1001": 70.0, "gw.example:1002": 20.0})
+
+    def test_country_comes_from_the_file_name_prefix(self):
+        folder = tmp(self)
+        names = ("us-east.conf", "DK.conf", "home.conf")
+        for name in names:
+            with open(os.path.join(folder, name), "w") as fh:
+                fh.write(conf("x.example"))
+        self.assertEqual([awg.parse_file(os.path.join(folder, name))["_file_cc"] for name in names],
+                         ["us", "dk", ""])
 
 
 class ConfigTest(unittest.TestCase):

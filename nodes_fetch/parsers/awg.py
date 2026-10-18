@@ -101,7 +101,9 @@ def parse_file(path):
     # Отдаём его как подсказку в '_file_cc'; group_meta берёт страну по приоритету
     # флаг → название страны в тексте → _file_cc (см. nodes_config: group_meta). Тег — только для
     # отображения, custom_rename всё равно соберёт {provider}-wg-{cc}-out.
+    # Amnezia называет файлы кодом страны шлюза: «us-east» → страна us.
     stem = os.path.splitext(os.path.basename(path))[0].lower()
-    node['_file_cc'] = stem if (len(stem) == 2 and stem.isalpha()) else ''
+    cc = stem.split('-')[0]
+    node['_file_cc'] = cc if (len(cc) == 2 and cc.isalpha()) else ''
     node['tag'] = f"AWG | {stem.upper()}"
     return node

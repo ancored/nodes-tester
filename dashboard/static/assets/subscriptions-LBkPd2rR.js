@@ -108,7 +108,7 @@ Once every 3 hours (10 minutes after the tester starts) the tester compares the 
 
 \`\`\`mermaid
 flowchart TD
-    start["Every 3 hours"] --> low["For each country file: find the node<br>by the server address and its rating"]
+    start["Every 3 hours"] --> low["For each country file: find the node<br>by the server address and port and its rating"]
     low --> all{"All rated countries<br>below the threshold?"}
     all -->|"yes (more than one)"| skip["The protocol or the network is the cause:<br>replace nothing"]
     all -->|no| hold{"A country below the threshold<br>for 6 hours?"}

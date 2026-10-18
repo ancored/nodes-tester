@@ -158,7 +158,7 @@ class Runner:
         self.reserve = ReserveKeeper(self)
         self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
                                     self.notifier)
-        self.amnezia = AmneziaSlots(cfg, self._ratings_by_server, self.notifier)
+        self.amnezia = AmneziaSlots(cfg, self._ratings_by_endpoint, self.notifier)
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
@@ -228,10 +228,14 @@ class Runner:
         ep = self._endpoints.get(node_id)
         return (ep[0] or "").lower() if ep else ""
 
-    def _ratings_by_server(self) -> dict[str, float]:
-        """{адрес сервера: рейтинг} нод с замерами — для стран Amnezia Premium."""
-        return {server: row["score"] for row in self.board.rows.copy().values()
-                if row.get("score") is not None and (server := self._server(row.get("id") or ""))}
+    def _ratings_by_endpoint(self) -> dict[str, float]:
+        """{«адрес:порт» сервера: рейтинг} нод с замерами — для стран Amnezia Premium."""
+        out = {}
+        for row in self.board.rows.copy().values():
+            server, port = self._endpoints.get(row.get("id") or "") or ("", None)
+            if row.get("score") is not None and server:
+                out[f"{server.lower()}:{port}"] = row["score"]
+        return out
 
     def _host_of(self, ident: NodeIdentity) -> str:
         """Хост ноды (server из storage). Фолбэк без storage/server — провайдер/CRC."""

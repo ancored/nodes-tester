@@ -1,7 +1,8 @@
 """Страны Amnezia Premium по рейтингу (подписки type=amnezia ветви router).
 
 Раз в CHECK_EVERY тестер сверяет файлы стран в каталоге подписки (`<код страны>.conf`) с
-рейтингом их нод (нода находится по адресу сервера из файла):
+рейтингом их нод (нода находится по адресу и порту сервера из файла: страны подписки могут
+делить один адрес):
 
 - страна, чья нода держит рейтинг ниже min_rating дольше HOLD, считается заблокированной: её
   файл отзывается на шлюзе и удаляется, страна запоминается и не выпускается, пока есть другие;
@@ -73,12 +74,13 @@ class Subscription:
         return {k: dict(state.get(k) or {}) for k in ("blocked", "issued", "low_since")}
 
     def _files(self) -> dict[str, str]:
-        """Код страны → адрес сервера из её файла."""
+        """Код страны → «адрес:порт» сервера из её файла."""
         out = {}
         for name in sorted(os.listdir(self.folder)):
             if name.endswith(".conf"):
                 try:
-                    out[name[:-5]] = awg.parse_file(os.path.join(self.folder, name))["peers"][0]["address"].lower()
+                    peer = awg.parse_file(os.path.join(self.folder, name))["peers"][0]
+                    out[name[:-5]] = f"{peer['address'].lower()}:{peer['port']}"
                 except (OSError, ValueError, KeyError):
                     self._say(f"{name} не разбирается — пропущен")
         return out
@@ -104,7 +106,7 @@ class Subscription:
         state["issued"][cc] = _today()
 
     def run(self, ratings: dict) -> list[str]:
-        """Одна сверка. ratings — {адрес сервера: рейтинг}. Возвращает сделанное (для уведомления)."""
+        """Одна сверка. ratings — {«адрес:порт» сервера: рейтинг}. Возвращает сделанное (для уведомления)."""
         os.makedirs(self.folder, mode=0o700, exist_ok=True)
         state, now, done = self._load_state(), self.clock(), []
         files = self._files()
@@ -157,7 +159,7 @@ class AmneziaSlots:
         self.subs = [Subscription(s, base_dir, s.get("proxy") or cfg.pipeline.fetch.proxy, log, clock)
                      for s in branch_subscriptions(cfg.subscriptions, "router")
                      if s.get("type") == "amnezia" and s.get("enabled", True) is not False]
-        self.ratings = ratings              # () -> {адрес сервера: рейтинг}
+        self.ratings = ratings              # () -> {«адрес:порт» сервера: рейтинг}
         self.notifier = notifier
         self.clock = clock
         self._next = clock() + FIRST_CHECK

@@ -260,7 +260,7 @@ more often than `min_interval` and only with the router build enabled. The field
 ## Amnezia Premium countries
 
 For subscriptions with `type: "amnezia"` [`amnezia_slots.py`](amnezia_slots.py) once every 3 hours compares the
-country files with the rating of their nodes (a node is found by the server address from the file): it revokes a
+country files with the rating of their nodes (a node is found by the server address and port from the file: countries of a subscription may share one address): it revokes a
 country whose node stays below `min_rating` for 6 hours, fills free places with random new countries (when none are left, with the longest-blocked ones) and issues anew a
 file whose server was updated. The rules are in [CONFIG.md](../docs/CONFIG.md#amnezia-premium); the results
 go to the log and to the `subscription` notification.
