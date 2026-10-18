@@ -310,7 +310,7 @@ class SchedulerTest(unittest.TestCase):
     def test_only_enabled_router_subscriptions_run_on_schedule(self):
         base = {"type": "amnezia", "url": link(), "path": "awg", "gateway_key": "gw.pem"}
         cfg = parse_config({"subscriptions": [
-            {**base, "tag": "A"}, {**base, "tag": "B", "enabled": False},
+            {**base, "tag": "A", "proxy": "socks5h://127.0.0.1:2080"}, {**base, "tag": "B", "enabled": False},
             {**base, "tag": "C", "branch": "clients"}, {"tag": "D", "url": "https://x"}]})
         cfg.path = os.path.join(tmp(self), "config.json")
         now = [1000.0]
@@ -318,6 +318,7 @@ class SchedulerTest(unittest.TestCase):
         slots = amnezia_slots.AmneziaSlots(cfg, lambda: {"x": 50.0}, notifier, log=lambda m: None,
                                            clock=lambda: now[0])
         self.assertEqual([s.tag for s in slots.subs], ["A"])
+        self.assertEqual(slots.subs[0].proxies["https"], "socks5h://127.0.0.1:2080")
         self.assertFalse(slots.due(now[0] + amnezia_slots.FIRST_CHECK - 1))
         self.assertTrue(slots.due(now[0] + amnezia_slots.FIRST_CHECK))
         with mock.patch.object(amnezia_slots.Subscription, "run", return_value=["de выпущена"]) as run:
@@ -328,6 +329,13 @@ class SchedulerTest(unittest.TestCase):
         self.assertFalse(slots.due(now[0] + amnezia_slots.FIRST_CHECK))
         self.assertTrue(slots.due(now[0] + amnezia_slots.CHECK_EVERY))
 
+    def test_gateway_proxy_falls_back_to_the_download_proxy(self):
+        sub = {"tag": "A", "type": "amnezia", "url": link(), "path": "awg", "gateway_key": "gw.pem"}
+        cfg = parse_config({"subscriptions": [sub], "pipeline": {"fetch": {"proxy": "socks5://10.0.0.1:1080"}}})
+        cfg.path = os.path.join(tmp(self), "config.json")
+        slots = amnezia_slots.AmneziaSlots(cfg, dict)
+        self.assertEqual(slots.subs[0].proxies["http"], "socks5://10.0.0.1:1080")
+
     def test_no_amnezia_subscriptions_never_due(self):
         cfg = parse_config({})
         cfg.path = os.path.join(tmp(self), "config.json")
@@ -337,8 +345,10 @@ class SchedulerTest(unittest.TestCase):
 class ConfigTest(unittest.TestCase):
     def test_amnezia_subscription_fields(self):
         good = {"tag": "AWG", "type": "amnezia", "url": "vpn://x", "path": "awg", "gateway_key": "gw.pem",
-                "slots": 5, "min_rating": 40, "exclude_countries": ["ru"]}
+                "slots": 5, "min_rating": 40, "exclude_countries": ["ru"], "proxy": "socks5h://127.0.0.1:2080"}
         parse_config({"subscriptions": [good]})
+        with self.assertRaises(ConfigError):
+            parse_config({"subscriptions": [{"tag": "U", "url": "https://x", "proxy": "socks5h://127.0.0.1:2080"}]})
         for broken in ({"url": "https://x"}, {"path": ""}, {"gateway_key": None}, {"slots": 0},
                        {"min_rating": 101}, {"exclude_countries": "ru"}):
             with self.subTest(broken=broken), self.assertRaises(ConfigError):

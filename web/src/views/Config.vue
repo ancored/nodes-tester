@@ -146,7 +146,7 @@ function setHappKeys(v) {v=v.trim();setPath(document.value,'pipeline.fetch.happ_
 function sourceKind(sub) {return ['folder','inline','amnezia'].includes(sub.type) ? sub.type : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
 function changeKind(sub,kind) {
   delete sub.url; delete sub.file; delete sub.type; delete sub.path; delete sub.outbounds
-  for(const key of ['gateway_key','slots','min_rating','exclude_countries'])delete sub[key]
+  for(const key of ['gateway_key','proxy','slots','min_rating','exclude_countries'])delete sub[key]
   if(kind === 'amnezia'){sub.type='amnezia';sub.url='';sub.path='';sub.gateway_key=''}
   else if(kind === 'folder'){sub.type='folder';sub.path=''; if(!sub.format)sub.format='awg'}
   else if(kind === 'inline'){sub.type='inline';sub.outbounds=[]}
@@ -158,6 +158,7 @@ function changeKind(sub,kind) {
 const branchSubs=computed(()=>(document.value?.subscriptions || []).map((sub,index)=>({sub,index})).filter(({sub})=>[branch.value,'both'].includes(sub.branch || 'router')))
 function setBranch(sub,v){if(v==='router')delete sub.branch; else sub.branch=v;preview.value=false}
 function setNumber(sub,key,v){if(v==='')delete sub[key]; else sub[key]=Number(v);preview.value=false}
+function setText(sub,key,v){v=v.trim();if(v)sub[key]=v; else delete sub[key];preview.value=false}
 function setList(sub,key,v){const list=v.split(',').map(x=>x.trim()).filter(Boolean);if(list.length)sub[key]=list; else delete sub[key];preview.value=false}
 function addSub(){(document.value.subscriptions ||= []).push(branch.value==='router' ? {tag:'',url:''} : {tag:'',url:'',branch:branch.value})}
 function userAgent(sub){return sub.user_agent ?? ''}
@@ -231,6 +232,7 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
               <label>{{ t('Exclude nodes by a name substring (comma-separated)') }}<input :value="(sub.exclude_names || []).join(', ')" @change="setList(sub,'exclude_names',$event.target.value)" /></label>
               <label v-if="['url','happ'].includes(sourceKind(sub))">{{ sourceKind(sub)==='happ' ? t('happ://crypt… link') : t('Subscription URL / share link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label>
               <template v-else-if="sourceKind(sub)==='amnezia'"><label>{{ t('vpn:// link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label><label>{{ t('Folder for country files') }} <input v-model="sub.path" placeholder="amnezia" /></label><label>{{ t('Gateway key file (PEM)') }} <input v-model="sub.gateway_key" placeholder="amnezia-gateway.pem" /></label>
+                <label>{{ t('Gateway proxy') }} <input :value="sub.proxy ?? ''" :placeholder="document.pipeline?.fetch?.proxy || t('direct')" @change="setText(sub,'proxy',$event.target.value)" /></label>
                 <label>{{ t('Country files to keep') }} <input type="number" min="1" :value="sub.slots ?? ''" :placeholder="t('all slots')" @change="setNumber(sub,'slots',$event.target.value)" /></label><label>{{ t('Replace a country rated below') }} <input type="number" min="0" max="100" :value="sub.min_rating ?? ''" placeholder="40" @change="setNumber(sub,'min_rating',$event.target.value)" /></label>
                 <label>{{ t('Do not issue countries (comma-separated)') }} <input :value="(sub.exclude_countries || []).join(', ')" placeholder="ru" @change="setList(sub,'exclude_countries',$event.target.value)" /></label></template>
               <label v-else-if="sourceKind(sub)==='file'">{{ t('File') }} <input v-model="sub.file" /></label>

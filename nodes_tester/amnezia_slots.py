@@ -154,7 +154,7 @@ class AmneziaSlots:
 
     def __init__(self, cfg, ratings, notifier=None, log=print, clock=time.time):
         base_dir = os.path.dirname(cfg.path)
-        self.subs = [Subscription(s, base_dir, cfg.pipeline.fetch.proxy, log, clock)
+        self.subs = [Subscription(s, base_dir, s.get("proxy") or cfg.pipeline.fetch.proxy, log, clock)
                      for s in branch_subscriptions(cfg.subscriptions, "router")
                      if s.get("type") == "amnezia" and s.get("enabled", True) is not False]
         self.ratings = ratings              # () -> {адрес сервера: рейтинг}

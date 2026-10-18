@@ -203,6 +203,10 @@
             "type": "string",
             "description": "amnezia: файл с публичным ключом шлюза Amnezia (PEM из официального приложения), относительно config.json."
           },
+          "proxy": {
+            "type": "string",
+            "description": "amnezia: прокси запросов к шлюзу Amnezia, например socks5h://127.0.0.1:2080; пусто — pipeline.fetch.proxy."
+          },
           "slots": {
             "type": "integer",
             "minimum": 1,

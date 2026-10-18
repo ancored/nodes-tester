@@ -218,6 +218,7 @@ is decided by the tester by the group checks. The country in the provider's node
 | `file` | string | — | `file`: path to the subscription file (relative to `config.json`) |
 | `path`, `format`, `ext` | strings | — | `folder`: directory, format (`awg`) and file extension (`.conf`); `amnezia`: directory of the country files |
 | `gateway_key` | string | — | `amnezia`: file with the public key of the Amnezia gateway (PEM), relative to `config.json` |
+| `proxy` | string | `pipeline.fetch.proxy` | `amnezia`: proxy for the gateway requests, for example `socks5h://127.0.0.1:2080` |
 | `slots` | integer | all slots | `amnezia`: how many country files to keep |
 | `min_rating` | number | `40` | `amnezia`: a country whose node keeps a lower rating is replaced |
 | `exclude_countries` | list of strings | `["ru"]` | `amnezia`: country codes that are not issued |
@@ -234,7 +235,9 @@ The router HWID is stored in `device.json`, the `happ://crypt…` keys in `happ-
 
 A subscription with `type: "amnezia"` takes the `vpn://` link of Amnezia Premium and keeps AmneziaWG files of
 countries in `path` (`<country code>.conf`, rights 0600). The files are issued by the tester through the Amnezia gateway
-(`gw.amnezia.org`, with `pipeline.fetch.proxy` if it is set) once every 3 hours:
+(`gw.amnezia.org`, through the subscription `proxy` or `pipeline.fetch.proxy` if one is set) once every 3 hours.
+Where the gateway is blocked, send it through a node, for example the tester SOCKS: `"proxy": "socks5h://127.0.0.1:2080"`.
+The check:
 
 - a country whose node keeps a rating below `min_rating` for 6 hours is considered blocked: its file is revoked and
   deleted, and the country is not issued while others remain;

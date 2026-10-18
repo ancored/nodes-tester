@@ -759,7 +759,7 @@ def _singbox(obj) -> SingboxConfig:
 BRANCHES = ("router", "clients", "both")
 _SUB_FIELDS = ("tag", "enabled", "branch", "type", "url", "file", "path", "format", "ext",
                "user_agent", "happ_headers", "send_device", "exclude_names", "outbounds",
-               "gateway_key", "slots", "min_rating", "exclude_countries")
+               "gateway_key", "slots", "min_rating", "exclude_countries", "proxy")
 
 
 def _subscriptions(obj) -> list[dict]:
@@ -794,6 +794,9 @@ def _subscriptions(obj) -> list[dict]:
             _number(sub, "slots", path, None, 1, integer=True)
             _number(sub, "min_rating", path, None, 0, 100)
             _strings(sub, "exclude_countries", path)
+            _string(sub, "proxy", path, "")
+        elif "proxy" in sub:
+            raise ConfigError(f"{path}.proxy: только у amnezia-подписки (остальные качаются через pipeline.fetch.proxy)")
         out.append(dict(sub))
     return out
 

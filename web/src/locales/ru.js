@@ -679,6 +679,8 @@ export default {
   'vpn:// link': 'Ссылка vpn://',
   'Folder for country files': 'Каталог файлов стран',
   'Gateway key file (PEM)': 'Файл ключа шлюза (PEM)',
+  'Gateway proxy': 'Прокси шлюза',
+  'direct': 'напрямую',
   'Country files to keep': 'Сколько файлов стран держать',
   'all slots': 'все слоты',
   'Replace a country rated below': 'Менять страну с рейтингом ниже',
