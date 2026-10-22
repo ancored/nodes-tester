@@ -1,7 +1,7 @@
 {
   "_preset": {
     "title": "ИИ: Google через выход",
-    "description": "Gemini и DeepMind → google-out, их DNS — dns-google. Всё, что попало на адреса Google (geoip-google), тоже → google-out: приложения Gemini ходят и на общие адреса Google. QUIC к ним запрещён. Не включать вместе с ai-google-smartdns",
+    "description": "Gemini и DeepMind → google-out, их DNS — dns-google. Всё, что попало на адреса Google (geoip-google), тоже → google-out: приложения Gemini ходят и на общие адреса Google. QUIC к ним запрещён. YouTube по доменам — туда же: ссылка на видео выдаётся под IP, с которого открыта страница, а кэши видео бывают и вне адресов Google. Не включать вместе с ai-google-smartdns",
     "enabled": false,
     "priority": 220
   },
@@ -45,10 +45,36 @@
         "action": "reject"
       },
       {
+        "network": "udp",
+        "port": 443,
+        "domain_suffix": [
+          "youtube.com",
+          "youtu.be",
+          "youtube-nocookie.com",
+          "youtubekids.com",
+          "googlevideo.com",
+          "ytimg.com",
+          "ggpht.com"
+        ],
+        "action": "reject"
+      },
+      {
         "rule_set": [
           "google-dm",
           "google-gemini",
           "geoip-google"
+        ],
+        "outbound": "google-out"
+      },
+      {
+        "domain_suffix": [
+          "youtube.com",
+          "youtu.be",
+          "youtube-nocookie.com",
+          "youtubekids.com",
+          "googlevideo.com",
+          "ytimg.com",
+          "ggpht.com"
         ],
         "outbound": "google-out"
       }
