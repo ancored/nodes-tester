@@ -10,7 +10,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
 PKG_VERSION:=0.8.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=AGPL-3.0-or-later
@@ -116,6 +116,16 @@ define Package/nodes-tester/install
 	$(INSTALL_BIN) ./files/nodes-tester.init $(1)/etc/init.d/nodes-tester
 	$(INSTALL_BIN) ./files/nodes-tester.uci-defaults $(1)/etc/uci-defaults/90-nodes-tester
 	$(INSTALL_BIN) ./files/nodes-tester.sh $(1)/usr/bin/nodes-tester
+endef
+
+# Байткод прежней версии удаляем и при обновлении: файлы пакета собраны с одним и тем же
+# временем (SOURCE_DATE_EPOCH), и Python принял бы старый .pyc за актуальный, если размер
+# исходника не изменился.
+define Package/nodes-tester/postinst
+#!/bin/sh
+[ -n "$$IPKG_INSTROOT" ] && exit 0
+find /usr/lib/nodes-tester -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null
+exit 0
 endef
 
 # __pycache__ создаёт Python во время работы — пакетный менеджер о нём не знает
