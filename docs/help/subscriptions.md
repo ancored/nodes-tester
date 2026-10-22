@@ -99,7 +99,9 @@ using the rating of their nodes.
 | vpn:// link | the subscription link from the Amnezia app; it contains the account key, keep it secret |
 | Folder for country files | where the `<country code>.conf` files are kept |
 | Gateway key file (PEM) | the public key of the Amnezia gateway (it is not part of the project: it is taken from the official AmneziaVPN app, see the [reference](../CONFIG.md#amnezia-premium)) |
-| Gateway proxy | the proxy for the gateway requests, for example `socks5h://127.0.0.1:2080` (through a node, if the gateway is blocked); empty — the download proxy |
+| Gateway addresses | gateway addresses, tried in turn on a network failure; empty — `http://gw.amnezia.org/` |
+| Relay configs only | a config issued without the Amnezia relay is revoked at once: the gateway gives the relay only to requests from Russia, see the [reference](../CONFIG.md#amnezia-premium) |
+| Gateway proxy | a proxy for the gateway requests; empty — the download proxy. Through a foreign exit the gateway gives configs without the relay |
 | Country files to keep | how many countries to hold; empty — all slots of the subscription. Slots above the limit stay free for the app |
 | Replace a country rated below | the rating threshold, 40 by default |
 | Do not issue countries | country codes never issued, `ru` by default |

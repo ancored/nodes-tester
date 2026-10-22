@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timezone
 
 from nodes_common.fileio import atomic_write_private, dumps_json
-from nodes_fetch.amnezia import AmneziaError, Gateway
+from nodes_fetch.amnezia import GATEWAYS, AmneziaError, Gateway
 from nodes_fetch.parsers import awg
 
 from .config import branch_subscriptions
@@ -113,7 +113,9 @@ class Subscription:
         low = self._low(files, ratings, state, now)
         try:
             with open(self.key_file, encoding="utf-8") as fh:
-                gateway = Gateway(self.sub["url"], fh.read(), proxies=self.proxies)
+                gateway = Gateway(self.sub["url"], fh.read(), proxies=self.proxies,
+                                  gateways=self.sub.get("gateways") or GATEWAYS)
+            relay = self.sub.get("relay", True)
             info = gateway.account_info()
             issued = {c.get("server_country_code"): c for c in info.get("issued_configs") or []
                       if c.get("source_type") == "country_config"}
@@ -122,11 +124,12 @@ class Subscription:
                 os.unlink(os.path.join(self.folder, f"{cc}.conf"))
                 files.pop(cc)
                 state["blocked"][cc] = _today()
+                state["low_since"].pop(cc, None)
                 done.append(f"{cc} заблокирована (рейтинг ниже порога) — файл отозван")
             for cc in files:
                 c = issued.get(cc) or {}
                 if c.get("worker_last_updated", "") > c.get("last_downloaded", "~"):
-                    self._write(cc, gateway.issue(cc), state)
+                    self._write(cc, gateway.issue(cc, relay), state)
                     done.append(f"{cc} перевыпущена: сервер обновился")
             max_devices = int(info.get("max_device_count") or 0)
             limit = int(self.sub.get("slots") or max_devices)
@@ -138,8 +141,8 @@ class Subscription:
             # Сначала не пробованные; кончились — заблокированные, начиная с самой давней блокировки.
             pool.sort(key=lambda cc: (cc in state["blocked"], state["blocked"].get(cc, "")))
             for cc in pool[:max(0, min(limit - len(files), free))]:
+                self._write(cc, gateway.issue(cc, relay), state)
                 retry = state["blocked"].pop(cc, None)
-                self._write(cc, gateway.issue(cc), state)
                 done.append(f"{cc} выпущена снова (заблокирована {retry}, других стран нет)" if retry
                             else f"{cc} выпущена")
         except (AmneziaError, OSError) as exc:

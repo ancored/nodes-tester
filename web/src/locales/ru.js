@@ -680,6 +680,8 @@ export default {
   'Folder for country files': 'Каталог файлов стран',
   'Gateway key file (PEM)': 'Файл ключа шлюза (PEM)',
   'Gateway proxy': 'Прокси шлюза',
+  'Gateway addresses (comma-separated)': 'Адреса шлюза (через запятую)',
+  'Relay configs only': 'Только конфиги через relay',
   'direct': 'напрямую',
   'Country files to keep': 'Сколько файлов стран держать',
   'all slots': 'все слоты',

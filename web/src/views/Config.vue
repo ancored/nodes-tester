@@ -146,7 +146,7 @@ function setHappKeys(v) {v=v.trim();setPath(document.value,'pipeline.fetch.happ_
 function sourceKind(sub) {return ['folder','inline','amnezia'].includes(sub.type) ? sub.type : sub.file != null ? 'file' : String(sub.url || '').trim().startsWith('happ://crypt') ? 'happ' : 'url'}
 function changeKind(sub,kind) {
   delete sub.url; delete sub.file; delete sub.type; delete sub.path; delete sub.outbounds
-  for(const key of ['gateway_key','proxy','slots','min_rating','exclude_countries'])delete sub[key]
+  for(const key of ['gateway_key','gateways','relay','proxy','slots','min_rating','exclude_countries'])delete sub[key]
   if(kind === 'amnezia'){sub.type='amnezia';sub.url='';sub.path='';sub.gateway_key=''}
   else if(kind === 'folder'){sub.type='folder';sub.path=''; if(!sub.format)sub.format='awg'}
   else if(kind === 'inline'){sub.type='inline';sub.outbounds=[]}
@@ -232,6 +232,8 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
               <label>{{ t('Exclude nodes by a name substring (comma-separated)') }}<input :value="(sub.exclude_names || []).join(', ')" @change="setList(sub,'exclude_names',$event.target.value)" /></label>
               <label v-if="['url','happ'].includes(sourceKind(sub))">{{ sourceKind(sub)==='happ' ? t('happ://crypt… link') : t('Subscription URL / share link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label>
               <template v-else-if="sourceKind(sub)==='amnezia'"><label>{{ t('vpn:// link') }} <input v-model="sub.url" :type="showSecrets ? 'text' : 'password'" autocomplete="off" /></label><label>{{ t('Folder for country files') }} <input v-model="sub.path" placeholder="amnezia" /></label><label>{{ t('Gateway key file (PEM)') }} <input v-model="sub.gateway_key" placeholder="amnezia-gateway.pem" /></label>
+                <label>{{ t('Gateway addresses (comma-separated)') }} <input :value="(sub.gateways || []).join(', ')" placeholder="http://gw.amnezia.org/" @change="setList(sub,'gateways',$event.target.value)" /></label>
+                <label class="check"><input type="checkbox" :checked="sub.relay !== false" @change="sub.relay = $event.target.checked ? undefined : false; preview=false" /> {{ t('Relay configs only') }}</label>
                 <label>{{ t('Gateway proxy') }} <input :value="sub.proxy ?? ''" :placeholder="document.pipeline?.fetch?.proxy || t('direct')" @change="setText(sub,'proxy',$event.target.value)" /></label>
                 <label>{{ t('Country files to keep') }} <input type="number" min="1" :value="sub.slots ?? ''" :placeholder="t('all slots')" @change="setNumber(sub,'slots',$event.target.value)" /></label><label>{{ t('Replace a country rated below') }} <input type="number" min="0" max="100" :value="sub.min_rating ?? ''" placeholder="40" @change="setNumber(sub,'min_rating',$event.target.value)" /></label>
                 <label>{{ t('Do not issue countries (comma-separated)') }} <input :value="(sub.exclude_countries || []).join(', ')" placeholder="ru" @change="setList(sub,'exclude_countries',$event.target.value)" /></label></template>

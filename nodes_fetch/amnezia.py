@@ -9,23 +9,31 @@
 
 Методы: account_info (только чтение), native_config (файл .conf страны: повторный выпуск
 заменяет прежний файл этой страны, каждый файл занимает слот подписки), revoke_native_config.
+
+Запросу из России шлюз выдаёт конфиг через relay Amnezia (в ответе routing_decision.relay.effective,
+в файле — I1 и адрес relay), запросу из-за границы — прямой на сервер страны, а такой путь из России режется.
+Поэтому шлюз нужен напрямую, без зарубежного прокси. Открытый HTTP к gw.amnezia.org провайдеры режут по
+заголовку Host — имя резолвим сами и шлём запрос на IP.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import ipaddress
 import json
 import os
+import socket
 import uuid
 import zlib
+from urllib.parse import urlsplit
 
 import requests
 
 from . import _aes
 from .happ_crypto import _children, _tlv
 
-GATEWAY = "http://gw.amnezia.org/"
+GATEWAYS = ("http://gw.amnezia.org/",)
 APP_VERSION = "5.0.3.0"                 # версия официального клиента, которой представляемся
 _TIMEOUT = (15, 30)
 _KEY_PLACEHOLDER = "$WIREGUARD_CLIENT_PRIVATE_KEY"
@@ -122,11 +130,33 @@ def wireguard_keypair() -> tuple[str, str]:
 
 # --- Шлюз -----------------------------------------------------------------------------
 
+def _targets(url: str) -> list[str]:
+    """Адреса для запроса к шлюзу: у открытого HTTP по имени — IP этого имени (по Host режут),
+    https и IP — как есть (имя нужно для TLS)."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme != "http" or not host:
+        return [url]
+    try:
+        ipaddress.ip_address(host)
+        return [url]
+    except ValueError:
+        pass
+    port = parts.port or 80
+    try:
+        ips = dict.fromkeys(ai[4][0] for ai in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM))
+    except OSError:
+        return [url]
+    suffix = f":{parts.port}" if parts.port else ""
+    return [f"http://{ip}{suffix}{parts.path or '/'}" for ip in ips] or [url]
+
+
 class Gateway:
-    def __init__(self, link: str, gateway_key: str, proxies=None):
+    def __init__(self, link: str, gateway_key: str, proxies=None, gateways=GATEWAYS):
         self.sub = decode_link(link)
         self.key = rsa_public_key(gateway_key)
         self.proxies = proxies
+        self.gateways = list(gateways)
         self.installation = str(uuid.uuid4())
 
     def _payload(self, **fields) -> dict:
@@ -146,12 +176,18 @@ class Gateway:
         body = {"key_payload": base64.b64encode(rsa_encrypt(self.key, keys)).decode(),
                 "api_payload": base64.b64encode(_aes.encrypt_cbc(
                     json.dumps(self._payload(**fields)).encode(), key, iv)).decode()}
-        try:
-            resp = requests.post(GATEWAY + "v1/" + method, json=body, timeout=_TIMEOUT,
-                                 proxies=self.proxies, allow_redirects=False,
-                                 headers={"X-Client-Request-ID": str(uuid.uuid4())})
-        except requests.RequestException as exc:
-            raise AmneziaError(f"{method}: шлюз недоступен ({exc.__class__.__name__})") from exc
+        errors = []
+        targets = [target for url in self.gateways for target in _targets(url)]
+        for base in targets:
+            try:
+                resp = requests.post(base.rstrip("/") + "/v1/" + method, json=body, timeout=_TIMEOUT,
+                                     proxies=self.proxies, allow_redirects=False,
+                                     headers={"X-Client-Request-ID": str(uuid.uuid4())})
+                break
+            except requests.RequestException as exc:
+                errors.append(exc.__class__.__name__)
+        else:
+            raise AmneziaError(f"{method}: шлюз недоступен ({', '.join(errors) or 'нет адресов'})")
         try:
             data = json.loads(_aes.decrypt_cbc(resp.content, key, iv))
         except ValueError:
@@ -170,14 +206,19 @@ class Gateway:
     def account_info(self) -> dict:
         return self.post("account_info", cli_version=APP_VERSION, subscription_status="active")
 
-    def issue(self, country: str) -> str:
-        """Новый файл .conf страны (прежний файл этой страны перестаёт работать)."""
+    def issue(self, country: str, relay: bool = True) -> str:
+        """Новый файл .conf страны (прежний файл этой страны перестаёт работать). relay — нужен
+        конфиг через relay Amnezia: выданный без него сразу отзывается."""
         private, public = wireguard_keypair()
         data = self.post("native_config", server_country_code=country, service_protocol="awg",
                          public_key=public)
         conf = data.get("config")
         if not isinstance(conf, str) or _KEY_PLACEHOLDER not in conf:
             raise AmneziaError(f"native_config {country}: в ответе нет конфига с местом для ключа")
+        routing = data.get("routing_decision") or {}
+        if relay and (routing.get("relay") or {}).get("effective") is False:
+            self.revoke(country)
+            raise AmneziaError(f"native_config {country}: конфиг без relay (запрос не из России?) — отозван")
         return conf.replace(_KEY_PLACEHOLDER, private)
 
     def revoke(self, country: str) -> None:

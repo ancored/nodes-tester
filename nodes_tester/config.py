@@ -885,7 +885,7 @@ def _singbox(obj) -> SingboxConfig:
 BRANCHES = ("router", "clients", "both")
 _SUB_FIELDS = ("tag", "enabled", "branch", "type", "url", "file", "path", "format", "ext",
                "user_agent", "happ_headers", "send_device", "exclude_names", "outbounds",
-               "gateway_key", "slots", "min_rating", "exclude_countries", "proxy")
+               "gateway_key", "slots", "min_rating", "exclude_countries", "proxy", "gateways", "relay")
 
 
 def _subscriptions(obj) -> list[dict]:
@@ -921,6 +921,10 @@ def _subscriptions(obj) -> list[dict]:
             _number(sub, "min_rating", path, None, 0, 100)
             _strings(sub, "exclude_countries", path)
             _string(sub, "proxy", path, "")
+            for url in _strings(sub, "gateways", path):
+                if not url.startswith(("http://", "https://")):
+                    raise ConfigError(f"{path}.gateways: {url!r} — нужен адрес http:// или https://")
+            _bool(sub, "relay", path, True)
         elif "proxy" in sub:
             raise ConfigError(f"{path}.proxy: только у amnezia-подписки (остальные качаются через pipeline.fetch.proxy)")
         out.append(dict(sub))

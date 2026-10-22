@@ -113,7 +113,54 @@ class FakeServer:
                          content=_aes.encrypt_cbc(json.dumps(reply).encode(), key, iv))
 
 
+def addrinfo(*ips):
+    return [(2, 1, 6, "", (ip, 80)) for ip in ips]
+
+
 class GatewayTest(unittest.TestCase):
+    def setUp(self):
+        patch = mock.patch.object(amnezia.socket, "getaddrinfo", return_value=addrinfo("192.0.2.10"))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_plain_http_name_goes_to_its_ip(self):
+        with mock.patch.object(amnezia.socket, "getaddrinfo", return_value=addrinfo("192.0.2.1", "192.0.2.2", "192.0.2.1")):
+            self.assertEqual(amnezia._targets("http://gw.example/"), ["http://192.0.2.1/", "http://192.0.2.2/"])
+            self.assertEqual(amnezia._targets("http://gw.example:8080/api"), ["http://192.0.2.1:8080/api", "http://192.0.2.2:8080/api"])
+        self.assertEqual(amnezia._targets("https://mirror.example/"), ["https://mirror.example/"])
+        self.assertEqual(amnezia._targets("http://203.0.113.5/"), ["http://203.0.113.5/"])
+        with mock.patch.object(amnezia.socket, "getaddrinfo", side_effect=OSError("no dns")):
+            self.assertEqual(amnezia._targets("http://gw.example/"), ["http://gw.example/"])
+
+    def test_next_address_on_network_failure(self):
+        server = FakeServer({"account_info": {"http_status": 200, "max_device_count": 7}})
+        urls = []
+
+        def post(url, **kwargs):
+            urls.append(url)
+            if len(urls) == 1:
+                raise amnezia.requests.ConnectionError("reset")
+            return server(url, **kwargs)
+        with mock.patch("requests.post", post):
+            gateway = amnezia.Gateway(link(), PEM, gateways=["http://gw.example/", "https://mirror.example/"])
+            self.assertEqual(gateway.account_info()["max_device_count"], 7)
+        self.assertEqual(urls, ["http://192.0.2.10/v1/account_info", "https://mirror.example/v1/account_info"])
+
+    def test_config_without_relay_is_revoked(self):
+        conf = "[Interface]\nPrivateKey = $WIREGUARD_CLIENT_PRIVATE_KEY\n"
+
+        def reply(effective):
+            return {"http_status": 201, "config": conf, "routing_decision": {"relay": {"requested": False, "effective": effective}}}
+        server = FakeServer({"native_config": reply(False), "revoke_native_config": {"http_status": 200}})
+        with mock.patch("requests.post", server):
+            with self.assertRaises(amnezia.AmneziaError) as err:
+                amnezia.Gateway(link(), PEM).issue("za")
+            self.assertIn("relay", str(err.exception))
+            self.assertEqual([m for m, _ in server.calls], ["native_config", "revoke_native_config"])
+            amnezia.Gateway(link(), PEM).issue("za", relay=False)       # relay не требуется — файл годен
+            server.replies["native_config"] = reply(True)
+            amnezia.Gateway(link(), PEM).issue("za")
+
     def test_requests_and_replies(self):
         conf = "[Interface]\nPrivateKey = $WIREGUARD_CLIENT_PRIVATE_KEY\n"
         server = FakeServer({"account_info": {"http_status": 200, "max_device_count": 7},
@@ -167,7 +214,8 @@ class FakeGateway:
         self.active = len(self.issued) if active is None else active
         self.log = []
 
-    def __call__(self, url, key, proxies=None):
+    def __call__(self, url, key, proxies=None, gateways=()):
+        self.gateways = list(gateways)
         return self
 
     def account_info(self):
@@ -176,7 +224,7 @@ class FakeGateway:
                 "available_countries": [{"server_country_code": cc, "available_protocols": ["awg", "vless"]}
                                         for cc in self.countries]}
 
-    def issue(self, cc):
+    def issue(self, cc, relay=True):
         self.log.append(("issue", cc))
         return conf(f"{cc}.example")
 
@@ -242,6 +290,7 @@ class SlotsTest(unittest.TestCase):
         self.assertNotIn("de", files)
         self.assertEqual(len(files), 2)
         self.assertIn("de", self.state()["blocked"])
+        self.assertNotIn("de", self.state()["low_since"])
 
     def test_recovered_rating_resets_hold(self):
         gateway = FakeGateway(issued=["de", "nl"], max_devices=2)
@@ -283,6 +332,17 @@ class SlotsTest(unittest.TestCase):
         sub.run({})
         self.assertEqual(self.files(), ["fi", "nl"])
         self.assertEqual(self.state()["blocked"], {"de": "2026-10-05"})
+
+    def test_failed_retry_keeps_the_country_blocked(self):
+        gateway = FakeGateway(max_devices=1)
+        gateway.countries = ["nl"]
+        gateway.issue = mock.Mock(side_effect=amnezia.AmneziaError("native_config nl: конфиг без relay — отозван"))
+        sub = self.sub(gateway, gateways=["http://gw.example/"], relay=True)
+        self.write_state({"blocked": {"nl": "2026-10-01"}})
+        sub.run({})
+        self.assertEqual(self.state()["blocked"], {"nl": "2026-10-01"})
+        self.assertEqual(gateway.gateways, ["http://gw.example/"])
+        gateway.issue.assert_called_once_with("nl", True)
 
     def test_country_blocked_now_is_not_retried_at_once(self):
         gateway = FakeGateway(issued=["nl"], max_devices=2)   # de сервер уже не числит
@@ -379,11 +439,13 @@ class EndpointTest(unittest.TestCase):
 class ConfigTest(unittest.TestCase):
     def test_amnezia_subscription_fields(self):
         good = {"tag": "AWG", "type": "amnezia", "url": "vpn://x", "path": "awg", "gateway_key": "gw.pem",
-                "slots": 5, "min_rating": 40, "exclude_countries": ["ru"], "proxy": "socks5h://127.0.0.1:2080"}
+                "slots": 5, "min_rating": 40, "exclude_countries": ["ru"], "proxy": "socks5h://127.0.0.1:2080",
+                "gateways": ["http://gw.amnezia.org/", "https://mirror.example/"], "relay": False}
         parse_config({"subscriptions": [good]})
         with self.assertRaises(ConfigError):
             parse_config({"subscriptions": [{"tag": "U", "url": "https://x", "proxy": "socks5h://127.0.0.1:2080"}]})
         for broken in ({"url": "https://x"}, {"path": ""}, {"gateway_key": None}, {"slots": 0},
+                       {"gateways": ["gw.amnezia.org"]}, {"gateways": "http://x/"}, {"relay": "yes"},
                        {"min_rating": 101}, {"exclude_countries": "ru"}):
             with self.subTest(broken=broken), self.assertRaises(ConfigError):
                 parse_config({"subscriptions": [{**good, **broken}]})

@@ -203,9 +203,24 @@
             "type": "string",
             "description": "amnezia: файл с публичным ключом шлюза Amnezia (PEM из официального приложения), относительно config.json."
           },
+          "gateways": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "http://gw.amnezia.org/"
+            ],
+            "description": "amnezia: адреса шлюза по очереди (следующий — при сетевом сбое). У открытого HTTP по имени запрос идёт на IP этого имени: провайдеры режут шлюз по заголовку Host."
+          },
+          "relay": {
+            "type": "boolean",
+            "default": true,
+            "description": "amnezia: только конфиги через relay Amnezia (их выдают запросам из России); выданный без relay сразу отзывается."
+          },
           "proxy": {
             "type": "string",
-            "description": "amnezia: прокси запросов к шлюзу Amnezia, например socks5h://127.0.0.1:2080; пусто — pipeline.fetch.proxy."
+            "description": "amnezia: прокси запросов к шлюзу; пусто — pipeline.fetch.proxy. Через зарубежный выход шлюз выдаёт конфиги без relay — с relay они будут отозваны."
           },
           "slots": {
             "type": "integer",
