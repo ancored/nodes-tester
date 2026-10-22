@@ -1,7 +1,7 @@
 {
   "_preset": {
     "title": "RU и тяжёлый трафик напрямую",
-    "description": "Российские домены (geosite-ru, ru-also-domains), Zoom, торренты и RDP → direct-out: российские сайты недоступны с иностранных IP, а торренты и видеосвязь нагружают ноды. DNS этих доменов — dns-direct",
+    "description": "Российские домены (geosite-ru, ru-also-domains), Zoom (домены и UDP 8801–8810 на адреса zoom-ip), торренты и RDP → direct-out: российские сайты недоступны с иностранных IP, а торренты и видеосвязь нагружают ноды. DNS этих доменов — dns-direct",
     "enabled": false,
     "priority": 300
   },
@@ -27,6 +27,14 @@
   },
   "route": {
     "rules": [
+      {
+        "network": "udp",
+        "port_range": [
+          "8801:8810"
+        ],
+        "rule_set": "zoom-ip",
+        "outbound": "direct-out"
+      },
       {
         "type": "logical",
         "mode": "or",
@@ -61,6 +69,12 @@
         "tag": "zoom",
         "format": "binary",
         "path": "/etc/sing-box/rules/zoom.srs"
+      },
+      {
+        "type": "local",
+        "tag": "zoom-ip",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/zoom-ip.srs"
       },
       {
         "type": "local",

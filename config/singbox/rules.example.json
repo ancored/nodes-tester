@@ -8,6 +8,7 @@
     {"dest": "ruleset-domain-oisd_nsfw.srs", "url": "https://raw.githubusercontent.com/burjuyz/RuRulesets/main/ruleset-domain-oisd_nsfw.srs"},
     {"dest": "ruleset-domain-torrent_trackres.srs", "url": "https://github.com/burjuyz/RuRulesets/raw/main/ruleset-domain-torrent_trackres.srs"},
     {"dest": "zoom.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/zoom.srs"},
+    {"dest": "zoom-ip.srs", "url": "https://github.com/ancored/zoom-ip/releases/latest/download/zoom-ip.srs"},
     {"dest": "anthropic.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs"},
     {"dest": "openai.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/openai.srs"},
     {"dest": "google-deepmind.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-deepmind.srs"},
