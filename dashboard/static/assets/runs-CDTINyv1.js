@@ -46,7 +46,8 @@ What the main lines mean:
 | \`кандидатов нет … группа на failsafe-out\` | the group lost its candidates ([fallback](groups.md#fallback)) |
 | \`gate-провал … пауза #n\` / \`карантин\` | a gate failure and the resulting [restriction](restrictions.md) |
 | \`[reserve]\` | the reserve process checks contenders |
-| \`[monitor]\` | probes of the active nodes |
+| \`[monitor]\` | probes and error rule of the active nodes |
+| \`[outage]\` | a general outage: start and end |
 | \`[rebuild]\` | the tester starts the router pipeline itself ([rebuild on degradation](switching.md#rebuild)) |
 | \`[amnezia]\` | the [Amnezia Premium](subscriptions.md#amnezia) country check |
 

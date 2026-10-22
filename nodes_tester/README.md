@@ -267,11 +267,19 @@ go to the log and to the `subscription` notification.
 
 ## Monitor, pause and quarantine
 
-The Monitor watches the active nodes between their measurements. When there is user traffic,
-it considers the node alive. After a quiet period it runs a short SOCKS probe. A burst of connection
-errors through the group in the sing-box log (`monitor.error_burst` per tick) starts a probe right away, even if
-traffic flows. A failed probe is repeated after `monitor.retry` (30 s); `fails` failures in a row start
-an emergency choice. The error text goes to the log.
+The Monitor watches the active nodes between their measurements. Connection errors of users through the group
+in the sing-box log decide first: at least 3 errors in a minute and at least 2 in the minute before it
+(`monitor.errors`, a group can have its own rule) replace the node at once, without a probe. During the first
+10 minutes after a node is chosen 2 errors in a minute are enough; errors of connections started before the switch
+are not counted. When there is user traffic, the node is considered alive. After a quiet period the monitor runs a
+short SOCKS probe, but only if the node had connections: an unused group is not probed. A burst of errors within a
+tick (`monitor.error_burst`) starts a probe right away. A failed probe is repeated after `monitor.retry` (30 s);
+`fails` failures in a row start an emergency choice. The error text goes to the log.
+
+[`outage.py`](outage.py) tells a general outage from a node failure: the direct exit is checked every minute past
+sing-box, and after 3 emergency replacements within 10 minutes also up to 3 nodes of different providers. While
+the WAN or all those nodes are down, measurements, the reserve, rotations and replacements stop
+(`monitor.outage`).
 
 After the n-th GATE failure in a row the node is paused for 2^(n−1) `connectivity` periods. When the skip
 grows to `selection.quarantine.after_skips`, the node goes into quarantine for `duration`, then
@@ -374,6 +382,7 @@ User guide: [`docs/USAGE.md`](../docs/USAGE.md). Technical description:
 | `scoreboard.py` | EWMA, availability and saving the rating |
 | `switcher.py` | emergency, quality, rotation and manual choice |
 | `monitor.py` | watching active nodes between measurements |
+| `outage.py` | general outage: the WAN or all nodes at once; checks and switches stop |
 | `rebuild.py` | rebuilding the config on degradation |
 | `amnezia_slots.py` | Amnezia Premium countries by the rating |
 | `traffic.py` | exact traffic accounting from the connection stream |

@@ -179,6 +179,11 @@ class Switcher:
             st = self.state.get(region)
             return st.get("active") if st else None
 
+    def last_switch(self, region: str) -> float:
+        """Когда выбрана активная нода группы (time.time()); 0 — неизвестно."""
+        with self._lock:
+            return float((self.state.get(region) or {}).get("last_switch") or 0)
+
     def next_rotate_deadline(self) -> "float | None":
         """Ближайший срок ротации среди активных групп. None — ни одна не активирована."""
         ds = [d for d in map(self.rotate_deadline, self.board.regions()) if d is not None]

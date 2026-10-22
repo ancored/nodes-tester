@@ -892,6 +892,65 @@
           "prefer": {
             "$ref": "#/definitions/groupChecks",
             "description": "Желательные проверки: успехи поднимают ноду в очереди."
+          },
+          "monitor": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Монитор для группы.",
+            "properties": {
+              "errors": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Своё правило аварии по ошибкам для группы; незаданные поля — из monitor.errors.",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Правило включено."
+                  },
+                  "window": {
+                    "type": "string",
+                    "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                    "description": "Окно счёта ошибок."
+                  },
+                  "min": {
+                    "type": "integer",
+                    "description": "Ошибок за последнее окно.",
+                    "minimum": 1
+                  },
+                  "prev_min": {
+                    "type": "integer",
+                    "description": "Ошибок за окно до него (ошибки держатся); 0 — без условия.",
+                    "minimum": 0
+                  },
+                  "classes": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "connect",
+                        "timeout",
+                        "reset",
+                        "canceled"
+                      ]
+                    },
+                    "description": "Классы ошибок: connect — не соединиться с нодой, timeout — не ответила, reset — оборвала, canceled — соединение отменило приложение."
+                  },
+                  "fresh": {
+                    "type": "string",
+                    "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                    "description": "Сколько после выбора ноды действует порог fresh_min."
+                  },
+                  "fresh_min": {
+                    "type": "integer",
+                    "description": "Ошибок за окно в первые fresh после выбора (без условия о предыдущем окне).",
+                    "minimum": 1
+                  },
+                  "probe_confirm": {
+                    "type": "boolean",
+                    "description": "Перед заменой один зонд; прошёл — нода остаётся."
+                  }
+                }
+              }
+            }
           }
         },
         "required": [
@@ -1149,7 +1208,7 @@
               "type": "string",
               "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
               "description": "Интервал ротации.",
-              "default": "3h"
+              "default": "6h"
             },
             "jitter": {
               "type": "string",
@@ -1234,6 +1293,49 @@
               "default": 0,
               "minimum": 0,
               "maximum": 100
+            }
+          }
+        },
+        "stability": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Надёжность в боевой работе: рейтинг × 1 / (1 + weight × аварий в час), частота ноды сглажена к частоте поставщика.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Учитывать аварии в рейтинге.",
+              "default": true
+            },
+            "window": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "За какой срок считать аварии.",
+              "default": "7d"
+            },
+            "weight": {
+              "type": "number",
+              "description": "Вес частоты аварий.",
+              "default": 1.0,
+              "minimum": 0
+            },
+            "prior_hours": {
+              "type": "number",
+              "description": "Часов «как у поставщика» в частоте ноды.",
+              "default": 2.0,
+              "minimum": 0
+            },
+            "provider_min_hours": {
+              "type": "number",
+              "description": "Меньше часов работы у поставщика — средняя частота всех.",
+              "default": 5.0,
+              "minimum": 0
+            },
+            "min": {
+              "type": "number",
+              "description": "Множитель не ниже.",
+              "default": 0.3,
+              "minimum": 0,
+              "maximum": 1
             }
           }
         }
@@ -1349,6 +1451,160 @@
           "description": "Ошибок соединений через группу за тик (по логу sing-box) — зонд сразу; 0 — выключено.",
           "default": 5,
           "minimum": 0
+        },
+        "silence_min_conns": {
+          "type": "integer",
+          "description": "Меньше соединений за тишину — группой не пользуются, зонд не нужен; 0 — зонд всегда.",
+          "default": 1,
+          "minimum": 0
+        },
+        "errors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Авария по ошибкам соединений через группу (лог sing-box): за окно ≥ min ошибок и за окно до него ≥ prev_min — замена ноды без зонда.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Правило включено.",
+              "default": true
+            },
+            "window": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Окно счёта ошибок.",
+              "default": "60s"
+            },
+            "min": {
+              "type": "integer",
+              "description": "Ошибок за последнее окно.",
+              "default": 3,
+              "minimum": 1
+            },
+            "prev_min": {
+              "type": "integer",
+              "description": "Ошибок за окно до него (ошибки держатся); 0 — без условия.",
+              "default": 2,
+              "minimum": 0
+            },
+            "classes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "connect",
+                  "timeout",
+                  "reset",
+                  "canceled"
+                ]
+              },
+              "description": "Классы ошибок: connect — не соединиться с нодой, timeout — не ответила, reset — оборвала, canceled — соединение отменило приложение.",
+              "default": [
+                "connect",
+                "timeout",
+                "reset"
+              ]
+            },
+            "fresh": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Сколько после выбора ноды действует порог fresh_min.",
+              "default": "10m"
+            },
+            "fresh_min": {
+              "type": "integer",
+              "description": "Ошибок за окно в первые fresh после выбора (без условия о предыдущем окне).",
+              "default": 2,
+              "minimum": 1
+            },
+            "probe_confirm": {
+              "type": "boolean",
+              "description": "Перед заменой один зонд; прошёл — нода остаётся.",
+              "default": false
+            }
+          }
+        },
+        "outage": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Общая авария (WAN или ноды разом): проверки и замены нод останавливаются до восстановления.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Сторож общей аварии включён.",
+              "default": true
+            },
+            "interval": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Фоновая проверка прямого выхода; 0 — только по сигналу.",
+              "default": "1m"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9.-]+:[0-9]+$"
+              },
+              "description": "Цели проверки прямого выхода (хост:порт, мимо sing-box).",
+              "default": [
+                "77.88.8.8:443",
+                "vk.com:443",
+                "www.gosuslugi.ru:443"
+              ]
+            },
+            "fail_quorum": {
+              "type": "integer",
+              "description": "Сколько целей не ответило — авария WAN.",
+              "default": 2,
+              "minimum": 1
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Таймаут одной цели.",
+              "default": "3s"
+            },
+            "switches": {
+              "type": "integer",
+              "description": "Аварийных замен за switches_window — проверка сразу (прямой выход и ноды).",
+              "default": 3,
+              "minimum": 1
+            },
+            "switches_window": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Окно счёта аварийных замен.",
+              "default": "10m"
+            },
+            "nodes": {
+              "type": "integer",
+              "description": "Сколько нод разных поставщиков проверить по сигналу; 0 — не проверять.",
+              "default": 3,
+              "minimum": 0
+            },
+            "recheck": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Повтор проверки во время аварии.",
+              "default": "30s"
+            },
+            "recover": {
+              "type": "integer",
+              "description": "Удачных проверок подряд для конца аварии.",
+              "default": 3,
+              "minimum": 1
+            },
+            "mark": {
+              "type": "integer",
+              "description": "routing_mark sing-box для проверки мимо него.",
+              "default": 8228,
+              "minimum": 0
+            },
+            "interface": {
+              "type": "string",
+              "description": "Интерфейс WAN; пусто — route.default_interface из конфига sing-box.",
+              "default": ""
+            }
+          }
         }
       },
       "description": "Надзор за активными нодами."
@@ -1706,7 +1962,8 @@
               "pipeline",
               "subscription",
               "expiry",
-              "singbox"
+              "singbox",
+              "outage"
             ]
           },
           "description": "События.",
@@ -1717,7 +1974,8 @@
             "pipeline",
             "subscription",
             "expiry",
-            "singbox"
+            "singbox",
+            "outage"
           ]
         },
         "switch_reasons": {

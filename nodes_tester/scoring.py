@@ -138,8 +138,29 @@ def instant_score(tests: dict, th: dict, weights: dict) -> tuple[float, bool, di
     return score, True, comps
 
 
-def aggregate(prev: Optional[dict], s_run: float, gate: bool, cfg) -> dict:
-    """Обновить EWMA-состояние ноды и вернуть S_final + компоненты состояния."""
+def final_score(ewma: float, avail: float, flap: float, cfg) -> float:
+    """Рейтинг из сглаженного состояния: EWMA × множитель доступности − штраф за флаппинг."""
+    if avail >= cfg.avail_full:
+        avail_factor = 1.0
+    elif avail <= cfg.avail_floor:
+        avail_factor = 0.5
+    else:
+        avail_factor = 0.5 + 0.5 * (avail - cfg.avail_floor) / (cfg.avail_full - cfg.avail_floor)
+    return clamp(ewma * avail_factor - cfg.flap_lambda * flap, 0.0, 100.0)
+
+
+def stability_factor(fails: float, hours: float, provider_rate: float, cfg) -> float:
+    """Множитель рейтинга за надёжность в боевой работе (selection.stability): частота аварий
+    ноды в час, сглаженная к частоте её поставщика (prior_hours часов «как у поставщика»):
+    1 / (1 + weight × частота), не ниже min. Истории нет — частота поставщика."""
+    total = hours + cfg.prior_hours
+    rate = (fails + cfg.prior_hours * provider_rate) / total if total else 0.0
+    return max(cfg.min, 1.0 / (1.0 + cfg.weight * rate))
+
+
+def aggregate(prev: Optional[dict], s_run: float, gate: bool, cfg, stability: float = 1.0) -> dict:
+    """Обновить EWMA-состояние ноды и вернуть S_final + компоненты состояния. stability —
+    множитель надёжности ноды в боевой работе (stability_factor)."""
     a = cfg.alpha
     g = 1.0 if gate else 0.0
     if prev is None:
@@ -151,19 +172,9 @@ def aggregate(prev: Optional[dict], s_run: float, gate: bool, cfg) -> dict:
         avail = a * g + (1 - a) * prev["avail"]
         samples = prev["samples"] + 1
 
-    if avail >= cfg.avail_full:
-        avail_factor = 1.0
-    elif avail <= cfg.avail_floor:
-        avail_factor = 0.5
-    else:
-        avail_factor = 0.5 + 0.5 * (avail - cfg.avail_floor) / (cfg.avail_full - cfg.avail_floor)
-
-    if not gate:
-        # Нода провалила gate в этом замере — рейтинг обнуляется сразу,
-        # без сглаживания (заблокирована/недоступна прямо сейчас).
-        final = 0.0
-    else:
-        final = clamp(ewma * avail_factor - cfg.flap_lambda * flap, 0.0, 100.0)
+    # Нода провалила gate в этом замере — рейтинг обнуляется сразу,
+    # без сглаживания (заблокирована/недоступна прямо сейчас).
+    final = final_score(ewma, avail, flap, cfg) * stability if gate else 0.0
     return {
         "score": round(final, 1),
         "score_ewma": round(ewma, 3),

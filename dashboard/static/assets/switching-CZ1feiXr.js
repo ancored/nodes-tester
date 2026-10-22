@@ -125,11 +125,15 @@ Between measurements (which may be hours apart) the monitor watches every active
 
 \`\`\`mermaid
 flowchart TD
-    tick["Monitor tick"] --> err{"Burst of connection errors<br>through the group in the<br>sing-box log (error_burst)?"}
+    tick["Monitor tick"] --> rule{"Connection errors through the group:<br>≥ 3 in a minute and ≥ 2 in the minute<br>before (first 10 min of a node: ≥ 2)?"}
+    rule -->|yes| emergency
+    rule -->|no| err{"Burst of errors within<br>a tick (error_burst)?"}
     err -->|yes| probe["Probe: download probe.size_mb<br>through the node"]
     err -->|no| traffic{"User traffic through<br>the node in the last<br>silence period?"}
     traffic -->|yes| alive["The node is alive"]
-    traffic -->|no| probe
+    traffic -->|no| used{"Were there connections<br>through the node?"}
+    used -->|no| alive
+    used -->|yes| probe
     probe --> ok{"Probe passed<br>(speed ≥ probe.min_mbps)?"}
     ok -->|yes| alive
     ok -->|no| fails{"Failures in a row<br>≥ monitor.fails?"}
@@ -137,11 +141,19 @@ flowchart TD
     fails -->|yes| emergency["Emergency: replace the node,<br>penalise its host"]
 \`\`\`
 
-- Live user traffic is the best proof: while it flows, no probes are made.
+- Connection errors of users decide first: for a proxy node such an error is the node itself (cannot connect,
+  no answer, connection broken). A single-connection probe often passes through a node that drops part of its
+  connections, so the rule replaces the node without a probe (\`monitor.errors\`). Errors of connections started
+  before the switch belong to the previous node and are not counted.
+- Live user traffic is the best proof: while it flows, no probes are made. A group nobody uses is not probed.
 - Connection errors are read from the sing-box log file (\`log.output\` of the running config). Without a log file
   this signal does not work.
 - The monitor also watches \`failsafe-out\` of a group that has no candidates, and brings back the selector choice if
   someone changed it behind the tester's back (\`monitor.reassert_drift\`).
+- **General outage** (\`monitor.outage\`): if the direct exit past sing-box does not answer, or after 3 emergency
+  replacements within 10 minutes nodes of different providers are all silent, the failure is not a node.
+  Measurements, the reserve, rotations and replacements stop until the checks pass 3 times in a row, so nodes
+  are not punished for someone else's failure.
 
 <a id="rebuild"></a>
 ## Rebuild on degradation

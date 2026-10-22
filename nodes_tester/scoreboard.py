@@ -44,6 +44,8 @@ class Scoreboard:
         self._reserve: dict[str, list[str]] = {}
         # Сведения о выходных IP (кэш ip_info): страна по базе, тип IP.
         self._ip_info: dict[str, dict] = {}
+        # Множитель боевой надёжности по ключу ноды (selection.stability); нет — 1.
+        self._stability: dict[str, float] = {}
         # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся,
         # но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
         self._restricted: set[str] = set()
@@ -80,7 +82,7 @@ class Scoreboard:
                 "avail": prev.get("avail", 1.0 if gate else 0.0),
                 "samples": prev.get("samples", 0),
             }
-        agg = scoring.aggregate(prev_state, s_run, gate, self.cfg)
+        agg = scoring.aggregate(prev_state, s_run, gate, self.cfg, self._stability.get(ident.node_id, 1.0))
 
         row = {
             "node": ident.raw,
@@ -111,6 +113,43 @@ class Scoreboard:
         self.storage.add_score_history(int(time.time()), [(ident.node_id, region,
                                                            float(agg["score"]), s_run, gate)])
         return float(agg["score"]), s_run, gate
+
+    def set_stability(self, stats: dict[str, list], cfg) -> None:
+        """Пересчитать множители надёжности (selection.stability) по боевой статистике
+        {crc: [часы активной, аварий]} и рейтинг нод с ними. Частота поставщика — по его
+        нодам; поставщик с малой историей (provider_min_hours) — средняя частота всех."""
+        with self._lock:
+            provider_of = {r.get("id"): r.get("provider") or "" for r in self.rows.values()}
+            totals: dict[str, list] = {}
+            for crc, (hours, fails) in stats.items():
+                t = totals.setdefault(provider_of.get(crc, ""), [0.0, 0])
+                t[0] += hours
+                t[1] += fails
+            all_hours = sum(t[0] for t in totals.values())
+            overall = sum(t[1] for t in totals.values()) / all_hours if all_hours else 0.0
+            rates = {p: (f / h if h >= cfg.provider_min_hours else overall) for p, (h, f) in totals.items()}
+            self._stability = {}
+            changed = []
+            for row in self.rows.values():
+                hours, fails = stats.get(row.get("id"), (0.0, 0))
+                factor = scoring.stability_factor(fails, hours, rates.get(row.get("provider") or "", overall), cfg)
+                self._stability[row.get("id")] = factor
+                if float(row.get("score") or 0) <= 0:
+                    continue                          # провал gate — рейтинг 0 и так
+                score = round(scoring.final_score(float(row["score_ewma"]), float(row["avail"]),
+                                                  float(row["flap"]), self.cfg) * factor, 1)
+                if score != row["score"]:
+                    row["score"] = score
+                    changed.append(row)
+            if changed:
+                marks = self._reserve_marks()
+                self.storage.upsert_scores([{**r, "reserve": marks.get(r["node"], "")} for r in changed])
+
+    def stability(self, node: str) -> float:
+        """Множитель надёжности ноды (1 — нет истории или учёт выключен)."""
+        with self._lock:
+            r = self.rows.get(node)
+            return self._stability.get(r.get("id"), 1.0) if r else 1.0
 
     def _persist(self, row: dict) -> None:
         """Записать строку ноды в scores. У дублей с тем же ключом пишется предпочтительная."""

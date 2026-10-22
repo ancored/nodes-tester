@@ -233,6 +233,7 @@ class GroupConfig:
     tier_floor: float | None = None  # None — selection.tier_floor
     require: dict[str, dict] = field(default_factory=dict)   # проверка → условия
     prefer: dict[str, dict] = field(default_factory=dict)
+    errors: "ErrorRuleConfig | None" = None   # None — monitor.errors
 
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9_]*")
@@ -265,7 +266,7 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
     return out
 
 
-def _groups(obj, checks: dict, regions: dict, reserve: int) -> list[GroupConfig]:
+def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleConfig") -> list[GroupConfig]:
     if obj is None:
         obj = [{"tag": "all"}]
     if not isinstance(obj, list):
@@ -274,7 +275,7 @@ def _groups(obj, checks: dict, regions: dict, reserve: int) -> list[GroupConfig]
     for i, item in enumerate(obj):
         path = f"groups[{i}]"
         item = _fields(item, path, ("tag", "strict", "direct_fallback", "in_global", "reserve",
-                                    "tier_floor", "require", "prefer"))
+                                    "tier_floor", "require", "prefer", "monitor"))
         tag = item.get("tag")
         if not isinstance(tag, str) or not _TAG.fullmatch(tag) or tag in ("global", "nodes", "failsafe"):
             raise ConfigError(f"{path}.tag: латиница в нижнем регистре, цифры и _; не global, nodes, "
@@ -289,6 +290,9 @@ def _groups(obj, checks: dict, regions: dict, reserve: int) -> list[GroupConfig]
                             tier_floor=_number(item, "tier_floor", path, None, 0, 100),
                             require=_group_checks(item.get("require"), f"{path}.require", checks),
                             prefer=_group_checks(item.get("prefer"), f"{path}.prefer", checks))
+        own = _fields(item.get("monitor"), f"{path}.monitor", ("errors",))
+        if "errors" in own:
+            group.errors = _error_rule(own["errors"], f"{path}.monitor.errors", errors)
         for part in ("require", "prefer"):
             for key in ("regions", "exclude_regions"):
                 unknown = [r for r in getattr(group, part).get("country", {}).get(key, [])
@@ -398,7 +402,9 @@ class BalanceConfig:
 @dataclass
 class RotationConfig:
     enabled: bool = True
-    interval: float = 10800.0
+    # 6 ч: чаще всего нода отказывает в первые минуты после выбора, а не от долгой работы —
+    # каждая ротация лишний раз рискует новой нодой.
+    interval: float = 6 * 3600.0
     jitter: float = 900.0
     min_dwell: float = 1800.0
     min_score: float = 55.0
@@ -417,6 +423,20 @@ class QuarantineConfig:
 
 
 @dataclass
+class StabilityConfig:
+    """Надёжность в боевой работе: рейтинг умножается на 1 / (1 + weight × частота аварий в час).
+    Частота — аварии ноды за window на часы её работы активной, сглаженные к частоте её
+    поставщика (prior_hours часов «как у поставщика»). Поставщик с работой меньше
+    provider_min_hours — к средней частоте всех. Множитель не ниже min."""
+    enabled: bool = True
+    window: float = 7 * 86400.0
+    weight: float = 1.0
+    prior_hours: float = 2.0
+    provider_min_hours: float = 5.0
+    min: float = 0.3
+
+
+@dataclass
 class SelectionConfig:
     reserve: int = 3
     quality_margin: float = 15.0
@@ -428,12 +448,24 @@ class SelectionConfig:
     host_penalty: float = 10800.0             # хост ноды, снятой аварией монитора, не выбирать
     rotation: RotationConfig = field(default_factory=RotationConfig)
     quarantine: QuarantineConfig = field(default_factory=QuarantineConfig)
+    stability: StabilityConfig = field(default_factory=StabilityConfig)
+
+
+def _stability(obj, path: str) -> StabilityConfig:
+    d = StabilityConfig()
+    obj = _fields(obj, path, ("enabled", "window", "weight", "prior_hours", "provider_min_hours", "min"))
+    return StabilityConfig(enabled=_bool(obj, "enabled", path, d.enabled),
+                           window=_duration(obj, "window", path, d.window),
+                           weight=_number(obj, "weight", path, d.weight, 0),
+                           prior_hours=_number(obj, "prior_hours", path, d.prior_hours, 0),
+                           provider_min_hours=_number(obj, "provider_min_hours", path, d.provider_min_hours, 0),
+                           min=_number(obj, "min", path, d.min, 0, 1))
 
 
 def _selection(obj) -> SelectionConfig:
     path, d = "selection", SelectionConfig()
     obj = _fields(obj, path, ("reserve", "quality_margin", "reserve_margin", "confirm_cycles", "comfort_floor",
-                              "tier_floor", "cooldown", "host_penalty", "rotation", "quarantine"))
+                              "tier_floor", "cooldown", "host_penalty", "rotation", "quarantine", "stability"))
     rpath, r = f"{path}.rotation", RotationConfig()
     rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "min_dwell",
                                                "min_score", "avoid_recent", "balance"))
@@ -466,14 +498,59 @@ def _selection(obj) -> SelectionConfig:
         quarantine=QuarantineConfig(
             after_skips=_number(quar, "after_skips", qpath, q.after_skips, 1, integer=True),
             duration=_duration(quar, "duration", qpath, q.duration),
-            low_score=_number(quar, "low_score", qpath, q.low_score, 0, 100)))
+            low_score=_number(quar, "low_score", qpath, q.low_score, 0, 100)),
+        stability=_stability(obj.get("stability"), f"{path}.stability"))
+
+
+ERROR_CLASSES = ("connect", "timeout", "reset", "canceled")
+
+
+@dataclass
+class ErrorRuleConfig:
+    """Авария по ошибкам соединений через группу из лога sing-box: за последние `window`
+    не меньше `min` ошибок классов `classes` и не меньше `prev_min` за окно до него (ошибки
+    держатся дольше окна; 0 — без этого условия). Первые `fresh` после выбора ноды хватает
+    `fresh_min` ошибок за окно без условия о предыдущем: чаще всего нода отказывает сразу после
+    выбора. Ошибки соединений, начатых до смены ноды, не считаются (время начала — по возрасту
+    соединения в строке лога). probe_confirm — перед аварией один зонд, прошёл — не менять."""
+    enabled: bool = True
+    window: float = 60.0
+    min: int = 3
+    prev_min: int = 2
+    classes: tuple = ("connect", "timeout", "reset")
+    fresh: float = 600.0
+    fresh_min: int = 2
+    probe_confirm: bool = False
+
+
+@dataclass
+class OutageConfig:
+    """Общая авария — отказ не ноды, а общего звена (WAN, DNS нод): все проверки и замены
+    останавливаются, пока прямой выход и ноды не ответят `recover` проверок подряд.
+    Прямой выход проверяется раз в `interval` (0 — только по сигналу) рукопожатием TCP+TLS с
+    `targets` мимо sing-box; не ответили `fail_quorum` целей — авария WAN. Сигнал — `switches`
+    аварийных замен за `switches_window`: проверяется прямой выход и до `nodes` нод разных
+    поставщиков; прямой жив, а ноды все молчат — авария нод."""
+    enabled: bool = True
+    interval: float = 60.0
+    targets: tuple = ("77.88.8.8:443", "vk.com:443", "www.gosuslugi.ru:443")
+    fail_quorum: int = 2
+    timeout: float = 3.0
+    switches: int = 3
+    switches_window: float = 600.0
+    nodes: int = 3
+    recheck: float = 30.0
+    recover: int = 3
+    mark: int = 0x2024             # routing_mark sing-box: такой трафик он не перехватывает
+    interface: str = ""            # пусто — route.default_interface из конфига sing-box
 
 
 @dataclass
 class MonitorConfig:
-    """Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` —
-    внеплановый зонд (закачка probe_mb через socks); провал (нет ответа или скорость ниже
-    probe_min_mbps — так ловится троттлинг) `fails` раз подряд — авария."""
+    """Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` и
+    были соединения — внеплановый зонд (закачка probe_mb через socks); провал (нет ответа или
+    скорость ниже probe_min_mbps — так ловится троттлинг) `fails` раз подряд — авария. Ошибки
+    соединений в логе sing-box — авария по правилу `errors`."""
     interval: float = 10.0
     reassert_drift: bool = True       # вернуть выбор селекторов, если его сменили в обход
     silence: float = 300.0
@@ -485,6 +562,9 @@ class MonitorConfig:
     fails: int = 2
     retry: float = 30.0               # повтор зонда после провала
     error_burst: int = 5              # ошибок соединений через группу за тик — зонд; 0 — выкл.
+    silence_min_conns: int = 1        # меньше соединений за тишину — группой не пользуются, зонд не нужен
+    errors: ErrorRuleConfig = field(default_factory=ErrorRuleConfig)
+    outage: OutageConfig = field(default_factory=OutageConfig)
 
     @property
     def silence_floor_bytes(self) -> int:
@@ -494,10 +574,52 @@ class MonitorConfig:
         return int(self.probe_min_mbps * 1_000_000 / 8 * self.silence)
 
 
+def _error_rule(obj, path: str, base: ErrorRuleConfig) -> ErrorRuleConfig:
+    """Правило аварии по ошибкам; незаданные поля — из base (monitor.errors для группы)."""
+    obj = _fields(obj, path, ("enabled", "window", "min", "prev_min", "classes", "fresh", "fresh_min",
+                              "probe_confirm"))
+    classes = tuple(_strings(obj, "classes", path, base.classes))
+    unknown = [c for c in classes if c not in ERROR_CLASSES]
+    if unknown or not classes:
+        raise ConfigError(f"{path}.classes: допустимы {', '.join(ERROR_CLASSES)} (получено {list(classes)})")
+    return ErrorRuleConfig(enabled=_bool(obj, "enabled", path, base.enabled),
+                           window=_duration(obj, "window", path, base.window),
+                           min=_number(obj, "min", path, base.min, 1, integer=True),
+                           prev_min=_number(obj, "prev_min", path, base.prev_min, 0, integer=True),
+                           classes=classes,
+                           fresh=_duration(obj, "fresh", path, base.fresh),
+                           fresh_min=_number(obj, "fresh_min", path, base.fresh_min, 1, integer=True),
+                           probe_confirm=_bool(obj, "probe_confirm", path, base.probe_confirm))
+
+
+def _outage(obj, path: str) -> OutageConfig:
+    d = OutageConfig()
+    obj = _fields(obj, path, ("enabled", "interval", "targets", "fail_quorum", "timeout", "switches",
+                              "switches_window", "nodes", "recheck", "recover", "mark", "interface"))
+    targets = tuple(_strings(obj, "targets", path, d.targets))
+    bad = [t for t in targets if not re.fullmatch(r"[A-Za-z0-9.-]+:\d+", t)]
+    if bad:
+        raise ConfigError(f"{path}.targets: {bad[0]!r} — нужно хост:порт")
+    quorum = _number(obj, "fail_quorum", path, d.fail_quorum, 1, integer=True)
+    if targets and quorum > len(targets):
+        raise ConfigError(f"{path}.fail_quorum: {quorum} больше числа целей ({len(targets)})")
+    return OutageConfig(enabled=_bool(obj, "enabled", path, d.enabled),
+                        interval=_duration(obj, "interval", path, d.interval),
+                        targets=targets, fail_quorum=quorum,
+                        timeout=_duration(obj, "timeout", path, d.timeout),
+                        switches=_number(obj, "switches", path, d.switches, 1, integer=True),
+                        switches_window=_duration(obj, "switches_window", path, d.switches_window),
+                        nodes=_number(obj, "nodes", path, d.nodes, 0, integer=True),
+                        recheck=_duration(obj, "recheck", path, d.recheck),
+                        recover=_number(obj, "recover", path, d.recover, 1, integer=True),
+                        mark=_number(obj, "mark", path, d.mark, 0, integer=True),
+                        interface=_string(obj, "interface", path, d.interface))
+
+
 def _monitor(obj) -> MonitorConfig:
     path, d = "monitor", MonitorConfig()
     obj = _fields(obj, path, ("interval", "reassert_drift", "silence", "silence_floor_mb", "probe", "fails",
-                              "retry", "error_burst"))
+                              "retry", "error_burst", "silence_min_conns", "errors", "outage"))
     ppath = f"{path}.probe"
     probe = _fields(obj.get("probe"), ppath, ("url", "size_mb", "min_mbps", "timeout"))
     return MonitorConfig(interval=_duration(obj, "interval", path, d.interval),
@@ -510,7 +632,11 @@ def _monitor(obj) -> MonitorConfig:
                          probe_timeout=_duration(probe, "timeout", ppath, d.probe_timeout),
                          fails=_number(obj, "fails", path, d.fails, 1, integer=True),
                          retry=_duration(obj, "retry", path, d.retry),
-                         error_burst=_number(obj, "error_burst", path, d.error_burst, 0, integer=True))
+                         error_burst=_number(obj, "error_burst", path, d.error_burst, 0, integer=True),
+                         silence_min_conns=_number(obj, "silence_min_conns", path, d.silence_min_conns, 0,
+                                                   integer=True),
+                         errors=_error_rule(obj.get("errors"), f"{path}.errors", d.errors),
+                         outage=_outage(obj.get("outage"), f"{path}.outage"))
 
 
 @dataclass
@@ -693,7 +819,7 @@ class NotifyConfig:
     proxy: str = ""                  # если Telegram без прокси недоступен
     via_tester: bool = True          # не прошло напрямую — повторить через SOCKS тестера
     events: list[str] = field(default_factory=lambda: [
-        "switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox"])
+        "switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox", "outage"])
     switch_reasons: list[str] = field(default_factory=lambda: ["emergency", "emergency-stuck"])
     expiry_warning: float = 3 * 86400.0
     dedupe: float = 3600.0           # не повторять одинаковое сообщение чаще
@@ -852,12 +978,13 @@ def parse_config(data: Any) -> Config:
     checks = _checks(data.get("checks"))
     regions = _regions(data.get("regions"))
     selection = _selection(data.get("selection"))
+    monitor = _monitor(data.get("monitor"))
     return Config(api=_api(data.get("api")),
                   subscriptions=_subscriptions(data.get("subscriptions")),
                   tests=_tests(data.get("tests")), checks=checks, regions=regions,
-                  groups=_groups(data.get("groups"), checks, regions, selection.reserve),
+                  groups=_groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors),
                   rating=_rating(data.get("rating")), selection=selection,
-                  tester=_tester(data.get("tester")), monitor=_monitor(data.get("monitor")),
+                  tester=_tester(data.get("tester")), monitor=monitor,
                   pipeline=_pipeline(data.get("pipeline")), storage=_storage(data.get("storage")),
                   admin=_admin(data.get("admin")), notify=_notify(data.get("notify")),
                   singbox=_singbox(data.get("singbox")))

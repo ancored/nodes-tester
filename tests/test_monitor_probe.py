@@ -27,6 +27,9 @@ class FakeSwitcher:
     def evaluate_region(self, region, emergency=False):
         self.emergencies.append(region)
 
+    def last_switch(self, region):
+        return 0.0
+
 
 def probe_with(results):
     """Монитор, чей prober отдаёт results по очереди; возвращает (монитор, свитчер, вызовы)."""

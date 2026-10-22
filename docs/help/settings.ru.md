@@ -41,7 +41,7 @@
 | Поле | Что значит |
 |---|---|
 | Ротация | `selection.rotation.enabled`: плановая [ротация](switching.ru.md#rotation) включена или выключена |
-| Интервал ротации | `selection.rotation.interval`, 3 ч |
+| Интервал ротации | `selection.rotation.interval`, 6 ч |
 | Минимальное время на ноде | `selection.rotation.min_dwell`, 30 мин |
 | Тик монитора активных нод | `monitor.interval`, 10 с ([монитор](switching.ru.md#monitor)) |
 | Длительность карантина | `selection.quarantine.duration`, 72 ч ([карантин](restrictions.ru.md#quarantine)) |

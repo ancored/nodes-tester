@@ -125,10 +125,10 @@ class RotationDeadlineTest(unittest.TestCase):
         deadlines = {sw._next_deadline(1000.0) for _ in range(20)}
         self.assertGreater(len(deadlines), 1)
         for d in deadlines:
-            self.assertLessEqual(abs(d - (1000.0 + 10800)), 900)
+            self.assertLessEqual(abs(d - (1000.0 + 6 * 3600)), 900)
 
     def test_no_jitter(self):
-        self.assertEqual(self._sw(jitter=0)._next_deadline(1000.0), 1000.0 + 10800)
+        self.assertEqual(self._sw(jitter=0)._next_deadline(1000.0), 1000.0 + 6 * 3600)
 
 
 class _Board:

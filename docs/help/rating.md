@@ -81,11 +81,14 @@ avail      = alpha × gate + (1 − alpha) × previous avail        (gate: 1 pas
 The final rating:
 
 ```text
-rating = clamp(score_ewma × availability factor − flap_lambda × flap, 0, 100)
+rating = clamp(score_ewma × availability factor − flap_lambda × flap, 0, 100) × reliability
 ```
 
 - **Availability factor**: below `availability.floor` (0.7) availability gives 0.5, from `availability.full` (0.9)
   it gives 1, in between linearly. A node that often fails the gate loses up to half of its rating.
+- **Reliability**: emergencies of the node per hour as the active node over 7 days, smoothed towards its
+  provider's rate, give `1 / (1 + rate)` (not below 0.3; `selection.stability`). A node without history gets the
+  provider's rate.
 - **Flapping penalty**: `flap_lambda` (0.5) × the average jump of the score. A node that is excellent one hour and
   poor the next ranks below a node that is steadily good.
 

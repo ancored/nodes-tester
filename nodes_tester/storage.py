@@ -474,6 +474,42 @@ class Storage:
                  float(score or 0), prev))
             self._db.commit()
 
+    def stability_stats(self, window: float, now: "float | None" = None) -> dict[str, list]:
+        """Боевая надёжность нод за window: {crc: [часы активной, аварий]}. Период ноды — от
+        выбора в группе до следующей записи этой группы; авария — следующая запись с причиной
+        emergency. Не в счёт аварии через ручной карантин из админки (не вина ноды)."""
+        now = time.time() if now is None else now
+        since = now - window
+        with self._lock:
+            acts = self._db.execute(
+                "SELECT ts, region, crc, reason FROM activations WHERE ts >= ? ORDER BY ts",
+                (since - window,)).fetchall()
+            manual = self._db.execute(
+                "SELECT crc, ts FROM node_events WHERE event = 'garbage' AND reason = 'manual' "
+                "AND ts >= ?", (since,)).fetchall()
+        quarantined: dict[str, list] = {}
+        for crc, ts in manual:
+            quarantined.setdefault(crc, []).append(ts)
+        stats: dict[str, list] = {}
+
+        def add(crc: str, start: float, end: float, failed: bool) -> None:
+            if not crc or end <= since:          # пустой crc — группа на запасном выходе
+                return
+            entry = stats.setdefault(crc, [0.0, 0])
+            entry[0] += (end - max(start, since)) / 3600
+            entry[1] += failed
+
+        current: dict[str, tuple] = {}           # группа → (crc, с какого момента активна)
+        for ts, region, crc, reason in acts:
+            if region in current:
+                prev, start = current[region]
+                manual_drop = any(0 <= ts - t < 120 for t in quarantined.get(prev, ()))
+                add(prev, start, ts, reason == "emergency" and not manual_drop)
+            current[region] = (crc, ts)
+        for crc, start in current.values():
+            add(crc, start, now, False)
+        return stats
+
     # --- Рейтинг (таблица scores) -------------------------------------
 
     def load_scores(self) -> dict:

@@ -47,7 +47,8 @@ const n=`[English](runs.md) | **Русский**
 | \`кандидатов нет … группа на failsafe-out\` | группа потеряла кандидатов ([запасной выход](groups.ru.md#fallback)) |
 | \`gate-провал … пауза #n\` / \`карантин\` | провал gate и следующее за ним [ограничение](restrictions.ru.md) |
 | \`[reserve]\` | процесс резерва проверяет претендентов |
-| \`[monitor]\` | пробы активных нод |
+| \`[monitor]\` | пробы и правило ошибок активных нод |
+| \`[outage]\` | общая авария: начало и конец |
 | \`[rebuild]\` | тестер сам запускает конвейер роутера ([пересборка при деградации](switching.ru.md#rebuild)) |
 | \`[amnezia]\` | сверка стран [Amnezia Premium](subscriptions.ru.md#amnezia) |
 `;export{n as default};

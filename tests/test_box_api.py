@@ -236,14 +236,14 @@ class CollectorTest(unittest.TestCase):
 
 class MonitorDeltaTest(unittest.TestCase):
     def test_delta_between_ticks(self):
-        from nodes_tester.monitor import ProductionMonitor
+        from nodes_tester.monitor import _delta
         counters = {"a": 100}
-        mon = ProductionMonitor(cfg=None, api=None, switcher=None, prober=None,
-                                traffic=lambda: dict(counters))
-        self.assertEqual(mon._traffic_delta(), {})         # первый тик — точка отсчёта
+        delta, last = _delta(dict(counters), None)
+        self.assertEqual(delta, {})                         # первый тик — точка отсчёта
         counters.update(a=250, b=40)
-        self.assertEqual(mon._traffic_delta(), {"a": 150, "b": 40})
-        self.assertEqual(mon._traffic_delta(), {})
+        delta, last = _delta(dict(counters), last)
+        self.assertEqual(delta, {"a": 150, "b": 40})
+        self.assertEqual(_delta(dict(counters), last)[0], {})
 
 
 if __name__ == "__main__":

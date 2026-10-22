@@ -7,7 +7,8 @@
   pipeline      — прогон конвейера завершился ошибкой/тайм-аутом;
   subscription  — подписка не загрузилась (работают прошлые ноды — до какого времени — или нод нет);
   expiry        — подписка заканчивается (по Subscription-Userinfo) — раз в сутки;
-  singbox       — sing-box остановлен/запущен из админки, переключён killswitch.
+  singbox       — sing-box остановлен/запущен из админки, переключён killswitch;
+  outage        — общая авария (WAN или ноды разом): проверки и замены остановлены, и её конец.
 
 Отправка — фоновым потоком из очереди: тестер и переключатель не ждут сеть. Повтор того
 же ключа (`key`) в пределах `dedupe_minutes` не отправляется; общий предел — `max_per_hour`.
@@ -24,7 +25,7 @@ from collections import deque
 
 import requests
 
-EVENTS = ("switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox")
+EVENTS = ("switch", "failsafe", "rollback", "pipeline", "subscription", "expiry", "singbox", "outage")
 SWITCH_REASONS = ("init", "rotation", "quality", "emergency", "emergency-stuck", "manual")
 
 _REASON_RU = {
@@ -200,6 +201,17 @@ class Notifier:
         else:
             text = f"Группа {group}: {why} → {node}" + (f" (была {prev})" if prev else "")
         self.send("switch", text, key=None if reason != "emergency-stuck" else f"stuck:{group}")
+
+    def outage(self, kind: str, detail: str, minutes: "float | None" = None) -> None:
+        """Общая авария (kind: wan — прямой выход, nodes — ноды разом). minutes=None — началась
+        (без WAN отправить нельзя — о нём пишем только по окончании), иначе — закончилась."""
+        what = "прямой выход не отвечал" if kind == "wan" else "ноды не отвечали разом"
+        if minutes is None:
+            text = f"Общая авария: {what} ({detail}). Проверки и замены нод остановлены."
+        else:
+            text = (f"Общая авария закончилась: {what} {minutes:.0f} мин ({detail}). "
+                    f"Проверки и замены нод возобновлены.")
+        self.send("outage", text, key=f"outage:{kind}:{'start' if minutes is None else 'end'}")
 
     def pipeline_finished(self, row: dict, log_text: str) -> None:
         """Из оркестратора: разбор журнала прогона."""

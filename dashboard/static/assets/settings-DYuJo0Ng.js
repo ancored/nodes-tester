@@ -41,7 +41,7 @@ The tester measures all nodes; each group chooses from them by its own checks.
 | Field | Meaning |
 |---|---|
 | Rotation | \`selection.rotation.enabled\`: scheduled [rotation](switching.md#rotation) on or off |
-| Rotation interval | \`selection.rotation.interval\`, 3 h |
+| Rotation interval | \`selection.rotation.interval\`, 6 h |
 | Minimum time on a node | \`selection.rotation.min_dwell\`, 30 min |
 | Active node monitor tick | \`monitor.interval\`, 10 s ([monitor](switching.md#monitor)) |
 | Quarantine duration | \`selection.quarantine.duration\`, 72 h ([quarantine](restrictions.md#quarantine)) |

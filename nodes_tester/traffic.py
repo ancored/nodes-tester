@@ -71,6 +71,7 @@ class TrafficCollector:
         self._by_node: dict[tuple, list] = defaultdict(lambda: [0, 0, 0])  # crc,is_tester -> [up,down,conns]
         self._by_ep: dict[tuple, list] = defaultdict(lambda: [0, 0, 0])    # crc,src,dst,net -> [up,down,flows]
         self._user: dict[str, int] = defaultdict(int)                      # crc -> байт (накопительно)
+        self._user_conns: dict[str, int] = defaultdict(int)                # crc -> соединений (накопительно)
         self._lock = threading.Lock()
         self._connected = False
 
@@ -106,6 +107,11 @@ class TrafficCollector:
         """Накопительные байты боевого трафика (up+down) по CRC ноды."""
         with self._lock:
             return dict(self._user)
+
+    def user_conns(self) -> dict[str, int]:
+        """Накопительное число боевых соединений по CRC ноды."""
+        with self._lock:
+            return dict(self._user_conns)
 
     # --- Внутреннее -----------------------------------------------------
 
@@ -150,6 +156,7 @@ class TrafficCollector:
             ep[2] += 1
         if not rec.is_tester:
             self._user[rec.crc] += up + down
+            self._user_conns[rec.crc] += new
 
     def apply(self, batch: dict) -> None:
         """Применить одно сообщение ConnectionEvents (см. connection_events)."""

@@ -124,11 +124,12 @@ Default values are shown so that all fields are visible.
     "cooldown": "5m",
     "host_penalty": "3h",
     "rotation": {
-      "enabled": true, "interval": "3h", "jitter": "15m",
+      "enabled": true, "interval": "6h", "jitter": "15m",
       "min_dwell": "30m", "min_score": 55, "avoid_recent": 2,
       "balance": { "window": "24h", "provider": 1.0, "country": 1.0, "protocol": 0.3 }
     },
-    "quarantine": { "after_skips": 32, "duration": "72h", "low_score": 0 }
+    "quarantine": { "after_skips": 32, "duration": "72h", "low_score": 0 },
+    "stability": { "enabled": true, "window": "7d", "weight": 1.0, "prior_hours": 2, "provider_min_hours": 5, "min": 0.3 }
   },
 
   "tester": {
@@ -147,7 +148,18 @@ Default values are shown so that all fields are visible.
     "probe": { "url": "", "size_mb": 1, "min_mbps": 1, "timeout": "8s" },
     "fails": 2,
     "retry": "30s",
-    "error_burst": 5
+    "error_burst": 5,
+    "silence_min_conns": 1,
+    "errors": {
+      "enabled": true, "window": "60s", "min": 3, "prev_min": 2,
+      "classes": ["connect", "timeout", "reset"], "fresh": "10m", "fresh_min": 2, "probe_confirm": false
+    },
+    "outage": {
+      "enabled": true, "interval": "1m",
+      "targets": ["77.88.8.8:443", "vk.com:443", "www.gosuslugi.ru:443"], "fail_quorum": 2, "timeout": "3s",
+      "switches": 3, "switches_window": "10m", "nodes": 3, "recheck": "30s", "recover": 3,
+      "mark": 8228, "interface": ""
+    }
   },
 
   "pipeline": {
@@ -333,6 +345,7 @@ A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router
 | `tier_floor` | number | `selection.tier_floor` | A lower rating puts the node into a tier after all other nodes of the group |
 | `require` | object | — | Required checks: without a fresh success the node is not a candidate |
 | `prefer` | object | — | Preferred checks: successes move the node up the choice queue |
+| `monitor.errors` | object | `monitor.errors` | The group's own rule of an emergency by connection errors; fields that are not set come from `monitor.errors` |
 
 A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl`, and
 `country` and `ip_type` can set conditions:
@@ -380,9 +393,9 @@ Choosing the active node in groups.
 | `comfort_floor` | `50` | Above this rating the active node is not replaced by quality |
 | `tier_floor` | `75` | A lower rating puts the node into a tier after all other nodes of the group: a weak node that passed the preferred checks (`prefer`) does not overtake strong ones that did not |
 | `cooldown` | `5m` | Pause between switches of a group |
-| `host_penalty` | `3h` | How long not to choose the host of a node that the monitor removed in an emergency (the probe failed); `0` means no penalty |
+| `host_penalty` | `3h` | How long not to choose the host of a node that the monitor removed in an emergency; `0` means no penalty |
 | `rotation.enabled` | `true` | Scheduled rotation |
-| `rotation.interval`, `rotation.jitter` | `3h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once |
+| `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once. A node fails most often in the first minutes after it is chosen, not after long work, so every rotation is an extra risk |
 | `rotation.min_dwell` | `30m` | Minimum time on a node |
 | `rotation.min_score` | `55` | Minimum rating of a rotation candidate |
 | `rotation.avoid_recent` | `2` | Do not go back to the last N nodes |
@@ -390,6 +403,14 @@ Choosing the active node in groups.
 | `quarantine.after_skips` | `32` | After the n-th failure in a row the node is not checked for 2^(n-1) `connectivity` periods; once the skip reaches N, quarantine |
 | `quarantine.duration` | `72h` | Quarantine duration |
 | `quarantine.low_score` | `0` | Above zero: quarantine also for weak nodes with a lower rating |
+| `stability.enabled` | `true` | Reliability in live use: the rating is multiplied by `1 / (1 + weight × emergencies per hour)` |
+| `stability.window` | `7d` | Period over which emergencies and hours as the active node are counted |
+| `stability.weight` | `1.0` | Weight of the emergency rate |
+| `stability.prior_hours` | `2` | The node rate is smoothed towards its provider's rate as if it had worked this many hours like the provider; a node without history gets the provider rate |
+| `stability.provider_min_hours` | `5` | A provider with less work gets the average rate of all |
+| `stability.min` | `0.3` | The multiplier is not lower |
+
+An emergency counts against the node that was active; emergencies after a manual quarantine from the admin panel do not count. The admin panel shows the rating with this multiplier.
 
 ## tester
 
@@ -403,10 +424,26 @@ Choosing the active node in groups.
 
 ## monitor
 
-Supervision of active nodes: live traffic flows, the node is alive; quiet for longer than `silence`, an unscheduled
-probe; `error_burst` connection errors through the group in the sing-box log within a tick, a probe right away; a failure, a retry
-after `retry`; `fails` failures in a row, an emergency and a replacement. Errors are read from the `log.output` file of the running
-sing-box config (`singbox.config`); if the log is not in a file, this signal does not work.
+Supervision of active nodes. Connection errors through the group are read from the `log.output` file of the running sing-box
+config (`singbox.config`); if the log is not in a file, these signals do not work. For a proxy node such an error is almost
+always the node itself: it cannot be connected to (`connect`), did not answer in time (`timeout`) or broke the connection (`reset`).
+
+- **Emergency by errors** (`errors`): at least `min` errors in the last `window` and at least `prev_min` in the window before it,
+  the node is replaced at once, without a probe: a single-connection probe often passes through a node that drops part of its
+  connections. During the first `fresh` after a node is chosen, `fresh_min` errors in a window are enough: a node fails most
+  often right after it is chosen. Errors of connections started before the switch (the line time minus the connection age)
+  belong to the previous node and are not counted.
+- **Traffic**: live traffic flows, the node is alive; `error_burst` errors within a tick, a probe right away; quiet for longer than
+  `silence`, an unscheduled probe, but only if the node had connections or errors in that time (`silence_min_conns`): nobody
+  uses the group, there is nothing to check. A failure, a retry after `retry`; `fails` failures in a row, an emergency and a
+  replacement.
+- **General outage** (`outage`): the failure is not a node but a shared link (the WAN, the node DNS). Then measurements,
+  the reserve, rotations and replacements stop until the checks pass `recover` times in a row, so nodes are not punished with
+  pauses and penalties for someone else's failure. The direct exit is checked every `interval` with a TCP handshake
+  (and TLS for a host name) to `targets` past sing-box (its `mark`, the WAN `interface`); `fail_quorum` targets did not answer,
+  a WAN outage. `switches` emergency replacements within `switches_window` start a check at once: the direct exit and up to
+  `nodes` nodes of different providers; the direct exit works but all those nodes are silent, a node outage. Cloudflare and
+  Google are not used as targets: they are often blocked in Russia.
 
 | Field | Default | Description |
 |---|---|---|
@@ -419,6 +456,21 @@ sing-box config (`singbox.config`); if the log is not in a file, this signal doe
 | `fails` | `2` | Failures in a row before an emergency |
 | `retry` | `30s` | Probe retry after a failure |
 | `error_burst` | `5` | Connection errors through the group per tick: a probe right away; `0` turns it off |
+| `silence_min_conns` | `1` | Fewer connections during the quiet time: nobody uses the group, no probe; `0` means always probe |
+| `errors.enabled` | `true` | Emergency by connection errors |
+| `errors.window` | `60s` | Error counting window |
+| `errors.min`, `errors.prev_min` | `3`, `2` | Errors in the last window and in the window before it; `prev_min` `0` drops the second condition |
+| `errors.classes` | `connect`, `timeout`, `reset` | Counted error classes; also `canceled`, a connection cancelled by the application |
+| `errors.fresh`, `errors.fresh_min` | `10m`, `2` | After a node is chosen, during `fresh` an emergency needs `fresh_min` errors in a window, without the condition on the previous window |
+| `errors.probe_confirm` | `false` | Before a replacement one probe; if it passes, the node stays |
+| `outage.enabled` | `true` | General outage guard |
+| `outage.interval` | `1m` | Background check of the direct exit; `0` means only on a signal |
+| `outage.targets` | `77.88.8.8:443`, `vk.com:443`, `www.gosuslugi.ru:443` | Direct exit targets, `host:port` |
+| `outage.fail_quorum`, `outage.timeout` | `2`, `3s` | How many targets must not answer for a WAN outage; timeout of one target |
+| `outage.switches`, `outage.switches_window` | `3`, `10m` | Emergency replacements within the window that start a check at once |
+| `outage.nodes` | `3` | Nodes of different providers checked on a signal; `0` means no node check |
+| `outage.recheck`, `outage.recover` | `30s`, `3` | Check period during an outage and successful checks in a row for its end |
+| `outage.mark`, `outage.interface` | `8228` (`0x2024`), — | sing-box `routing_mark` and the WAN interface for checks past sing-box; no interface means `route.default_interface` of the sing-box config |
 
 ## pipeline
 
@@ -499,7 +551,7 @@ The web admin panel built into the tester process.
 | `webhook.url` | — | POST JSON `{event, text, ts}` |
 | `proxy` | — | Proxy for sending |
 | `via_tester` | `true` | If sending directly failed, retry through the tester SOCKS |
-| `events` | all | `switch`, `failsafe`, `rollback`, `pipeline`, `subscription`, `expiry`, `singbox` |
+| `events` | all | `switch`, `failsafe`, `rollback`, `pipeline`, `subscription`, `expiry`, `singbox`, `outage` (a general outage: a node outage is reported when it starts, a WAN outage when it ends) |
 | `switch_reasons` | `emergency`, `emergency-stuck` | Switch reasons to report; also `init`, `rotation`, `quality`, `manual` |
 | `expiry_warning` | `3d` | Warn about the subscription end in advance |
 | `dedupe` | `1h` | Do not repeat the same message more often |

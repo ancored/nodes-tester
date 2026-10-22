@@ -31,6 +31,7 @@ from .identity import NodeIdentity, parse_node
 from .logbuffer import LogRing, TeeStream
 from .monitor import ProductionMonitor, singbox_log_path
 from .notify import Notifier
+from .outage import OutageGuard
 from .singbox_ctl import SingboxControl
 from .proxy import make_session
 from .rebuild import RebuildWatch
@@ -162,10 +163,15 @@ class Runner:
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
-            pause_check=self._apply_paused, hold_check=lambda: self._apply_in_progress,
+            conns=self.collector.user_conns,
+            group_rules={g.tag: g.errors for g in cfg.groups if g.errors is not None},
+            pause_check=self._paused, hold_check=lambda: self._apply_in_progress,
             on_tick=self.rebuild.check,
             singbox_log=singbox_log_path(cfg.singbox.config),
         )
+        self.outage = OutageGuard(cfg.monitor.outage, cfg.singbox.config,
+                                  node_alive=self._node_answers, node_pool=self._outage_pool,
+                                  notifier=self.notifier, busy=lambda: self._apply_in_progress)
 
     # --- Состав нод ------------------------------------------------------
 
@@ -371,6 +377,7 @@ class Runner:
             if self.once:
                 self._force_requested.set()
             self.monitor.start()
+            self.outage.start()
             self.reserve.start()
             self.collector.start()
             self._start_orchestrator()
@@ -386,6 +393,7 @@ class Runner:
             self._progress = {**self._progress, "phase": "stopped", "node": None}
             self._wait_until = None
             self.monitor.stop()
+            self.outage.stop()
             self.reserve.stop()
             self.collector.stop()
             self._stop_dashboard()
@@ -440,7 +448,8 @@ class Runner:
                 refreshed = -math.inf          # запрос из админки: свежий состав нод
 
     def _service(self) -> None:
-        """Тип выходных IP и белые списки — у них свои сроки годности."""
+        """Тип выходных IP и белые списки — у них свои сроки годности; боевая надёжность нод."""
+        self._refresh_stability()
         self._refresh_ip_info([r.get("exit_ip") for r in self.board.rows.copy().values()])
         self._refresh_whitelist(list(self._node_by_raw.values()))
 
@@ -454,7 +463,7 @@ class Runner:
         None — замер не засчитан (ноды нет в селекторе, sing-box перезапускается)."""
         self._respect_host_gap(self._host_of(ident), self._ep_sig(ident))
         record = self._test_node(regions, ident, tests)
-        if record is None or self._apply_paused():     # замер мог попасть на перезапуск sing-box
+        if record is None or self._paused():   # замер мог попасть на перезапуск sing-box или аварию
             return None
         if self._box_interrupted(record):
             self._apply_pause_until = time.monotonic() + _BOX_SETTLE
@@ -509,6 +518,7 @@ class Runner:
             "forced_left": len(self._forced),
             "wait_until": self._wait_until,
             "apply_paused": self._apply_paused(),
+            "outage": dict(self.outage.active) if self.outage.active else None,
         }
 
     def _apply_start(self) -> None:
@@ -525,11 +535,17 @@ class Runner:
     def _apply_paused(self) -> bool:
         return self._apply_in_progress or time.monotonic() < self._apply_pause_until
 
+    def _paused(self) -> bool:
+        """Замеры, резерв, ротации и аварийные замены стоят: применяется конфиг или идёт
+        общая авария (nodes_tester.outage)."""
+        return self._apply_paused() or self.outage.active is not None
+
     def _wait_apply_window(self) -> None:
-        """Ждать конца паузы применения. Состав нод перечитывается, как только конвейер
-        закончил: активная нода могла уйти из конфига, замена не должна ждать паузу."""
-        while self._apply_paused():
-            self._progress = {**self._progress, "phase": "apply_wait", "node": None}
+        """Ждать конца паузы применения или общей аварии. Состав нод перечитывается, как только
+        конвейер закончил: активная нода могла уйти из конфига, замена не должна ждать паузу."""
+        while self._paused():
+            phase = "apply_wait" if self._apply_paused() else "outage"
+            self._progress = {**self._progress, "phase": phase, "node": None}
             if self._stale_nodes and not self._apply_in_progress:
                 self._stale_nodes = False
                 try:
@@ -710,9 +726,39 @@ class Runner:
     # --- Проверки для резерва (nodes_tester.reserve) ---------------------
 
     def _on_activation(self, group: str, reason: str, node: str, prev) -> None:
-        """Смена активной (или уход на failsafe): уведомление и добор резерва."""
+        """Смена активной (или уход на failsafe): уведомление, добор резерва, сигнал сторожу
+        общей аварии (много аварийных замен подряд)."""
         self.notifier.activation(group, reason, node, prev)
+        self.outage.note_switch(reason)
+        if reason == "emergency":
+            self._refresh_stability()           # упавшая нода теряет рейтинг сразу
         self.reserve.wake()
+
+    def _refresh_stability(self) -> None:
+        """Множители боевой надёжности нод в рейтинге (selection.stability) по истории аварий."""
+        cfg = self.cfg.selection.stability
+        if cfg.enabled:
+            self.board.set_stability(self.storage.stability_stats(cfg.window), cfg)
+
+    def _outage_pool(self) -> list[str]:
+        """Ноды для проверки слоя нод в общей аварии: лучшие кандидаты групп, по одной от
+        поставщика."""
+        best: dict[str, tuple[float, str]] = {}
+        for group in self.board.regions():
+            for cand in self.board.candidates(group):
+                provider = parse_node(cand["node"]).provider
+                score = float(cand.get("score") or 0)
+                if score > best.get(provider, (-1.0, ""))[0]:
+                    best[provider] = (score, cand["node"])
+        return [node for _score, node in sorted(best.values(), reverse=True)]
+
+    def _node_answers(self, leaf: str) -> bool:
+        """Нода отвечает на зонд монитора (неполный ответ сервера — тоже ответ)."""
+        try:
+            ok, _mbps, inconclusive, _error = self._probe_node("", leaf)
+        except ApiError:
+            return False
+        return ok or inconclusive
 
     def reserve_size(self, group: str) -> int:
         g = self.cfg.group(group)

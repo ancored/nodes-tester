@@ -30,8 +30,11 @@ def _nest(path, leaf):
 
 
 def _loader_fields(path):
+    data = _nest(path, {"zz_unknown": 1})
+    if path[:2] == ("groups", 0):
+        data["groups"][0].setdefault("tag", "all")     # вложенные поля группы читаются после тега
     try:
-        parse_config(_nest(path, {"zz_unknown": 1}))
+        parse_config(data)
     except ConfigError as exc:
         found = re.search(r"zz_unknown: неизвестное поле \(есть: (.*)\)", str(exc))
         if found:

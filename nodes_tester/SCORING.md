@@ -92,6 +92,17 @@ The result for a node that passed the GATE:
 score = clamp(score_ewma * avail_factor - flap_lambda * flap, 0, 100)
 ```
 
+Then the rating is multiplied by the reliability in live use (`selection.stability`):
+
+```text
+score = score × max(min, 1 / (1 + weight × rate))
+rate  = (emergencies + prior_hours × provider rate) / (hours as active + prior_hours)
+```
+
+Emergencies and hours as the active node are counted over `window` (7 days). The provider rate is the
+emergencies of all its nodes per hour of their work; a node without history gets it. So a provider whose
+nodes often fail in live use loses rating even when the short measurements look good.
+
 So a single good measurement does not fully cover an unstable history, and frequent jumps
 get a separate penalty.
 

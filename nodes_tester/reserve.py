@@ -81,8 +81,8 @@ class ReserveKeeper:
         if not runner._node_by_raw:
             return                            # состав нод ещё неизвестен (до первой сверки)
         for group in runner.board.regions():
-            if runner._apply_paused():
-                return                        # конвейер перезапускает sing-box
+            if runner._paused():
+                return                        # конвейер перезапускает sing-box или общая авария
             self.maintain(group)
 
     def maintain(self, group: str) -> None:
@@ -112,7 +112,7 @@ class ReserveKeeper:
         if not due:
             return
         for check in due:
-            if runner._apply_paused():
+            if runner._paused():
                 return
             runner.check_node(active, check)
         if not runner.board.fits(active, group):
@@ -190,7 +190,7 @@ class ReserveKeeper:
         board = self.runner.board
         missing = board.reserve_missing(node, group)
         while missing:
-            if self.runner._apply_paused():
+            if self.runner._paused():
                 return False
             self.runner.check_node(node, missing[0])
             after = board.reserve_missing(node, group)
@@ -200,7 +200,7 @@ class ReserveKeeper:
         if missing is None:
             return False
         for check in board.prefer_missing(node, group):
-            if self.runner._apply_paused():
+            if self.runner._paused():
                 break
             self.runner.check_node(node, check)
         return True
