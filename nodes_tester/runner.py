@@ -625,7 +625,7 @@ class Runner:
         середину замера — после выбора ноды и связности. Новый PID запоминается — следующий
         провал засчитывается как обычно."""
         tests = record.get("tests") or {}
-        if all((res or {}).get("ok", True) for res in tests.values() if isinstance(res, dict)):
+        if all(res.get("ok", True) for res in tests.values() if isinstance(res, dict)):
             return False
         try:
             self.api.ping()

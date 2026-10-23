@@ -37,10 +37,10 @@ def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None):
     def members(excluded):
         return [n for n in nodes if provider_of.get(n) not in excluded]
 
+    # Подписку, которую исключили все группы, не берут и failsafe-out с nodes-tester.
+    unused = set.intersection(*(set(g.exclude_subscriptions) for g in groups)) if groups else set()
+    nodes = members(unused)
     out, in_global = [], []
-    if groups:
-        unused = set.intersection(*(set(g.exclude_subscriptions) for g in groups))
-        nodes = members(unused)
     for g in groups:
         if g.strict:
             fallback = [BLOCK] + ([DIRECT] if g.direct_fallback else [])

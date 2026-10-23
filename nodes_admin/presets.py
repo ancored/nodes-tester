@@ -145,9 +145,10 @@ def dangling_refs(config: dict) -> list[str]:
     route, dns = config.get("route") or {}, config.get("dns") or {}
     outs = (config.get("outbounds") or []) + (config.get("endpoints") or [])
     servers = dns.get("servers") or []
+    rule_sets = route.get("rule_set") or []
     defined = {"outbound": {o.get("tag") for o in outs},
                "server": {s.get("tag") for s in servers},
-               "rule_set": {r.get("tag") for r in route.get("rule_set") or []}}
+               "rule_set": {r.get("tag") for r in rule_sets}}
     refs = list(_rule_refs((route.get("rules") or []) + (dns.get("rules") or [])))
     for kind, value in (("outbound", route.get("final")), ("server", dns.get("final")),
                         ("server", _resolver(route.get("default_domain_resolver")))):
@@ -160,8 +161,7 @@ def dangling_refs(config: dict) -> list[str]:
             refs.append(("outbound", item["detour"]))
         if item.get("domain_resolver"):
             refs.append(("server", _resolver(item["domain_resolver"])))
-    refs += [("outbound", rs["download_detour"]) for rs in route.get("rule_set") or []
-             if rs.get("download_detour")]
+    refs += [("outbound", rs["download_detour"]) for rs in rule_sets if rs.get("download_detour")]
     return sorted({f"{kind} {tag}" for kind, tag in refs if tag not in defined[kind]})
 
 
