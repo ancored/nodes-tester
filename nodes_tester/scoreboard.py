@@ -49,6 +49,9 @@ class Scoreboard:
         # CRC нод с действующей паузой/карантином/баном: строка рейтинга у них остаётся,
         # но выбирать их нельзя — ни ротацией, ни emergency, ни вручную.
         self._restricted: set[str] = set()
+        # CRC нод, с которых сняли ограничение: следующий замер начинает сглаженный рейтинг
+        # заново, иначе память провалов сразу вернёт выздоровевшую ноду в карантин.
+        self._fresh: set[str] = set()
         # Тестер и резерв пишут (record/set_heavy/prune), фоновый монитор читает
         # (candidates/get/regions) и ставит active — защищаем составные операции.
         self._lock = threading.RLock()
@@ -75,7 +78,9 @@ class Scoreboard:
         own = self.rows.get(ident.raw)
         prev = own or self._best_sibling(ident) or {}
         prev_state = None
-        if prev:
+        if ident.node_id in self._fresh:
+            self._fresh.discard(ident.node_id)
+        elif prev:
             prev_state = {
                 "score_ewma": prev.get("score_ewma", s_run),
                 "flap": prev.get("flap", 0.0),
@@ -497,6 +502,13 @@ class Scoreboard:
         """Полный набор ограниченных нод."""
         with self._lock:
             self._restricted = {c for c in crcs if c}
+
+    def forget_history(self, crc: str) -> None:
+        """Ограничение снято (вручную, резервом, истёк карантин): следующий замер ноды
+        начинает сглаженный рейтинг (EWMA, доступность, флаппинг) с себя. История замеров и
+        аварийность в боевой работе остаются."""
+        with self._lock:
+            self._fresh.add(crc)
 
     def restrict(self, crc: str, on: bool) -> None:
         """Ограничение одной ноды поставлено/снято (карантин, бан, снятие)."""

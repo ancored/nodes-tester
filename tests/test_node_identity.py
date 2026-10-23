@@ -96,6 +96,30 @@ class InheritanceTest(unittest.TestCase):
         self.assertEqual(self.board.country(parse_node("A-x-out [bbbb0001.11111111]")), "")
 
 
+class ForgetHistoryTest(unittest.TestCase):
+    """Снятое ограничение: первый замер после снятия не тянет память провалов."""
+
+    setUp, tearDown = InheritanceTest.setUp, InheritanceTest.tearDown
+
+    def test_good_measure_after_release_is_not_low(self):
+        node = parse_node("A-vless|reality-out [aaaa0001.11111111]")
+        good = {"connectivity": {"ok": True, "exit_ip": "1.2.3.4", "country": "NL"},
+                "latency": {"ok": True, "ttfb_ms": 100}}
+        for _ in range(8):
+            self.board.record(node, "eu", {"connectivity": {"ok": False}})
+        self.board.record(node, "eu", good)
+        remembered = self.board.get(node.raw)["score"]
+        for _ in range(8):
+            self.board.record(node, "eu", {"connectivity": {"ok": False}})
+        self.board.forget_history(node.node_id)
+        self.board.record(node, "eu", good)
+        row = self.board.get(node.raw)
+        self.assertGreater(row["score"], remembered + 20)
+        self.assertEqual(row["samples"], 1)
+        self.board.record(node, "eu", good)                       # дальше — обычное сглаживание
+        self.assertEqual(self.board.get(node.raw)["samples"], 2)
+
+
 class StorageSchemaTest(unittest.TestCase):
     def test_other_schema_set_aside_and_history_starts_over(self):
         tmp = temp_dir()

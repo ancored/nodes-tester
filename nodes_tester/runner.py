@@ -470,6 +470,9 @@ class Runner:
             print("  · sing-box недоступен или перезапустился — замер не засчитан")
             return None
         self.storage.add_results(record)
+        entry = self._backoff.get(ident.node_id)
+        if entry and entry[2] == "garbage" and not self._in_effect(entry, time.time()):
+            self.board.forget_history(ident.node_id)    # проба после истёкшего карантина
         results = record["tests"]
         if "connectivity" in results:          # нода выбрана: рейтинг — по последним данным
             now = int(time.time())
@@ -856,6 +859,7 @@ class Runner:
         self.storage.set_backoff(crc, int(time.time()), streak, reason)
         self._backoff[crc] = (int(time.time()), streak, reason)
         self.board.restrict(crc, False)
+        self.board.forget_history(crc)
         self.storage.add_node_event(crc, "restriction_cleared", "reserve", streak)
         self._released_at[crc] = now
         print(f"  [reserve] {group}: кандидатов не хватает — снято ограничение с {ident.short()}")
@@ -926,6 +930,7 @@ class Runner:
             self._backoff[crc] = entry          # тестер тоже её пропустит
         elif not on:
             self._backoff.pop(crc, None)
+            self.board.forget_history(crc)
         self.board.restrict(crc, on)
         if on:
             for group in self.switcher.active_regions():
