@@ -153,7 +153,9 @@ proxy/VPN, and the country of the IP in the database. The request goes through t
 healthy node (DNS filters on the router often block ip-api.com); if that fails, directly.
 
 - \`ip_type\` passes when the type is in the allowed list of the group (\`kinds\`: \`residential\`, \`mobile\`,
-  \`hosting\`, \`proxy\`).
+  \`hosting\`). ip-api marks almost every node exit as a proxy; the sign does not cancel the type, and \`proxy\` in
+  the list lets through any IP with it. The group sets no \`ttl\` for \`ip_type\` and \`geo_consistent\`: the data is
+  refreshed by \`checks.ip_type.ttl\`.
 - \`geo_consistent\` passes when the database country equals the measured exit country. AI services and
   streaming sites look at the databases: a node whose IP is listed in another country is treated as that country.
 

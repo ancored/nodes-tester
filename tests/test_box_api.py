@@ -171,6 +171,18 @@ class TransportTest(unittest.TestCase):
         self.addCleanup(os.remove, path)
         self.assertEqual(box_api.from_singbox_config(path).url, "http://127.0.0.1:9091")
 
+    def test_health_takes_first_group_present(self):
+        import os
+        import tempfile
+        from unittest.mock import patch
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as fh:          # только строгие группы: failsafe-out нет
+            json.dump({"services": [{"type": "api"}], "outbounds": [{"tag": "global-auto-out"}]}, fh)
+        self.addCleanup(os.remove, path)
+        with patch.object(box_api, "health", return_value=42) as health:
+            code = box_api.main(["health", "--config", path, "--group", "failsafe-out", "global-auto-out"])
+        self.assertEqual((code, health.call_args.args[1]), (0, "global-auto-out"))
+
 
 class _Cfg:
     poll_interval = 5

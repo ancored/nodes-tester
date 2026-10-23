@@ -358,12 +358,16 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     h = sub.add_parser("health", help="связность через группу (URL-тест)")
     h.add_argument("--config", required=True, help="конфиг sing-box с services[type=api]")
-    h.add_argument("--group", required=True)
+    h.add_argument("--group", required=True, nargs="+",
+                   help="группа; несколько — первая, что есть в конфиге (failsafe-out есть не всегда)")
     h.add_argument("--wait", type=float, default=0, help="ждать успеха до N секунд")
     args = ap.parse_args(argv)
     try:
         api = from_singbox_config(args.config)
-        delay = health(api, args.group, args.wait)
+        with open(args.config, encoding="utf-8") as fh:
+            tags = {o.get("tag") for o in json.load(fh).get("outbounds") or []}
+        group = next((g for g in args.group if g in tags), args.group[0])
+        delay = health(api, group, args.wait)
     except (OSError, ValueError, BoxApiError) as exc:
         print(exc, file=sys.stderr)
         return 2

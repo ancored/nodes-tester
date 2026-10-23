@@ -170,7 +170,8 @@ Bare \`vless\` and \`vmess\` without TLS and Reality are always dropped: they wo
 
 “Interrupt existing connections when the node changes” (\`selector.interrupt_exist_connections\`): on — connections of the old
 node are closed at once and reopen through the new one; off — they continue through the old node until they end. Without a value
-the sing-box default applies.
+the sing-box default applies. Off is recommended: a scheduled rotation then does not break downloads and calls, and after an
+emergency replacement the tester itself closes the connections left on the failed node.
 
 <a id="failsafe"></a>
 ### failsafe-out group
@@ -189,6 +190,7 @@ The group editor (router branch only). Every group block has:
 - **Group tag** — lowercase Latin letters, digits and \`_\`; not \`global\`, \`nodes\`, \`failsafe\`. The selector is \`{tag}-auto-out\`;
 - **Reserve candidates** — the group's own reserve size; empty — as in the settings (\`selection.reserve\`);
 - **Strict**, **Allow direct outbound**, **Part of global-auto-out** — see [fallback outbounds](groups.md#fallback);
+- **Except subscriptions** — router subscriptions whose nodes are not in the group ([details](groups.md));
 - a table of checks: for each check “ignored”, “required” or “preferred”; the exit country and the IP type have their own
   conditions ([details](groups.md#checks)). Unknown regions and country codes that are not two letters are highlighted;
 - “Up”, “Down” change the order of groups, “Delete group” removes it.

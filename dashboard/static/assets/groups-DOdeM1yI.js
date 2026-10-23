@@ -12,7 +12,9 @@ group; the tester keeps the best fitting node selected in it.
 Every group becomes a sing-box selector \`{tag}-auto-out\`: for a group \`eu\` it is \`eu-auto-out\`. The selector
 contains **all** router nodes, the fallback outbound and, with \`direct_fallback\`, \`direct-out\`. Which node is
 selected is decided by the tester through the sing-box API. Because every node is in every group, a group change
-does not need a new configuration: the choice changes on the fly.
+does not need a new configuration: the choice changes on the fly. The exception is “Except subscriptions”
+(\`exclude_subscriptions\`): nodes of the marked subscriptions are not in the group at all. A subscription excluded
+by every group is left out of \`failsafe-out\` and \`nodes-tester\` too, so the tester does not check it.
 
 The build also creates:
 

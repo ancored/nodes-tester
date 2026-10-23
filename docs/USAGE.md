@@ -7,7 +7,7 @@
 This guide is an overview. Every page and block of the admin panel, with flowcharts of the algorithms, is explained in the
 [help](help/README.md); in the admin panel it opens by the **?** icon next to a page title or in the corner of a block.
 
-The guide applies to package [`v0.8.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.8.0). Updating the sources on a computer does not update the installed package.
+The guide applies to package [`v0.9.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.9.0). Updating the sources on a computer does not update the installed package.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">

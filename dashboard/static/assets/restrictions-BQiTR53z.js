@@ -66,6 +66,10 @@ the probe reaches the threshold.
 - **By hand**: “Lift restriction” in the node card puts the node back into the check queue. It does not confirm that the
   node works: the next check decides.
 
+After a lift by hand, by the reserve or at the end of a quarantine the smoothed [rating](rating.md#smoothing) starts over from the
+next measurement: the failures before the restriction do not send a node that recovered back to quarantine for a low
+rating. The measurement history and the [reliability](rating.md#smoothing) in production work stay.
+
 <a id="ban"></a>
 ## Exclusion (ban)
 

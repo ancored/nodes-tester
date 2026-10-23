@@ -67,6 +67,9 @@ refusing, the result expired). The replacement is immediate, without cooldown an
 - The choice is weighted and [balanced](#balance), not just the top-rated node.
 - If the monitor removed the node, its host is penalised for \`selection.host_penalty\` (3 h): neither the reserve
   nor a replacement takes nodes of that host.
+- Connections left on the failed node are closed (also when the group goes to its fallback outbound), and applications
+  reopen them through the new one. A scheduled rotation does not close them if \`selector.interrupt_exist_connections\`
+  is off.
 - If there is no replacement, the group stays on the dead node and the history gets one “Emergency: no replacement
   found” record. As soon as a candidate appears, the group moves to it.
 
@@ -89,8 +92,9 @@ A group moves to a better node only when the advantage is real and stable:
 Rotation changes the active node on a schedule even when it works, so that traffic is spread over several nodes
 and providers and a single node does not attract attention.
 
-- Each group has its own deadline: \`rotation.interval\` (3 h) ± \`rotation.jitter\` (15 min) from its last switch,
-  so groups do not switch at the same moment.
+- Each group has its own deadline: \`rotation.interval\` (6 h) ± \`rotation.jitter\` (15 min) from its last switch.
+- Scheduled rotations of different groups are at least \`rotation.spread\` (10 min) apart: a group whose deadline
+  came waits.
 - A node stays active at least \`rotation.min_dwell\` (30 min).
 - The new node comes from the reserve, of the same or a better tier, rated at least \`rotation.min_score\` (55),
   and is not one of the last \`rotation.avoid_recent\` (2) active nodes.
