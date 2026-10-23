@@ -112,7 +112,7 @@ presets/*.json     ← включённые пресеты по priority (мен
 | Пресет | Где | Что делает |
 |---|---|---|
 | `out-ai`, `out-us` | роутер | объявляют `ai-out`, `google-out`, `us-out` из групп `ai` и `us` |
-| `core` | роутер | `sniff`, перехват DNS, локальные адреса → `direct-lan`, тестер; домен URL-теста — через `bootstrap` |
+| `core` | роутер | `sniff`, перехват DNS, домен по IP из ответов DNS (`dns.reverse_mapping`), локальные адреса → `direct-lan`, тестер; домен URL-теста — через `bootstrap` |
 | `untrusted-lan` | роутер | LAN вне доверенного сегмента → `direct-out`; см. [модель безопасности](SECURITY_MODEL.ru.md#модель-доверия) |
 | `block-ads`, `block-adult` | везде | реклама и трекеры, взрослый контент: `reject` и `NXDOMAIN` |
 | `ip-check` | везде | `ifconfig.me` → `ai-out`: какой IP видят ИИ |

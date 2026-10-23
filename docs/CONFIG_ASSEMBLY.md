@@ -112,7 +112,7 @@ go through home, the rest directly.
 | Preset | Where | What it does |
 |---|---|---|
 | `out-ai`, `out-us` | router | declare `ai-out`, `google-out`, `us-out` from the `ai` and `us` groups |
-| `core` | router | `sniff`, DNS hijacking, local addresses → `direct-lan`, the tester; the URL test domain goes through `bootstrap` |
+| `core` | router | `sniff`, DNS hijacking, the domain of an IP from DNS answers (`dns.reverse_mapping`), local addresses → `direct-lan`, the tester; the URL test domain goes through `bootstrap` |
 | `untrusted-lan` | router | LAN outside the trusted segment → `direct-out`; see the [security model](SECURITY_MODEL.md#trust-model) |
 | `block-ads`, `block-adult` | everywhere | ads and trackers, adult content: `reject` and `NXDOMAIN` |
 | `ip-check` | everywhere | `ifconfig.me` → `ai-out`: which IP AI services see |

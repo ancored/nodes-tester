@@ -1,11 +1,12 @@
 {
   "_preset": {
     "title": "Роутер: основа",
-    "description": "sniff, перехват DNS, локальные адреса → direct-lan, тестер → nodes-tester. Домен URL-теста резолвится через bootstrap, иначе при мёртвой группе не работает и сама проверка",
+    "description": "sniff, перехват DNS, домен по IP из ответов DNS (reverse_mapping), локальные адреса → direct-lan, тестер → nodes-tester. Домен URL-теста резолвится через bootstrap, иначе при мёртвой группе не работает и сама проверка",
     "enabled": false,
     "priority": 100
   },
   "dns": {
+    "reverse_mapping": true,
     "rules": [
       {
         "domain": [

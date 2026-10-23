@@ -23,9 +23,12 @@ OpenWrt router + sing-box (TUN, auto_route/auto_redirect)  ◄── LAN devices
 ```
 
 - Each hop resolves names itself (TUN + `hijack-dns`, no FakeIP): the DNS query of an application
-  is captured, the engine resolves it by `dns.rules` and remembers the “domain — IP” pair; the application
-  connects by IP, the route is chosen by the domain from the cache, and the next hop gets the IP, not the name.
-  `action: resolve` and `domain_strategy` are not needed for this. DNS servers have `detour` set, so
+  is captured and the engine resolves it by `dns.rules`; the application connects by IP, and the next hop gets
+  the IP, not the name. The route is chosen by the domain the engine learns from the connection itself (`sniff`: TLS,
+  QUIC, HTTP) or, for traffic without one (calls, games, other UDP), from its own DNS answers: `dns.reverse_mapping`
+  in the `core` preset keeps the “IP — domain” pairs for the answer TTL. Without it such traffic is routed by IP
+  only, and domain rules do not apply to it. The pairs live in memory (up to 1024), and a shared CDN address maps to
+  the domain resolved last. `action: resolve` and `domain_strategy` are not needed for this. DNS servers have `detour` set, so
   the query exits where the zone traffic goes, and the answer matches the exit country.
 - The exception is the tester: it goes through SOCKS (`socks5h`) and passes the host name, which the already
   chosen node resolves. So the measurement reflects what a user of this node gets, including its DNS and geo.
