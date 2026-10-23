@@ -2092,6 +2092,12 @@
           "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
           "description": "Уведомить, если sing-box лежит дольше.",
           "default": "1m"
+        },
+        "log_max": {
+          "type": "number",
+          "description": "МБ: лог sing-box (log.output) больше — копия в .1 и очистка; 0 — без предела.",
+          "default": 5,
+          "minimum": 0
         }
       },
       "description": "Остановка sing-box и kill switch из админки."

@@ -875,18 +875,20 @@ class SingboxConfig:
     down_alert: float = 60.0                 # уведомить, если sing-box лежит дольше
     stop_flag: str = "/var/run/nodes-tester/singbox-stopped"
     config: str = "/etc/sing-box/config.json"   # работающий конфиг: DNS-серверы по тегу
+    log_max: float = 5.0                     # МБ: лог sing-box больше — в .1 и очистить; 0 — нет
 
 
 def _singbox(obj) -> SingboxConfig:
     path, d = "singbox", SingboxConfig()
-    obj = _fields(obj, path, ("init", "config", "killswitch", "watch", "down_alert"))
+    obj = _fields(obj, path, ("init", "config", "killswitch", "watch", "down_alert", "log_max"))
     ks = _fields(obj.get("killswitch"), f"{path}.killswitch", ("init", "table"))
     return SingboxConfig(init=_string(obj, "init", path, d.init),
                          config=_string(obj, "config", path, d.config),
                          killswitch_init=_string(ks, "init", f"{path}.killswitch", d.killswitch_init),
                          killswitch_table=_string(ks, "table", f"{path}.killswitch", d.killswitch_table),
                          watch=_duration(obj, "watch", path, d.watch),
-                         down_alert=_duration(obj, "down_alert", path, d.down_alert))
+                         down_alert=_duration(obj, "down_alert", path, d.down_alert),
+                         log_max=_number(obj, "log_max", path, d.log_max, 0))
 
 
 # --- Подписки --------------------------------------------------------------

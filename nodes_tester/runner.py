@@ -168,6 +168,7 @@ class Runner:
             pause_check=self._paused,
             on_tick=self.rebuild.check,
             singbox_log=singbox_log_path(cfg.singbox.config),
+            log_max=int(cfg.singbox.log_max * 1_000_000),
         )
         self.outage = OutageGuard(cfg.monitor.outage, cfg.singbox.config,
                                   node_alive=self._node_answers, node_pool=self._outage_pool,

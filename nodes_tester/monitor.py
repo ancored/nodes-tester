@@ -40,6 +40,7 @@ import calendar
 import collections
 import json
 import re
+import shutil
 import threading
 import time
 
@@ -99,10 +100,13 @@ def parse_error(line: str, now: float) -> "tuple | None":
 
 class _LogTail:
     """Новые строки лога sing-box с прошлого чтения. Первое чтение — с конца файла;
-    файл стал короче (обрезали) — с начала."""
+    файл стал короче (обрезали) — с начала. Перерос max_bytes (0 — без предела) — копия в
+    `.1` и очистка: лог на OpenWrt лежит в RAM, а sing-box пишет с O_APPEND и продолжит с
+    начала. Переименовать нельзя: sing-box писал бы в старый файл."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, max_bytes: int = 0):
         self.path = path
+        self.max_bytes = max_bytes
         self.pos: int | None = None
 
     def lines(self) -> list[str]:
@@ -119,7 +123,19 @@ class _LogTail:
             return []
         end = data.rfind(b"\n") + 1                  # недописанную строку — в следующий раз
         self.pos += end
+        if self.max_bytes and size > self.max_bytes:
+            self._rotate()
         return data[:end].decode("utf-8", "replace").splitlines()
+
+    def _rotate(self) -> None:
+        try:
+            shutil.copyfile(self.path, self.path + ".1")
+            with open(self.path, "r+b") as fh:
+                fh.truncate(0)
+        except OSError as exc:
+            print(f"  [monitor] лог sing-box не очищен: {exc}")
+            return
+        self.pos = 0
 
 
 def singbox_log_path(config_path: str) -> str:
@@ -133,7 +149,7 @@ def singbox_log_path(config_path: str) -> str:
 
 class ProductionMonitor:
     def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None,
-                 on_tick=None, singbox_log="", conns=None, group_rules=None):
+                 on_tick=None, singbox_log="", conns=None, group_rules=None, log_max=0):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
@@ -163,7 +179,7 @@ class ProductionMonitor:
         self._last_conns: dict[str, int] | None = None
         # Наблюдение за failsafe-out (общее для групп без кандидатов); None — не нужно.
         self._failsafe: dict | None = None
-        self._log = _LogTail(singbox_log) if singbox_log else None
+        self._log = _LogTail(singbox_log, log_max) if singbox_log else None
 
     def start(self) -> None:
         self._thread = threading.Thread(

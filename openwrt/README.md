@@ -33,8 +33,8 @@ The script:
   all traffic directly: there are no nodes in the routes until you add your own rules;
 - checks connectivity through TUN (DNS and HTTPS); without it, stops and disables sing-box,
   and the network works as before the installation;
-- adds a cron job that empties the sing-box log once it exceeds 5 MB (`/var/log` on OpenWrt is in
-  RAM); the tester runs `VACUUM` of its database itself by `storage.vacuum`;
+- does not add cron jobs: the tester itself keeps the sing-box log under 5 MB (`singbox.log_max`, `/var/log`
+  on OpenWrt is in RAM) and runs `VACUUM` of its database (`storage.vacuum`);
 - enables the tester and the admin panel on the LAN address (port `8088`) and prints the administrator token;
 - with a subscription, runs `nodes-tester pipeline router` right away and enables the router build schedule
   (`pipeline.router`, 03:00). Without one, add a subscription in “Subscriptions”, press “Apply” in

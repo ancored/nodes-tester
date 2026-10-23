@@ -199,7 +199,8 @@ Default values are shown so that all fields are visible.
     "init": "/etc/init.d/sing-box",
     "killswitch": { "init": "/etc/init.d/killswitch", "table": "killswitch" },
     "watch": "5s",
-    "down_alert": "1m"
+    "down_alert": "1m",
+    "log_max": 5
   }
 }
 ```
@@ -580,6 +581,7 @@ Stopping and starting sing-box and the kill switch service from the admin panel 
 | `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | Init script and the `inet` nftables table of the kill switch |
 | `watch` | `5s` | Watchdog period |
 | `down_alert` | `1m` | Notify if sing-box is down for longer |
+| `log_max` | `5` | MB: when the sing-box log (`log.output`) grows larger, the monitor copies it to `.1` and empties it (on OpenWrt `/var/log` is in RAM); `0` means no limit |
 
 ## Secrets
 

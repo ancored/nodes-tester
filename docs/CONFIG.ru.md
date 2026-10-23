@@ -199,7 +199,8 @@ sing-box только со следующей сборкой конвейера.
     "init": "/etc/init.d/sing-box",
     "killswitch": { "init": "/etc/init.d/killswitch", "table": "killswitch" },
     "watch": "5s",
-    "down_alert": "1m"
+    "down_alert": "1m",
+    "log_max": 5
   }
 }
 ```
@@ -576,6 +577,7 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 | `killswitch.init`, `killswitch.table` | `/etc/init.d/killswitch`, `killswitch` | init-скрипт и таблица nftables `inet` kill switch |
 | `watch` | `5s` | Период сторожа |
 | `down_alert` | `1m` | Уведомить, если sing-box лежит дольше |
+| `log_max` | `5` | МБ: лог sing-box (`log.output`) больше — монитор копирует его в `.1` и очищает (на OpenWrt `/var/log` — в оперативной памяти); `0` — без предела |
 
 ## Секреты
 

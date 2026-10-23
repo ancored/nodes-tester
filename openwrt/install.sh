@@ -20,7 +20,6 @@ SB_DIR=/etc/sing-box
 NT_DIR=/etc/nodes-tester
 NODES=/opt/nodes-tester/nodes.json        # data_dir пакета по умолчанию
 SB_LOG=/var/log/sing-box.log              # монитор тестера считает по нему ошибки групп
-SB_LOG_MAX_KB=5120                        # /var/log — в RAM: больше — cron очищает
 SUB_URL="${1:-}"
 
 log() { echo "[install] $*"; }
@@ -202,14 +201,6 @@ if [ "$ok" = 0 ]; then
 fi
 log "sing-box работает, трафик идёт через TUN напрямую"
 
-# Лог sing-box в RAM очищается, когда перерастёт лимит (sing-box пишет с O_APPEND, монитор
-# тестера после очистки читает файл с начала). VACUUM базы делает сам тестер (storage.vacuum).
-CRON=/etc/crontabs/root
-touch "$CRON"
-grep -qF "$SB_LOG" "$CRON" \
-	|| echo "*/10 * * * * [ -n \"\$(find $SB_LOG -size +${SB_LOG_MAX_KB}k 2>/dev/null)\" ] && : > $SB_LOG" >> "$CRON"
-/etc/init.d/cron enable
-/etc/init.d/cron restart
 uci set nodes-tester.tester.enabled=1
 uci commit nodes-tester
 /etc/init.d/nodes-tester enable

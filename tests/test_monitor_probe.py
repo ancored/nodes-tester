@@ -254,5 +254,26 @@ class ApplyPauseTest(unittest.TestCase):
         self.assertEqual(self.reasserted, ["eu", "ai"])
 
 
+class LogLimitTest(unittest.TestCase):
+    """Лог sing-box больше предела: копия в .1, файл очищается, чтение идёт с начала."""
+
+    def test_rotate(self):
+        from nodes_tester.monitor import _LogTail
+        path = os.path.join(temp_dir(), "sing-box.log")
+        with open(path, "wb") as fh:
+            fh.write("старт\n".encode())
+        tail = _LogTail(path, max_bytes=100)
+        self.assertEqual(tail.lines(), [])                       # первое чтение — с конца
+        with open(path, "ab") as fh:
+            fh.write(b"x" * 120 + b"\n")
+        self.assertEqual(tail.lines(), ["x" * 120])
+        self.assertEqual(os.path.getsize(path), 0)
+        with open(path + ".1", "rb") as fh:
+            self.assertEqual(fh.read(), "старт\n".encode() + b"x" * 120 + b"\n")
+        with open(path, "ab") as fh:                             # sing-box пишет с начала
+            fh.write("дальше\n".encode())
+        self.assertEqual(tail.lines(), ["дальше"])
+
+
 if __name__ == "__main__":
     unittest.main()
