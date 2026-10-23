@@ -16,7 +16,8 @@
 с тегом схлопываются, поэтому пресет сам объявляет нужные ему rule_set и DNS-серверы.
 
 `requires.groups` — группы нод ({name}-auto-out), без которых пресет ссылается на
-несуществующий outbound; окончательную проверку делает `sing-box check`.
+несуществующий outbound. Итоговый конфиг со ссылкой на необъявленный outbound, DNS-сервер
+или набор правил не собирается: `sing-box check` такие ссылки пропускает.
 
 Клиентская ветка склеивает так же базу клиента, whnodes.json и пресеты `clients/presets/`.
 Клиенту локальные наборы правил роутера недоступны, поэтому `local` с путём в
@@ -39,7 +40,7 @@ import re
 import sys
 from pathlib import Path
 
-from nodes_admin.merge import Source, dumps, merge
+from nodes_admin.merge import MergeError, Source, dumps, merge
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DEFAULT_PRIORITY = 500
@@ -117,7 +118,51 @@ def assemble(base: dict, nodes: dict, presets: list[dict]) -> tuple[dict, list[s
             data = {k: v for k, v in p["data"].items() if k != "_preset"}
             sources.append(Source(f"presets/{p['name']}", data, p["meta"]["priority"],
                                   p["meta"]["priorities"]))
-    return merge(sources)
+    config, warnings = merge(sources)
+    missing = dangling_refs(config)
+    if missing:
+        raise MergeError("ссылки на необъявленное: " + ", ".join(missing))
+    return config, warnings
+
+
+def _rule_refs(rules):
+    for rule in rules:
+        yield from _rule_refs(rule.get("rules", []))
+        for key in ("outbound", "server"):
+            if key in rule:
+                yield key, rule[key]
+        sets = rule.get("rule_set", [])
+        for tag in [sets] if isinstance(sets, str) else sets:
+            yield "rule_set", tag
+
+
+def _resolver(value):
+    return value.get("server") if isinstance(value, dict) else value
+
+
+def dangling_refs(config: dict) -> list[str]:
+    """Ссылки на необъявленные outbound, DNS-серверы и наборы правил: «outbound x» и т. п."""
+    route, dns = config.get("route") or {}, config.get("dns") or {}
+    outs = (config.get("outbounds") or []) + (config.get("endpoints") or [])
+    servers = dns.get("servers") or []
+    defined = {"outbound": {o.get("tag") for o in outs},
+               "server": {s.get("tag") for s in servers},
+               "rule_set": {r.get("tag") for r in route.get("rule_set") or []}}
+    refs = list(_rule_refs((route.get("rules") or []) + (dns.get("rules") or [])))
+    for kind, value in (("outbound", route.get("final")), ("server", dns.get("final")),
+                        ("server", _resolver(route.get("default_domain_resolver")))):
+        if value:
+            refs.append((kind, value))
+    for item in outs + servers:                    # члены групп, detour, резолвер домена
+        refs += [("outbound", tag) for tag in item.get("outbounds") or []]
+        refs += [("server", tag) for tag in item.get("servers") or []]
+        if item.get("detour"):
+            refs.append(("outbound", item["detour"]))
+        if item.get("domain_resolver"):
+            refs.append(("server", _resolver(item["domain_resolver"])))
+    refs += [("outbound", rs["download_detour"]) for rs in route.get("rule_set") or []
+             if rs.get("download_detour")]
+    return sorted({f"{kind} {tag}" for kind, tag in refs if tag not in defined[kind]})
 
 
 def client_settings(data: object) -> dict:

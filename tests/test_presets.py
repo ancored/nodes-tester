@@ -48,7 +48,7 @@ class PresetModuleTest(unittest.TestCase):
         self._write("ru", ru)
         self._write("ai", ai)
         self._write("off", _preset(100, route=[{"r": "off"}], enabled=False))
-        base = {"route": {"rules": [{"r": "base"}], "final": "global"}}
+        base = {"route": {"rules": [{"r": "base"}], "final": "n1"}}
         nodes = {"outbounds": [{"tag": "n1"}]}
         config, warnings = presets.assemble(base, nodes, presets.load(self.dir))
         self.assertEqual(config["route"]["rules"],
@@ -58,6 +58,11 @@ class PresetModuleTest(unittest.TestCase):
         self.assertEqual(config["outbounds"], [{"tag": "n1"}])
         self.assertNotIn("_preset", config)
         self.assertEqual(warnings, [])
+
+    def test_dangling_reference_fails(self):
+        self._write("x", _preset(300, route=[{"domain": ["a.example"], "outbound": "no-such-out"}]))
+        with self.assertRaisesRegex(presets.MergeError, "outbound no-such-out"):
+            presets.assemble({}, {"outbounds": [{"tag": "n1"}]}, presets.load(self.dir))
 
     def test_validation(self):
         bad = [({"_preset": {"enabled": "yes"}}, "enabled"), ({"_preset": {"priority": 1.5}}, "priority"),
@@ -107,7 +112,8 @@ class PresetModuleTest(unittest.TestCase):
                      "url": "https://r.example:8443/s3cr3t/category-ru.srs", "update_interval": "24h"}
         # База клиента уже раздаёт тот же набор: одинаковые объекты схлопываются.
         base = {"route": {"rule_set": [dict(remote_ru)]}}
-        config, _ = presets.assemble_client(base, {"outbounds": []}, presets.load(self.dir), settings)
+        config, _ = presets.assemble_client(base, {"outbounds": [{"tag": "direct-out"}]},
+                                            presets.load(self.dir), settings)
         self.assertEqual(config["route"]["rule_set"], [
             remote_ru,
             {"type": "remote", "tag": "my", "format": "source",
@@ -155,18 +161,6 @@ def _selector(tag, *members):
     return {"type": "selector", "tag": tag, "outbounds": list(members)}
 
 
-def _rule_refs(rules):
-    """Пары (поле, значение) ссылок правил на выходы, DNS-серверы и наборы правил."""
-    for rule in rules:
-        yield from _rule_refs(rule.get("rules", []))
-        for key in ("outbound", "server"):
-            if key in rule:
-                yield key, rule[key]
-        sets = rule.get("rule_set", [])
-        for tag in [sets] if isinstance(sets, str) else sets:
-            yield "rule_set", tag
-
-
 class PresetLibraryTest(unittest.TestCase):
     """Библиотека config/singbox/presets: склеивается без конфликтов, ссылки разрешаются."""
 
@@ -178,17 +172,7 @@ class PresetLibraryTest(unittest.TestCase):
         return config
 
     def assert_refs_resolved(self, config):
-        defined = {
-            "outbound": {o["tag"] for o in config["outbounds"]},
-            "server": {s["tag"] for s in config["dns"]["servers"]},
-            "rule_set": {r["tag"] for r in config["route"]["rule_set"]},
-        }
-        refs = list(_rule_refs(config["route"]["rules"] + config["dns"]["rules"]))
-        refs += [("outbound", s["detour"]) for s in config["dns"]["servers"] if "detour" in s]
-        refs += [("outbound", m) for o in config["outbounds"] for m in o.get("outbounds", [])]
-        refs.append(("outbound", config["route"]["final"]))
-        missing = sorted({(kind, tag) for kind, tag in refs if tag not in defined[kind]})
-        self.assertEqual(missing, [])
+        self.assertEqual(presets.dangling_refs(config), [])
 
     def test_all_disabled(self):
         library = presets.load(LIBRARY)
@@ -316,7 +300,7 @@ class PresetApiTest(unittest.TestCase):
 
     def test_client_presets(self):
         clients = self._client_setup()
-        preset = _preset(300, route=[{"rule_set": "ru", "outbound": "direct-out"}], groups=["global"])
+        preset = _preset(300, route=[{"rule_set": "ru", "outbound": "global-auto-out"}], groups=["global"])
         preset["route"]["rule_set"] = [{"type": "local", "tag": "ru", "path": "/etc/sing-box/rules/ru.srs"}]
         url = "/api/singbox/files/clients/presets/ru.json"
         with patch("dashboard.api_singbox.subprocess.run") as run:

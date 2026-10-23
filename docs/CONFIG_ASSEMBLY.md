@@ -163,7 +163,9 @@ presets is shared by all clients from `clients.list`; the differences between cl
 
 After merging:
 
-1. `sing-box check` of the resulting file; on a merge or check error the running config is not
+1. A reference to an outbound, DNS server or rule set that nothing declares is a merge error
+   (`sing-box check` lets such references through, and a client has no connectivity check). Then
+   `sing-box check` of the resulting file; on a merge or check error the running config is not
    touched. The admin panel does the same merge and check when the base and presets are saved.
 2. Comparison with the running `/etc/sing-box/config.json`; if they match, nothing is done.
 3. Replacing the config and restarting sing-box.
