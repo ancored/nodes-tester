@@ -236,6 +236,7 @@ class GroupConfig:
     require: dict[str, dict] = field(default_factory=dict)   # проверка → условия
     prefer: dict[str, dict] = field(default_factory=dict)
     errors: "ErrorRuleConfig | None" = None   # None — monitor.errors
+    exclude_subscriptions: list[str] = field(default_factory=list)   # их ноды не в группе
 
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9_]*")
@@ -279,7 +280,7 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
     for i, item in enumerate(obj):
         path = f"groups[{i}]"
         item = _fields(item, path, ("tag", "strict", "direct_fallback", "in_global", "reserve",
-                                    "tier_floor", "require", "prefer", "monitor"))
+                                    "tier_floor", "require", "prefer", "monitor", "exclude_subscriptions"))
         tag = item.get("tag")
         if not isinstance(tag, str) or not _TAG.fullmatch(tag) or tag in ("global", "nodes", "failsafe"):
             raise ConfigError(f"{path}.tag: латиница в нижнем регистре, цифры и _; не global, nodes, "
@@ -293,7 +294,8 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
                             reserve=_number(item, "reserve", path, reserve, 0, 20, integer=True),
                             tier_floor=_number(item, "tier_floor", path, None, 0, 100),
                             require=_group_checks(item.get("require"), f"{path}.require", checks),
-                            prefer=_group_checks(item.get("prefer"), f"{path}.prefer", checks))
+                            prefer=_group_checks(item.get("prefer"), f"{path}.prefer", checks),
+                            exclude_subscriptions=_strings(item, "exclude_subscriptions", path))
         own = _fields(item.get("monitor"), f"{path}.monitor", ("errors",))
         if "errors" in own:
             group.errors = _error_rule(own["errors"], f"{path}.monitor.errors", errors)
@@ -990,10 +992,17 @@ def parse_config(data: Any) -> Config:
     regions = _regions(data.get("regions"))
     selection = _selection(data.get("selection"))
     monitor = _monitor(data.get("monitor"))
+    subscriptions = _subscriptions(data.get("subscriptions"))
+    groups = _groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors)
+    router_subs = {s["tag"] for s in subscriptions if s.get("branch", "router") == "router"}
+    for i, group in enumerate(groups):
+        unknown = [t for t in group.exclude_subscriptions if t not in router_subs]
+        if unknown:
+            raise ConfigError(f"groups[{i}].exclude_subscriptions: нет подписки роутера {unknown[0]!r}")
     return Config(api=_api(data.get("api")),
-                  subscriptions=_subscriptions(data.get("subscriptions")),
+                  subscriptions=subscriptions,
                   tests=_tests(data.get("tests")), checks=checks, regions=regions,
-                  groups=_groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors),
+                  groups=groups,
                   rating=_rating(data.get("rating")), selection=selection,
                   tester=_tester(data.get("tester")), monitor=monitor,
                   pipeline=_pipeline(data.get("pipeline")), storage=_storage(data.get("storage")),

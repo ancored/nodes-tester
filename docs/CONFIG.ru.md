@@ -346,6 +346,7 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 | `strict` | bool | `false` | Без кандидатов — `block-out` (трафик группы блокируется), а не `failsafe-out` |
 | `direct_fallback` | bool | `false` | Добавить `direct-out`; строгая группа без кандидатов уходит на него вместо `block-out` |
 | `in_global` | bool | `true` | Входит в `global-auto-out` |
+| `exclude_subscriptions` | список | — | Теги подписок роутера, ноды которых не входят в группу; подписку, которую исключили все группы, не берут и `failsafe-out` с тестером |
 | `reserve` | число | `selection.reserve` | Кандидатов в резерве |
 | `tier_floor` | число | `selection.tier_floor` | Рейтинг ниже — ярус после всех остальных нод группы |
 | `require` | объект | — | Обязательные проверки: без свежего успеха нода не кандидат |

@@ -11,6 +11,8 @@
   же стоит по умолчанию вместо block.
 `global-auto-out` — selector групп с `in_global`; `nodes-tester` — плоский selector всех
 нод для тестера и `failsafe-out`: через него монитор зондирует запасной выход групп.
+Ноды подписок из `exclude_subscriptions` группы в её селектор не входят; подписку, которую
+исключили все группы, не берут ни `failsafe-out`, ни `nodes-tester`.
 
 Клиенты (whnodes.json): selector `global-auto-out` со всеми нодами и urltest
 `failsafe-out` по умолчанию — клиентские конфиги ссылаются только на global-auto-out.
@@ -27,10 +29,18 @@ def _urltest(tag, members, params):
     return {'tag': tag, 'type': 'urltest', 'outbounds': members, **params}
 
 
-def router_groups(nodes, groups, selector=None, urltest=None):
-    '''Selector-ы групп, global-auto-out, nodes-tester и общий failsafe-out.'''
-    selector, urltest = selector or {}, urltest or {}
+def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None):
+    '''Selector-ы групп, global-auto-out, nodes-tester и общий failsafe-out.
+    provider_of — тег ноды → подписка (для exclude_subscriptions).'''
+    selector, urltest, provider_of = selector or {}, urltest or {}, provider_of or {}
+
+    def members(excluded):
+        return [n for n in nodes if provider_of.get(n) not in excluded]
+
     out, in_global = [], []
+    if groups:
+        unused = set.intersection(*(set(g.exclude_subscriptions) for g in groups))
+        nodes = members(unused)
     for g in groups:
         if g.strict:
             fallback = [BLOCK] + ([DIRECT] if g.direct_fallback else [])
@@ -39,7 +49,7 @@ def router_groups(nodes, groups, selector=None, urltest=None):
             fallback = [FAILSAFE] + ([DIRECT] if g.direct_fallback else [])
             default = FAILSAFE
         auto = '{}-auto-out'.format(g.tag)
-        out.append(_selector(auto, fallback + list(nodes), default, selector))
+        out.append(_selector(auto, fallback + members(g.exclude_subscriptions), default, selector))
         if g.in_global:
             in_global.append(auto)
     top = []

@@ -94,6 +94,28 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(by_tag["nodes-tester"]["outbounds"], nodes + ["failsafe-out"])   # зонд монитора
         self.assertEqual(by_tag["failsafe-out"]["outbounds"], nodes)
 
+    def test_exclude_subscriptions(self):
+        frag, _ = _build(groups=[{"tag": "eu", "exclude_subscriptions": ["B"]},
+                                 {"tag": "ai", "exclude_subscriptions": ["A"]}])
+        by_tag = {o["tag"]: o for o in frag["outbounds"]}
+        nodes = [o["tag"] for o in _leaves(frag)]
+        a = [n for n in nodes if n.startswith("A-")]
+        b = [n for n in nodes if n.startswith("B-")]
+        self.assertEqual(by_tag["eu-auto-out"]["outbounds"], ["failsafe-out"] + a)
+        self.assertEqual(by_tag["ai-auto-out"]["outbounds"], ["failsafe-out"] + b)
+        self.assertEqual(by_tag["failsafe-out"]["outbounds"], nodes)    # не исключили все
+        frag, _ = _build(groups=[{"tag": "eu", "exclude_subscriptions": ["B"]},
+                                 {"tag": "ai", "exclude_subscriptions": ["B"]}])
+        by_tag = {o["tag"]: o for o in frag["outbounds"]}
+        self.assertEqual(by_tag["failsafe-out"]["outbounds"], a)
+        self.assertEqual(by_tag["nodes-tester"]["outbounds"], a + ["failsafe-out"])
+        self.assertEqual(len(_leaves(frag)), len(nodes))                # сами ноды остаются
+
+    def test_exclude_unknown_subscription(self):
+        from nodes_tester.config import ConfigError
+        with self.assertRaisesRegex(ConfigError, "exclude_subscriptions.*'C'"):
+            _cfg(groups=[{"tag": "eu", "exclude_subscriptions": ["C"]}])
+
     def test_strict_with_direct_fallback_defaults_to_direct(self):
         frag, _ = _build(groups=[{"tag": "ai", "strict": True, "direct_fallback": True}])
         ai = next(o for o in frag["outbounds"] if o["tag"] == "ai-auto-out")

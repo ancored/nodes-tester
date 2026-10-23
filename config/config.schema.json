@@ -888,6 +888,13 @@
             "description": "Входит в global-auto-out.",
             "default": true
           },
+          "exclude_subscriptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Теги подписок роутера, ноды которых не входят в группу. Подписку, которую исключили все группы, не берут ни failsafe-out, ни тестер."
+          },
           "reserve": {
             "type": "integer",
             "description": "Кандидатов в резерве (по умолчанию selection.reserve).",

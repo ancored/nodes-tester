@@ -68,6 +68,7 @@ export default {
   'Strict: block when no node fits': 'Строгая: без подходящей ноды — блокировать',
   'Allow direct outbound (direct-out)': 'Разрешить прямой выход (direct-out)',
   'Part of global-auto-out': 'Входит в global-auto-out',
+  'Except subscriptions': 'Кроме подписок',
   'ignored': 'не учитывать',
   'required': 'обязательна',
   'preferred': 'желательна',

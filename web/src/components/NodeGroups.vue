@@ -21,6 +21,8 @@ const KIND_NAMES={get residential(){return t('residential')},get mobile(){return
 const COUNTRY_FIELDS=computed(()=>[['countries',t('Countries (ISO codes)')],['regions',t('Regions')],['exclude_countries',t('Except countries')],['exclude_regions',t('Except regions')]])
 const BUILTIN=['eu','us','ru','other']
 const groups=computed(()=>props.doc.groups)
+// Подписки ветви роутера: их можно исключить из группы.
+const routerSubs=computed(()=>(props.doc.subscriptions || []).filter(s=>(s.branch || 'router')==='router' && s.tag).map(s=>s.tag))
 const regionList=computed(()=>[...new Set([...BUILTIN,...Object.keys(props.doc.regions || {})])])
 function changed(){emit('changed')}
 function add(){(props.doc.groups ||= []).push({tag:''});changed()}
@@ -28,6 +30,12 @@ function remove(i){if(window.confirm(t('Delete group {group}?',{group:props.doc.
 function move(i,d){const g=props.doc.groups;const j=i+d;if(j<0||j>=g.length)return;[g[i],g[j]]=[g[j],g[i]];changed()}
 function flag(g,key,dflt){return g[key] ?? dflt}
 function setFlag(g,key,e){g[key]=e.target.checked;changed()}
+function toggleSub(g,tag,on){
+  const cur=(g.exclude_subscriptions || []).filter(x=>x!==tag)
+  if(on)cur.push(tag)
+  if(cur.length)g.exclude_subscriptions=cur; else delete g.exclude_subscriptions
+  changed()
+}
 function setReserve(g,e){if(e.target.value==='')delete g.reserve; else g.reserve=Number(e.target.value);changed()}
 // Проверка в группе: require (без свежего успеха нода не кандидат), prefer (влияет на выбор) или не используется.
 function mode(g,check){return g.require?.[check] ? 'require' : g.prefer?.[check] ? 'prefer' : ''}
@@ -71,6 +79,10 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
           <label class="check"><input type="checkbox" :checked="flag(g,'strict',false)" @change="setFlag(g,'strict',$event)" /> {{ t('Strict: block when no node fits') }}</label>
           <label class="check"><input type="checkbox" :checked="flag(g,'direct_fallback',false)" @change="setFlag(g,'direct_fallback',$event)" /> {{ t('Allow direct outbound (direct-out)') }}</label>
           <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> {{ t('Part of global-auto-out') }}</label>
+        </div>
+        <div v-if="routerSubs.length" class="toolbar">
+          <span>{{ t('Except subscriptions') }}:</span>
+          <label v-for="tag in routerSubs" :key="tag" class="check"><input type="checkbox" :checked="(g.exclude_subscriptions || []).includes(tag)" @change="toggleSub(g,tag,$event.target.checked)" /> {{ tag }}</label>
         </div>
         <table class="checks">
           <tr v-for="check in checks" :key="check">

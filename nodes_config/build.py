@@ -104,7 +104,8 @@ def build(raws, cfg, branch_name="router", log=print):
     leaf_nodes = finalize_nodes(nodes, branch, exclude_names, dropped)
     tags = [n['tag'] for n in leaf_nodes]
     if branch_name == "router":
-        group_outbounds = groups.router_groups(tags, cfg.groups, branch.selector, branch.urltest)
+        group_outbounds = groups.router_groups(tags, cfg.groups, branch.selector, branch.urltest,
+                                               {n['tag']: n['_provider'] for n in leaf_nodes})
     else:
         group_outbounds = groups.client_groups(tags, branch.selector, branch.urltest)
     for node in leaf_nodes:

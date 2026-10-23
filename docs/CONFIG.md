@@ -348,6 +348,7 @@ A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router
 | `strict` | bool | `false` | Without candidates: `block-out` (the group traffic is blocked) instead of `failsafe-out` |
 | `direct_fallback` | bool | `false` | Add `direct-out`; a strict group without candidates goes to it instead of `block-out` |
 | `in_global` | bool | `true` | Part of `global-auto-out` |
+| `exclude_subscriptions` | list | — | Tags of router subscriptions whose nodes are not in the group; a subscription excluded by every group is left out of `failsafe-out` and the tester as well |
 | `reserve` | number | `selection.reserve` | Reserve candidates |
 | `tier_floor` | number | `selection.tier_floor` | A lower rating puts the node into a tier after all other nodes of the group |
 | `require` | object | — | Required checks: without a fresh success the node is not a candidate |

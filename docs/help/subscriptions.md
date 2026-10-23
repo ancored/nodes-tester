@@ -190,6 +190,7 @@ The group editor (router branch only). Every group block has:
 - **Group tag** — lowercase Latin letters, digits and `_`; not `global`, `nodes`, `failsafe`. The selector is `{tag}-auto-out`;
 - **Reserve candidates** — the group's own reserve size; empty — as in the settings (`selection.reserve`);
 - **Strict**, **Allow direct outbound**, **Part of global-auto-out** — see [fallback outbounds](groups.md#fallback);
+- **Except subscriptions** — router subscriptions whose nodes are not in the group ([details](groups.md));
 - a table of checks: for each check “ignored”, “required” or “preferred”; the exit country and the IP type have their own
   conditions ([details](groups.md#checks)). Unknown regions and country codes that are not two letters are highlighted;
 - “Up”, “Down” change the order of groups, “Delete group” removes it.
