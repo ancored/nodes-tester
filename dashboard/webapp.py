@@ -74,10 +74,11 @@ class Request:
 class Response:
     """Ответ хендлера. Хендлер может вернуть Response, либо dict/list (→ JSON 200)."""
 
-    def __init__(self, status: int, ctype: str, body: bytes):
+    def __init__(self, status: int, ctype: str, body: bytes, headers: dict | None = None):
         self.status = status
         self.ctype = ctype
         self.body = body
+        self.headers = headers or {}
 
     @classmethod
     def json(cls, data, status: int = 200) -> "Response":
@@ -131,12 +132,12 @@ class App:
     def handle(self, method: str, raw_path: str, headers, body: bytes) -> Response:
         split = urlsplit(raw_path)
         path = split.path
-        path_exists = False
+        allowed = []
         for route in self._routes:
             m = route.regex.match(path)
             if not m:
                 continue
-            path_exists = True
+            allowed.append(route.method)
             if route.method != method:
                 continue
             req = Request(method, path, parse_qs(split.query), headers, body)
@@ -149,8 +150,10 @@ class App:
             if isinstance(result, Response):
                 return result
             return Response.json(result)          # dict/list → JSON 200
-        if path_exists:
-            return Response.json({"error": "method not allowed"}, status=405)
+        if allowed:
+            resp = Response.json({"error": "method not allowed"}, status=405)
+            resp.headers["Allow"] = ", ".join(dict.fromkeys(allowed))
+            return resp
         # Не API — пробуем статику / SPA-фолбэк (только на GET).
         if method == "GET" and not path.startswith("/api/"):
             return self._serve_static(path)
@@ -225,6 +228,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", resp.ctype)
             self.send_header("Content-Length", str(len(resp.body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in resp.headers.items():
+                self.send_header(name, value)
             self.end_headers()
             if method != "HEAD":
                 self.wfile.write(resp.body)

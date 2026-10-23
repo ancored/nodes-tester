@@ -62,7 +62,7 @@ protection. It shows operational data, and the subscription editor works with th
 | Database | `GET /api/storage/vacuum`, `POST /api/storage/vacuum` | the result of the last `VACUUM`, the next run by schedule, the database size; a manual start (token) |
 | sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | state, emergency stop and start, turning the router killswitch service on and off (OpenWrt only) |
 | Notifications | `POST /api/notify/test` | a test message with the settings of the running process |
-| Pipeline | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | schedule, start and history; all routes require the token |
+| Pipeline | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/runs/{id}`, `/api/pipeline/schedule` | schedule, start and history; all routes require the token |
 | sing-box files and presets | `/api/singbox/files/...`, `/api/singbox/presets` | a limited list of JSON files, a check of the resulting build when the base and presets are written, revision and 20 previous versions, deleting presets |
 
 `/api/data` is kept as a shared aggregate for compatibility. Separate read routes are more convenient

@@ -62,7 +62,7 @@ python3 -m dashboard -c config/config.json --host 127.0.0.1 --port 8088
 | База | `GET /api/storage/vacuum`, `POST /api/storage/vacuum` | итог последнего `VACUUM`, следующий запуск по расписанию, размер базы; запуск вручную (токен) |
 | sing-box | `GET /api/singbox/control`, `POST /api/singbox/stop`, `POST /api/singbox/start`, `PUT /api/singbox/killswitch` | состояние, аварийная остановка и запуск, включение и выключение службы killswitch роутера (только OpenWrt) |
 | Уведомления | `POST /api/notify/test` | тестовое сообщение по настройкам работающего процесса |
-| Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
+| Конвейер | `/api/pipeline`, `/api/pipeline/run`, `/api/pipeline/runs`, `/api/pipeline/runs/{id}`, `/api/pipeline/schedule` | расписание, запуск и история; все маршруты требуют токен |
 | Файлы sing-box и пресеты | `/api/singbox/files/...`, `/api/singbox/presets` | ограниченный список JSON-файлов, проверка итоговой сборки при записи базы и пресетов, revision и 20 прошлых версий, удаление пресетов |
 
 `/api/data` сохранён как общий агрегат для совместимости. Раздельные read-маршруты удобнее

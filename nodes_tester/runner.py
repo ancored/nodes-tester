@@ -620,13 +620,12 @@ class Runner:
             self._httpd = None
 
     def _box_interrupted(self, record: dict) -> bool:
-        """Замер провалился из-за sing-box, а не ноды: не удалось выбрать ноду или нет
-        связности, и при этом API не отвечает или процесс сменился с последней сверки.
-        Новый PID запоминается — следующий провал засчитывается как обычно."""
+        """Замер провалился из-за sing-box, а не ноды: какой-то тест провален, и при этом API
+        не отвечает или процесс сменился с последней сверки. Рестарт мог прийтись и на
+        середину замера — после выбора ноды и связности. Новый PID запоминается — следующий
+        провал засчитывается как обычно."""
         tests = record.get("tests") or {}
-        selected = (tests.get("_select") or {}).get("ok")
-        connected = (tests.get("connectivity") or {"ok": True}).get("ok")
-        if selected and connected:
+        if all((res or {}).get("ok", True) for res in tests.values() if isinstance(res, dict)):
             return False
         try:
             self.api.ping()

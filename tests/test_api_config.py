@@ -165,7 +165,9 @@ class ApiConfigTest(unittest.TestCase):
         self.assertIn("eu", data["builtin_regions"])
 
     def test_wrong_method_returns_405(self):
-        self.assertEqual(self.app.handle("DELETE", "/api/config", {}, b"").status, 405)
+        resp = self.app.handle("DELETE", "/api/config", {}, b"")
+        self.assertEqual(resp.status, 405)
+        self.assertIn("GET", resp.headers["Allow"].split(", "))
 
     def test_config_requires_token(self):
         self.assertEqual(self.app.handle("GET", "/api/config", {}, b"").status, 401)

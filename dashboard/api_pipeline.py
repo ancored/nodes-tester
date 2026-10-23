@@ -43,6 +43,13 @@ def register(app: App) -> None:
             raise HttpError(400, "limit должен быть числом") from exc
         return {"runs": _orchestrator(app).runs(limit)}
 
+    @app.route("GET", "/api/pipeline/runs/{run_id}", needs_token=read_auth)
+    def run(app, req, run_id):
+        row = _orchestrator(app).run(run_id)
+        if row is None:
+            raise HttpError(404, "Прогон не найден")
+        return {"run": row}
+
     @app.route("GET", "/api/pipeline/runs/{run_id}/log", needs_token=read_auth)
     def log(app, req, run_id):
         try:

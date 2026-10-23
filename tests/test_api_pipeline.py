@@ -65,6 +65,9 @@ class PipelineApiTests(unittest.TestCase):
         while self.orch.run(data["run_id"])["status"] == "running" and time.monotonic() < deadline:
             time.sleep(0.03)
         self.assertEqual(self.orch.run(data["run_id"])["status"], "ok")
+        status, one = self.request("GET", f"/api/pipeline/runs/{data['run_id']}")
+        self.assertEqual((status, one["run"]["status"]), (200, "ok"))
+        self.assertEqual(self.request("GET", "/api/pipeline/runs/nope")[0], 404)
 
     def test_file_paths_revision_and_base_check(self):
         for path in ("../secret.json", "%2E%2E%2Fsecret.json", "clients/other.json", "C:%5Ctemp"):

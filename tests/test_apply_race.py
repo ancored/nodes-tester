@@ -66,6 +66,16 @@ class ApplyRaceTest(unittest.TestCase):
             self.assertEqual(self.scored, [])
             self.assertFalse(r._box_interrupted(failed))   # PID тот же — провал ноды
 
+    def test_restart_after_connectivity_not_scored(self):
+        # Выбор и связность прошли до рестарта, остальное упало из-за него (RuRu 026e5d2a, 17.10).
+        r = self.r
+        r._box_pid = "100"
+        failed = {"id": "aaaa0001", "tests": {"_select": {"ok": True}, "connectivity": {"ok": True},
+                                              "download": {"ok": False}}}
+        with patch.object(r.singbox, "pid", return_value="200"):
+            self.assertIsNone(self._measure(failed))
+        self.assertEqual(self.scored, [])
+
     def test_failure_with_box_alive_is_scored(self):
         failed = {"id": "aaaa0001", "tests": {"_select": {"ok": True}, "connectivity": {"ok": False}}}
         self.assertTrue(self._measure(failed))
