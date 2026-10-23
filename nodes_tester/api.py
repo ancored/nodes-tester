@@ -58,3 +58,6 @@ class ApiClient:
 
     def subscribe_connections(self, interval: float):
         return self._api.subscribe_connections(interval)
+
+    def close_connection(self, conn_id: str) -> None:
+        self._api.close_connection(conn_id)

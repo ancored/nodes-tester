@@ -108,6 +108,11 @@ class TrafficCollector:
         with self._lock:
             return dict(self._user)
 
+    def open_user_conns(self, crc: str) -> list[str]:
+        """Открытые боевые соединения через ноду (id для CloseConnection)."""
+        with self._lock:
+            return [cid for cid, rec in self._conns.items() if rec.crc == crc and not rec.is_tester]
+
     def user_conns(self) -> dict[str, int]:
         """Накопительное число боевых соединений по CRC ноды."""
         with self._lock:

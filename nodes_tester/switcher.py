@@ -61,6 +61,9 @@ class Switcher:
         # хоста падают и блокируются вместе: замену берём с другого хоста.
         self._server_of = server_of or (lambda node: "")
         self._penalty: dict[str, float] = {}     # хост → не выбирать до (time.time())
+        # Последняя плановая ротация каждой группы (только в памяти: после рестарта тестера
+        # возможно одно совпадение).
+        self._rotated: dict[str, float] = {}
         self.state: dict[str, dict] = storage.load_switch_state() if storage else {}
         # Один RLock: switcher дёргают тестер, резерв и фоновый монитор.
         self._lock = threading.RLock()
@@ -199,7 +202,14 @@ class Switcher:
             if not st.get("active") or not st.get("rotate_deadline"):
                 return None
             return max(float(st["rotate_deadline"]),
-                       float(st.get("last_switch") or 0) + float(self.cfg.rotation.min_dwell))
+                       float(st.get("last_switch") or 0) + float(self.cfg.rotation.min_dwell),
+                       self._spread_until(region))
+
+    def _spread_until(self, region: str) -> float:
+        """До какого момента группа не ротируется: плановая ротация другой группы была
+        меньше rotation.spread назад."""
+        last = max((t for g, t in self._rotated.items() if g != region), default=0.0)
+        return last + self.cfg.rotation.spread if last else 0.0
 
     def excluded(self, region: str) -> set[str]:
         """Ноды, которые не берём в резерв группы: активная и avoid_recent последних."""
@@ -249,7 +259,8 @@ class Switcher:
             now = time.time()
             return (self.cfg.rotation.enabled
                     and now >= st.get("rotate_deadline", 0)
-                    and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell)
+                    and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
+                    and now >= self._spread_until(region))
 
     def force_activate(self, region: str, node: str) -> bool:
         """Ручное форс-переключение активной ноды региона (из админки).
@@ -322,7 +333,8 @@ class Switcher:
         st = self.state.get(region) or {}
         now = time.time()
         if (self.cfg.rotation.enabled and st.get("active")
-                and float(st.get("rotate_deadline") or 0) <= now):
+                and float(st.get("rotate_deadline") or 0) <= now
+                and now >= self._spread_until(region)):    # ждёт разноса — срок не переносим
             st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
             print(f"  [switch] {region}: ротация сейчас невозможна — срок перенесён")
 
@@ -385,6 +397,7 @@ class Switcher:
         if (self.cfg.rotation.enabled
                 and now >= st.get("rotate_deadline", 0)
                 and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
+                and now >= self._spread_until(region)
                 and top and top[0]["tier"] <= active_tier
                 and self._activate(self._balanced_choice(top, st), region, st, now, "rotation")):
             return
@@ -526,6 +539,8 @@ class Switcher:
         st.pop("failsafe", None)
         st.pop("fallback", None)
         st["rotate_deadline"] = self._next_deadline(now)
+        if reason == "rotation":
+            self._rotated[region] = now
         recent = [node] + [n for n in st.get("recent", []) if n != node]
         st["recent"] = recent[:10]
         st.setdefault("activations", {})

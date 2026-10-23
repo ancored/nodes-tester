@@ -170,7 +170,8 @@ Bare `vless` and `vmess` without TLS and Reality are always dropped: they would 
 
 “Interrupt existing connections when the node changes” (`selector.interrupt_exist_connections`): on — connections of the old
 node are closed at once and reopen through the new one; off — they continue through the old node until they end. Without a value
-the sing-box default applies.
+the sing-box default applies. Off is recommended: a scheduled rotation then does not break downloads and calls, and after an
+emergency replacement the tester itself closes the connections left on the failed node.
 
 <a id="failsafe"></a>
 ### failsafe-out group

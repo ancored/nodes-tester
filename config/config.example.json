@@ -38,7 +38,7 @@
       "enabled": false,
       "at": ["03:00"],
       "exclude_types": ["shadowsocksr"],
-      "selector": { "interrupt_exist_connections": true },
+      "selector": { "interrupt_exist_connections": false },
       "urltest": { "interval": "5m", "tolerance": 100, "idle_timeout": "5m", "interrupt_exist_connections": true }
     },
     "clients": {

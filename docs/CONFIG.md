@@ -125,7 +125,7 @@ Default values are shown so that all fields are visible.
     "host_penalty": "3h",
     "rotation": {
       "enabled": true, "interval": "6h", "jitter": "15m",
-      "min_dwell": "30m", "min_score": 55, "avoid_recent": 2,
+      "min_dwell": "30m", "spread": "10m", "min_score": 55, "avoid_recent": 2,
       "balance": { "window": "24h", "provider": 1.0, "country": 1.0, "protocol": 0.3 }
     },
     "quarantine": { "after_skips": 32, "duration": "72h", "low_score": 0 },
@@ -170,7 +170,7 @@ Default values are shown so that all fields are visible.
       "at": ["03:00"],
       "exclude_types": ["shadowsocksr"],
       "domain_resolver": "bootstrap",
-      "selector": { "interrupt_exist_connections": true },
+      "selector": { "interrupt_exist_connections": false },
       "urltest": { "interval": "5m", "tolerance": 100, "idle_timeout": "5m", "interrupt_exist_connections": true }
     },
     "clients": {
@@ -404,6 +404,7 @@ Choosing the active node in groups.
 | `rotation.enabled` | `true` | Scheduled rotation |
 | `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once. A node fails most often in the first minutes after it is chosen, not after long work, so every rotation is an extra risk |
 | `rotation.min_dwell` | `30m` | Minimum time on a node |
+| `rotation.spread` | `10m` | Scheduled rotations of different groups are at least this far apart: a group whose deadline came waits until this much time passes since the rotation of another group (each rotation breaks the connections of its group) |
 | `rotation.min_score` | `55` | Minimum rating of a rotation candidate |
 | `rotation.avoid_recent` | `2` | Do not go back to the last N nodes |
 | `rotation.balance` | off | Balancing by traffic; the section turns it on: `window` `24h`, axis strength `provider` `1.0`, `country` `1.0`, `protocol` `0.3` |

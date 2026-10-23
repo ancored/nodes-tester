@@ -732,7 +732,25 @@ class Runner:
         self.outage.note_switch(reason)
         if reason == "emergency":
             self._refresh_stability()           # упавшая нода теряет рейтинг сразу
+        if reason in ("emergency", "failsafe") and prev:
+            threading.Thread(target=self._close_conns, args=(prev,), name="close-conns",
+                             daemon=True).start()
         self.reserve.wake()
+
+    def _close_conns(self, node: str) -> None:
+        """Аварийная замена: закрыть соединения, оставшиеся на упавшей ноде, — приложения
+        переоткроют их через новую. Плановую ротацию это не касается: при
+        interrupt_exist_connections: false её соединения доживают на прежней ноде."""
+        ids = self.collector.open_user_conns(parse_node(node).node_id)
+        closed = 0
+        for cid in ids:
+            try:
+                self.api.close_connection(cid)
+                closed += 1
+            except ApiError:
+                pass                            # уже закрыто или ядро перезапускается
+        if ids:
+            print(f"  [switch] закрыто соединений упавшей ноды: {closed} из {len(ids)}")
 
     def _refresh_stability(self) -> None:
         """Множители боевой надёжности нод в рейтинге (selection.stability) по истории аварий."""

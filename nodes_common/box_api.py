@@ -297,6 +297,9 @@ class BoxApi:
     def url_test(self, tag: str) -> None:
         self.unary("URLTest", encode({1: tag}))
 
+    def close_connection(self, conn_id: str) -> None:
+        self.unary("CloseConnection", encode({1: conn_id}))
+
     def subscribe_connections(self, interval: float) -> _Call:
         """Поток ConnectionEvents; interval — период UPDATE-событий, секунды."""
         return self.stream("SubscribeConnections", encode({1: int(interval * 1e9)}))

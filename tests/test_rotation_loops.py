@@ -3,6 +3,7 @@
 недобранном min_dwell."""
 
 import itertools
+import threading
 import time
 import unittest
 
@@ -72,6 +73,61 @@ class RotationLoopTest(unittest.TestCase):
         for n, scenario in itertools.product(range(4), self.SCENARIOS):
             with self.subTest(nodes=n, scenario=scenario):
                 self._check(n, scenario)
+
+
+class RotationSpreadTest(unittest.TestCase):
+    """Плановые ротации разных групп не ближе rotation.spread: вторая группа ждёт, срок не
+    переносится на целый интервал."""
+
+    def test_second_group_waits(self):
+        r = make_runner(temp_dir())
+        try:
+            groups = {"eu": NODES[:2], "us": [OTHER, "DEMO-vless-us-out [bbbb0002]"]}
+            sw, board = r.switcher, r.board
+            sw.api = r.api
+            board.set_groups({g: set(m) for g, m in groups.items()})
+            board.rows = {m: {**_row(m), "region": g} for g, ms in groups.items() for m in ms}
+            r.api.all_proxies = lambda: {f"{g}-auto-out": {"type": "Selector", "all": list(m)}
+                                         for g, m in groups.items()}
+            now = time.time()
+            sw.state = {g: {"active": m[0], "rotate_deadline": now - 1, "last_switch": now - 7200}
+                        for g, m in groups.items()}
+            for g, m in groups.items():
+                board.set_reserve(g, m[1:])
+
+            sw.rotate_due()
+            moved = [g for g, m in groups.items() if sw.state[g]["active"] != m[0]]
+            self.assertEqual(len(moved), 1)
+            waiting = "us" if moved == ["eu"] else "eu"
+            self.assertFalse(sw.rotation_due(waiting))
+            self.assertAlmostEqual(sw.rotate_deadline(waiting), now + sw.cfg.rotation.spread, delta=5)
+            self.assertLess(sw.state[waiting]["rotate_deadline"], now)   # срок не перенесён
+
+            sw._rotated[moved[0]] -= sw.cfg.rotation.spread               # разнос выдержан
+            sw.rotate_due()
+            self.assertNotEqual(sw.state[waiting]["active"], groups[waiting][0])
+        finally:
+            r.storage.close()
+
+
+class EmergencyCloseTest(unittest.TestCase):
+    """Аварийная замена закрывает соединения упавшей ноды; плановая ротация — нет."""
+
+    def test_close_on_emergency_only(self):
+        r = make_runner(temp_dir())
+        try:
+            closed = []
+            r.collector.open_user_conns = lambda crc: [f"{crc}-1", f"{crc}-2"]
+            r.api.close_connection = closed.append
+            r.reserve.wake = lambda: None
+            for reason in ("rotation", "quality", "emergency"):
+                r._on_activation("eu", reason, NODES[1], NODES[0])
+                for t in [t for t in threading.enumerate() if t.name == "close-conns"]:
+                    t.join(5)
+                self.assertEqual(closed, ["aaaa0001-1", "aaaa0001-2"] if reason == "emergency" else [],
+                                 reason)
+        finally:
+            r.storage.close()
 
 
 if __name__ == "__main__":

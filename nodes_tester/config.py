@@ -407,6 +407,8 @@ class RotationConfig:
     interval: float = 6 * 3600.0
     jitter: float = 900.0
     min_dwell: float = 1800.0
+    # Плановые ротации разных групп не ближе этого: каждая рвёт соединения своей группы.
+    spread: float = 600.0
     min_score: float = 55.0
     avoid_recent: int = 2
     balance: BalanceConfig = field(default_factory=BalanceConfig)
@@ -467,7 +469,7 @@ def _selection(obj) -> SelectionConfig:
     obj = _fields(obj, path, ("reserve", "quality_margin", "reserve_margin", "confirm_cycles", "comfort_floor",
                               "tier_floor", "cooldown", "host_penalty", "rotation", "quarantine", "stability"))
     rpath, r = f"{path}.rotation", RotationConfig()
-    rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "min_dwell",
+    rot = _fields(obj.get("rotation"), rpath, ("enabled", "interval", "jitter", "min_dwell", "spread",
                                                "min_score", "avoid_recent", "balance"))
     bpath, b = f"{rpath}.balance", BalanceConfig()
     bal = _fields(rot.get("balance"), bpath, ("window", "provider", "country", "protocol"))
@@ -488,6 +490,7 @@ def _selection(obj) -> SelectionConfig:
             interval=_duration(rot, "interval", rpath, r.interval),
             jitter=_duration(rot, "jitter", rpath, r.jitter),
             min_dwell=_duration(rot, "min_dwell", rpath, r.min_dwell),
+            spread=_duration(rot, "spread", rpath, r.spread),
             min_score=_number(rot, "min_score", rpath, r.min_score, 0, 100),
             avoid_recent=_number(rot, "avoid_recent", rpath, r.avoid_recent, 0, integer=True),
             balance=BalanceConfig(enabled="balance" in rot,

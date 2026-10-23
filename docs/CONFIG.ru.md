@@ -125,7 +125,7 @@ sing-box только со следующей сборкой конвейера.
     "host_penalty": "3h",
     "rotation": {
       "enabled": true, "interval": "6h", "jitter": "15m",
-      "min_dwell": "30m", "min_score": 55, "avoid_recent": 2,
+      "min_dwell": "30m", "spread": "10m", "min_score": 55, "avoid_recent": 2,
       "balance": { "window": "24h", "provider": 1.0, "country": 1.0, "protocol": 0.3 }
     },
     "quarantine": { "after_skips": 32, "duration": "72h", "low_score": 0 },
@@ -170,7 +170,7 @@ sing-box только со следующей сборкой конвейера.
       "at": ["03:00"],
       "exclude_types": ["shadowsocksr"],
       "domain_resolver": "bootstrap",
-      "selector": { "interrupt_exist_connections": true },
+      "selector": { "interrupt_exist_connections": false },
       "urltest": { "interval": "5m", "tolerance": 100, "idle_timeout": "5m", "interrupt_exist_connections": true }
     },
     "clients": {
@@ -402,6 +402,7 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 | `rotation.enabled` | `true` | Плановая ротация |
 | `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Срок ротации и случайный сдвиг; у каждой группы свой срок от её переключения, группы не переключаются разом. Чаще всего нода отказывает в первые минуты после выбора, а не от долгой работы, поэтому каждая ротация — лишний риск |
 | `rotation.min_dwell` | `30m` | Минимальное время на ноде |
+| `rotation.spread` | `10m` | Плановые ротации разных групп не ближе этого: группа, чей срок наступил, ждёт, пока с ротации другой группы не пройдёт столько (каждая ротация рвёт соединения своей группы) |
 | `rotation.min_score` | `55` | Минимальный рейтинг кандидата ротации |
 | `rotation.avoid_recent` | `2` | Не возвращаться к последним N нодам |
 | `rotation.balance` | выключена | Балансировка по трафику; раздел включает её: `window` `24h`, сила осей `provider` `1.0`, `country` `1.0`, `protocol` `0.3` |

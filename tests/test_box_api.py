@@ -122,6 +122,12 @@ class TransportTest(unittest.TestCase):
         req = decode(srv.requests[0][2][5:])
         self.assertEqual(req, {1: [b"grp"], 2: [b"node"]})
 
+    def test_close_connection_request(self):
+        path = box_api.SERVICE + "CloseConnection"
+        api, srv = self._api({path: (200, {}, _grpc_frames())})
+        api.close_connection("c42")
+        self.assertEqual(decode(srv.requests[0][2][5:]), {1: [b"c42"]})
+
     def test_trailers_only_error_in_headers(self):
         path = box_api.SERVICE + "GetVersion"
         api, _ = self._api({path: (200, {"grpc-status": "16",
@@ -226,6 +232,14 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(self._node(is_tester=1), [1, 10_000_000, 1])
         self.assertEqual(self.col.user_bytes(), {})
         self.assertIn(("0c0a0001", "127.0.0.1", "example.com", "tcp"), self.col._by_ep)
+
+    def test_open_user_conns_of_node(self):
+        self.col.apply(_events(_event(EVENT_NEW, "u1", _conn("u1")),
+                               _event(EVENT_NEW, "u2", _conn("u2")),
+                               _event(EVENT_NEW, "t1", _conn("t1", chain=[LEAF, "nodes-tester"]))))
+        self.col.apply(_events(_event(EVENT_CLOSED, "u2", _conn("u2", closed=1))))
+        self.assertEqual(self.col.open_user_conns("0c0a0001"), ["u1"])
+        self.assertEqual(self.col.open_user_conns("ffffffff"), [])
 
     def test_host_parsing(self):
         from nodes_tester.traffic import _host
