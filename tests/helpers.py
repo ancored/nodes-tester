@@ -5,7 +5,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
+
+# Консоль Windows в cp1251 не печатает часть вывода тестера (стрелки, тире): тесты падали бы
+# на print. Модуль импортируют почти все тесты, discover загружает их до запуска.
+for _stream in (sys.stdout, sys.stderr):
+    if (hasattr(_stream, "reconfigure")
+            and (getattr(_stream, "encoding", "") or "").lower().replace("-", "") != "utf8"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def temp_dir() -> str:

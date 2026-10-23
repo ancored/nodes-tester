@@ -9,6 +9,9 @@ LogRing (и продолжает писать в реальный термина
 
 from __future__ import annotations
 
+import threading
+import time
+
 
 class LogRing:
     """Потокобезопасный кольцевой буфер строк с монотонным порядковым номером seq.
@@ -19,30 +22,33 @@ class LogRing:
 
     def __init__(self, maxlen: int = 2000):
         self._entries: list[dict] = []
-        self._lock = __import__("threading").Lock()
+        self._lock = threading.Lock()
         self._maxlen = maxlen
         self._seq = 0
-        self._buf = ""
+        # Недописанная строка у каждого потока вывода и каждого потока выполнения своя:
+        # print шлёт текст и перевод отдельными write(), и общий буфер склеивал бы строки.
+        self._bufs: dict[tuple, str] = {}
 
-    def write(self, s: str) -> None:
-        """Накопление строк: print шлёт текст и перевод отдельными write()."""
+    def write(self, s: str, stream=None) -> None:
+        """Накопление строк по (stream, поток выполнения)."""
         if not s:
             return
+        key = (stream, threading.get_ident())
         with self._lock:
-            self._buf += s
-            while "\n" in self._buf:
-                line, self._buf = self._buf.split("\n", 1)
+            *lines, rest = (self._bufs.pop(key, "") + s).split("\n")
+            for line in lines:
                 self._append(line)
             # Очень длинная строка без перевода — не даём буферу распухнуть.
-            if len(self._buf) > 8192:
-                self._append(self._buf)
-                self._buf = ""
+            if len(rest) > 8192:
+                self._append(rest)
+            elif rest:
+                self._bufs[key] = rest
 
     def _append(self, line: str) -> None:
         if not line:
             return
         self._seq += 1
-        self._entries.append({"seq": self._seq, "ts": __import__("time").time(),
+        self._entries.append({"seq": self._seq, "ts": time.time(),
                               "line": line})
         if len(self._entries) > self._maxlen:
             self._entries = self._entries[-self._maxlen:]
@@ -79,7 +85,7 @@ class TeeStream:
         try:
             self._real.write(s)
         finally:
-            self._ring.write(s)
+            self._ring.write(s, id(self))
 
     def flush(self):
         self._real.flush()

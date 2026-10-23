@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import threading
 import unittest
 
 from tests.helpers import make_config, temp_dir, fresh_nodes_json
@@ -156,6 +158,20 @@ class ApiControlTest(unittest.TestCase):
         self.assertEqual(r.status, 409)
         r2 = app2.handle("GET", "/api/status", {"X-Admin-Token": "secret"}, b"")
         self.assertEqual(r2.status, 409)
+
+
+class LogRingTest(unittest.TestCase):
+    def test_streams_and_threads_do_not_glue_lines(self):
+        from nodes_tester.logbuffer import TeeStream
+        ring = LogRing()
+        out, err = TeeStream(ring, io.StringIO()), TeeStream(ring, io.StringIO())
+        out.write("из stdout")
+        err.write("из stderr\n")                      # между текстом и переводом stdout
+        worker = threading.Thread(target=lambda: out.write("из потока\n"))
+        worker.start()
+        worker.join()
+        out.write("\n")
+        self.assertEqual([e["line"] for e in ring.snapshot()], ["из stderr", "из потока", "из stdout"])
 
 
 if __name__ == "__main__":
