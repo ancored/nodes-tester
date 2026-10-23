@@ -472,7 +472,7 @@ always the node itself: it cannot be connected to (`connect`), did not answer in
 | `errors.enabled` | `true` | Emergency by connection errors |
 | `errors.window` | `60s` | Error counting window |
 | `errors.min`, `errors.prev_min` | `3`, `2` | Errors in the last window and in the window before it; `prev_min` `0` drops the second condition |
-| `errors.classes` | `connect`, `timeout`, `reset` | Counted error classes; also `canceled`, a connection cancelled by the application |
+| `errors.classes` | `connect`, `timeout`, `reset` | Counted error classes; also `canceled`, a connection cancelled by the application. A failed lookup of the node's own domain (`lookup …`, a `bootstrap` failure) is never counted |
 | `errors.fresh`, `errors.fresh_min` | `10m`, `2` | After a node is chosen, during `fresh` an emergency needs `fresh_min` errors in a window, without the condition on the previous window |
 | `errors.probe_confirm` | `false` | Before a replacement one probe; if it passes, the node stays |
 | `outage.enabled` | `true` | General outage guard |

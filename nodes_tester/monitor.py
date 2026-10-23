@@ -69,8 +69,9 @@ def _go_seconds(text: str) -> float:
 
 def error_class(error: str) -> "str | None":
     """Класс ошибки соединения через ноду (config.ERROR_CLASSES) или None — не про ноду:
-    группа на block-out («operation not permitted») и прочее."""
-    if "operation not permitted" in error:
+    группа на block-out («operation not permitted»), не резолвится домен самой ноды
+    («lookup …» — отказ bootstrap, 16.10 так падали все ноды разом) и прочее."""
+    if "operation not permitted" in error or error.startswith("lookup "):
         return None
     if _CONNECT.match(error):
         return "connect"

@@ -468,7 +468,7 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 | `errors.enabled` | `true` | Авария по ошибкам соединений |
 | `errors.window` | `60s` | Окно счёта ошибок |
 | `errors.min`, `errors.prev_min` | `3`, `2` | Ошибок за последнее окно и за окно до него; `prev_min` `0` — без второго условия |
-| `errors.classes` | `connect`, `timeout`, `reset` | Какие классы ошибок считать; ещё `canceled` — соединение отменило приложение |
+| `errors.classes` | `connect`, `timeout`, `reset` | Какие классы ошибок считать; ещё `canceled` — соединение отменило приложение. Не резолвится домен самой ноды (`lookup …`, отказ `bootstrap`) — не считается никогда |
 | `errors.fresh`, `errors.fresh_min` | `10m`, `2` | Первые `fresh` после выбора ноды для аварии хватает `fresh_min` ошибок за окно, без условия о предыдущем окне |
 | `errors.probe_confirm` | `false` | Перед заменой один зонд; прошёл — нода остаётся |
 | `outage.enabled` | `true` | Сторож общей аварии |

@@ -159,6 +159,8 @@ class ParseErrorTest(unittest.TestCase):
         self.assertEqual(error_class("read tcp a->b: read: connection reset by peer"), "reset")
         self.assertEqual(error_class("context canceled"), "canceled")
         self.assertIsNone(error_class("lookup x: i/o timeout"))
+        self.assertIsNone(error_class("lookup x: unexpected EOF"))             # отказ DNS, не ноды
+        self.assertIsNone(error_class("lookup x: context deadline exceeded"))
 
 
 class SilenceNeedsConnectionsTest(unittest.TestCase):
