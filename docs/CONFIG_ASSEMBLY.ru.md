@@ -119,7 +119,7 @@ presets/*.json     ← включённые пресеты по priority (мен
 | `zone-ai` | роутер | пользователь `ai` → `ai-out`, без QUIC |
 | `ai-services` | везде | Claude, OpenAI, Grok, Perplexity → `ai-out`, без QUIC |
 | `ai-google` | везде | Gemini, адреса Google и домены YouTube → `google-out`, без QUIC |
-| `ai-google-smartdns` | везде | Gemini через прокси SmartDNS, остальные адреса Google и домены YouTube → `google-out`; вместо `ai-google` |
+| `ai-google-smartdns` | везде | Gemini через прокси SmartDNS: напрямую только TCP на адреса прокси (подставьте свои), остальные адреса Google и домены YouTube → `google-out`; вместо `ai-google` |
 | `zone-us` | везде | пользователь `us` и `us-domains` → `us-out` |
 | `ru-direct` | везде | российские домены, Zoom, торренты, RDP → `direct-out` |
 | `user-ru-strict`, `user-global` | роутер | пользователи `ru-strict` → `direct-out`, `global` → `global-auto-out` |

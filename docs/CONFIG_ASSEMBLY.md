@@ -119,7 +119,7 @@ go through home, the rest directly.
 | `zone-ai` | router | the `ai` user → `ai-out`, without QUIC |
 | `ai-services` | everywhere | Claude, OpenAI, Grok, Perplexity → `ai-out`, without QUIC |
 | `ai-google` | everywhere | Gemini, Google addresses and YouTube domains → `google-out`, without QUIC |
-| `ai-google-smartdns` | everywhere | Gemini through a SmartDNS proxy, other Google addresses and YouTube domains → `google-out`; instead of `ai-google` |
+| `ai-google-smartdns` | everywhere | Gemini through a SmartDNS proxy: directly only TCP to the proxy addresses (put in your own), other Google addresses and YouTube domains → `google-out`; instead of `ai-google` |
 | `zone-us` | everywhere | the `us` user and `us-domains` → `us-out` |
 | `ru-direct` | everywhere | Russian domains, Zoom, torrents, RDP → `direct-out` |
 | `user-ru-strict`, `user-global` | router | users `ru-strict` → `direct-out`, `global` → `global-auto-out` |
