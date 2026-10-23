@@ -647,6 +647,7 @@ export default {
   'Subscription failure': 'Сбой подписки',
   'Subscription and traffic end': 'Конец подписки и трафика',
   'sing-box stop and failure': 'Остановка и сбой sing-box',
+  'General outage': 'Общая авария',
   'emergency': 'авария',
   'emergency without replacement': 'авария без замены',
   'rotation': 'ротация',

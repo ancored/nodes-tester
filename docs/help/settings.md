@@ -91,6 +91,7 @@ Messages to Telegram and/or a webhook.
 | Subscription failure | a subscription failed to download (with the time left before its previous nodes are dropped); Amnezia country changes |
 | Subscription and traffic end | the subscription ends within the warning period or 90 % of its traffic is used (once a day) |
 | sing-box stop and failure | sing-box stopped or started from the admin panel, the killswitch toggled, sing-box down longer than `singbox.down_alert` |
+| General outage | start and end of a [general outage](switching.md) (`monitor.outage`): node replacements stop while the cause is outside the nodes |
 
 **Node switches: reasons** — which [switch reasons](switching.md#reasons) are reported. Rotations are frequent; by default only
 emergencies are sent.

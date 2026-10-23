@@ -131,7 +131,7 @@ const groups = [
   {title:t('Exit IP type'),help:'settings#ip-type',fields:[
     ['checks.ip_type.ttl',t('Refresh the data every'),'duration'],['checks.ip_type.via_tester',t('Request through the tester'),'checkbox']]},
 ]
-const NOTIFY_EVENTS={switch:t('Node switch'),failsafe:t('Fallback group'),rollback:t('sing-box config rollback'),pipeline:t('Pipeline error'),subscription:t('Subscription failure'),expiry:t('Subscription and traffic end'),singbox:t('sing-box stop and failure')}
+const NOTIFY_EVENTS={switch:t('Node switch'),failsafe:t('Fallback group'),rollback:t('sing-box config rollback'),pipeline:t('Pipeline error'),subscription:t('Subscription failure'),expiry:t('Subscription and traffic end'),singbox:t('sing-box stop and failure'),outage:t('General outage')}
 const SWITCH_REASONS={emergency:t('emergency'),['emergency-stuck']:t('emergency without replacement'),rotation:t('rotation'),quality:t('quality'),manual:t('manually'),init:t('first choice')}
 const defaultList=field=>defaults.value[field] || []
 function toggleList(field,item,on){const cur=[...(value(field) ?? defaultList(field))];const next=on?[...new Set([...cur,item])]:cur.filter(x=>x!==item);setPath(document.value,field,next);preview.value=false}
