@@ -230,7 +230,7 @@ class ErrorBurstTest(unittest.TestCase):
 
 
 class ApplyPauseTest(unittest.TestCase):
-    """Пауза применения конфига: только восстановление выбора, пока конвейер работает — ничего."""
+    """Пауза применения конфига: только восстановление выбора, и пока конвейер работает тоже."""
 
     def setUp(self):
         sw = FakeSwitcher()
@@ -239,22 +239,19 @@ class ApplyPauseTest(unittest.TestCase):
         self.reasserted = []
         sw.reassert_chain = lambda region, proxies: self.reasserted.append(region) or 0
         sw.fallback_regions = lambda: []
-        self.calls, self.paused, self.held = [], True, False
+        self.calls, self.paused = [], True
         self.mon = ProductionMonitor(cfg=MonitorConfig(), api=FakeApi(), switcher=sw,
                                      prober=lambda region, node: self.calls.append(region) or GOOD,
-                                     traffic=dict, pause_check=lambda: self.paused,
-                                     hold_check=lambda: self.held)
+                                     traffic=dict, pause_check=lambda: self.paused)
 
     def test_pause_reasserts_without_probes(self):
         self.mon._tick()
         self.assertEqual(self.reasserted, ["eu", "ai"])
         self.assertEqual(self.calls, [])
 
-    def test_pipeline_running_touches_nothing(self):
-        self.held = True
-        self.mon._tick()
+    def test_reassert_outside_tick(self):
         self.mon.reassert()
-        self.assertEqual(self.reasserted, [])
+        self.assertEqual(self.reasserted, ["eu", "ai"])
 
 
 if __name__ == "__main__":

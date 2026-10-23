@@ -72,7 +72,8 @@ runs the same mode. Preset examples: `/usr/share/nodes-tester/examples/singbox/p
 4. Saving the previous `config.json`.
 5. Replacing the config and restarting only when the resulting config changed. sing-box 1.10 and newer
    rereads updated `.srs` and source sets in `/etc/sing-box/rules/` without a restart.
-6. A connectivity check: a URL test of the working group through the sing-box API service (`services[type=api]`).
+6. A connectivity check: a URL test of `failsafe-out` (all nodes, `HEALTH_GROUP`) through the sing-box API service
+   (`services[type=api]`); it does not depend on which nodes the groups have chosen.
 7. An automatic return of the previous config when connectivity is lost.
 
 If sing-box was stopped from the admin panel (the `STOP_FLAG` flag exists, by default

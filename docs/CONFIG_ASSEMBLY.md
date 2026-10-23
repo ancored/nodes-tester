@@ -167,7 +167,8 @@ After merging:
    touched. The admin panel does the same merge and check when the base and presets are saved.
 2. Comparison with the running `/etc/sing-box/config.json`; if they match, nothing is done.
 3. Replacing the config and restarting sing-box.
-4. A URL test of the `global-auto-out` group through the sing-box API service; without connectivity
+4. A URL test of the `failsafe-out` group (all nodes) through the sing-box API service: the check does not
+   depend on which nodes the groups have chosen. Without connectivity
    `config.json.prev` comes back and sing-box restarts with it.
 
 Saving the base or a preset in the admin panel runs the merge and `sing-box check` the same way, in a

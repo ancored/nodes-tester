@@ -19,7 +19,8 @@
 # (склейка/check упали) — работающий config.json не трогается, exit 1.
 #
 # После рестарта — проверка РЕАЛЬНОЙ связности (до $HEALTH_WAIT с): через API-сервис sing-box
-# запускается URL-тест боевой группы $HEALTH_GROUP (адрес проверки — из настроек urltest). Не прошла (процесс не
+# запускается URL-тест группы $HEALTH_GROUP (по умолчанию failsafe-out — все ноды; от выбора групп
+# и активных нод проверка не зависит, адрес — из настроек urltest). Не прошла (процесс не
 # поднялся или трафик не ходит) → автоматически возвращается прежний config.json и sing-box
 # перезапускается на нём. Пока sing-box перезапускается, сеть (и удалённая сессия) может
 # пропасть — поэтому скрипт не зависит от того, кто его запустил; запускать его вручную
@@ -36,7 +37,7 @@ PRESETS_DIR="${PRESETS_DIR:-}"
 CONFIG="$TARGET_DIR/config.json"
 RULES_MARK="${RULES_MARK:-/tmp/nodes-rules-changed}"
 CANDIDATE="${CANDIDATE:-${DATA:-/opt/nodes-tester}/config.candidate.json}"
-HEALTH_GROUP="${HEALTH_GROUP:-global-auto-out}"
+HEALTH_GROUP="${HEALTH_GROUP:-failsafe-out}"
 HEALTH_WAIT="${HEALTH_WAIT:-60}"
 # Флаг «sing-box остановлен из админки» (nodes_tester.singbox_ctl): пока он есть, конфиг
 # не применяется и sing-box не поднимается.
@@ -48,7 +49,7 @@ while [ $# -gt 0 ]; do
         --dry-run) DRY=1 ;;
         --force) FORCE=1 ;;
         --health) HEALTH_ONLY=1 ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
         -*) echo "неизвестный ключ: $1" >&2; exit 2 ;;
         *) NODES="$1" ;;
     esac

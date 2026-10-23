@@ -9,7 +9,7 @@
 Командная строка (для скриптов роутера):
 
     python3 -m nodes_common.box_api health --config /etc/sing-box/config.json \
-        --group global-auto-out [--wait 60]
+        --group failsafe-out [--wait 60]
 """
 
 from __future__ import annotations

@@ -132,7 +132,7 @@ def singbox_log_path(config_path: str) -> str:
 
 
 class ProductionMonitor:
-    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None, hold_check=None,
+    def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None,
                  on_tick=None, singbox_log="", conns=None, group_rules=None):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
@@ -148,10 +148,9 @@ class ProductionMonitor:
         # Правило аварии по ошибкам у групп со своим groups[].monitor.errors.
         self.group_rules = group_rules or {}
         # pause_check — пауза применения конфига или общая авария: зондов и замен нет, только
-        # восстановление выбора; hold_check — конвейер ещё работает (его проверка связности
-        # идёт через failsafe): селекторы не трогаем совсем.
+        # восстановление выбора (проверка связности конвейера идёт через failsafe-out и от
+        # выбора групп не зависит).
         self.pause_check = pause_check or (lambda: False)
-        self.hold_check = hold_check or (lambda: False)
         # Доп. проверка на каждом тике вне окна применения (пересборка по деградации).
         self.on_tick = on_tick
         self._stop = threading.Event()
@@ -199,7 +198,7 @@ class ProductionMonitor:
     def reassert(self) -> None:
         """Вернуть выбор боевых селекторов на активные ноды — после перезапуска sing-box они
         на default (failsafe-out, block-out). Ноды, ушедшей из конфига, здесь не заменяем."""
-        if not self.cfg.reassert_drift or self.hold_check():
+        if not self.cfg.reassert_drift:
             return
         try:
             proxies = self.api.all_proxies()

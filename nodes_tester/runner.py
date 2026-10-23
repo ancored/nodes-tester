@@ -165,7 +165,7 @@ class Runner:
             prober=self._probe_node, traffic=self.collector.user_bytes,
             conns=self.collector.user_conns,
             group_rules={g.tag: g.errors for g in cfg.groups if g.errors is not None},
-            pause_check=self._paused, hold_check=lambda: self._apply_in_progress,
+            pause_check=self._paused,
             on_tick=self.rebuild.check,
             singbox_log=singbox_log_path(cfg.singbox.config),
         )
