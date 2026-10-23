@@ -99,7 +99,7 @@ def _row(node, score, ip, cc="NL"):
 
 IPS = {"1.0.0.1": {"country": "NL", "hosting": 1},                 # ДЦ
        "1.0.0.2": {"country": "NL"},                               # домашний
-       "1.0.0.3": {"country": "NL", "mobile": 1, "proxy": 1},      # мобильный, но прокси
+       "1.0.0.3": {"country": "NL", "mobile": 1, "proxy": 1},      # мобильный с признаком прокси
        "1.0.0.4": {"country": "DE"},                               # домашний, по базе DE
        "1.0.0.5": {"country": "NL", "mobile": 1}}                  # мобильный
 
@@ -121,8 +121,8 @@ class StrictExitIpTest(unittest.TestCase):
     def _strict(self):
         """Группа как ai: страна выхода по базе совпадает (обязательно), домашний или
         мобильный IP — в приоритете."""
-        self.sb.set_policy([GroupConfig("eu", require={"geo_consistent": {"ttl": 0}},
-                                        prefer={"ip_type": {"ttl": 0, "kinds": ["residential", "mobile"]}})],
+        self.sb.set_policy([GroupConfig("eu", require={"geo_consistent": {}},
+                                        prefer={"ip_type": {"kinds": ["residential", "mobile"]}})],
                            BUILTIN_REGIONS)
 
     def test_not_strict_group_unchanged(self):
@@ -131,23 +131,27 @@ class StrictExitIpTest(unittest.TestCase):
     def test_strict_prefers_residential_and_mobile_drops_geo_mismatch(self):
         self._strict()
         # GEO — страна по базе другая (провал), NOINFO — сведений нет (не кандидат, но
-        # в резерв годится: проверка ещё не провалена).
-        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "PROXY"])
-        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 1, 1])
-        self.assertEqual(self.sb.reserve_pool("eu"), ["HOME", "MOB", "DC", "NOINFO", "PROXY"])
+        # в резерв годится: проверка ещё не провалена). Признак прокси тип не отменяет.
+        self.assertEqual(self._cands(), ["PROXY", "HOME", "MOB", "DC"])
+        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 0, 0, 1])
 
     def test_low_score_after_wrong_ip_type(self):
         # Домашний с рейтингом ниже tier_floor не обходит дата-центр с хорошим рейтингом.
         self._strict()
         self.sb.tier_floor = 75
-        self.assertEqual(self._cands(), ["DC", "PROXY", "HOME", "MOB"])
-        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [1, 1, 2, 2])
+        self.assertEqual(self._cands(), ["PROXY", "DC", "HOME", "MOB"])
+        self.assertEqual([c["tier"] for c in self.sb.candidates("eu")], [0, 1, 2, 2])
 
     def test_group_tier_floor_overrides_selection(self):
         self._strict()
         self.sb.tier_floor = 75
         self.sb.policy("eu").tier_floor = 0                 # у группы свой порог
-        self.assertEqual(self._cands(), ["HOME", "MOB", "DC", "PROXY"])
+        self.assertEqual(self._cands(), ["PROXY", "HOME", "MOB", "DC"])
+
+    def test_proxy_kind_lets_through_any_proxy_ip(self):
+        self.sb.set_policy([GroupConfig("eu", require={"ip_type": {"kinds": ["proxy"]}})],
+                           BUILTIN_REGIONS)
+        self.assertEqual(self._cands(), ["PROXY"])
 
     def _switcher(self, active):
         from nodes_tester.config import SelectionConfig
@@ -169,6 +173,7 @@ class StrictExitIpTest(unittest.TestCase):
 
     def test_emergency_prefers_residential(self):
         self._strict()
+        del self.sb.rows["PROXY"]
         sw, picked = self._switcher("HOME")
         sw.evaluate_region("eu", emergency=True)
         self.assertEqual(picked, [("MOB", "emergency")])
@@ -212,8 +217,14 @@ class ConfigTest(unittest.TestCase):
         ai = cfg.group("ai")
         self.assertEqual(ai.require, {"gemini": {"ttl": 43200.0, "ttl_jitter": 4320.0},
                                       "openai": {"ttl": 3600.0, "ttl_jitter": 360.0}})
-        self.assertEqual(ai.prefer["ip_type"]["kinds"], ["mobile"])
+        self.assertEqual(ai.prefer["ip_type"], {"kinds": ["mobile"]})       # без своего срока
         self.assertTrue(ai.strict)
+
+    def test_ip_checks_take_no_group_ttl(self):
+        from nodes_tester.config import ConfigError
+        for check in ("ip_type", "geo_consistent"):
+            with self.subTest(check=check), self.assertRaisesRegex(ConfigError, "ttl"):
+                parse_config({"groups": [{"tag": "ai", "require": {check: {"ttl": "1h"}}}]})
 
 
 class ResultCellsTest(unittest.TestCase):

@@ -70,8 +70,10 @@ class CryptoTest(unittest.TestCase):
         for size in (0, 1, 15, 16, 17, 1000):
             data = os.urandom(size)
             self.assertEqual(_aes.decrypt_cbc(_aes.encrypt_cbc(data, key, iv), key, iv), data)
+        # Чужой ключ — постоянный: со случайным padding изредка (~1/256) оказывается верным.
+        key, iv = bytes(range(32)), bytes(32)
         with self.assertRaises(ValueError):
-            _aes.decrypt_cbc(_aes.encrypt_cbc(b"x", key, iv), os.urandom(32), iv)
+            _aes.decrypt_cbc(_aes.encrypt_cbc(b"x", key, iv), bytes(range(1, 33)), iv)
 
     def test_x25519_rfc7748(self):
         alice = bytes.fromhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")

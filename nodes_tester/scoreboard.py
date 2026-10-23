@@ -295,9 +295,10 @@ class Scoreboard:
                 return ""
             if check == "geo_consistent":
                 return "0" if db_country_mismatch(info, r["exit_cc"]) else "1"
+            # Признак proxy ip-api ставит почти всем выходным IP нод: тип он не отменяет, а
+            # "proxy" в kinds пропускает любой IP с этим признаком.
             kinds = params.get("kinds") or _DEFAULT_KINDS
-            is_proxy = bool(info.get("proxy"))
-            return "1" if kind(info) in kinds and (not is_proxy or "proxy" in kinds) else "0"
+            return "1" if kind(info) in kinds or ("proxy" in kinds and info.get("proxy")) else "0"
         if check == "heavy":
             return str(r.get("heavy_ok", "")) if current(r.get("heavy_ts")) else ""
         result = (r.get("required") or {}).get(check) or {}

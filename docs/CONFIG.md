@@ -354,11 +354,13 @@ A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router
 | `prefer` | object | — | Preferred checks: successes move the node up the choice queue |
 | `monitor.errors` | object | `monitor.errors` | The group's own rule of an emergency by connection errors; fields that are not set come from `monitor.errors` |
 
-A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl`, and
-`country` and `ip_type` can set conditions:
+A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl` (except
+`ip_type` and `geo_consistent`: the ip-api data is refreshed by `checks.ip_type.ttl`), and `country` and
+`ip_type` can set conditions:
 
 - `country`: `countries`, `regions`, `exclude_countries`, `exclude_regions` (ISO codes and region names);
-- `ip_type`: `kinds`, the allowed IP types.
+- `ip_type`: `kinds`, the allowed IP types. The ip-api `proxy` sign does not cancel the type: a residential IP
+  with it is still residential; `proxy` in `kinds` lets through any IP with the sign.
 
 A group candidate passes the gate, has a rating above zero, is not paused or quarantined, and all its
 `require` checks are fresh and successful. Among the candidates, nodes with successes in

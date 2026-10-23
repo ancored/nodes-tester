@@ -14,7 +14,7 @@
     "groupCheck": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Проверка в группе: ttl и ttl_jitter — свой срок годности; у country и ip_type — условия.",
+      "description": "Проверка в группе: ttl и ttl_jitter — свой срок годности (кроме ip_type и geo_consistent: сведения ip-api обновляются по checks.ip_type.ttl); у country и ip_type — условия.",
       "properties": {
         "ttl": {
           "type": "string",
@@ -64,7 +64,7 @@
               "proxy"
             ]
           },
-          "description": "ip_type: допустимые типы IP."
+          "description": "ip_type: допустимые типы IP; proxy — любой IP с признаком proxy (тип он не отменяет)."
         }
       }
     },

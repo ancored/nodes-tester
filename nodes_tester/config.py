@@ -203,10 +203,12 @@ _CHECK_DEFAULTS = {
                   "sni_list": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-sni.txt", "dns": "dns-ru", "timeout": 10.0},
 }
 CHECKS = tuple(_CHECK_DEFAULTS)
-# Параметры проверки внутри группы (require/prefer): условия отбора.
+# Параметры проверки внутри группы (require/prefer): условия отбора. У ip_type и
+# geo_consistent своего срока нет: сведения ip-api обновляются по checks.ip_type.ttl.
 _GROUP_CHECK_FIELDS = {
     "country": (*_TTL_KEYS, "countries", "regions", "exclude_countries", "exclude_regions"),
-    "ip_type": (*_TTL_KEYS, "kinds"),
+    "ip_type": ("kinds",),
+    "geo_consistent": (),
 }
 IP_KINDS = ("residential", "mobile", "hosting", "proxy")
 
@@ -261,8 +263,10 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
             raise ConfigError(f"{path}.{name}.kinds: допустимы {', '.join(IP_KINDS)}")
         if "ttl" in params:
             out[name] = _with_jitter(params, params["ttl"])
-        else:
+        elif "ttl" in allowed:
             out[name] = {"ttl": checks[name]["ttl"], "ttl_jitter": checks[name]["ttl_jitter"], **params}
+        else:
+            out[name] = params
     return out
 
 
