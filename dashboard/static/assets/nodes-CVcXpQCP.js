@@ -19,8 +19,7 @@ subscriptions move to the [archive](#archive).
 | Provider | the \`tag\` of the subscription |
 | Protocol | the protocol and transport, one part per line: \`vless\` / \`grpc\` / \`reality\` |
 | Node | the node key \`node_crc.cred_crc\` ([what it is](concepts.md#nodes)) |
-| Country | the measured exit country |
-| Chain | for a [chain](checks.md#entry) — entry country → exit country, an orange cloud — exit through Cloudflare WARP; a dash — the entry and exit IPs are the same or the entry is not known yet. Hover for the IPs |
+| Country or chain | the measured exit country; for a [chain](checks.md#entry) — entry country → exit country, an orange cloud — exit through Cloudflare WARP. Hover for the IPs |
 | Reserve | the groups whose [reserve](groups.md#reserve) has the node |
 | Rating | 0–100 ([how it is computed](rating.md)); “No measurements” — not measured yet |
 | State | presence, restrictions and the switcher choice (see below) |
@@ -39,7 +38,7 @@ The rating and its factors for every measured node; the active nodes are highlig
 
 | Column | Meaning |
 |---|---|
-| Country or chain | the exit country; for a [chain](checks.md#entry) — entry country → exit country, as in “All nodes” |
+| Country or chain | as in “All nodes” |
 | rating | 0–100; green 70 and above, red 20 and below |
 | selected | active in at least one group |
 | reserve | groups whose reserve has the node |

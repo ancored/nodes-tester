@@ -88,17 +88,13 @@ export function rowKeys(rows) {
 // Стандартные фильтры таблиц (DataTable): поля строк снимка /api/data.
 // Первые столбцы таблиц нод — одинаково везде (образец — «Результаты»): провайдер, протокол
 // столбиком, ключ в две строки (ссылка на карточку), флаг страны. crc и country — имена полей строки;
-// route — вместо страны цепочка (chainColumn) с флагом страны выхода у прямой ноды.
+// route — вместо флага страны цепочка «вход → выход» (ячейка — ChainCell), у прямой ноды — флаг страны выхода.
+// Поля строки — от /api/data: chain («FI→NL», только у цепочки), route (она же или страна выхода), entry_*/exit_*, warp.
 export function nodeColumns({ crc = 'crc', country = 'country', route = false } = {}) {
   return [{ key: 'provider', title: t('Provider'), l: true }, { key: 'protocol', title: t('Protocol'), l: true },
     { key: crc, title: t('Node'), l: true, nowrap: true },
-    route ? chainColumn({ fallback: true }) : { key: country, title: t('Country'), head: '', l: true, narrow: true }]
-}
-// Столбец «Цепочка» (ячейка — ChainCell): вход → выход флагами стран. Поля строки — от /api/data:
-// chain («FI→NL», только у цепочки), route (она же или страна выхода), entry_*/exit_*, warp.
-export function chainColumn({ fallback = false } = {}) {
-  return fallback ? { key: 'route', title: t('Country or chain'), head: '', l: true, chain: 'country', cellTitle: chainTitle }
-    : { key: 'chain', title: t('Chain'), l: true, chain: 'only', cellTitle: chainTitle }
+    route ? { key: 'route', title: t('Country or chain'), head: '', l: true, chain: true, cellTitle: chainTitle }
+      : { key: country, title: t('Country'), head: '', l: true, narrow: true }]
 }
 export function chainTitle(r) {
   if (r.chain) return t('Entry {entry} → exit {exit}', { entry: `${r.entry_cc || '?'} ${r.entry_ip}`, exit: `${r.exit_cc} ${r.exit_ip}` })

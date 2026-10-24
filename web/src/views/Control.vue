@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { nodeFlags, nodeColumns, chainColumn } from '../ux.js'
+import { nodeFlags, nodeColumns } from '../ux.js'
 import { scoreClass } from '../format.js'
 import { t } from '../i18n.js'
 import DataTable from '../components/DataTable.vue'
@@ -14,8 +14,7 @@ const extraFilters = [{ key:'state', title:t('State'), get:states }]
 // Рейтинг и резерв — в своих столбцах, в «Состоянии» их не повторяем.
 const stateFlags = n => nodeFlags(n, { state: true }).join(' · ') || '—'
 const columns = [
-  ...nodeColumns(),
-  chainColumn(),
+  ...nodeColumns({ route: true }),
   { key:'reserve', title:t('Reserve'), l:true, fmt:v => v || '—' },
   { key:'score', title:t('Rating'),fmt:(v,n) => n.wh_only ? '—' : v == null ? t('No measurements') : Number(v).toFixed(1),cls:scoreClass },
   { key:'flags',title:t('State'),l:true,fmt:(_,n) => stateFlags(n) },
