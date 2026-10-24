@@ -46,6 +46,10 @@ The token is kept only until the page is closed unless “Remember on this devic
 
 The “sing-box dashboard” menu item opens the official panel of the sing-box API service in a new tab. The admin panel serves its static files from `{api.url}/dashboard/` at `/sing-box-dashboard/`, so the API service must have `dashboard` set. After the administrator logs in, the admin panel writes the `api` address and secret into the panel settings in the browser itself, and the panel opens without entering the secret. Without logging in the panel asks for the address and secret itself. The secret ends up in the browser localStorage; on someone else's computer do not log in, or delete the server in the panel settings.
 
+An MCP client connects to `http://<router>:8088/mcp` with the header `Authorization: Bearer <admin.token>` and gets
+the state, nodes, logs, the database and the same actions as the admin panel; the tools and the client configuration
+are in [`dashboard`](../dashboard/README.md#mcp).
+
 A separate `python3 -m dashboard` reads the database and lets you edit files with the token, but does not control the Runner, does not start testing and does not show the live log. The admin panel reports this mode separately.
 
 ## Settings and subscriptions

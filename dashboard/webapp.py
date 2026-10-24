@@ -68,6 +68,10 @@ class Request:
             raise HttpError(400, f"невалидный JSON в теле: {exc}") from exc
 
     def token(self) -> str:
+        # Authorization: Bearer — так токен передают MCP-клиенты.
+        auth = self.headers.get("Authorization") or ""
+        if auth[:7].lower() == "bearer ":
+            return auth[7:].strip()
         return self.headers.get("X-Admin-Token", "") or ""
 
 

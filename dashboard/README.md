@@ -40,7 +40,7 @@ unavailable in this mode.
 Most reading APIs are available without the token only with `admin.public_read: true`. The pipeline
 history, its logs and the sing-box source files always require the token: they may contain
 subscription addresses and other working data. Writes and actions
-always require the `X-Admin-Token` header equal to `admin.token`. An empty token turns off
+always require the `X-Admin-Token` header (or `Authorization: Bearer`) equal to `admin.token`. An empty token turns off
 modifying operations.
 
 Publish the admin panel only in a trusted network or over HTTPS with additional
@@ -74,6 +74,55 @@ without service traffic and other tests. `traffic_tester_totals` is all tester t
 stored period from the exact connection accounting (`storage.traffic`).
 
 API messages and server errors are in Russian for now; the interface itself is translated on the client.
+
+## MCP
+
+`POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server (Streamable HTTP,
+JSON-RPC 2.0) for MCP clients. It works in the embedded mode and needs the administrator token as
+`Authorization: Bearer <admin.token>` (or `X-Admin-Token`): the client gets the same rights as the
+administrator in the admin panel. The server keeps no sessions and answers every request with one JSON
+response; `GET /mcp` (an SSE stream) is not offered. A request with an `Origin` that does not match
+`Host` is refused.
+
+Client configuration (the usual `mcpServers` format):
+
+```json
+{
+  "mcpServers": {
+    "nodes-tester": {
+      "type": "http",
+      "url": "http://192.168.1.1:8088/mcp",
+      "headers": { "Authorization": "Bearer <admin.token>" }
+    }
+  }
+}
+```
+
+The tools call the same API routes, so checks, revisions and errors are as in the interface. Long lists
+are cut by `limit` with a `_truncated` count.
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `overview` | read | capabilities, tester status, groups with candidates and reserve, sing-box and kill switch, pipeline |
+| `list_nodes` | read | nodes with filters by group, provider, country, protocol, state and text |
+| `get_node` | read | one node: identity, rating components, latest result of every test, group checks, restrictions, events, activations, score history; `include_config` adds the outbound JSON |
+| `get_view` | read | a ready-made view: `rating`, `history`, `results`, `traffic`, `lifecycle`, `graveyard` |
+| `tester_log`, `singbox_log` | read | the last lines of the tester log and of the sing-box log file (`log.output`), with a regular expression filter |
+| `pipeline` | read | schedule and runs, or one run with its log |
+| `get_config`, `config_schema` | read | `config.json` with its revision; the schema of a section with descriptions and defaults |
+| `singbox_files` | read | the list of sing-box source files and presets, a file with its versions |
+| `query_db` | read | one `SELECT` over `stats.db`: read-only connection, no `ATTACH` or `PRAGMA` except the schema ones, 5 s and up to 5000 rows |
+| `node_action` | action | ban, unban, quarantine, lift quarantine |
+| `switch_group` | action | activate a candidate in a group |
+| `run_tests` | action | measure all nodes now |
+| `run_pipeline` | action | start the pipeline (`dry_run` builds and checks only), optionally wait for the end and return the log |
+| `update_config` | action | replace top-level sections of `config.json` (the tester restarts) |
+| `edit_singbox_file` | action | write, restore a version of or delete a sing-box source file by revision |
+| `singbox_control` | action | stop and start sing-box, turn the kill switch service on and off |
+| `call_api` | action | any `/api/...` route not covered above |
+
+Read tools are marked `readOnlyHint`, those that can break connectivity or restart a service —
+`destructiveHint`, so a client can ask for confirmation before them.
 
 ## File handling
 
@@ -126,6 +175,7 @@ the build result `dashboard/static`.
 |---|---|
 | `server.py` | building the application, connecting the APIs and starting the server |
 | `webapp.py` | HTTP framework, routing, token and static files |
+| `mcp.py` | MCP server `/mcp`: JSON-RPC and tools over the API |
 | `data.py` | SQLite queries and aggregates |
 | `api_read.py` | reading routes |
 | `api_control.py` | actions on nodes, groups, the Runner and `VACUUM` |

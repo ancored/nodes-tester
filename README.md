@@ -49,7 +49,7 @@ Client subscriptions → fetch → whnodes.json + client bases
 
 The pipeline keeps the previous data when a fetch fails, checks the resulting config before replacing it and brings back the working version if connectivity is lost after a restart. The client branch builds separate files and does not switch the router sing-box. Details and the manual run order are in the [guide](docs/USAGE.md#how-subscriptions-and-configs-are-updated).
 
-The admin panel shows the tester state, measurement history, traffic and switches. In it you can configure subscriptions and groups, run the pipeline, set the schedule, read the logs, edit the sing-box source files and manage nodes. The “Rules” page checks and applies the base with presets without fetching subscriptions again. Changes need the administrator token. The interface is in English and Russian: the browser language by default, the choice is remembered.
+The admin panel shows the tester state, measurement history, traffic and switches. In it you can configure subscriptions and groups, run the pipeline, set the schedule, read the logs, edit the sing-box source files and manage nodes. The “Rules” page checks and applies the base with presets without fetching subscriptions again. Changes need the administrator token. The same state and actions are available to MCP clients at `/mcp` ([tools](dashboard/README.md#mcp)). The interface is in English and Russian: the browser language by default, the choice is remembered.
 
 ## Good to know
 

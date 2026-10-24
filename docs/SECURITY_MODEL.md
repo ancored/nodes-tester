@@ -189,7 +189,10 @@ Research the app-side and regulatory threats are taken from:
   resolver (dnsmasq → provider DNS) sees only what the router resolves itself.
 - **Trust by address.** A device that manually takes an address of the trusted segment gets its rights.
 - **Admin panel and API.** The administrator token and the API service secret give full control over the exit.
-  Do not expose them to the internet; access only from the LAN or through a tunnel.
+  Do not expose them to the internet; access only from the LAN or through a tunnel. The MCP endpoint `/mcp`
+  of the admin panel takes the same token and can do everything the administrator can, including stopping
+  sing-box: give the token only to an MCP client you trust, and prefer one that asks before actions marked
+  `destructiveHint`. Tool results contain secrets (configs, the node JSON) and go to the client's model.
 - **Secrets in configs.** The base, client configs and subscriptions contain passwords, UUIDs, Reality keys,
   secret distribution paths. They must be replaced before publishing fragments (bug reports, issues).
 - **Amnezia Premium.** The `vpn://` link holds the subscription `api_key`, the country files hold AWG private
