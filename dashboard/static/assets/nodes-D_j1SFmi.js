@@ -20,6 +20,7 @@ subscriptions move to the [archive](#archive).
 | Protocol | the protocol and transport, one part per line: \`vless\` / \`grpc\` / \`reality\` |
 | Node | the node key \`node_crc.cred_crc\` ([what it is](concepts.md#nodes)) |
 | Country | the measured exit country |
+| Chain | for a [chain](checks.md#entry) — entry country → exit country, an orange cloud — exit through Cloudflare WARP; a dash — the entry and exit IPs are the same or the entry is not known yet. Hover for the IPs |
 | Reserve | the groups whose [reserve](groups.md#reserve) has the node |
 | Rating | 0–100 ([how it is computed](rating.md)); “No measurements” — not measured yet |
 | State | presence, restrictions and the switcher choice (see below) |
@@ -38,6 +39,7 @@ The rating and its factors for every measured node; the active nodes are highlig
 
 | Column | Meaning |
 |---|---|
+| Country or chain | the exit country; for a [chain](checks.md#entry) — entry country → exit country, as in “All nodes” |
 | rating | 0–100; green 70 and above, red 20 and below |
 | selected | active in at least one group |
 | reserve | groups whose reserve has the node |
@@ -54,7 +56,7 @@ The latest result of each measurement and check of every node. The time of each 
 
 | Column | What it shows |
 |---|---|
-| Country flag | the exit country; a pale flag is a country from a previous measurement: the last connection failed (hover for the time) |
+| Country or chain | the exit country; for a [chain](checks.md#entry) — entry country → exit country, as in “All nodes”. Pale — from a previous measurement: the last connection failed (hover for the time) |
 | IP | the exit IP type by ip-api.com: a building — data centre, a phone — mobile network, a house — residential provider; a mask — the IP is known as a VPN/proxy; a flag below — the database puts the IP in another country than the measured one. Red icons are worse for AI services. Hover for the IP and the network (ASN) |
 | Link | \`connectivity\`: ✓ or ✗ |
 | Latency | time to the first byte, ms |

@@ -159,6 +159,18 @@ healthy node (DNS filters on the router often block ip-api.com); if that fails, 
 - `geo_consistent` passes when the database country equals the measured exit country. AI services and
   streaming sites look at the databases: a node whose IP is listed in another country is treated as that country.
 
+<a id="entry"></a>
+### Node entry and chains
+
+The entry is the address of the node server that sing-box connects to. Every 5 minutes the tester resolves the server
+names of the nodes without fresh data through the DoH servers of the `bootstrap` group of the sing-box config (the one
+sing-box resolves node domains with; without such a group, Cloudflare), IPv4 only, keeps the answer for
+`checks.ip_type.ttl` and asks ip-api.com about the entry IPs together with the exit IPs.
+
+A node is a chain when its exit IP is none of the entry IPs: the subscription server passes the traffic further, often to
+another country. The admin panel shows it as entry flag → exit flag; an orange cloud after the exit means an exit through
+Cloudflare WARP (AS13335), whose country follows the Cloudflare point of presence. Chains do not affect the node choice.
+
 <a id="ai"></a>
 ### AI services
 

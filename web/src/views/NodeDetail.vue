@@ -7,6 +7,7 @@ import { dateTime, bytes, dur } from '../format.js'
 import { useQuery } from '../query.js'
 import NodeActions from '../components/NodeActions.vue'
 import NodeKey from '../components/NodeKey.vue'
+import ChainCell from '../components/ChainCell.vue'
 import Sparkline from '../components/Sparkline.vue'
 import DataTable from '../components/DataTable.vue'
 import { api, auth, can } from '../api.js'
@@ -71,6 +72,8 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
     <section class="panel">
       <h2 class="break"><NodeKey :text="node.node" /><HelpButton topic="node-card#header" /></h2>
       <p class="break">{{ t('Name in the subscription') }}: {{ node.title || '—' }}</p>
+      <p v-if="node.chain" class="break">{{ t('Chain') }}: <ChainCell :row="node" /> · {{ t('entry') }} {{ node.entry_ip }} <span class="mut">{{ node.entry_as }}</span> → {{ t('exit') }} {{ node.exit_ip }} <span class="mut">{{ node.exit_as }}</span><template v-if="node.warp"> · Cloudflare WARP</template></p>
+      <p v-else-if="node.entry_ip" class="break">{{ t('Direct node: entry and exit {ip}', { ip: node.exit_ip }) }} <span class="mut">{{ node.exit_as }}</span></p>
       <div class="chips"><span v-if="node.groups?.length" class="badge">{{ t('Groups') }}: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">{{ t(node.gstate === 'backoff' ? 'Paused until {time}, then the node is checked again.' : 'Quarantined until {time}, then the node is checked again.', { time: dateTime(node.guntil) }) }}</p>
     </section>

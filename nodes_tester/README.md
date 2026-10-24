@@ -325,6 +325,11 @@ signs of a data centre, a mobile network and a known proxy) is cached in the `ip
 and the country by Cloudflare. They affect the node choice through the `ip_type` and `geo_consistent` checks of
 groups.
 
+The same request covers the entry IPs: the addresses of the node servers, resolved through the DoH servers of the
+`bootstrap` group of the sing-box config and kept in the `entry_dns` table for the same `ttl`. A node whose exit IP is none
+of its entry IPs is a chain; the admin panel shows it as entry country → exit country and marks an exit through
+Cloudflare WARP (AS13335).
+
 ## Notifications
 
 `notify` sends messages to Telegram (`telegram.token`, `telegram.chat_id`) and/or a

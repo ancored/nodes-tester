@@ -11,6 +11,8 @@ stays valid while the node exists. The card of a node gone from the subscription
 
 - the full node tag with the key in two colours ([what the key is](concepts.md#nodes));
 - the name of the node in the subscription;
+- for a [chain](checks.md#entry) — entry country → exit country with the IPs and networks (ASN) of the entry and the exit, and an exit
+  through Cloudflare WARP; for a direct node — its single IP;
 - badges: the groups whose reserve has the node, presence in the list, the rating, restrictions, “Selected by the switcher”;
 - for a paused or quarantined node — until when, after that it is checked again.
 

@@ -58,10 +58,10 @@ def _dns_addresses(data: bytes) -> list[str]:
     return out
 
 
-def resolve(url: str, name: str, timeout: float) -> list[str]:
-    """IPv4 и IPv6 адреса имени через DoH-сервер url."""
+def resolve(url: str, name: str, timeout: float, qtypes=(1, 28)) -> list[str]:
+    """Адреса имени через DoH-сервер url: IPv4 (тип 1) и IPv6 (28)."""
     out = []
-    for qtype in (1, 28):
+    for qtype in qtypes:
         query = base64.urlsafe_b64encode(_dns_query(name, qtype)).rstrip(b"=").decode()
         resp = requests.get(url, params={"dns": query}, timeout=timeout,
                             headers={"Accept": "application/dns-message"})

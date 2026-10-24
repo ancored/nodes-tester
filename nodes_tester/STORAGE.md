@@ -32,6 +32,8 @@ renames it to `<file>.v<version>-<time>` and starts the history anew: there are 
 | `switch_recent` | recently used candidates |
 | `switch_activations` | cumulative number of times a node was chosen |
 | `node_events` | addition, removal, pause, quarantine and recovery |
+| `ip_info` | country, network (ASN) and type of the entry and exit IPs by ip-api.com |
+| `entry_dns` | IPv4 addresses of node server names (the entry) and the time of the answer |
 | `meta` | service values, for example the schema version and the result of the last `VACUUM` |
 
 ## `nodes` and presence

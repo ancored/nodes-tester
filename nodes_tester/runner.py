@@ -449,9 +449,12 @@ class Runner:
                 refreshed = -math.inf          # запрос из админки: свежий состав нод
 
     def _service(self) -> None:
-        """Тип выходных IP и белые списки — у них свои сроки годности; боевая надёжность нод."""
+        """Входы нод, сведения об IP и белые списки — у них свои сроки годности; боевая
+        надёжность нод."""
         self._refresh_stability()
-        self._refresh_ip_info([r.get("exit_ip") for r in self.board.rows.copy().values()])
+        rows = list(self.board.rows.copy().values())
+        entry_ips = self._refresh_entry([r.get("id") for r in rows])
+        self._refresh_ip_info([r.get("exit_ip") for r in rows] + entry_ips)
         self._refresh_whitelist(list(self._node_by_raw.values()))
 
     def _visit(self, regions: frozenset, ident: NodeIdentity, tests: list[str]) -> None:
@@ -638,8 +641,23 @@ class Runner:
         self._box_pid = pid
         return restarted
 
+    def _refresh_entry(self, crcs) -> list:
+        """IP входа (серверов) нод: резолв хостов без свежего ответа DNS (nodes_tester.entry),
+        срок годности — checks.ip_type.ttl. Возвращает IP входа всех нод — для сведений ip-api."""
+        from .entry import is_ip, resolve
+        cfg = self.cfg.checks["ip_type"]
+        servers = self.storage.endpoints_by_crc()
+        hosts = {servers.get(crc, ("", None))[0] for crc in crcs} - {""}
+        stale = self.storage.entry_stale([h for h in hosts if not is_ip(h)], cfg["ttl"], cfg["ttl_jitter"])
+        if stale:
+            resolved = resolve(stale, self.cfg.singbox.config)
+            self.storage.save_entry(resolved)
+            print(f"  · адреса входа нод: получено {len(resolved)} из {len(stale)}")
+        known = self.storage.load_entry()
+        return [ip for h in hosts for ip in ([h] if is_ip(h) else known.get(h, []))]
+
     def _refresh_ip_info(self, ips) -> None:
-        """Тип выходного IP для новых/устаревших exit_ip (один пакетный запрос)."""
+        """Сведения ip-api о новых и устаревших IP выхода и входа нод (пакетный запрос)."""
         cfg = self.cfg.checks["ip_type"]
         stale = self.storage.ip_info_stale(ips, cfg["ttl"], cfg["ttl_jitter"])
         if not stale:
@@ -655,7 +673,7 @@ class Runner:
             infos = lookup(stale, cfg["url"], cfg["timeout"])
         self.storage.save_ip_info(infos)
         self.board.set_ip_info(self.storage.load_ip_info())
-        print(f"  · тип выходного IP: обновлено {len(infos)} из {len(stale)}")
+        print(f"  · сведения об IP нод: обновлено {len(infos)} из {len(stale)}")
 
     def _refresh_whitelist(self, nodes) -> None:
         """Проверка «белый список» без свежего результата: тестируемые ноды и ноды клиентской

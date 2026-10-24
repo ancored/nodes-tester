@@ -226,6 +226,10 @@ def _collect(cfg) -> dict:
     for table in (nodes, results["rows"], garbage, longevity, dropouts, rows):
         for r in table:
             r["groups"] = groups_of.get(r.get("crc"), [])
+    chains = _chains(db)
+    for table in (rating, nodes, results["rows"]):
+        for r in table:
+            r.update(chains.get(r.get("crc") or r.get("id"), {}))
     traffic_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=0")
     tester_range = _query(db, "SELECT MIN(ts) AS start, MAX(ts) AS end FROM traffic WHERE is_tester=1")
 
@@ -461,6 +465,7 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
     info = ip_info.get(m.get("exit_ip") or "")
     if not info:
         return
+    from nodes_tester.entry import network
     from nodes_tester.ipinfo import db_country_mismatch, kind
     k = kind(info)
     node["ip_kind"] = k
@@ -469,9 +474,31 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
     node["ip_type"] = _IP_KIND[k] + (", прокси" if node["ip_proxy"] else "")
     if node["ip_db_cc"]:
         node["ip_type"] += f", по базе {node['ip_db_cc']}"
-    node["ip_asn"] = (f"AS{info['asn']} " if info.get("asn") else "") + (info.get("as_name") or info.get("isp") or "")
+    node["ip_asn"] = network(info)
     node["ip_title"] = " · ".join(x for x in (node["ip_type"], m.get("exit_ip"), node["ip_asn"],
                                               info.get("org")) if x)
+
+
+def _chains(db: str) -> dict:
+    """Ключ ноды → вход и выход (nodes_tester.entry.chain) и строки для поиска и сортировки
+    столбцов: chain — «FI→NL» только у цепочки, route — она же или страна выхода прямой ноды."""
+    from nodes_tester.entry import chain, is_ip
+    entry = {r["host"]: [ip for ip in (r["ips"] or "").split(",") if ip]
+             for r in _query(db, "SELECT host, ips FROM entry_dns")}
+    ip_info = {r["ip"]: r for r in _query(db, "SELECT ip, asn, as_name, isp, country FROM ip_info")}
+    out = {}
+    for r in _query(db, "SELECT s.crc AS crc, s.exit_ip AS exit_ip, s.exit_cc AS exit_cc, "
+                        "n.server AS server FROM scores s JOIN nodes n ON n.crc = s.crc"):
+        server = r["server"] or ""
+        info = chain([server] if is_ip(server) else entry.get(server), r["exit_ip"], r["exit_cc"], ip_info)
+        if not info:
+            continue
+        is_chain = info.pop("chain")
+        if is_chain:
+            info["chain"] = f"{info['entry_cc'] or '?'}→{info['exit_cc']}" + (" WARP" if info["warp"] else "")
+        info["route"] = info.get("chain") or info["exit_cc"]
+        out[r["crc"]] = info
+    return out
 
 
 def _results(db: str) -> dict:

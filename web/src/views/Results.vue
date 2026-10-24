@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useSnapshot } from '../store.js'
-import { testTitle, nodeColumns } from '../ux.js'
+import { testTitle, nodeColumns, chainTitle } from '../ux.js'
 import { flag } from '../format.js'
 import { t, locale } from '../i18n.js'
 // Компактное время: ячейки тестов должны помещаться в ширину страницы.
@@ -16,18 +16,18 @@ const rows=computed(()=>(s.data.results?.rows || []).filter(r => !r.removed))
 const AI={gemini:1,openai:1,anthropic:1,upstream:1,connectivity:1,whitelist:1}
 // Короткие заголовки, чтобы таблица помещалась; полное название — в пояснениях и сортировке.
 const HEADS={connectivity:t('Link'),whitelist:t('Whitelist'),reachability:t('Sites'),download:t('Speed, Mbit/s')}
-// Последнее соединение не прошло — флаг из прошлого успешного замера: бледный, с временем замера.
+// Последнее соединение не прошло — страна или цепочка из прошлого успешного замера: бледно, с временем замера.
 function staleCountry(cols) {
-  const country = cols[3]
-  country.cls = (_, r) => r.country_stale ? 'stale-flag' : ''
-  country.cellTitle = r => !r.country ? null : String(r.country).toUpperCase()
+  const route = cols[3]
+  route.cls = (_, r) => r.country_stale ? 'stale-flag' : ''
+  route.cellTitle = r => !r.country && !r.chain ? null : chainTitle(r)
     + (r.country_stale ? (r.country_ts ? ' — ' + t('measured {time}', { time: short(r.country_ts) }) : '') + '; ' + t('the last connection failed') : '')
   return cols
 }
 const aiMark = c => c.unk ? '?' : c.ok ? '✓' : '✗'
 const aiTitle = c => [c.v, c.title].filter(Boolean).join('\n')
 const columns=computed(()=>[
-  ...staleCountry(nodeColumns()),
+  ...staleCountry(nodeColumns({ route: true })),
   {key:'ip_type',title:t('IP type'),head:'IP',slot:true,narrow:true},
   ...tests.value.map(k=>k in AI ? {key:k,title:testTitle(k),head:HEADS[k],slot:true,narrow:true} : {key:k,title:testTitle(k),head:HEADS[k],slot:true,l:true}),
 ])

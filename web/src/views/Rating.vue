@@ -14,7 +14,7 @@ const spark = computed(() => s.data.score_spark || {})
 
 const c01 = (v) => fixed(v, 2)
 const columns = [
-  ...nodeColumns({ crc: 'id' }),
+  ...nodeColumns({ crc: 'id', route: true }),
   { key: 'score', title: t('rating'), slot: true },
   { key: 'active', title: t('selected'), slot: true },
   { key: 'reserve', title: t('reserve'), l: true, fmt: (v) => v || '—' },

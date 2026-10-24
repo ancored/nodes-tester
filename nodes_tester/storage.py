@@ -16,6 +16,8 @@ node_crc — CRC настроек сервера, cred_crc — CRC учётны�
   switch_state / switch_recent / switch_activations            — состояние switcher
   node_events(ts, crc, event, reason, streak)  — журнал added/removed/backoff/garbage/recovered
   garbage(crc PK, since, until, reason, streak) — текущая пауза/карантин
+  ip_info(ip PK, …)                — страна, AS и тип IP (ip-api) входов и выходов нод
+  entry_dns(host PK, ips, ts)      — IP серверов нод (вход) по DNS
   meta(key PK, value)              — сквозные значения между рестартами
 
 Одно соединение sqlite3 (check_same_thread=False) + Lock: пишут поток тестера, резерва
@@ -94,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_node_events_crc ON node_events(crc);
 CREATE TABLE IF NOT EXISTS ip_info (
   ip TEXT PRIMARY KEY, asn INTEGER, as_name TEXT, isp TEXT, org TEXT, country TEXT,
   mobile INTEGER, proxy INTEGER, hosting INTEGER, ts INTEGER);
+CREATE TABLE IF NOT EXISTS entry_dns (host TEXT PRIMARY KEY, ips TEXT, ts INTEGER);
 """
 
 # Колонки снимка рейтинга (таблица scores). Ключ БД — crc; в памяти Scoreboard
@@ -318,6 +321,26 @@ class Storage:
                 "INSERT OR REPLACE INTO ip_info (ip,asn,as_name,isp,org,country,mobile,proxy,"
                 "hosting,ts) VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
             self._db.commit()
+
+    def entry_stale(self, hosts, ttl_seconds: float, jitter: float = 0.0) -> list:
+        """Хосты серверов нод без ответа DNS или с истёкшим сроком годности."""
+        hosts = [h for h in dict.fromkeys(hosts) if h]
+        with self._lock:
+            ts = dict(self._db.execute("SELECT host, ts FROM entry_dns").fetchall())
+        return [h for h in hosts if not fresh(ts.get(h), ttl_seconds, jitter, h)]
+
+    def save_entry(self, resolved: dict) -> None:
+        ts = int(time.time())
+        with self._lock:
+            self._db.executemany("INSERT OR REPLACE INTO entry_dns (host, ips, ts) VALUES (?,?,?)",
+                                 [(h, ",".join(ips), ts) for h, ips in resolved.items()])
+            self._db.commit()
+
+    def load_entry(self) -> dict:
+        """{хост: [IP входа]}."""
+        with self._lock:
+            rows = self._db.execute("SELECT host, ips FROM entry_dns").fetchall()
+        return {h: [ip for ip in (ips or "").split(",") if ip] for h, ips in rows}
 
     def load_ip_info(self) -> dict:
         """{ip: {asn, as_name, isp, org, country, mobile, proxy, hosting, ts}} — весь кэш."""
@@ -722,6 +745,7 @@ class Storage:
             self._db.execute("DELETE FROM activations WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM score_history WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM ip_info WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM entry_dns WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM node_events WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM endpoints WHERE last_seen < ?", (cutoff,))
             self._db.commit()

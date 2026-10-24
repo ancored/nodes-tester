@@ -7,6 +7,7 @@ import { flag } from '../format.js'
 import { t, locale } from '../i18n.js'
 import FilterBar from './FilterBar.vue'
 import NodeKey from './NodeKey.vue'
+import ChainCell from './ChainCell.vue'
 const props = defineProps({ rows:{type:Array,default:()=>[]}, columns:{type:Array,required:true},
   pageSize:{type:Number,default:15}, rowClass:{type:Function,default:null}, empty:{type:String,default:''},
   queryKey:{type:String,default:''}, total:{type:Number,default:null},
@@ -64,6 +65,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
           <tr v-for="row in slice" :key="keys.get(row)" :class="rowClass?.(row)">
             <td v-for="c in columns" :key="c.key" :data-label="c.title" :class="[c.l ? 'l':'',c.nowrap ? 'nowrap':'',c.narrow ? 'narrow':'',c.cls?.(row[c.key],row)]" :title="c.cellTitle ? c.cellTitle(row) : isCountry(c) && row[c.key] ? String(row[c.key]).toUpperCase() : null">
               <slot v-if="c.slot" :name="'cell-'+c.key" :row="row" :value="row[c.key]" />
+              <ChainCell v-else-if="c.chain" :row="row" :fallback="c.chain === 'country'" />
               <NodeKey v-else-if="['crc','id','node'].includes(c.key) && row.wh_only" :text="cellText(c,row)" stacked />
               <RouterLink v-else-if="['crc','id','node'].includes(c.key) && crcOf(row)" :to="'/nodes/'+crcOf(row)" class="break"><NodeKey :text="cellText(c,row)" stacked /></RouterLink>
               <span v-else-if="isProtocol(c)" class="proto"><span v-for="p in String(row[c.key] || '—').split('|')" :key="p">{{ p }}</span></span>
