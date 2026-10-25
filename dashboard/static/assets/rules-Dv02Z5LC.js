@@ -34,7 +34,7 @@ The full description of merging and the catalogue of ready presets: [config asse
 | Tab | Presets | Merged with |
 |---|---|---|
 | Router | \`singbox/presets/\` | \`base.json\` and \`nodes.json\` → the router sing-box |
-| Clients | \`singbox/clients/presets/\`, shared by all clients | each client base \`clients/base_<name>.json\` and \`whnodes.json\` → the configs of \`clients.list\` |
+| Clients | \`singbox/clients/presets/\`, shared by all clients | each client base \`clients/base_<name>.json\` and \`whnodes.json\` → the configs of the [clients](subscriptions.md#clients) |
 
 <a id="list"></a>
 ## Presets
@@ -55,7 +55,7 @@ running sing-box changes only with “Apply”.
 
 A preset that needs a group that is not in \`nodes.json\` will not pass the check: add the group on
 [“Subscriptions and build”](subscriptions.md#groups) and run the router pipeline first. Below the table: the groups of the current
-\`nodes.json\` and, on the Clients tab, the clients from \`clients.list\`.
+\`nodes.json\` and, on the Clients tab, the enabled clients (the list is on [“Subscriptions and build”](subscriptions.md#clients)).
 
 New presets are created in “sing-box files” as \`presets/<name>.json\` (or \`clients/presets/<name>.json\`); ready ones are in
 \`/usr/share/nodes-tester/examples/singbox/presets/\`.

@@ -9,8 +9,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nodes-tester
-PKG_VERSION:=0.10.0
-PKG_RELEASE:=2
+PKG_VERSION:=0.11.0
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Andrey Dyadyk <andrey.dyadyk@protonmail.ch>
 PKG_LICENSE:=AGPL-3.0-or-later
@@ -50,7 +50,6 @@ endef
 define Package/nodes-tester/conffiles
 /etc/config/nodes-tester
 /etc/nodes-tester/config.json
-/etc/nodes-tester/clients.list
 /etc/nodes-tester/singbox/
 endef
 
@@ -71,7 +70,6 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/config/awg
 	$(foreach f,config.example.json config.schema.json awg/de.conf.example,\
 		cp $(REPO_ROOT)/config/$(f) $(PKG_BUILD_DIR)/config/$(f);)
-	cp $(REPO_ROOT)/scripts/router/clients.list.example $(PKG_BUILD_DIR)/config/
 	cp $(REPO_ROOT)/LICENSE $(REPO_ROOT)/THIRD_PARTY_LICENSES $(PKG_BUILD_DIR)/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox
 	cp $(REPO_ROOT)/config/singbox/rules.example.json $(PKG_BUILD_DIR)/config/singbox/
@@ -101,7 +99,6 @@ define Package/nodes-tester/install
 	$(INSTALL_DIR) $(1)/usr/share/nodes-tester/examples/awg $(1)/usr/share/nodes-tester/examples/singbox/presets \
 		$(1)/usr/share/nodes-tester/examples/singbox/rules
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/config.example.json $(1)/usr/share/nodes-tester/examples/
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/clients.list.example $(1)/usr/share/nodes-tester/examples/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules.example.json $(1)/usr/share/nodes-tester/examples/singbox/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/presets/*.json $(1)/usr/share/nodes-tester/examples/singbox/presets/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/config/singbox/rules/*.json $(1)/usr/share/nodes-tester/examples/singbox/rules/

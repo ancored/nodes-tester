@@ -7,7 +7,7 @@
 группы и не решает, поддерживает ли их установленный sing-box.
 
 ```text
-config.json (subscriptions ветви) + URL, файлы, happ, папки AWG, inline
+config.json (все подписки) + URL, файлы, happ, папки AWG, inline
     -> nodes_fetch
     -> raw_nodes.json
 ```
@@ -18,9 +18,9 @@ config.json (subscriptions ветви) + URL, файлы, happ, папки AWG, 
 ## Запуск
 
 ```sh
-python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json
+python3 -m nodes_fetch -c config.json -o data/raw/router.json
 
-python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json \
+python3 -m nodes_fetch -c config.json -o data/raw/router.json \
   --only LUNA --json
 
 python3 -m nodes_fetch -c config.json --dry-run --json
@@ -31,7 +31,6 @@ python3 -m nodes_fetch -c config.json --dry-run --json
 | Параметр | Назначение |
 |---|---|
 | `-c`, `--config` | `config.json`: подписки и раздел `pipeline.fetch` |
-| `--branch` | `router` (по умолчанию) или `clients`: подписки этой ветви и `both` |
 | `-o`, `--output` | выходной `raw_nodes.json` |
 | `--only TAG` | обновить указанный источник, остальные взять из прошлого raw |
 | `--dry-run` | загрузить и разобрать источники без записи файла |
@@ -54,13 +53,13 @@ python3 -m nodes_fetch -c config.json --dry-run --json
 - `type: "amnezia"`: каталог файлов AWG `.conf` стран Amnezia Premium; файлы выпускает и меняет тестер
   ([CONFIG.md](../docs/CONFIG.ru.md#amnezia-premium)), fetch читает их как `folder`.
 
-Поддерживаются `enabled`, `branch`, `user_agent`, `happ_headers` и `send_device`. Относительные
-пути считаются от каталога `config.json`.
+Поддерживаются `enabled`, `user_agent`, `happ_headers` и `send_device`; `branch` для загрузки не важен: загружаются все
+подписки, ветвь использует сборка. Относительные пути считаются от каталога `config.json`.
 
 ### Устройство и заголовки панелей
 
 Панели с лимитом устройств (Marzban, Remnawave и другие) считают устройством каждый новый
-`X-Hwid`. У установки свой HWID в `device.json` рядом с `config.json`, общий для обеих ветвей
+`X-Hwid`. У установки свой HWID в `device.json` рядом с `config.json`, общий для всех подписок
 (`--device` задаёт путь явно). Файл создаётся при первой загрузке случайным.
 
 happ-подписки отправляют HWID и описание устройства всегда; `happ_headers` подписки

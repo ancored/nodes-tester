@@ -131,8 +131,8 @@ nodes-tester pipeline router --dry-run
 Для ручного запуска можно отдельно проверить сборку:
 
 ```sh
-python3 -m nodes_fetch -c config/config.json --branch router -o data/raw/router.json --json
-python3 -m nodes_config -c config/config.json --branch router --raw data/raw/router.json \
+python3 -m nodes_fetch -c config/config.json -o data/raw/router.json --json
+python3 -m nodes_config -c config/config.json --raw data/raw/router.json \
   -o data/nodes.json --check --json
 ```
 

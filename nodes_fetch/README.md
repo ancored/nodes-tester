@@ -7,7 +7,7 @@
 groups and does not decide whether the installed sing-box supports them.
 
 ```text
-config.json (subscriptions of the branch) + URLs, files, happ, AWG folders, inline
+config.json (all subscriptions) + URLs, files, happ, AWG folders, inline
     -> nodes_fetch
     -> raw_nodes.json
 ```
@@ -18,9 +18,9 @@ a sing-box configuration fragment.
 ## Running
 
 ```sh
-python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json
+python3 -m nodes_fetch -c config.json -o data/raw/router.json
 
-python3 -m nodes_fetch -c config.json --branch router -o data/raw/router.json \
+python3 -m nodes_fetch -c config.json -o data/raw/router.json \
   --only LUNA --json
 
 python3 -m nodes_fetch -c config.json --dry-run --json
@@ -31,7 +31,6 @@ Options:
 | Option | Purpose |
 |---|---|
 | `-c`, `--config` | `config.json`: subscriptions and the `pipeline.fetch` section |
-| `--branch` | `router` (default) or `clients`: the subscriptions of this branch and `both` |
 | `-o`, `--output` | output `raw_nodes.json` |
 | `--only TAG` | update the given source, take the others from the previous raw |
 | `--dry-run` | fetch and parse the sources without writing the file |
@@ -54,13 +53,13 @@ entry has a unique `tag` and one source:
 - `type: "amnezia"`: a directory of AWG `.conf` files of Amnezia Premium countries; the files are issued and
   replaced by the tester ([CONFIG.md](../docs/CONFIG.md#amnezia-premium)), fetch reads them like `folder`.
 
-`enabled`, `branch`, `user_agent`, `happ_headers` and `send_device` are supported. Relative
-paths are counted from the `config.json` directory.
+`enabled`, `user_agent`, `happ_headers` and `send_device` are supported; `branch` does not matter to the fetch: all
+subscriptions are fetched, the branch is used by the build. Relative paths are counted from the `config.json` directory.
 
 ### Device and panel headers
 
 Panels with a device limit (Marzban, Remnawave and others) count every new
-`X-Hwid` as a device. The installation has its own HWID in `device.json` next to `config.json`, shared by both branches
+`X-Hwid` as a device. The installation has its own HWID in `device.json` next to `config.json`, shared by all subscriptions
 (`--device` sets the path explicitly). The file is created with a random value on the first fetch.
 
 happ subscriptions always send the HWID and the device description; `happ_headers` of a subscription

@@ -12,7 +12,6 @@ from pathlib import Path
 
 from naming import parse_node
 from naming.regions import alpha3_to_alpha2
-from nodes_common.raw import title_of, titles as raw_titles
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -77,11 +76,12 @@ def node_detail(cfg, crc: str, include_config=False) -> dict:
 _AUTO_SUFFIX = "-auto-out"
 
 
-def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
-    """Группы из nodes.json: порядок групп и ключ ноды → группы, куда она входит.
+def node_groups(nodes_file, kind="selector") -> tuple[list[str], dict[str, list[str]]]:
+    """Группы из nodes.json (whnodes.json клиентов — kind="urltest"): порядок групп и ключ ноды →
+    группы, куда она входит.
 
-    Состав берётся из selector {group}-auto-out (члены с ключом — ноды; failsafe, block,
-    direct пропускаются). Нет файла — пустой результат: группы неизвестны, а не пусты."""
+    Состав берётся из {group}-auto-out (члены с ключом — ноды; failsafe, block, direct
+    пропускаются). Нет файла — пустой результат: группы неизвестны, а не пусты."""
     try:
         with open(nodes_file, encoding="utf-8") as fh:
             config = json.load(fh)
@@ -90,7 +90,7 @@ def node_groups(nodes_file) -> tuple[list[str], dict[str, list[str]]]:
     order, by_crc = [], {}
     for ob in config.get("outbounds", []) if isinstance(config, dict) else []:
         tag = str(ob.get("tag", "")) if isinstance(ob, dict) else ""
-        if not tag.endswith(_AUTO_SUFFIX) or tag.startswith("global-") or ob.get("type") != "selector":
+        if not tag.endswith(_AUTO_SUFFIX) or tag.startswith("global-") or ob.get("type") != kind:
             continue
         group = tag[:-len(_AUTO_SUFFIX)]
         order.append(group)
@@ -207,25 +207,21 @@ def _collect(cfg) -> dict:
     attrition = _attrition(db)
     score_spark = _score_spark(db)
     nodes = _nodes_list(db)
-    # Ноды клиентской ветви, которых нет у роутера: тестер их не ведёт, только белые списки.
-    clients = _client_nodes(getattr(cfg, "whnodes_file", "") or "", {n["crc"] for n in nodes})
-    nodes += [{**meta, "present": 1, "banned": 0, "score": None, "reserve": "", "wh_only": 1}
-              for meta in clients.values()]
     # Ушедшие из подписок ноды — только в «Архиве» (_graveyard): их строки помечены removed,
-    # «Результаты» их не показывают, карточка ноды — показывает. Ключи, которых нет ни
-    # в базе, ни в whnodes.json (прежние клиентские ноды), не отдаём.
-    shown = {n["crc"] for n in nodes}
-    archived = {g["crc"] for g in graveyard} - set(clients)   # ушла от роутера, но жива в whnodes
-    known = shown | archived
+    # «Результаты» их не показывают, карточка ноды — показывает. Ключи, которых нет в базе
+    # (прежние ноды), не отдаём.
+    archived = {g["crc"] for g in graveyard}
+    known = {n["crc"] for n in nodes} | archived
     results["rows"] = [r for r in results.get("rows", []) if r["crc"] in known]
     for r in results["rows"]:
         if r["crc"] in archived:
             r["removed"] = 1
-        if r["crc"] in clients:
-            r.update(provider=clients[r["crc"]]["provider"], protocol=clients[r["crc"]]["protocol"], wh_only=1)
+    # Клиентские группы — по собранному whnodes.json: что получили клиенты.
+    _, client_groups_of = node_groups(getattr(cfg, "whnodes_file", "") or "", kind="urltest")
     for table in (nodes, results["rows"], garbage, longevity, dropouts, rows):
         for r in table:
             r["groups"] = groups_of.get(r.get("crc"), [])
+            r["client_groups"] = client_groups_of.get(r.get("crc"), [])
     chains = _chains(db)
     for table in (rating, nodes, results["rows"]):
         for r in table:
@@ -475,6 +471,7 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
     if node["ip_db_cc"]:
         node["ip_type"] += f", по базе {node['ip_db_cc']}"
     node["ip_asn"] = network(info)
+    node["ip_ts"] = info.get("ts")
     node["ip_title"] = " · ".join(x for x in (node["ip_type"], m.get("exit_ip"), node["ip_asn"],
                                               info.get("org")) if x)
 
@@ -510,7 +507,7 @@ def _results(db: str) -> dict:
                n.provider AS provider, n.protocol AS protocol, n.country AS country
         FROM results r LEFT JOIN nodes n ON n.crc = r.crc
         WHERE r.test != '_select' ORDER BY r.ts, r.rowid""")
-    ip_rows = _query(db, "SELECT ip, asn, as_name, isp, org, country, mobile, proxy, hosting "
+    ip_rows = _query(db, "SELECT ip, asn, as_name, isp, org, country, mobile, proxy, hosting, ts "
                          "FROM ip_info")
     ip_info = {r.get("ip"): r for r in ip_rows if r.get("ip")}
     latest: dict[str, dict] = {}
@@ -707,25 +704,6 @@ def _score_spark(db: str, points: int = 24) -> dict:
     for r in _query(db, "SELECT crc, score FROM score_history ORDER BY crc, ts"):
         out.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
     return {c: v[-points:] for c, v in out.items()}
-
-
-def _client_nodes(whnodes_file: str, known: set) -> dict:
-    """Ноды whnodes.json, которых нет среди нод тестера: ключ → crc, тег, провайдер, протокол,
-    имя в подписке (из raw клиентской ветви)."""
-    try:
-        with open(whnodes_file, encoding="utf-8") as fh:
-            fragment = json.load(fh)
-    except (OSError, ValueError, TypeError):
-        return {}
-    names = raw_titles(os.path.join(os.path.dirname(whnodes_file), "raw", "clients.json"))
-    out = {}
-    for ob in fragment.get("outbounds", []) + fragment.get("endpoints", []):
-        ident = parse_node(str(ob.get("tag", "")))
-        if ident.node_id and ident.node_id not in known:
-            out[ident.node_id] = {"crc": ident.node_id, "node": ident.raw, "provider": ident.provider,
-                                  "protocol": ident.protocol, "country": None, "server": ob.get("server"),
-                                  "title": title_of(names, ident.node_id)}
-    return out
 
 
 def _nodes_list(db: str) -> list[dict]:

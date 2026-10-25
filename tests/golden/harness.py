@@ -11,7 +11,6 @@
 
 Команды (запуск из любого места, stdlib + зависимости nodes_fetch):
     python harness.py record --project DIR --config-dir DIR --out SET   # живая сеть → ответы
-                                    [--branch router|clients]
     python harness.py replay --project DIR --set SET [--out FILE]      # офлайн → nodes.json
     python harness.py golden --project DIR --set SET                   # replay → SET/golden.json
 
@@ -61,7 +60,8 @@ def _patched(obj, name, value):
 
 
 def _branch(config_dir):
-    """Ветвь набора: clients, если подписки набора — клиентские, иначе router."""
+    """Ветвь набора: clients (эталон — whnodes.json), если подписки набора — клиентские, иначе
+    router (эталон — nodes.json)."""
     with open(os.path.join(config_dir, "config.json"), encoding="utf-8") as f:
         subs = json.load(f).get("subscriptions") or []
     return "clients" if subs and all(s.get("branch") == "clients" for s in subs) else "router"
@@ -94,7 +94,6 @@ def record(project, config_dir, out_set):
     try:
         with _patched(http_obj, http_name, get), _patched(happ, "_fetch", fetch):
             fetch_cli.main(["-c", os.path.join(config_dir, "config.json"),
-                            "--branch", _branch(config_dir),
                             "--device", os.path.join(tmp, "device.json"),
                             "-o", os.path.join(tmp, "raw.json")])
     finally:
@@ -141,9 +140,21 @@ def _offline(project, set_dir):
         yield
 
 
+def _all_candidates(config, nodes, out):
+    """Кандидаты клиентских групп — все ноды nodes.json: проверки тестера эталона не касаются."""
+    from nodes_config import build
+    from nodes_tester.config import load_config
+    with open(nodes, encoding="utf-8") as f:
+        tags = build.tags(json.load(f))
+    groups = {g.tag: tags for g in load_config(config).pipeline.clients.groups}
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump({"ts": int(time.time()), "groups": groups}, f)
+
+
 def replay(project, set_dir, out_path):
-    """Офлайн-генерация конвейером: CLI nodes_fetch → CLI nodes_config —
-    ровно так, как их зовут конвейер и роутерные скрипты. Незаписанный запрос — ошибка."""
+    """Офлайн-генерация конвейером: CLI nodes_fetch → CLI nodes_config (у клиентского набора —
+    ещё сборка клиентов из nodes.json) — ровно так, как их зовут конвейер и роутерные скрипты.
+    Незаписанный запрос — ошибка."""
     from nodes_config import __main__ as config_cli
     from nodes_fetch import __main__ as fetch_cli
     tmp = tempfile.mkdtemp(prefix="golden-")
@@ -152,11 +163,16 @@ def replay(project, set_dir, out_path):
         config, branch = os.path.join(cfg, "config.json"), _branch(cfg)
         raw = os.path.join(tmp, "raw.json")
         with _offline(project, set_dir):
-            code = fetch_cli.main(["-c", config, "--branch", branch, "-o", raw,
-                                   "--device", os.path.join(tmp, "device.json")])
+            code = fetch_cli.main(["-c", config, "-o", raw, "--device", os.path.join(tmp, "device.json")])
         if code:
             raise RuntimeError(f"nodes_fetch вернул {code}")
-        code = config_cli.main(["-c", config, "--branch", branch, "--raw", raw, "-o", out_path])
+        nodes = out_path if branch == "router" else os.path.join(tmp, "nodes.json")
+        code = config_cli.main(["-c", config, "--raw", raw, "-o", nodes])
+        if code == 0 and branch == "clients":
+            candidates = os.path.join(tmp, "candidates.json")
+            _all_candidates(config, nodes, candidates)
+            code = config_cli.main(["-c", config, "--branch", "clients", "--nodes", nodes,
+                                    "--candidates", candidates, "-o", out_path])
         if code:
             raise RuntimeError(f"nodes_config вернул {code}")
     finally:

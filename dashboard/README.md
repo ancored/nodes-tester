@@ -147,8 +147,10 @@ values come directly from the loader, a separate `user_agent` is ignored.
 
 Saving does not start fetching subscriptions, building and applying sing-box. The embedded tester
 restarts itself after saving (`/etc/init.d/nodes-tester restart` as a detached process), except while
-the pipeline runs; the PUT answer contains `restarting` and, if there is no restart, `restart_note`. In the OpenWrt package the raw is stored in `/opt/nodes-tester/raw/router.json` and
-`clients.json`, the build result is `nodes.json` and `whnodes.json` in the same data directory.
+the pipeline runs; the PUT answer contains `restarting` and, if there is no restart, `restart_note`. In the OpenWrt package the raw is stored in `/opt/nodes-tester/raw/router.json`, the build
+result is `nodes.json` and `whnodes.json` in the same data directory. The subscription options also return the client
+state (the config source and when it was published by its token, without the token) and the number of nodes in each client
+group from `client-candidates.json`.
 
 The JSON in the card is taken from `nodes.json`; if the fragment is not there, the available
 part is restored from the tag and the SQLite payload with a note about the missing fields.

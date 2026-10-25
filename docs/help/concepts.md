@@ -88,13 +88,14 @@ active node with a node of the same host.
 
 The pipeline has two branches built from the same file:
 
-| Branch | Subscriptions | Result | Where it goes |
+| Branch | Nodes | Result | Where it goes |
 |---|---|---|---|
-| **Router** (`router`) | `branch` = `router` or `both` | `nodes.json` | the router sing-box; the tester checks these nodes |
-| **Clients** (`clients`) | `branch` = `clients` or `both` | `whnodes.json` | client configs (phones, laptops) built from the client bases |
+| **Router** (`router`) | of subscriptions with `branch` = `router` or `both` | `nodes.json` | the router sing-box: router groups |
+| **Clients** (`clients`) | of subscriptions with `branch` = `clients` or `both`, checked by the router tester | `whnodes.json` | client configs (phones, laptops) built from the client bases |
 
-The tester measures only the router nodes. Client-branch nodes that the router does not have get only the
-whitelist check and have no card (they are marked “client (WH)” in the node list).
+All subscriptions are fetched together and all their nodes get into the router sing-box: the nodes of `clients` subscriptions
+only into the tester selector `nodes-tester`, so the tester measures them, but router traffic never goes through them. The client
+branch fetches nothing: it takes from `nodes.json` the nodes that passed the checks of the client groups on the router.
 
 <a id="groups"></a>
 ## Groups, candidates and the active node
@@ -145,8 +146,8 @@ flowchart LR
 |---|---|
 | Settings | `/etc/nodes-tester/config.json` (permissions 0600: it holds secrets) |
 | sing-box sources: base, rules, presets, client bases | `/etc/nodes-tester/singbox/` |
-| Fetched subscriptions | `/opt/nodes-tester/raw/router.json`, `raw/clients.json` |
-| Build results | `/opt/nodes-tester/nodes.json`, `whnodes.json` |
+| Fetched subscriptions | `/opt/nodes-tester/raw/router.json` |
+| Build results | `/opt/nodes-tester/nodes.json`, `whnodes.json`; the client group nodes of the tester — `client-candidates.json` |
 | Measurements, rating, history | `/opt/nodes-tester/results/stats.db` (SQLite) |
 | Pipeline history and logs | `/opt/nodes-tester/pipeline.db`, `pipeline/runs/` |
 | Running sing-box config | `/etc/sing-box/config.json` |

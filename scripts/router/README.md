@@ -18,7 +18,7 @@ nodes-tester pipeline router
 The `router` mode runs:
 
 ```text
-nodes_fetch
+nodes_fetch                       (all subscriptions of both branches)
     -> raw/router.json            (pipeline.sh fetch: only this step)
     -> nodes_config
     -> nodes.json
@@ -130,6 +130,7 @@ there. A full rollback:
 
 Old snapshots are not deleted automatically.
 
+<a id="clients"></a>
 ## Client branch
 
 ```sh
@@ -137,17 +138,44 @@ nodes-tester pipeline clients --dry-run
 nodes-tester pipeline clients
 ```
 
-It fetches the subscriptions of the `clients` branch, creates `whnodes.json` and passes it to `build-clients.sh`.
-It needs your own base configs `singbox/clients/base_<name>.json` and `clients.list`.
-Upload or edit the client bases in the “sing-box files” section. The enabled presets
-`singbox/clients/presets/*.json` are added to the base; local rule sets in them
-are replaced with `remote` with the address from `singbox/clients/settings.json`. Each config passes
-`sing-box check`; one that fails stays as before. Ready configs go to
-`/etc/sing-box-clients/`; a separately configured web server serves their links.
-Files from `singbox/clients/publish/` are checked and copied as is only when applying,
-not in a dry run.
+The client branch fetches no subscriptions: the router pipeline fetches all of them, and the tester checks the nodes of client
+subscriptions too (in the router sing-box they are only in the `nodes-tester` selector). The `clients` mode runs:
 
-The `apply-clients` mode rebuilds the clients from the current `whnodes.json` without fetching subscriptions:
+```text
+nodes.json + client-candidates.json     (the tester writes the nodes of each client group every 5 minutes)
+    -> nodes_config --branch clients    (client filters and domain_resolver; a group without nodes or
+                                         data older than 30 minutes stop the run)
+    -> whnodes.json                     (urltest {group}-auto-out, selector global-auto-out)
+    -> build-clients.sh
+```
+
+`build-clients.sh` takes the clients from `clients` in `config.json` (only enabled ones). For each it merges the base
+`singbox/clients/base_<name>.json` with `whnodes.json` and the enabled presets `singbox/clients/presets/*.json` (local rule sets in
+them are replaced with `remote` with the address from `singbox/clients/settings.json`) or takes the ready file
+`singbox/clients/publish/<name>.json` as is. Each config passes `sing-box check`; one that fails stays as before. A ready config
+goes to `<output>/<name>.json` and `<output>/by-token/<token>.json` (`pipeline.clients.output`, `/etc/sing-box-clients` by
+default). Files in `by-token/` of deleted and disabled clients and of old tokens are deleted: their links stop working. A dry run
+builds into `$DATA/clients-dry` and compares with the published configs.
+
+The web server serves only `by-token/`, with the token as the file name. Example for Caddy:
+
+```caddyfile
+router.example:8443 {
+    @client path_regexp client ^/([A-Za-z0-9_-]{16,})$
+    handle @client {
+        root * /etc/sing-box-clients/by-token
+        rewrite * /{re.client.1}.json
+        file_server
+    }
+    handle {
+        respond 404
+    }
+}
+```
+
+Adding a client or changing a token needs no web server reload. Do not turn on the access log: the tokens would get into it.
+
+The `apply-clients` mode rebuilds the clients from the current `whnodes.json`:
 
 ```sh
 nodes-tester pipeline apply-clients --dry-run
@@ -158,7 +186,7 @@ nodes-tester pipeline apply-clients
 
 | Script | Responsibility |
 |---|---|
-| `pipeline.sh` | the fetch, config and apply sequence for router or clients |
+| `pipeline.sh` | the fetch, config and apply sequence of the router; the client build from the checked nodes |
 | `apply-nodes.sh` | merge, check, diff, restart, health check and rollback |
 | `update-rules.sh` | updating rule sets before building the working config |
 | `build-clients.sh` | building client configurations |
@@ -173,8 +201,7 @@ nodes-tester pipeline apply-clients
 - `DATA`: the directory of raw files and candidates;
 - `CFG_ROOT`: the directory of `config.json` and `singbox/`;
 - `CONFIG_DIR`: the sing-box base, rules and client sources in `singbox/`;
-- `SINGBOX`: the directory of the sing-box sources (by default `$CFG_ROOT/singbox`), presets are in `presets/`;
-- `CLIENTS_FILE`: the list of client base names.
+- `SINGBOX`: the directory of the sing-box sources (by default `$CFG_ROOT/singbox`), presets are in `presets/`.
 
 The package command fills the main paths from UCI. Without it the package paths apply:
 `DATA=/opt/nodes-tester`, `CFG_ROOT=/etc/nodes-tester`.

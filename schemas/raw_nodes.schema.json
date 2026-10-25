@@ -8,7 +8,7 @@
   "properties": {
     "version": { "const": 1 },
     "generated_at": { "type": "string", "description": "UTC ISO-8601, суффикс Z" },
-    "providers": { "type": "string", "description": "ветвь подписок: router или clients" },
+    "providers": { "type": "string", "description": "метка опроса (router: все подписки для сборки роутера)" },
     "nodes_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "sources": {
       "type": "array",

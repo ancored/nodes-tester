@@ -7,7 +7,7 @@
 This guide is an overview. Every page and block of the admin panel, with flowcharts of the algorithms, is explained in the
 [help](help/README.md); in the admin panel it opens by the **?** icon next to a page title or in the corner of a block.
 
-The guide applies to package [`v0.10.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.10.0). Updating the sources on a computer does not update the installed package.
+The guide applies to package [`v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). Updating the sources on a computer does not update the installed package.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">
@@ -127,11 +127,11 @@ The router branch runs the steps in order:
 
 While the router branch is being applied, the tester pauses checks and switching. After the pipeline finishes, the pause lasts another 120 seconds. When you work through the same proxy, a sing-box restart may briefly interrupt access to the admin panel and SSH.
 
-The client branch fetches the subscriptions of the `clients` branch, builds `whnodes.json` and merges it with the `singbox/clients/base_<name>.json` bases by the `clients.list` list and the enabled client presets `singbox/clients/presets/`. Each config passes `sing-box check` before publishing. The ready files, for example `alice.json` and `bob.json`, go to `/etc/sing-box-clients/`. A separately configured web server serves them to clients by links; nodes-tester itself does not configure a web server for these files. Files from `singbox/clients/publish/` are copied there as is, without merging. The client branch does not restart the router sing-box.
+The client branch fetches no subscriptions: the router branch fetches all of them, and the tester checks the nodes of client subscriptions too (in the router sing-box they are only in the tester selector). The client branch takes from `nodes.json` the nodes that passed the checks of the client groups on the router, builds `whnodes.json` and merges it with the `singbox/clients/base_<name>.json` bases of the [clients](help/subscriptions.md#clients) and the enabled client presets `singbox/clients/presets/` (a client without a base gets its ready file from `singbox/clients/publish/` as is). Each config passes `sing-box check` before publishing. The ready files go to `/etc/sing-box-clients/<name>.json` and `by-token/<token>.json`; a separately configured web server serves `by-token/` to clients by links (an example is in the [router scripts guide](../scripts/router/README.md#clients)). The client list and the tokens are edited in “Subscriptions and build” → “Clients”. The client branch does not restart the router sing-box.
 
 ## Pipeline
 
-After logging in with the token open “Pipeline”, choose the `router` or `clients` branch and press “Check” (`--dry-run`). The check downloads the sources and writes intermediate files to the data directory. For the router it builds the candidate and runs `sing-box check`, but does not update the rules, does not replace the working config and does not restart sing-box. For the clients the result is written separately, without publishing. Study the log, then press “Apply” or run on the router:
+After logging in with the token open “Pipeline”, choose the `router` or `clients` branch and press “Check” (`--dry-run`). The check downloads the sources and writes intermediate files to the data directory. For the router it builds the candidate and runs `sing-box check`, but does not update the rules, does not replace the working config and does not restart sing-box. For the clients the result is written separately, without publishing; the client check also takes no subscriptions: it builds from the current `nodes.json` and the tester data. Study the log, then press “Apply” or run on the router:
 
 ```sh
 nodes-tester pipeline router --dry-run
@@ -186,7 +186,7 @@ changes. When you come back to the page it shows the status and log of the last 
 run; the full history is in “Pipeline”.
 
 The “Clients” tab in the same section shows the `singbox/clients/presets/` presets, shared by
-all clients from `clients.list`. The switch checks the config of each client (base,
+all enabled clients. The switch checks the config of each client (base,
 `whnodes.json`, enabled presets) with `sing-box check`. “Build clients” publishes the configs
 from the current `whnodes.json` without fetching subscriptions (`nodes-tester pipeline apply-clients`);
 “Check the build” builds them into a separate directory without publishing. A client gets the local rule sets

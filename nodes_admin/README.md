@@ -22,7 +22,9 @@ and source sets itself.
 presets go by priority, identical elements collapse, a tag conflict is an error. `presets.py`
 checks the presets and builds the resulting config from them, the base and `nodes.json`; for the client branch
 (`assemble --client-settings`) it merges the client base, `whnodes.json` and client presets,
-replacing local router rule sets with `remote` with the address from `clients/settings.json`.
+replacing local router rule sets with `remote` with the address from `clients/settings.json`. `clients.py` gives
+`build-clients.sh` the enabled clients from `config.json` (`list`: name and token) and the publishing directory (`output`), and
+the admin panel the client state.
 
 The HTTP routes are in `dashboard/api_pipeline.py` and `dashboard/api_singbox.py`.
 Starting and editing require the token; the history and logs are also behind the token, since

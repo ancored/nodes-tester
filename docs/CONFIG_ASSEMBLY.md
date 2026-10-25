@@ -83,13 +83,13 @@ or by the client base, so the same logic fits both the router and a client:
 | `us-out` | the `us` user, `us-domains` | `out-us` → `us-auto-out` | router, the `us` user |
 | `global-out` | browser STUN | — | router, the `global` user |
 | `home-out` | home network and home IP | — | router, the `ru-strict` user |
-| `direct-out`, `direct-lan`, `global-auto-out`, `nodes-tester` | direct outbound, LAN, all nodes, tester | base and `nodes.json` | `global-auto-out`: the client branch nodes |
+| `direct-out`, `direct-lan`, `global-auto-out`, `nodes-tester` | direct outbound, LAN, all nodes, tester | base and `nodes.json` | `global-auto-out`: the client groups (`whnodes.json`) |
 
 A zone outbound is a selector with one element. To send AI through your own proxy it is enough
 to change the `ai-out` element in `out-ai`. Presets declare DNS servers themselves, on public addresses:
 `dns-direct` is Yandex DoT `77.88.8.8` (Russian answers for direct traffic), `dns-ai`,
 `dns-google`, `dns-us`, `dns-global` are DoH through their own outbound, `dns-home` goes through home, `dns-wh`
-through the client branch nodes. Replace them with your own (for example, NextDNS profiles) in the preset copies.
+through the client group nodes. Replace them with your own (for example, NextDNS profiles) in the preset copies.
 
 ### Order
 
@@ -142,7 +142,7 @@ the SSID `Home-WiFi` and the subnet `192.168.1.0/24` in `client-home-lan`, `smar
 
 The client branch merges the same way: `singbox/clients/base_<name>.json` (above all), then
 `whnodes.json`, then the enabled presets `singbox/clients/presets/*.json` by priority. The set of
-presets is shared by all clients from `clients.list`; the differences between clients stay in their bases.
+presets is shared by all [clients](CONFIG.md#clients); the differences between clients stay in their bases.
 
 - Rule sets. Router local files are unavailable to a client, so a `local` set with a path in
   `/etc/sing-box/rules/` becomes `remote` with the distribution address from
@@ -176,7 +176,7 @@ After merging:
 
 Saving the base or a preset in the admin panel runs the merge and `sing-box check` the same way, in a
 temporary directory, and does not write a file that sing-box would not accept. A client preset,
-`clients/settings.json` and a client base are checked by merging each client from `clients.list` with the
+`clients/settings.json` and a client base are checked by merging each enabled client with the
 current `whnodes.json` (a base without `whnodes.json` is saved without a check, as before).
 `build-clients.sh` runs `sing-box check` for each client and for the JSON from
 `clients/publish/` before publishing; a file that fails the check is not published, the previous one stays.
@@ -187,7 +187,7 @@ current `whnodes.json` (a base without `whnodes.json` is saved without a check, 
 |---|---|
 | `nodes-tester pipeline router` | all three chains: subscriptions, node build, base and rules, apply; by schedule or from “Pipeline” |
 | `nodes-tester pipeline apply` | the base and presets on the current `nodes.json`, without fetching subscriptions; the “Apply” button in “Rules” |
-| `nodes-tester pipeline clients` | WH subscriptions → `whnodes.json` → client configs; by schedule or from “Pipeline” |
+| `nodes-tester pipeline clients` | `nodes.json` + the client group nodes of the tester → `whnodes.json` → client configs; by schedule or from “Pipeline” |
 | `nodes-tester pipeline apply-clients` | client bases and client presets on the current `whnodes.json`, without fetching subscriptions; “Build clients” in “Rules” → “Clients” |
 | `--dry-run` for all of them | builds the candidate from the editable files and checks it without changing anything |
 
@@ -197,7 +197,9 @@ current `whnodes.json` (a base without `whnodes.json` is saved without a check, 
 it reads the groups and picks nodes in them, and receives the connection stream for traffic accounting. Tests
 go through a separate inbound `nodes-tester-in` and the flat selector `nodes-tester`.
 
-The client branch (`pipeline clients`) is separate: subscriptions with `"branch": "clients"` → `whnodes.json`,
-merging with `singbox/clients/base_<name>.json` and client presets by the same merger
-(`python3 -m nodes_admin.presets assemble --client-settings …`) → `/etc/sing-box-clients/`.
-It does not touch the router sing-box.
+The client branch (`pipeline clients`) is separate. It fetches nothing: the nodes of subscriptions with
+`"branch": "clients"` are already in `nodes.json` (only in the `nodes-tester` selector), the tester checks them and lists the
+nodes of every client group in `client-candidates.json`. The branch builds from them `whnodes.json` (urltest of the client
+groups, the `global-auto-out` selector), merges it with `singbox/clients/base_<name>.json` and client presets by the same
+merger (`python3 -m nodes_admin.presets assemble --client-settings …`) and publishes the configs to `/etc/sing-box-clients/`
+and `by-token/<token>.json`. It does not touch the router sing-box.

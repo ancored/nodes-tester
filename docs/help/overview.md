@@ -58,7 +58,7 @@ sing-box being down longer than `singbox.down_alert`.
 | Group candidates | nodes that are a [candidate](groups.md#candidates) of at least one group |
 | With restrictions | nodes in a pause, in quarantine or excluded |
 
-Client-branch nodes that the router does not have are not counted. The node list is on the [“Nodes”](nodes.md) page.
+The node list is on the [“Nodes”](nodes.md) page.
 
 <a id="traffic"></a>
 ## Traffic over the stored period

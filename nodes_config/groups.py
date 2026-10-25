@@ -12,10 +12,13 @@
 `global-auto-out` — selector групп с `in_global`; `nodes-tester` — плоский selector всех
 нод для тестера и `failsafe-out`: через него монитор зондирует запасной выход групп.
 Ноды подписок из `exclude_subscriptions` группы в её селектор не входят; подписку, которую
-исключили все группы, не берут ни `failsafe-out`, ни `nodes-tester`.
+исключили все группы, не берут ни `failsafe-out`, ни `nodes-tester`. Ноды подписок только для
+клиентов (`branch: clients`) — только в `nodes-tester`: тестер их проверяет, трафик роутера через
+них не идёт.
 
-Клиенты (whnodes.json): selector `global-auto-out` со всеми нодами и urltest
-`failsafe-out` по умолчанию — клиентские конфиги ссылаются только на global-auto-out.
+Клиенты (whnodes.json): urltest `{tag}-auto-out` каждой группы pipeline.clients.groups из нод,
+прошедших её проверки на роутере, и selector `global-auto-out` групп с `in_global` — базы
+клиентов ссылаются на global-auto-out.
 '''
 
 FAILSAFE, BLOCK, DIRECT = 'failsafe-out', 'block-out', 'direct-out'
@@ -29,17 +32,19 @@ def _urltest(tag, members, params):
     return {'tag': tag, 'type': 'urltest', 'outbounds': members, **params}
 
 
-def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None):
+def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None, tester_only=()):
     '''Selector-ы групп, global-auto-out, nodes-tester и общий failsafe-out.
-    provider_of — тег ноды → подписка (для exclude_subscriptions).'''
+    provider_of — тег ноды → подписка (для exclude_subscriptions); tester_only — подписки
+    только для клиентов.'''
     selector, urltest, provider_of = selector or {}, urltest or {}, provider_of or {}
+    tester_only = set(tester_only)
 
     def members(excluded):
         return [n for n in nodes if provider_of.get(n) not in excluded]
 
     # Подписку, которую исключили все группы, не берут и failsafe-out с nodes-tester.
     unused = set.intersection(*(set(g.exclude_subscriptions) for g in groups)) if groups else set()
-    nodes = members(unused)
+    tested, routed = members(unused), members(unused | tester_only)
     out, in_global = [], []
     for g in groups:
         if g.strict:
@@ -49,24 +54,27 @@ def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None):
             fallback = [FAILSAFE] + ([DIRECT] if g.direct_fallback else [])
             default = FAILSAFE
         auto = '{}-auto-out'.format(g.tag)
-        out.append(_selector(auto, fallback + members(g.exclude_subscriptions), default, selector))
+        out.append(_selector(auto, fallback + members(set(g.exclude_subscriptions) | tester_only),
+                             default, selector))
         if g.in_global:
             in_global.append(auto)
     top = []
     if in_global:
         top.append(_selector('global-auto-out', in_global, in_global[0], selector))
     failsafe = any(not g.strict for g in groups)
-    if nodes:
-        out.append(_selector('nodes-tester', list(nodes) + ([FAILSAFE] if failsafe else []),
-                             nodes[0], selector))
+    if tested:
+        out.append(_selector('nodes-tester', tested + ([FAILSAFE] if failsafe else []),
+                             tested[0], selector))
     if failsafe:
         # urltest без членов sing-box не принимает: без нод проверять нечего — direct.
-        out.append(_urltest(FAILSAFE, list(nodes) or [DIRECT], urltest))
+        out.append(_urltest(FAILSAFE, routed or [DIRECT], urltest))
     return top + out
 
 
-def client_groups(nodes, selector=None, urltest=None):
-    '''whnodes.json: global-auto-out (все ноды, по умолчанию failsafe-out) и failsafe-out.'''
+def client_groups(members, groups, selector=None, urltest=None):
+    '''whnodes.json: global-auto-out (группы с in_global) и urltest каждой группы.
+    members — группа → теги её нод (не пусто: группу без нод сборка клиентов не пишет).'''
     selector, urltest = selector or {}, urltest or {}
-    return [_selector('global-auto-out', [FAILSAFE] + list(nodes), FAILSAFE, selector),
-            _urltest(FAILSAFE, list(nodes) or [DIRECT], urltest)]
+    top = ['{}-auto-out'.format(g.tag) for g in groups if g.in_global]
+    tests = [_urltest('{}-auto-out'.format(g.tag), list(members[g.tag]), urltest) for g in groups]
+    return [_selector('global-auto-out', top, top[0], selector)] + tests

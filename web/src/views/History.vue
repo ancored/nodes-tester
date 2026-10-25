@@ -22,7 +22,12 @@ const reasons={manual:t('Manual choice'),rotation:t('Scheduled rotation'),qualit
   'emergency-stuck':t('Emergency: no replacement found'),failsafe:t('No candidates: fallback outbound'),initial:t('First choice'),init:t('First choice')}
 const reasonText=v=>reasons[v] || v || t('Not recorded')
 const reasonFilters=[{key:'region',title:t('Group')},{key:'reason',title:t('Reason'),get:r=>reasonText(r.reason_key)}]
-const keyOf=tag=>crcOf({node:tag || ''})
+// В «Предыдущей ноде» обычно только ключ (activations.prev): ссылка — по нему, полный тег — из снимка
+// (нода в списке или в архиве).
+const BARE_KEY=/^[0-9a-f]{8}\.[0-9a-f]{8}$/i
+const keyOf=tag=>BARE_KEY.test(tag || '') ? tag : crcOf({node:tag || ''})
+const tagByKey=computed(()=>new Map([...(s.data.graveyard || []).map(n=>[n.crc,n.tag]),...(s.data.nodes || []).map(n=>[n.crc,n.node])]))
+const shown=v=>BARE_KEY.test(v || '') ? tagByKey.value.get(v) || v : v
 const columns=[
   {key:'ts',title:t('Date and time'),fmt:dateTime,l:true},{key:'region',title:t('Group'),l:true},
   {key:'tag',title:t('Selected node'),l:true,slot:true},
@@ -39,7 +44,7 @@ const columns=[
   <h2>{{ t('History') }}<HelpButton topic="switches#history" /></h2>
   <DataTable :rows="rows" :columns="columns" :extra-filters="reasonFilters" :page-size="20" :row-class="r=>r.current_choice ? 'active' : ''">
     <template v-for="k in ['tag','prev']" :key="k" #[`cell-${k}`]="{row}">
-      <RouterLink v-if="keyOf(row[k])" :to="'/nodes/'+keyOf(row[k])" class="break"><NodeKey :text="row[k]" /></RouterLink>
+      <RouterLink v-if="keyOf(row[k])" :to="'/nodes/'+keyOf(row[k])" class="break"><NodeKey :text="shown(row[k])" /></RouterLink>
       <span v-else class="break">{{ row[k] || '—' }}</span>
     </template>
     <template #cell-reason_key="{row}"><span class="reason"><ReasonIcon :reason="row.reason_key" />{{ reasonText(row.reason_key) }}</span></template>

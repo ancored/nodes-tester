@@ -33,7 +33,7 @@ def _config_keys(nodes_file: str) -> set[str]:
 def _raw_keys(raw_file: str, cfg) -> set[str]:
     """Ключи нод, которые сборка дала бы из последнего опроса (те же фильтры)."""
     from nodes_config import build
-    fragment, _ = build.build([rawfmt.load(raw_file)], cfg, "router", log=lambda m: None)
+    fragment, _ = build.build([rawfmt.load(raw_file)], cfg, log=lambda m: None)
     return {parse_node(tag).node_id for tag in build.tags(fragment)} - {""}
 
 

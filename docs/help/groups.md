@@ -22,8 +22,9 @@ The build also creates:
 - `failsafe-out` — a sing-box `urltest` over all nodes: sing-box itself keeps the fastest responding node there;
 - `nodes-tester` — the tester's own selector for measurements.
 
-Without a `groups` section in `config.json` a single group `all` is built. The client branch always has one group
-`global-auto-out` with all nodes: there the client sing-box chooses itself.
+Without a `groups` section in `config.json` a single group `all` is built. Client groups are set separately
+([client node groups](subscriptions.md#client-groups)): there is no tester on a client, so a client group is a urltest over the
+nodes that passed its checks on the router.
 
 <a id="checks"></a>
 ## Required and preferred checks

@@ -226,8 +226,8 @@ TLS needs only the IP. The lists are the text lists of
 
 The check is local: no traffic goes through the node. The server domain is resolved with a DoH request to the
 `checks.whitelist.dns` server from the running sing-box config, never through the router system resolver (that
-would give the node name to the provider). This check also covers client-branch nodes that the router does not
-have.
+would give the node name to the provider). The nodes of client subscriptions are in the router sing-box too, so the check covers
+them, and a [client group](subscriptions.md#client-groups) can require it.
 
 <a id="see-also"></a>
 ## See also

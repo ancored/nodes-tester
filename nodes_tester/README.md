@@ -257,6 +257,14 @@ from the subscriptions). Then the tester starts the `router` pipeline marked “
 more often than `min_interval` and only with the router build enabled. The fields are `pipeline.router.rebuild`
 ([CONFIG.md](../docs/CONFIG.md#pipeline)).
 
+## Client groups
+
+The tester measures the nodes of client subscriptions like any other: they are in the `nodes-tester` selector, but in no
+router group. Every 5 minutes it writes to `client-candidates.json` (next to `nodes.json`) the nodes of each client group
+(`pipeline.clients.groups`): nodes of `clients` and `both` subscriptions with a rating above 0, without a pause, quarantine or
+exclusion, and with a fresh success of every required check of the group. The client build takes the nodes from this file; the
+time of the record shows that the tester works ([CONFIG.md](../docs/CONFIG.md#pipeline)).
+
 ## Amnezia Premium countries
 
 For subscriptions with `type: "amnezia"` [`amnezia_slots.py`](amnezia_slots.py) once every 3 hours compares the

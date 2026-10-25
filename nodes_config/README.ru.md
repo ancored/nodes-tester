@@ -2,15 +2,20 @@
 
 # nodes_config
 
-`nodes_config` превращает `raw_nodes.json` ветви в готовый фрагмент конфигурации sing-box. Это
-вторая стадия конвейера.
+`nodes_config` превращает `raw_nodes.json` в готовый фрагмент конфигурации sing-box роутера, а проверенные тестером ноды
+роутера — в клиентский фрагмент. Это вторая стадия конвейера.
 
 ```text
-raw_nodes.json + config.json (pipeline.<ветвь>, groups, subscriptions[].exclude_names)
+raw_nodes.json + config.json (pipeline.router, groups, subscriptions[].exclude_names)
     -> фильтры против падения sing-box
     -> имена и ключи [node_crc.cred_crc]
     -> группы из всех нод
-    -> nodes.json (ветвь router) или whnodes.json (ветвь clients)
+    -> nodes.json
+
+nodes.json + client-candidates.json (тестер) + config.json (pipeline.clients)
+    -> клиентские фильтры и domain_resolver
+    -> urltest клиентских групп, global-auto-out
+    -> whnodes.json
 ```
 
 Выход содержит `outbounds` и, при наличии WireGuard или AWG, `endpoints`. Фрагмент нужно
@@ -19,12 +24,17 @@ raw_nodes.json + config.json (pipeline.<ветвь>, groups, subscriptions[].exc
 ## Запуск
 
 ```sh
-python3 -m nodes_config -c config.json --branch router \
+python3 -m nodes_config -c config.json \
   --raw data/raw/router.json -o data/nodes.json --json
 ```
 
 `--raw` можно повторять. Флаг `--check` собирает результат и сравнивает его с текущим файлом,
-но ничего не записывает.
+но ничего не записывает. Клиентский фрагмент:
+
+```sh
+python3 -m nodes_config -c config.json --branch clients \
+  --nodes data/nodes.json --candidates data/client-candidates.json -o data/whnodes.json
+```
 
 Файл заменяется только при изменении JSON. Запись атомарная и защищена lock-файлом. Сводка
 `--json` содержит `changed`, `written`, добавленные и удалённые теги, хеши raw и число
@@ -90,8 +100,8 @@ AWG-wg-out [61df49c0.9d2e4b17]
 ## Группы
 
 Ветвь `router` строит группы из раздела [`groups`](../docs/CONFIG.ru.md#groups). Каждая группа —
-selector `{tag}-auto-out`, в котором **все** ноды; какую активировать, решает тестер по проверкам
-группы. Кроме нод в селекторе запасные члены:
+selector `{tag}-auto-out`, в котором **все** ноды подписок `router` и `both`; какую активировать, решает тестер по
+проверкам группы. Кроме нод в селекторе запасные члены:
 
 | Группа | Члены сверх нод | По умолчанию |
 |---|---|---|
@@ -105,12 +115,16 @@ selector `{tag}-auto-out`, в котором **все** ноды; какую а�
   `{"type": "block", "tag": "block-out"}`.
 - `global-auto-out` — selector групп с `in_global`.
 - `nodes-tester` — плоский selector всех нод для тестера и `failsafe-out`: через него монитор
-  зондирует запасной выход групп.
+  зондирует запасной выход групп. Ноды подписок `clients` есть только здесь: тестер их проверяет, трафик роутера через них
+  не идёт.
 
 Поля `selector` и `urltest` ветви добавляются ко всем selector-ам и к `failsafe-out`.
 
-Ветвь `clients` строит одну группу: `global-auto-out` со всеми нодами (по умолчанию
-`failsafe-out`) и `failsafe-out` — клиентские конфиги ссылаются только на неё.
+Ветвь `clients` берёт ноды из `nodes.json`: ноды подписок `clients` и `both`, которые тестер назвал для клиентской группы
+(`pipeline.clients.groups`), и ноды, на которые указывает их `detour`. Поверх — фильтры и `domain_resolver` ветви `clients`.
+Каждая клиентская группа — urltest `{tag}-auto-out`; группы с `in_global` образуют селектор `global-auto-out`, на который
+ссылаются клиентские конфиги. Группа без нод, группа, которую тестер не назвал, и кандидаты старше 30 минут — ошибка:
+`whnodes.json` остаётся прежним.
 
 ## Карта кода
 

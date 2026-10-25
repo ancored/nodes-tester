@@ -58,6 +58,11 @@ sing-box только со следующей сборкой конвейера.
     { "tag": "my", "type": "inline", "outbounds": [ { "type": "vless", "server": "<…>", "server_port": 443 } ] }
   ],
 
+  "clients": [
+    { "name": "phone", "token": "replace-with-random-token-1" },
+    { "name": "laptop", "token": "replace-with-random-token-2", "enabled": false }
+  ],
+
   "tests": {
     "connectivity": { "service": "cloudflare" },
     "latency": { "url": "https://speed.cloudflare.com/__down?bytes=0" },
@@ -178,7 +183,10 @@ sing-box только со следующей сборкой конвейера.
       "at": ["00:30", "06:30", "12:30", "18:30"],
       "exclude_types": ["shadowsocksr"],
       "exclude_protocols": ["xhttp", "wg"],
-      "domain_resolver": "dns-whitelist"
+      "domain_resolver": "dns-whitelist",
+      "groups": [ { "tag": "whitelist", "require": { "whitelist": {} } } ],
+      "output": "/etc/sing-box-clients",
+      "url": "https://<router-domain>:8443/"
     }
   },
 
@@ -218,14 +226,14 @@ API-сервис sing-box 1.14 (`services[]` с `"type": "api"` в конфиг�
 
 ## subscriptions
 
-Источники нод. Сборка (`nodes_config`) берёт все ноды подписок своей ветви; что из них активировать,
-решает тестер по проверкам групп. Страна в названии ноды у провайдера не используется.
+Источники нод. Все подписки загружаются вместе, и тестер роутера проверяет все их ноды; что из них
+активировать, решает тестер по проверкам групп. Страна в названии ноды у провайдера не используется.
 
 | Поле | Тип | По умолчанию | Описание |
 |---|---|---|---|
 | `tag` | строка | — | Имя провайдера, уникальное; первая часть тегов нод |
 | `enabled` | bool | `true` | Использовать подписку |
-| `branch` | `router` · `clients` · `both` | `router` | Ветвь сборки: `nodes.json` роутера, `whnodes.json` клиентов или обе |
+| `branch` | `router` · `clients` · `both` | `router` | Где ноды несут трафик: группы роутера, группы клиентов (`pipeline.clients.groups`) или обе. Ноды подписок `clients` в sing-box роутера есть только в селекторе тестера `nodes-tester` |
 | `type` | `url` · `file` · `folder` · `inline` · `amnezia` | `url` | Вид источника |
 | `url` | строка | — | URL подписки, share-ссылка, `happ://crypt…` или ссылка `vpn://` Amnezia Premium |
 | `file` | строка | — | `file`: путь к файлу подписки (относительно `config.json`) |
@@ -245,6 +253,16 @@ API-сервис sing-box 1.14 (`services[]` с `"type": "api"` в конфиг�
 
 HWID роутера хранится в `device.json`, ключи `happ://crypt…` — в `happ-keys.json`; оба лежат рядом с
 `config.json` и создаются автоматически.
+
+## clients
+
+Клиенты, чьи конфиги собирает и публикует конвейер клиентов (см. [`pipeline.clients`](#pipeline)).
+
+| Поле | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `name` | строка | — | Латиница, цифры, `_`, `-`; уникально. Конфиг склеивается из `singbox/clients/base_<имя>.json` или берётся как есть из `singbox/clients/publish/<имя>.json` |
+| `token` | строка | — | Секрет ссылки: не меньше 16 знаков из латиницы, цифр, `_`, `-`; уникален. Конфиг публикуется как `<output>/by-token/<токен>.json`, ссылка — `pipeline.clients.url` + токен |
+| `enabled` | bool | `true` | `false` — конфиг не собирается, ссылка перестаёт работать |
 
 ### Amnezia Premium
 
@@ -338,8 +356,8 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 
 ## groups
 
-Группа — селектор sing-box `{tag}-auto-out`. В нём все ноды ветви `router`, запасной выход и, при
-`direct_fallback`, `direct-out`. Активную ноду выбирает тестер.
+Группа — селектор sing-box `{tag}-auto-out`. В нём все ноды подписок `router` и `both`, запасной выход и,
+при `direct_fallback`, `direct-out`. Активную ноду выбирает тестер.
 
 | Поле | Тип | По умолчанию | Описание |
 |---|---|---|---|
@@ -494,10 +512,12 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 | `fetch.keep_stale` | `48h` | Сколько держать прошлые ноды упавшей подписки |
 | `fetch.min_ratio` | `0.5` | Нод стало меньше этой доли — `raw` не перезаписывается |
 | `fetch.happ_keys_url` | встроенный | Источник ключей `happ://crypt…` |
-| `fetch.every` | `3h` | Опрашивать подписки роутера отдельно от сборки: только `raw/router.json`, без сборки и применения; отсчёт — от прошлого опроса или сборки роутера. `0s` — подписки опрашивает только сборка |
+| `fetch.every` | `3h` | Опрашивать подписки отдельно от сборки: только `raw/router.json`, без сборки и применения; отсчёт — от прошлого опроса или сборки роутера. `0s` — подписки опрашивает только сборка |
 
 Ветви `router` (результат — `nodes.json` для sing-box роутера) и `clients` (`whnodes.json` для
-клиентских конфигов) настраиваются одинаково:
+клиентских конфигов) настраиваются одинаково. Ветвь роутера загружает все подписки; клиентская не загружает ни одной и собирает
+`whnodes.json` из `nodes.json` и нод клиентских групп, которые тестер раз в 5 минут пишет в `client-candidates.json` в каталоге
+данных:
 
 | Поле | По умолчанию | Описание |
 |---|---|---|
@@ -506,9 +526,12 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 | `exclude_types` | — | Не брать outbound-ы этих типов, например `shadowsocksr` |
 | `exclude_protocols` | — | Не брать протоколы и транспорты: `reality`, `xhttp`, `wg`… |
 | `domain_resolver` | `bootstrap` | Тег DNS-сервера для адресов нод |
-| `selector` | — | Поля selector-ов групп sing-box, например `interrupt_exist_connections` |
-| `urltest` | — | Поля urltest `failsafe-out`: `url`, `interval`, `tolerance`, `idle_timeout` |
+| `selector` | — | Поля selector-ов групп sing-box (у `clients` — селектора `global-auto-out`), например `interrupt_exist_connections` |
+| `urltest` | — | Поля urltest: `failsafe-out` (`router`) или клиентских групп (`clients`): `url`, `interval`, `tolerance`, `idle_timeout` |
 | `rebuild` | см. ниже | Только `router`: пересборка по деградации |
+| `groups` | `[{"tag": "all"}]` | Только `clients`: клиентские группы, см. ниже |
+| `output` | `/etc/sing-box-clients` | Только `clients`: каталог публикации — `<имя>.json` и `by-token/<токен>.json` |
+| `url` | — | Только `clients`: адрес веб-сервера, раздающего `by-token/`, с `/` в конце; админка показывает ссылки клиентов как этот адрес + токен |
 
 Пересборка по деградации (`pipeline.router.rebuild`). Перезапуск sing-box рвёт соединения, поэтому
 тестер просит конвейер собрать конфиг заново, только когда выполнены оба условия: группа без
@@ -519,8 +542,20 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 сравнение идёт с raw последней сборки и пересборка не срабатывает. Каждая пересборка — в журнале и уведомлении `pipeline`.
 
 Фильтры ветви защищают sing-box от outbound-ов, которые он не примет; голые vless и vmess (без TLS и Reality)
-отбрасываются всегда. Клиентская ветвь собирает одну группу `global-auto-out` со всеми нодами и
-`failsafe-out`.
+отбрасываются всегда.
+
+Клиентские группы (`pipeline.clients.groups`). На клиенте тестера нет, поэтому клиентская группа — urltest sing-box
+`{tag}-auto-out` из нод подписок `clients` и `both`, прошедших её обязательные проверки на роутере: рейтинг выше 0, нет паузы,
+карантина и исключения, свежий успех каждой обязательной проверки. Группы с `in_global` образуют клиентский селектор
+`global-auto-out` (на него ссылаются клиентские базы). Группа без нод и кандидаты старше 30 минут останавливают сборку клиентов:
+прежние конфиги остаются.
+
+| Поле | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `tag` | строка | — | Латиница в нижнем регистре, цифры, `_`; не `global`, `nodes`, `failsafe` |
+| `in_global` | bool | `true` | Входит в клиентский `global-auto-out`; хотя бы у одной группы должно быть включено |
+| `require` | объект | — | Обязательные проверки, как в [groups](#groups), но только те, что тестер ведёт для каждой ноды: `country`, `ip_type`, `geo_consistent`, `whitelist` |
+| `exclude_subscriptions` | список строк | — | Теги подписок `clients` или `both`, ноды которых не входят в группу |
 
 ## storage
 
@@ -581,5 +616,5 @@ sing-box (`singbox.config`); лог не в файле — эти сигналы
 
 ## Секреты
 
-`api.secret`, `admin.token`, `notify.telegram.token` и `subscriptions[].url` дают доступ к sing-box,
-админке, боту и подпискам. Перед публикацией фрагмента конфига замените их.
+`api.secret`, `admin.token`, `notify.telegram.token`, `subscriptions[].url` и `clients[].token` дают доступ к
+sing-box, админке, боту, подпискам и клиентским конфигам. Перед публикацией фрагмента конфига замените их.

@@ -116,14 +116,8 @@ def _check_assembly(app: App, what: str, base: dict | None = None,
 
 
 def _client_names(app: App) -> list:
-    """Клиенты из clients.list рядом с config.json (как у build-clients.sh)."""
-    path = Path(app.cfg.path).resolve().parent / "clients.list"
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    return [name for line in lines for name in line.split("#", 1)[0].split()
-            if re.fullmatch(_name, name)]
+    """Включённые клиенты из раздела clients config.json (как у build-clients.sh)."""
+    return [c["name"] for c in getattr(app.cfg, "clients", []) if c["enabled"]]
 
 
 def _whnodes(app: App) -> Path:
@@ -132,7 +126,7 @@ def _whnodes(app: App) -> Path:
 
 
 def _client_bases(app: App, what: str) -> list:
-    """[(клиент, база)] для клиентов из clients.list; клиент без базы пропускается, как в build-clients.sh."""
+    """[(клиент, база)] включённых клиентов; клиент без базы (готовый файл publish/) пропускается."""
     bases = []
     for name in _client_names(app):
         path = _root(app) / "clients" / f"base_{name}.json"

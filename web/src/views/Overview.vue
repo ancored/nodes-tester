@@ -6,8 +6,7 @@ import { PHASES, checkNames } from '../ux.js'
 import { bytes, dateTime } from '../format.js'
 import { t } from '../i18n.js'
 import HelpButton from '../components/HelpButton.vue'
-// Ноды тестера: клиентские (WH) только проверяются на белые списки и в счётчики не входят.
-const s=useSnapshot(), nodes=computed(()=>(s.data.nodes || []).filter(n=>!n.wh_only)), runner=computed(()=>s.data.runner)
+const s=useSnapshot(), nodes=computed(()=>s.data.nodes || []), runner=computed(()=>s.data.runner)
 // sing-box: остановка/запуск и killswitch (только встроенная админка на OpenWrt).
 const box=ref(null), boxBusy=ref(false), boxError=ref('')
 const boxAvailable=computed(()=>!!auth.capabilities.singbox_control)

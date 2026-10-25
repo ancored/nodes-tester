@@ -13,6 +13,7 @@ import DataTable from '../components/DataTable.vue'
 import { api, auth, can } from '../api.js'
 import { t } from '../i18n.js'
 import HelpButton from '../components/HelpButton.vue'
+import IpTypeIcon from '../components/IpTypeIcon.vue'
 const s = useSnapshot(), route = useRoute(), tab = useQuery('tab','state')
 const crc = computed(() => String(route.params.crc).toLowerCase())
 // Ушедшая из подписок нода есть только в архиве: карточка строится по его строке.
@@ -63,6 +64,8 @@ watch(()=>s.data.generated,async()=>{
 const jsonLines=computed(()=>detail.value?.fragment ? nodeJsonLines(detail.value.fragment,detail.value.crc_fields,detail.value.cred_paths) : [])
 const historyColumns=[{key:'ts',title:t('Date / time'),fmt:dateTime,l:true},{key:'score',title:t('Rating'),fmt:v=>v == null ? '—' : Number(v).toFixed(1)}]
 const eventNames = { added:t('Added'), removed:t('Disappeared from the list'), backoff:t('Pause'), garbage:t('Quarantined'), recovered:t('Recovered'), ban:t('Excluded'), unban:t('Exclusion removed'), restriction_cleared:t('Restriction lifted') }
+// Тип выходного IP и страна по базам ip-api — из строки «Результатов» (сведения о последнем IP выхода).
+const IP_KINDS = { residential: t('residential'), mobile: t('mobile'), hosting: t('data centre'), proxy: t('proxy') }
 const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results')],['traffic',t('Traffic')],['events',t('Events')],['actions',t('Actions')]]
 </script>
 <template>
@@ -74,7 +77,7 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
       <p class="break">{{ t('Name in the subscription') }}: {{ node.title || '—' }}</p>
       <p v-if="node.chain" class="break">{{ t('Chain') }}: <ChainCell :row="node" /> · {{ t('entry') }} {{ node.entry_ip }} <span class="mut">{{ node.entry_as }}</span> → {{ t('exit') }} {{ node.exit_ip }} <span class="mut">{{ node.exit_as }}</span><template v-if="node.warp"> · Cloudflare WARP</template></p>
       <p v-else-if="node.entry_ip" class="break">{{ t('Direct node: entry and exit {ip}', { ip: node.exit_ip }) }} <span class="mut">{{ node.exit_as }}</span></p>
-      <div class="chips"><span v-if="node.groups?.length" class="badge">{{ t('Groups') }}: {{ node.groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
+      <div class="chips"><span v-if="node.groups?.length" class="badge">{{ t('Groups') }}: {{ node.groups.join(', ') }}</span><span v-if="node.client_groups?.length" class="badge">{{ t('Client groups') }}: {{ node.client_groups.join(', ') }}</span><span v-for="flag in nodeFlags(node)" :key="flag" class="badge">{{ flag }}</span></div>
       <p v-if="node.guntil">{{ t(node.gstate === 'backoff' ? 'Paused until {time}, then the node is checked again.' : 'Quarantined until {time}, then the node is checked again.', { time: dateTime(node.guntil) }) }}</p>
     </section>
     <nav class="chips" :aria-label="t('Node card')"><button v-for="[v,label] in TABS" class="chip" :class="{on:tab === v}" @click="tab = v" :key="v">{{ label }}</button></nav>
@@ -105,7 +108,9 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
       <HelpButton topic="node-card#results" />
       <p v-if="!result">{{ t('No saved results. This does not mean a failed check.') }}</p>
       <template v-else>
-        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>{{ t('Details') }}</summary><pre>{{ cell.title }}</pre></details></dd></template></dl>
+        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>{{ t('Details') }}</summary><pre>{{ cell.title }}</pre></details></dd></template>
+          <template v-if="result.ip_kind"><dt>{{ CHECK_NAMES.ip_type }}</dt><dd><IpTypeIcon :kind="result.ip_kind" /><IpTypeIcon v-if="result.ip_proxy" kind="proxy" /> {{ [IP_KINDS[result.ip_kind], result.ip_proxy ? IP_KINDS.proxy : '', result.ip_asn].filter(Boolean).join(' · ') }}<small class="cell-note">{{ dateTime(result.ip_ts) }}</small></dd>
+            <dt>{{ CHECK_NAMES.geo_consistent }}</dt><dd :class="{bad:result.ip_db_cc}">{{ result.ip_db_cc ? t('the databases give {cc}, not the measured country',{cc:String(result.ip_db_cc).toUpperCase()}) : t('matches the measured country') }}<small class="cell-note">{{ dateTime(result.ip_ts) }}</small></dd></template></dl>
       </template>
     </section>
     <section v-if="tab === 'traffic'" class="panel">

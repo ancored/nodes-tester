@@ -385,11 +385,11 @@ class SlotsTest(unittest.TestCase):
 
 
 class SchedulerTest(unittest.TestCase):
-    def test_only_enabled_router_subscriptions_run_on_schedule(self):
+    def test_only_enabled_subscriptions_run_on_schedule(self):
         base = {"type": "amnezia", "url": link(), "path": "awg", "gateway_key": "gw.pem"}
         cfg = parse_config({"subscriptions": [
             {**base, "tag": "A", "proxy": "socks5h://127.0.0.1:2080"}, {**base, "tag": "B", "enabled": False},
-            {**base, "tag": "C", "branch": "clients"}, {"tag": "D", "url": "https://x"}]})
+            {"tag": "D", "url": "https://x"}]})
         cfg.path = os.path.join(tmp(self), "config.json")
         now = [1000.0]
         notifier = mock.Mock()

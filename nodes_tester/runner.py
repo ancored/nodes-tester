@@ -23,9 +23,11 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from nodes_common.fileio import atomic_write_text, dumps_json
+
 from .amnezia_slots import AmneziaSlots
 from .api import ApiClient, ApiError
-from .config import TESTS, Config, region_of
+from .config import TESTS, Config, branch_subscriptions, region_of
 from .freshness import expires, fresh
 from .identity import NodeIdentity, parse_node
 from .logbuffer import LogRing, TeeStream
@@ -79,7 +81,7 @@ def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0)
 
 
 def _leaf_outbounds(path: str) -> dict:
-    """Тег → outbound нод фрагмента (nodes.json, whnodes.json); нет файла — пусто."""
+    """Тег → outbound нод фрагмента nodes.json; нет файла — пусто."""
     try:
         with open(path, encoding="utf-8") as fh:
             fragment = json.load(fh)
@@ -450,12 +452,26 @@ class Runner:
 
     def _service(self) -> None:
         """Входы нод, сведения об IP и белые списки — у них свои сроки годности; боевая
-        надёжность нод."""
+        надёжность нод; кандидаты клиентских групп."""
         self._refresh_stability()
         rows = list(self.board.rows.copy().values())
         entry_ips = self._refresh_entry([r.get("id") for r in rows])
         self._refresh_ip_info([r.get("exit_ip") for r in rows] + entry_ips)
         self._refresh_whitelist(list(self._node_by_raw.values()))
+        self._write_client_candidates()
+
+    def _write_client_candidates(self) -> None:
+        """Кандидаты клиентских групп (pipeline.clients.groups) для сборки клиентов: ноды подписок
+        ветви clients, прошедшие на роутере обязательные проверки группы. Время записи — признак
+        того, что тестер работает: устаревшие кандидаты сборка не берёт."""
+        own = set(branch_subscriptions(self.cfg.subscriptions, "clients"))
+        groups = {g.tag: self.board.fitting(g, own - set(g.exclude_subscriptions))
+                  for g in self.cfg.pipeline.clients.groups}
+        try:
+            atomic_write_text(self.cfg.client_candidates_file,
+                              dumps_json({"ts": int(time.time()), "groups": groups}))
+        except OSError as exc:
+            print(f"  [!] кандидаты клиентских групп не записаны: {exc}")
 
     def _visit(self, regions: frozenset, ident: NodeIdentity, tests: list[str]) -> None:
         self._progress = {"phase": "testing", "node": ident.raw}
@@ -588,11 +604,10 @@ class Runner:
         except OSError:
             log_text = ""
         self.notifier.pipeline_finished(row, log_text)
-        branch = {"router": "router", "fetch": "router", "clients": "clients"}.get(row.get("mode"))
-        if row.get("dry_run") or branch is None or self.orchestrator is None:
+        if row.get("dry_run") or row.get("mode") not in ("router", "fetch") or self.orchestrator is None:
             return
         try:
-            with open(self.orchestrator.data_dir / "raw" / f"{branch}.json", encoding="utf-8") as fh:
+            with open(self.orchestrator.data_dir / "raw" / "router.json", encoding="utf-8") as fh:
                 sources = json.load(fh).get("sources") or []
         except (OSError, ValueError, AttributeError):
             return
@@ -676,34 +691,25 @@ class Runner:
         print(f"  · сведения об IP нод: обновлено {len(infos)} из {len(stale)}")
 
     def _refresh_whitelist(self, nodes) -> None:
-        """Проверка «белый список» без свежего результата: тестируемые ноды и ноды клиентской
-        ветви (whnodes.json), которых нет у роутера, — их тестер больше ничем не проверяет.
-        Проверка локальная (списки и адрес сервера), трафик через ноду не идёт; неудача
-        прежний вердикт не отменяет."""
+        """Проверка «белый список» без свежего результата у тестируемых нод. Проверка локальная
+        (списки и адрес сервера), трафик через ноду не идёт; неудача прежний вердикт не отменяет."""
         params = self.cfg.checks["whitelist"]
         last = self.storage.last_result_ts("whitelist")
         router = _leaf_outbounds(self.cfg.nodes_file)
-        todo = [(ident.raw, ident.node_id, router[ident.raw], True) for _regions, ident in nodes
-                if ident.raw in router]
-        known = {ident.node_id for _r, ident in nodes} | {parse_node(t).node_id for t in router}
-        for tag, ob in _leaf_outbounds(self.cfg.whnodes_file).items():
-            key = parse_node(tag).node_id
-            if key and key not in known:
-                todo.append((tag, key, ob, False))
-        todo = [t for t in todo if not fresh(last.get(t[1]), params["ttl"], params["ttl_jitter"],
-                                             f"{t[1]}/whitelist")]
+        todo = [(ident.raw, ident.node_id, router[ident.raw]) for _regions, ident in nodes
+                if ident.raw in router and not fresh(last.get(ident.node_id), params["ttl"],
+                                                     params["ttl_jitter"], f"{ident.node_id}/whitelist")]
         if not todo:
             return
         if self._whitelist is None:
             self._whitelist = WhitelistCheck(params, self.cfg.singbox.config)
         passed = checked = 0
-        for tag, key, ob, on_router in todo:
+        for tag, key, ob in todo:
             res = self._whitelist.run(ob)
             if res.get("inconclusive"):
                 print(f"  [whitelist] {tag}: {res['error']}")
                 continue
-            if on_router:
-                self.board.set_required_result(tag, "whitelist", res["ok"])
+            self.board.set_required_result(tag, "whitelist", res["ok"])
             self.storage.add_results({"id": key, "node": tag, "tests": {"whitelist": res}})
             checked += 1
             passed += res["ok"]

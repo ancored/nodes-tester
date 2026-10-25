@@ -3,8 +3,9 @@ const e=`**English** | [Русский](subscriptions.ru.md)
 # Subscriptions and build
 
 This page edits the part of \`config.json\` that decides **which nodes get into sing-box and how they are grouped**: the
-subscriptions, the build parameters, the groups and their checks. It has two tabs: “Subscription sources” and “Build and
-groups”, and two branches: “Router” and “Clients” (the chips at the top).
+subscriptions, the build parameters, the groups and their checks, the clients and their links. It has three tabs:
+“Subscription sources”, “Build and groups” and “Clients”; the build has two branches, “Router” and “Clients” (the chips under
+the tabs).
 
 Saving the file does **not** fetch subscriptions and does not change the running sing-box. New subscriptions, filters and
 groups reach sing-box with the next [pipeline](pipeline.md) run; see [How changes reach sing-box](#apply).
@@ -15,10 +16,18 @@ groups reach sing-box with the next [pipeline](pipeline.md) run; see [How change
 | Branch | Result | Used by |
 |---|---|---|
 | Router | \`nodes.json\` | the router sing-box and the tester |
-| Clients | \`whnodes.json\` | client configs built on the [“Rules”](rules.md#clients) page |
+| Clients | \`whnodes.json\` | client configs built from the nodes the router tester checked ([“Rules”](rules.md#clients)) |
 
-A subscription belongs to the router, the clients or both (the “Branch” field). The branch chips only filter the form: the
-document is the same, and unsaved edits in another branch are kept. More about branches: [concepts](concepts.md#branches).
+All subscriptions are fetched together, and the router tester checks all their nodes. The “Branch” field of a subscription says
+where its nodes may carry traffic:
+
+- **Router** — the router groups;
+- **Clients** — only the client groups. In the router sing-box such nodes are only in the tester selector \`nodes-tester\`: the
+  tester measures them, router traffic never goes through them;
+- **Both branches** — both.
+
+The branch chips are on the “Build and groups” tab and only switch the form: the document is the same, and unsaved edits in
+another branch are kept. More about branches: [concepts](concepts.md#branches).
 
 <a id="sources"></a>
 ## Subscription sources
@@ -29,7 +38,7 @@ Each subscription is a block with the fields:
 |---|---|
 | Provider name (unique tag) | the first part of the tags of its nodes; Latin letters without spaces are best |
 | Use the subscription | off — the subscription stays in the file but is not fetched |
-| Branch | Router, Clients or Both branches |
+| Branch | where the nodes carry traffic: Router, Clients or Both branches ([above](#branches)) |
 | Source | the kind of the source, see below |
 | Exclude nodes by a name substring | nodes whose provider name contains one of these substrings are skipped (for example \`promo, test\`) |
 
@@ -144,7 +153,7 @@ Fields of \`pipeline.fetch\` that protect the router from a bad or missing subsc
 | Minimum share of remaining nodes | if a subscription suddenly gives fewer nodes than this share of the previous count (0.5), the previous nodes are kept: a broken answer does not wipe out the configuration |
 | HTTP retries | retries of a failed download (3) |
 | Keep previous nodes on failure | how long the last working nodes of a failed subscription stay in the build (\`48h\`); after that they are dropped |
-| Poll router subscriptions every | a separate poll of router subscriptions that only refreshes the raw nodes and the state shown here, without building and applying (\`3h\`; \`0s\` — only during a build). It also feeds the [rebuild on degradation](switching.md#rebuild) |
+| Poll subscriptions every | a separate poll of the subscriptions that only refreshes the raw nodes and the state shown here, without building and applying (\`3h\`; \`0s\` — only during a build). It also feeds the [rebuild on degradation](switching.md#rebuild) |
 | Download proxy | a proxy for downloads, for example \`socks5://127.0.0.1:2080\` (through sing-box); empty — directly |
 
 The result of each fetch is in the [pipeline log](pipeline.md#log).
@@ -165,6 +174,10 @@ The result of each fetch is in the [pipeline log](pipeline.md#log).
 
 Bare \`vless\` and \`vmess\` without TLS and Reality are always dropped: they would send traffic in the clear.
 
+In the Clients branch the filters and the resolver apply to the client configs on top of the router build: the client core may
+not accept XHTTP and AWG (exclude \`xhttp\` and \`wg\`), and the resolver is a DNS server of the client bases (for example
+\`dns-whitelist\`). The client branch fetches no subscriptions: it runs by its schedule and takes the nodes the router already has.
+
 <a id="selector"></a>
 ### Selector groups
 
@@ -173,12 +186,16 @@ node are closed at once and reopen through the new one; off — they continue th
 the sing-box default applies. Off is recommended: a scheduled rotation then does not break downloads and calls, and after an
 emergency replacement the tester itself closes the connections left on the failed node.
 
+In the Clients branch this block is “global-auto-out group (selector)”: the field goes to the client \`global-auto-out\`, the
+selector of the client groups.
+
 <a id="failsafe"></a>
 ### failsafe-out group
 
 \`failsafe-out\` is a sing-box \`urltest\` over all nodes — the shared fallback of non-strict groups
 ([fallback outbounds](groups.md#fallback)). Its fields go to sing-box as they are: the check URL, the check interval, the latency
 tolerance in ms (a node is replaced only if another is faster by more than this), the idle timeout, interrupting connections.
+In the Clients branch the same fields are “Client groups (urltest)”: they go to the urltest of every client group.
 
 <a id="groups"></a>
 ### Node groups
@@ -190,7 +207,7 @@ The group editor (router branch only). Every group block has:
 - **Group tag** — lowercase Latin letters, digits and \`_\`; not \`global\`, \`nodes\`, \`failsafe\`. The selector is \`{tag}-auto-out\`;
 - **Reserve candidates** — the group's own reserve size; empty — as in the settings (\`selection.reserve\`);
 - **Strict**, **Allow direct outbound**, **Part of global-auto-out** — see [fallback outbounds](groups.md#fallback);
-- **Except subscriptions** — router subscriptions whose nodes are not in the group ([details](groups.md));
+- **Except subscriptions** — subscriptions of the Router or Both branches whose nodes are not in the group ([details](groups.md));
 - a table of checks: for each check “ignored”, “required” or “preferred”; the exit country and the IP type have their own
   conditions ([details](groups.md#checks)). Unknown regions and country codes that are not two letters are highlighted;
 - “Up”, “Down” change the order of groups, “Delete group” removes it.
@@ -198,11 +215,54 @@ The group editor (router branch only). Every group block has:
 Changes of group checks need no rebuild: the tester picks them up after its restart (it restarts by itself after saving). Adding,
 removing or renaming a group changes the selectors and needs a router pipeline run.
 
+<a id="client-groups"></a>
+### Client node groups
+
+The group editor of the Clients branch (\`pipeline.clients.groups\`). There is no tester on a client, so a client group is a
+sing-box \`urltest\` \`{tag}-auto-out\` over the nodes that passed its required checks **on the router**; groups with “Part of
+global-auto-out” form the client \`global-auto-out\` selector, which the client bases use. Without groups the build makes one group
+\`all\` of all healthy nodes of client subscriptions.
+
+- A node gets into a client group if its subscription has the Clients or Both branch (minus “Except subscriptions”), its rating
+  is above 0, it is not paused, quarantined or excluded, and every required check has a fresh success.
+- Only the checks the tester keeps for every node can be required: the exit country, the IP type, the IP country by the
+  databases and the whitelists. Service access checks and the heavy download are run only for router groups.
+- The tester writes the nodes of each client group to \`client-candidates.json\` every 5 minutes; the block shows how many nodes
+  pass now. The client build takes the nodes from it and from \`nodes.json\` and refuses data older than 30 minutes (the tester is not
+  running) and a group without nodes: then the previous client configs stay.
+- The client configs change only with the client build: by its schedule, “Run” on the [“Pipeline”](pipeline.md) page, or “Build
+  clients” on the [“Rules”](rules.md#clients) page (it uses the current \`whnodes.json\`).
+
+Example: one group \`whitelist\` with the required “Whitelists” check in \`global-auto-out\` gives the clients only nodes whose server
+IP and SNI are in the Russian mobile whitelists, already measured by the router.
+
 <a id="regions"></a>
 ### Regions
 
 A JSON object “region → list of countries”, for example \`{"asia": ["jp", "sg", "kr"]}\`. Built-in regions (\`eu\`, \`us\`, \`ru\`,
 \`other\`) can be overridden here. [More about regions](groups.md#regions).
+
+<a id="clients"></a>
+## Clients
+
+The “Clients” tab edits the list of clients (\`clients\` in \`config.json\`) and the publishing (\`pipeline.clients.url\`,
+\`pipeline.clients.output\`).
+
+| Field | Meaning |
+|---|---|
+| Distribution address | the address of the web server that serves the client configs, with \`/\` at the end (\`https://router.example:8443/\`); the link of a client is this address plus its token |
+| Publishing folder | where the client build puts the configs (\`/etc/sing-box-clients\`): \`<name>.json\` and \`by-token/<token>.json\` |
+| Name | the client base \`singbox/clients/base_<name>.json\` (merged with the client nodes and presets) or a ready file \`singbox/clients/publish/<name>.json\` (published as is) |
+| Link token | the secret part of the link: at least 16 Latin letters, digits, \`_\` and \`-\`. “New token” generates a random one |
+| Build and publish the config | off — the config is not built and the link stops working |
+
+Under the fields: where the config comes from and when it was published by this token, and the link (the token is hidden until
+“Show secrets and subscription URLs”). A token is a secret like a subscription URL: whoever has the link gets the full client
+config.
+
+The links change with the client build: it publishes \`by-token/<token>.json\` of every enabled client and deletes the files of
+deleted and disabled clients and of old tokens, so their links stop working. The web server must serve only \`by-token/\`, the file
+name being the token; an example for Caddy is in the [router scripts guide](../../scripts/router/README.md#clients).
 
 <a id="saving"></a>
 ## Editing and saving
@@ -227,17 +287,20 @@ How saving works:
 <a id="apply"></a>
 ## How changes reach sing-box
 
-1. Subscriptions, build parameters and groups are stored in \`config.json\`; the pipeline and the tester read it.
-2. The pipeline runs by the schedule of the branch (\`pipeline.router.at\`, \`pipeline.clients.at\`) or manually on the
-   [“Pipeline”](pipeline.md) page: it fetches subscriptions, builds \`nodes.json\`, checks the result with \`sing-box check\` and
-   applies it. sing-box restarts only if the configuration changed; without connectivity the previous configuration comes back.
+1. Subscriptions, build parameters, groups and clients are stored in \`config.json\`; the pipeline and the tester read it.
+2. The router pipeline runs by its schedule (\`pipeline.router.at\`) or manually on the [“Pipeline”](pipeline.md) page: it fetches
+   all subscriptions, builds \`nodes.json\`, checks the result with \`sing-box check\` and applies it. sing-box restarts only if the
+   configuration changed; without connectivity the previous configuration comes back.
 3. The tester picks up new nodes within a minute; changes of groups and tester settings after its restart.
+4. The client pipeline (\`pipeline.clients.at\`) builds \`whnodes.json\` from \`nodes.json\` and the client group nodes of the tester
+   and publishes the client configs.
 
-Fetched subscriptions are \`raw/router.json\` and \`raw/clients.json\`, the build result \`nodes.json\` and \`whnodes.json\` in the data
-directory (\`/opt/nodes-tester\` in the OpenWrt package). The same steps by hand on the router:
+Fetched subscriptions are \`raw/router.json\`, the build results \`nodes.json\` and \`whnodes.json\` in the data directory
+(\`/opt/nodes-tester\` in the OpenWrt package). The same steps by hand on the router:
 
 \`\`\`sh
-nodes-tester fetch -c config.json --branch router -o raw/router.json
-nodes-tester config -c config.json --branch router --raw raw/router.json -o nodes.json
+nodes-tester fetch -c config.json -o raw/router.json
+nodes-tester config -c config.json --raw raw/router.json -o nodes.json
+nodes-tester config -c config.json --branch clients --nodes nodes.json --candidates client-candidates.json -o whnodes.json
 \`\`\`
 `;export{e as default};

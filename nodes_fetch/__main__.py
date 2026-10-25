@@ -1,6 +1,6 @@
-"""python -m nodes_fetch — подписки ветви из config.json → raw_nodes.json.
+"""python -m nodes_fetch — подписки из config.json → raw_nodes.json.
 
-    python -m nodes_fetch -c config.json --branch router -o raw/router.json
+    python -m nodes_fetch -c config.json -o raw/router.json
     python -m nodes_fetch -c config.json --dry-run --only LUNA --json   # проверить подписку
 
 Лог — в stderr; --json печатает в stdout одну строку-сводку (для оркестратора).
@@ -38,8 +38,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m nodes_fetch",
                                  description="Подписки → raw_nodes.json")
     ap.add_argument("-c", "--config", required=True, help="config.json")
-    ap.add_argument("--branch", choices=("router", "clients"), default="router",
-                    help="ветвь сборки: подписки с этой ветвью (по умолчанию router)")
     ap.add_argument("-o", "--output", help="куда писать raw_nodes.json")
     ap.add_argument("--only", action="append", metavar="TAG",
                     help="обновить только эти подписки (остальные — из прошлого raw)")
@@ -62,13 +60,13 @@ def main(argv=None):
     from nodes_tester.config import load_config
     try:
         cfg = load_config(args.config)
-        providers = fetch.load_providers(fetch.providers_from_config(cfg, args.branch), log=_log)
+        providers = fetch.load_providers(fetch.providers_from_config(cfg), log=_log)
     except (OSError, ValueError) as exc:
         _log(f"[fetch] ОШИБКА конфига: {exc}")
         return report({"ok": False, "error": str(exc)}, 1)
 
     base_dir = os.path.dirname(os.path.abspath(args.config))
-    name = args.branch          # поле providers в raw: из какой ветви подписки
+    name = "router"             # поле providers в raw: опрос подписок для сборки роутера
 
     def do_run():
         previous = _load_previous(args.output)

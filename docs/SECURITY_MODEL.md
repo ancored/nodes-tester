@@ -76,6 +76,10 @@ unknown goes directly.
   bypass the model.
 - IPv6 in the LAN without capture is off: the trust rules are written for IPv4, and `strategy: ipv4_only`
   limits only DNS answers, not the transport.
+- Nodes of subscriptions meant only for clients (for example, public whitelist nodes) are in the router config
+  only in the tester selector `nodes-tester`: the tester measures them, router groups and `failsafe-out` do not take
+  them, so router traffic never goes through such nodes. The clients get only the nodes that passed the checks of
+  their groups on the router.
 
 ## Kill switch
 
@@ -199,8 +203,9 @@ Research the app-side and regulatory threats are taken from:
   keys; the tester writes the files with rights 0600. The gateway is reached over plain HTTP, and the request is
   protected only by the gateway RSA key: take it only from the official AmneziaVPN app, a substituted key
   gives the `api_key` to whoever is on the path.
-- **Client config distribution** over secret paths is protected only by the path length and TLS; a leaked
-  link gives the full client config.
+- **Client config distribution** by secret tokens is protected only by the token length and TLS; a leaked
+  link gives the full client config. The tokens live in `config.json` (`clients`); a new token or a disabled client
+  revokes the old link at the next client build. Keep the web server access log off: it would collect the tokens.
 - **Laptop kill switch.** The Windows counterpart of the Android “Block connections without VPN” is
   [`scripts/windows/killswitch.ps1`](../scripts/windows/killswitch.ps1) (`on`/`off`/`status`, as administrator):
   the outgoing firewall policy is Block, allowed are the sing-box core (in the GUI, the `sing-box-daemon` service), the TUN adapter,

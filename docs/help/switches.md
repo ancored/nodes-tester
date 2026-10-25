@@ -20,7 +20,7 @@ The last 200 records over all groups, newest first.
 | Date and time | when the switch happened |
 | Group | the group |
 | Selected node | the node that became active (or the fallback outbound) |
-| Previous node | the node before it |
+| Previous node | the node before it; the link opens its card (the full tag is shown while the node is in the list or the archive) |
 | Reason | why (see below); the icon helps to tell them apart |
 | Active node | “● Active” — the latest record of the node that is active in the group now; its row is green |
 

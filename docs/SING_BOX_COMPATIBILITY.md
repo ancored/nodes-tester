@@ -131,8 +131,8 @@ mean that the filter is not on or an unsuitable core is used.
 For a manual run the build can be checked separately:
 
 ```sh
-python3 -m nodes_fetch -c config/config.json --branch router -o data/raw/router.json --json
-python3 -m nodes_config -c config/config.json --branch router --raw data/raw/router.json \
+python3 -m nodes_fetch -c config/config.json -o data/raw/router.json --json
+python3 -m nodes_config -c config/config.json --raw data/raw/router.json \
   -o data/nodes.json --check --json
 ```
 

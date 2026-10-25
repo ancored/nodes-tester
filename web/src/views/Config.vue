@@ -13,6 +13,8 @@ import HelpButton from '../components/HelpButton.vue'
 const route = useRoute(), subscriptions = computed(()=>route.path === '/subscriptions')
 const selected=ref('providers'), branch=ref('router'), options=ref({user_agents:[],happ_headers:{}}), jsonValid=ref({}), customAgents=ref(new WeakSet())
 const recipe=computed(()=>subscriptions.value && selected.value==='build')
+const clientsPage=computed(()=>subscriptions.value && selected.value==='clients')
+const SECTIONS=[['providers',t('Subscription sources')],['build',t('Build and groups')],['clients',t('Clients')]]
 const document = ref(null), original = ref(null), text = ref(''), advanced = ref(false)
 const path = ref(''), revision = ref(''), busy = ref(false), message = ref(''), error = ref('')
 const preview = ref(false), showSecrets = ref(false), restart = ref(false), conflict = ref(false)
@@ -154,13 +156,36 @@ function changeKind(sub,kind) {
   else sub[kind]=''
   preview.value=false
 }
-// Подписки текущей ветви с индексами в общем списке (branch both — в обеих).
-const branchSubs=computed(()=>(document.value?.subscriptions || []).map((sub,index)=>({sub,index})).filter(({sub})=>[branch.value,'both'].includes(sub.branch || 'router')))
 function setBranch(sub,v){if(v==='router')delete sub.branch; else sub.branch=v;preview.value=false}
 function setNumber(sub,key,v){if(v==='')delete sub[key]; else sub[key]=Number(v);preview.value=false}
 function setText(sub,key,v){v=v.trim();if(v)sub[key]=v; else delete sub[key];preview.value=false}
 function setList(sub,key,v){const list=v.split(',').map(x=>x.trim()).filter(Boolean);if(list.length)sub[key]=list; else delete sub[key];preview.value=false}
-function addSub(){(document.value.subscriptions ||= []).push(branch.value==='router' ? {tag:'',url:''} : {tag:'',url:'',branch:branch.value})}
+function addSub(){(document.value.subscriptions ||= []).push({tag:'',url:''})}
+// Клиенты: имя базы, токен ссылки (секрет, как URL подписок), публикация — сборкой клиентов.
+function clientState(c){return (options.value.clients || []).find(s=>s.name===c.name) || null}
+function newToken(c){
+  if(c.token && !window.confirm(t('Issue a new token? The old link stops working after the next client build.')))return
+  const bytes=crypto.getRandomValues(new Uint8Array(24))
+  c.token=btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_');preview.value=false
+}
+function addClient(){const c={name:'',token:''};newToken(c);(document.value.clients ||= []).push(c);preview.value=false}
+function removeClient(i){if(window.confirm(t('Delete client {name}? Its link stops working after the next client build.',{name:document.value.clients[i].name || i+1}))){document.value.clients.splice(i,1);preview.value=false}}
+function setClientEnabled(c,on){if(on)delete c.enabled; else c.enabled=false;preview.value=false}
+function clientLink(c){const base=value('pipeline.clients.url');return base && c.token ? base+(showSecrets.value ? c.token : '••••••••') : ''}
+function clientSource(c){
+  const st=clientState(c)
+  if(!st)return t('not saved yet')
+  if(st.source==='base')return t('built from {file} with the client nodes and presets',{file:`base_${c.name}.json`})
+  if(st.source==='file')return t('published as is from {file}',{file:`publish/${c.name}.json`})
+  return t('neither {base} nor {file}: the config is not built',{base:`base_${c.name}.json`,file:`publish/${c.name}.json`})
+}
+function clientPublished(c){
+  const st=clientState(c)
+  if(c.enabled===false)return t('disabled: the link does not work')
+  if(!st)return ''
+  return st.published ? t('published {time}',{time:dateTime(st.published)}) : t('not published by this token yet')
+}
+const NAME_RE=/^[A-Za-z0-9_-]+$/, TOKEN_RE=/^[A-Za-z0-9_-]{16,}$/
 function userAgent(sub){return sub.user_agent ?? ''}
 function uaChoice(sub){const v=userAgent(sub);return customAgents.value.has(sub) ? '__custom' : options.value.user_agents.some(o=>o.value===v) ? v : '__custom'}
 function setUA(sub,v,selection=false){if(v==='__custom' && selection){customAgents.value.add(sub);return}if(selection)customAgents.value.delete(sub);sub.user_agent=v;preview.value=false}
@@ -168,13 +193,18 @@ function happFields(sub){return [...new Set([...Object.keys(options.value.happ_h
 function setHeader(sub,key,v){(sub.happ_headers ||= {})[key]=v;preview.value=false}
 function removeHeader(sub,key){if(sub.happ_headers)delete sub.happ_headers[key];preview.value=false}
 function addHeader(sub){const key=window.prompt(t('Name of the additional HTTP header'));if(key?.trim())setHeader(sub,key.trim(),'')}
-// Сборка nodes.json ветви (pipeline.<ветвь>): фильтры против падения sing-box и параметры групп.
-const recipeGroups=[
+// Сборка ветви (pipeline.<ветвь>): фильтры против падения sing-box и параметры групп. У клиентов
+// группы — urltest из проверенных на роутере нод, selector — только global-auto-out.
+const URLTEST_FIELDS=[['urltest.url',t('Check URL'),'text'],['urltest.interval',t('Interval'),'duration'],['urltest.tolerance',t('Latency tolerance, ms'),'number'],['urltest.idle_timeout',t('Idle timeout'),'duration'],['urltest.interrupt_exist_connections',t('Interrupt existing connections'),'checkbox']]
+const recipeGroups=computed(()=>[
   {title:t('Schedule and filters'),help:'subscriptions#schedule-filters',fields:[['enabled',t('Branch enabled (scheduled build)'),'checkbox'],['at',t('Start time, HH:MM (comma-separated)'),'list'],
     ['exclude_types',t('Exclude outbound types (comma-separated)'),'list'],['exclude_protocols',t('Exclude protocols / transports (comma-separated)'),'list'],['domain_resolver',t('Node DNS resolver tag'),'text']]},
-  {title:t('Selector groups'),help:'subscriptions#selector',fields:[['selector.interrupt_exist_connections',t('Interrupt existing connections when the node changes'),'checkbox']]},
-  {title:t('failsafe-out group (urltest)'),help:'subscriptions#failsafe',fields:[['urltest.url',t('Check URL'),'text'],['urltest.interval',t('Interval'),'duration'],['urltest.tolerance',t('Latency tolerance, ms'),'number'],['urltest.idle_timeout',t('Idle timeout'),'duration'],['urltest.interrupt_exist_connections',t('Interrupt existing connections'),'checkbox']]},
-]
+  ...(branch.value==='clients' ? [
+    {title:t('global-auto-out group (selector)'),help:'subscriptions#client-groups',fields:[['selector.interrupt_exist_connections',t('Interrupt existing connections when the group changes'),'checkbox']]},
+    {title:t('Client groups (urltest)'),help:'subscriptions#client-groups',fields:URLTEST_FIELDS}] : [
+    {title:t('Selector groups'),help:'subscriptions#selector',fields:[['selector.interrupt_exist_connections',t('Interrupt existing connections when the node changes'),'checkbox']]},
+    {title:t('failsafe-out group (urltest)'),help:'subscriptions#failsafe',fields:URLTEST_FIELDS}]),
+])
 const recipePath=field=>`pipeline.${branch.value}.${field}`
 function recipeValue(field){return value(recipePath(field))}
 function recipeUpdate(field,event,type){update(recipePath(field),event,type)}
@@ -186,13 +216,13 @@ const SUB_HELP={happ:'subscriptions#happ-keys',amnezia:'subscriptions#amnezia'}
 const SOURCE_KINDS=[['url',t('URL / link')],['happ',t('Happ · encrypted link (crypt–crypt5)')],['file',t('File')],['folder',t('AWG folder')],['amnezia',t('Amnezia Premium · vpn:// link')],['inline',t('Own nodes (sing-box outbounds)')]]
 const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],['pipeline.fetch.min_ratio',t('Minimum share of remaining nodes (0–1)'),'number',{min:0,max:1,step:0.05}],
   ['pipeline.fetch.retries',t('HTTP retries'),'number',{min:0}],['pipeline.fetch.keep_stale',t('Keep previous nodes on failure'),'duration'],
-  ['pipeline.fetch.every',t('Poll router subscriptions every (0s: only when building)'),'duration'],['pipeline.fetch.proxy',t('Download proxy (empty: direct)'),'text']]
+  ['pipeline.fetch.every',t('Poll subscriptions every (0s: only when building)'),'duration'],['pipeline.fetch.proxy',t('Download proxy (empty: direct)'),'text']]
 </script>
 <template>
   <p v-if="!can('edit_config')" class="notice">{{ t('The editor requires a verified administrator token. Log in with the button in the header.') }}</p>
   <template v-else>
-    <nav v-if="subscriptions && (options.branches || []).length > 1" class="chips" :aria-label="t('Pipeline branch')"><button v-for="set in options.branches" :key="set" class="chip" :class="{on:branch===set}" :disabled="busy" @click="selectDocument(selected,set)">{{ BRANCHES[set] || set }}</button></nav>
-    <nav v-if="subscriptions" class="chips" :aria-label="t('Subscription and build sections')"><button v-for="[kind,label] in [['providers',t('Subscription sources')],['build',t('Build and groups')]]" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
+    <nav v-if="subscriptions" class="chips" :aria-label="t('Subscription and build sections')"><button v-for="[kind,label] in SECTIONS" :key="kind" class="chip" :class="{on:selected===kind}" :disabled="busy" @click="selectDocument(kind)">{{ label }}</button></nav>
+    <nav v-if="recipe && (options.branches || []).length > 1" class="chips" :aria-label="t('Pipeline branch')"><button v-for="set in options.branches" :key="set" class="chip" :class="{on:branch===set}" :disabled="busy" @click="selectDocument(selected,set)">{{ BRANCHES[set] || set }}</button></nav>
     <div class="toolbar">
       <button class="btn" :disabled="busy" @click="load">{{ t('Reload file') }}</button>
       <button class="btn" :disabled="busy || !document" @click="switchEditor">{{ advanced ? t('To the form') : t('Advanced JSON') }}</button>
@@ -220,10 +250,33 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
             </label></div>
           </section>
           <NodeGroups v-if="branch==='router'" :doc="document" :checks="options.checks || []" :ip-kinds="options.ip_kinds || []" :builtin="options.builtin_regions || {}" :reserve-default="value('selection.reserve') ?? defaults['selection.reserve']" @changed="preview=false" @valid="jsonValid.regions=$event" />
+          <NodeGroups v-else branch="clients" :doc="document" :checks="options.client_checks || []" :ip-kinds="options.ip_kinds || []" :client-live="options.client_groups" @changed="preview=false" />
+        </template>
+        <template v-else-if="clientsPage">
+          <section class="panel"><h2>{{ t('Publishing') }}<HelpButton topic="subscriptions#clients" /></h2>
+            <div class="form-grid">
+              <label>{{ t('Distribution address with / at the end (link = address + token)') }}<input :value="value('pipeline.clients.url')" placeholder="https://router.example:8443/" @input="update('pipeline.clients.url',$event)" /></label>
+              <label>{{ t('Publishing folder') }}<input :value="value('pipeline.clients.output')" :placeholder="placeholder('pipeline.clients.output')" @input="update('pipeline.clients.output',$event)" /></label>
+            </div>
+            <p class="mut">{{ t('The web server serves the by-token/ subfolder of the publishing folder: the file name is the token. The configs and links change after the client build (“Pipeline” or “Rules” → “Clients”).') }}</p>
+          </section>
+          <section v-for="(c,index) in document.clients || []" :key="index" class="panel">
+            <h2>{{ c.name || t('New client') }}<span v-if="c.enabled===false" class="mut"> · {{ t('disabled') }}</span></h2>
+            <div class="form-grid">
+              <label>{{ t('Name: base_<name>.json or publish/<name>.json') }}<input :value="c.name" @input="c.name=$event.target.value.trim();preview=false" /><small v-if="c.name && !NAME_RE.test(c.name)" class="bad">{{ t('Latin letters, digits, _ and -') }}</small></label>
+              <label>{{ t('Link token') }}<input :value="c.token" :type="showSecrets ? 'text' : 'password'" autocomplete="off" @input="c.token=$event.target.value.trim();preview=false" /><small v-if="!TOKEN_RE.test(c.token || '')" class="bad">{{ t('At least 16 Latin letters, digits, _ and -') }}</small></label>
+              <label class="check"><input type="checkbox" :checked="c.enabled !== false" @change="setClientEnabled(c,$event.target.checked)" /> {{ t('Build and publish the config') }}</label>
+            </div>
+            <p class="mut">{{ [clientSource(c),clientPublished(c)].filter(Boolean).join(' · ') }}</p>
+            <label v-if="clientLink(c) && c.enabled !== false" class="client-link">{{ t('Client link') }}<input readonly :value="clientLink(c)" @focus="$event.target.select()" /></label>
+            <div class="toolbar"><button class="btn sm" @click="newToken(c)">{{ t('New token') }}</button><button class="btn sm" @click="removeClient(index)">{{ t('Delete client') }}</button></div>
+          </section>
+          <p v-if="!(document.clients || []).length" class="notice">{{ t('No clients: the client build has nothing to publish.') }}</p>
+          <button class="btn" @click="addClient">{{ t('Add client') }}</button>
         </template>
         <template v-else-if="subscriptions">
-          <section v-for="{sub,index} in branchSubs" :key="index" class="panel">
-            <h2>{{ t('Subscription {n}', { n: index+1 }) }} · {{ sub.tag || t('new') }}<HelpButton :topic="SUB_HELP[sourceKind(sub)] || 'subscriptions#sources'" /></h2>
+          <section v-for="(sub,index) in document.subscriptions || []" :key="index" class="panel">
+            <h2>{{ t('Subscription {n}', { n: index+1 }) }} · {{ sub.tag || t('new') }}<span v-if="(sub.branch || 'router')!=='router'" class="mut"> · {{ SUB_BRANCHES[sub.branch] || sub.branch }}</span><HelpButton :topic="SUB_HELP[sourceKind(sub)] || 'subscriptions#sources'" /></h2>
             <div class="form-grid">
               <label>{{ t('Provider name (unique tag)') }}<input v-model="sub.tag" /></label>
               <label class="check"><input type="checkbox" :checked="sub.enabled !== false" @change="sub.enabled=$event.target.checked" /> {{ t('Use the subscription') }}</label>
@@ -292,5 +345,7 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
 
 <style scoped>
 .sub-state p { margin: .2rem 0 }
+.client-link { display: grid; gap: .25rem; margin: .4rem 0 }
+.client-link input { width: 100% }
 .sub-state .pre { white-space: pre-wrap }
 </style>

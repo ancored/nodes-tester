@@ -83,13 +83,13 @@ presets/*.json     ← включённые пресеты по priority (мен
 | `us-out` | пользователь `us`, `us-domains` | `out-us` → `us-auto-out` | роутер, пользователь `us` |
 | `global-out` | STUN браузеров | — | роутер, пользователь `global` |
 | `home-out` | домашняя сеть и домашний IP | — | роутер, пользователь `ru-strict` |
-| `direct-out`, `direct-lan`, `global-auto-out`, `nodes-tester` | прямой выход, LAN, все ноды, тестер | база и `nodes.json` | `global-auto-out` — ноды клиентской ветки |
+| `direct-out`, `direct-lan`, `global-auto-out`, `nodes-tester` | прямой выход, LAN, все ноды, тестер | база и `nodes.json` | `global-auto-out` — клиентские группы (`whnodes.json`) |
 
 Выход зоны — selector с одним элементом. Чтобы ИИ выходили через свой прокси, достаточно
 поменять элемент `ai-out` в `out-ai`. DNS-серверы пресеты объявляют сами, на публичных адресах:
 `dns-direct` — Яндекс DoT `77.88.8.8` (российские ответы для прямого трафика), `dns-ai`,
 `dns-google`, `dns-us`, `dns-global` — DoH через свой выход, `dns-home` — через дом, `dns-wh` —
-через ноды клиентской ветки. Замените их своими (например, профилями NextDNS) в копиях пресетов.
+через ноды клиентских групп. Замените их своими (например, профилями NextDNS) в копиях пресетов.
 
 ### Порядок
 
@@ -142,7 +142,7 @@ SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smart
 
 Клиентская ветка склеивает так же: `singbox/clients/base_<имя>.json` (выше всех), затем
 `whnodes.json`, затем включённые пресеты `singbox/clients/presets/*.json` по приоритету. Набор
-пресетов общий для всех клиентов из `clients.list`; различия клиентов остаются в их базах.
+пресетов общий для всех [клиентов](CONFIG.ru.md#clients); различия клиентов остаются в их базах.
 
 - Наборы правил. Клиенту локальные файлы роутера недоступны, поэтому `local` с путём в
   `/etc/sing-box/rules/` при сборке клиента превращается в `remote` с адресом раздачи из
@@ -175,7 +175,7 @@ SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smart
 
 Сохранение базы или пресета в админке прогоняет склейку и `sing-box check` так же, во
 временном каталоге, и не записывает файл, который sing-box не примет. Клиентский пресет,
-`clients/settings.json` и база клиента проверяются склейкой каждого клиента из `clients.list` с
+`clients/settings.json` и база клиента проверяются склейкой каждого включённого клиента с
 текущим `whnodes.json` (база без `whnodes.json` сохраняется без проверки, как раньше).
 `build-clients.sh` перед публикацией прогоняет `sing-box check` по каждому клиенту и по JSON из
 `clients/publish/`; не прошедший проверку файл не публикуется, прежний остаётся.
@@ -186,7 +186,7 @@ SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smart
 |---|---|
 | `nodes-tester pipeline router` | все три цепочки: подписки, сборка нод, база и правила, применение; по расписанию или из «Конвейера» |
 | `nodes-tester pipeline apply` | база и пресеты к текущему `nodes.json`, без загрузки подписок; кнопка «Применить» в «Правилах» |
-| `nodes-tester pipeline clients` | WH-подписки → `whnodes.json` → конфиги клиентов; по расписанию или из «Конвейера» |
+| `nodes-tester pipeline clients` | `nodes.json` + ноды клиентских групп от тестера → `whnodes.json` → конфиги клиентов; по расписанию или из «Конвейера» |
 | `nodes-tester pipeline apply-clients` | базы клиентов и клиентские пресеты к текущему `whnodes.json`, без загрузки подписок; «Собрать клиентов» в «Правилах» → «Клиенты» |
 | `--dry-run` у всех | собирает кандидата из редактируемых файлов и проверяет его, ничего не меняя |
 
@@ -196,7 +196,9 @@ SSID `Home-WiFi` и подсеть `192.168.1.0/24` в `client-home-lan`, `smart
 читает группы и выбирает в них ноды, получает поток соединений для учёта трафика. Тесты
 идут через отдельный inbound `nodes-tester-in` и плоский selector `nodes-tester`.
 
-Клиентская ветка (`pipeline clients`) устроена отдельно: подписки с `"branch": "clients"` → `whnodes.json`,
-склейка с `singbox/clients/base_<имя>.json` и клиентскими пресетами тем же склейщиком
-(`python3 -m nodes_admin.presets assemble --client-settings …`) → `/etc/sing-box-clients/`.
-Роутерный sing-box она не трогает.
+Клиентская ветка (`pipeline clients`) устроена отдельно. Она ничего не загружает: ноды подписок с `"branch": "clients"`
+уже есть в `nodes.json` (только в селекторе `nodes-tester`), тестер их проверяет и перечисляет ноды каждой клиентской группы в
+`client-candidates.json`. Ветка собирает из них `whnodes.json` (urltest клиентских групп, селектор `global-auto-out`), склеивает
+его с `singbox/clients/base_<имя>.json` и клиентскими пресетами тем же склейщиком
+(`python3 -m nodes_admin.presets assemble --client-settings …`) и публикует конфиги в `/etc/sing-box-clients/` и
+`by-token/<токен>.json`. Роутерный sing-box она не трогает.

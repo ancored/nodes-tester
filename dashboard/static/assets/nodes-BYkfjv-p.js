@@ -25,11 +25,9 @@ subscriptions move to the [archive](#archive).
 | State | presence, restrictions and the switcher choice (see below) |
 | Name in the subscription | the node name given by the provider; a dash — there is none (for example, AWG files) |
 
-The “State” filter selects one of the overlapping states: active, no measurements, paused, quarantine, excluded, client (WH).
-A node can be in several at once.
-
-Client-branch nodes that the router does not have are marked “Whitelists only” / “client (WH)”: the tester does not measure
-them, they only get the [whitelist check](checks.md#whitelist) and have no card.
+The “State” filter selects one of the overlapping states: active, no measurements, paused, quarantine, excluded. A node can be
+in several at once. The “Client groups” filter shows the nodes the clients got in a [client group](subscriptions.md#client-groups)
+(by the current \`whnodes.json\`).
 
 <a id="rating"></a>
 ## Rating

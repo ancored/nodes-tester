@@ -162,7 +162,13 @@ class ApiConfigTest(unittest.TestCase):
         data = json.loads(self._call("GET", "/api/config/subscription-options").body)
         self.assertEqual(data["branches"], ["router", "clients"])
         self.assertIn("gemini", data["checks"])
+        self.assertNotIn("gemini", data["client_checks"])
         self.assertIn("eu", data["builtin_regions"])
+        self.assertEqual((data["clients"], data["client_groups"]), ([], None))
+        with open(self.cfg.client_candidates_file, "w", encoding="utf-8") as fh:
+            json.dump({"ts": 100, "groups": {"whitelist": ["a", "b"]}}, fh)
+        data = json.loads(self._call("GET", "/api/config/subscription-options").body)
+        self.assertEqual(data["client_groups"], {"ts": 100, "groups": {"whitelist": 2}})
 
     def test_wrong_method_returns_405(self):
         resp = self.app.handle("DELETE", "/api/config", {}, b"")

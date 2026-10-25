@@ -58,6 +58,11 @@ Default values are shown so that all fields are visible.
     { "tag": "my", "type": "inline", "outbounds": [ { "type": "vless", "server": "<…>", "server_port": 443 } ] }
   ],
 
+  "clients": [
+    { "name": "phone", "token": "replace-with-random-token-1" },
+    { "name": "laptop", "token": "replace-with-random-token-2", "enabled": false }
+  ],
+
   "tests": {
     "connectivity": { "service": "cloudflare" },
     "latency": { "url": "https://speed.cloudflare.com/__down?bytes=0" },
@@ -178,7 +183,10 @@ Default values are shown so that all fields are visible.
       "at": ["00:30", "06:30", "12:30", "18:30"],
       "exclude_types": ["shadowsocksr"],
       "exclude_protocols": ["xhttp", "wg"],
-      "domain_resolver": "dns-whitelist"
+      "domain_resolver": "dns-whitelist",
+      "groups": [ { "tag": "whitelist", "require": { "whitelist": {} } } ],
+      "output": "/etc/sing-box-clients",
+      "url": "https://<router-domain>:8443/"
     }
   },
 
@@ -218,14 +226,14 @@ switches selectors and reads traffic counters.
 
 ## subscriptions
 
-Node sources. The build (`nodes_config`) takes all nodes of the subscriptions of its branch; which of them to activate
-is decided by the tester by the group checks. The country in the provider's node name is not used.
+Node sources. All subscriptions are fetched together, and the router tester checks all their nodes; which of them to
+activate is decided by the tester by the group checks. The country in the provider's node name is not used.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `tag` | string | — | Provider name, unique; the first part of node tags |
 | `enabled` | bool | `true` | Use the subscription |
-| `branch` | `router` · `clients` · `both` | `router` | Build branch: router `nodes.json`, client `whnodes.json` or both |
+| `branch` | `router` · `clients` · `both` | `router` | Where the nodes carry traffic: router groups, client groups (`pipeline.clients.groups`) or both. Nodes of `clients` subscriptions are in the router sing-box only in the tester selector `nodes-tester` |
 | `type` | `url` · `file` · `folder` · `inline` · `amnezia` | `url` | Source kind |
 | `url` | string | — | Subscription URL, share link, `happ://crypt…` or the Amnezia Premium `vpn://` link |
 | `file` | string | — | `file`: path to the subscription file (relative to `config.json`) |
@@ -245,6 +253,16 @@ is decided by the tester by the group checks. The country in the provider's node
 
 The router HWID is stored in `device.json`, the `happ://crypt…` keys in `happ-keys.json`; both are next to
 `config.json` and are created automatically.
+
+## clients
+
+Clients whose configs the client pipeline builds and publishes (see [`pipeline.clients`](#pipeline)).
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | — | Latin letters, digits, `_`, `-`; unique. The config is merged from `singbox/clients/base_<name>.json` or taken as is from `singbox/clients/publish/<name>.json` |
+| `token` | string | — | The secret of the link: at least 16 Latin letters, digits, `_`, `-`; unique. The config is published as `<output>/by-token/<token>.json`, the link is `pipeline.clients.url` + token |
+| `enabled` | bool | `true` | `false`: the config is not built, the link stops working |
 
 ### Amnezia Premium
 
@@ -340,8 +358,8 @@ overridden.
 
 ## groups
 
-A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router` branch, the fallback outbound and, with
-`direct_fallback`, `direct-out`. The tester picks the active node.
+A group is a sing-box selector `{tag}-auto-out`. It has all nodes of the `router` and `both` subscriptions, the fallback
+outbound and, with `direct_fallback`, `direct-out`. The tester picks the active node.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -498,10 +516,12 @@ applying. The admin panel runs it by the `at` schedule or manually.
 | `fetch.keep_stale` | `48h` | How long to keep the previous nodes of a failed subscription |
 | `fetch.min_ratio` | `0.5` | If fewer nodes than this share remain, `raw` is not overwritten |
 | `fetch.happ_keys_url` | built-in | Source of the `happ://crypt…` keys |
-| `fetch.every` | `3h` | Poll router subscriptions separately from the build: only `raw/router.json`, without building and applying; counted from the previous poll or router build. `0s`: subscriptions are polled only by the build |
+| `fetch.every` | `3h` | Poll the subscriptions separately from the build: only `raw/router.json`, without building and applying; counted from the previous poll or router build. `0s`: subscriptions are polled only by the build |
 
 The `router` branch (result: `nodes.json` for the router sing-box) and the `clients` branch (`whnodes.json` for
-client configs) are configured the same way:
+client configs) are configured the same way. The router branch fetches all subscriptions; the client branch fetches none and
+builds `whnodes.json` from `nodes.json` and the nodes of the client groups that the tester writes to
+`client-candidates.json` in the data directory every 5 minutes:
 
 | Field | Default | Description |
 |---|---|---|
@@ -510,9 +530,12 @@ client configs) are configured the same way:
 | `exclude_types` | — | Skip outbounds of these types, for example `shadowsocksr` |
 | `exclude_protocols` | — | Skip protocols and transports: `reality`, `xhttp`, `wg`… |
 | `domain_resolver` | `bootstrap` | DNS server tag for node addresses |
-| `selector` | — | Fields of the sing-box group selectors, for example `interrupt_exist_connections` |
-| `urltest` | — | Fields of the `failsafe-out` urltest: `url`, `interval`, `tolerance`, `idle_timeout` |
+| `selector` | — | Fields of the sing-box group selectors (`clients`: the `global-auto-out` selector), for example `interrupt_exist_connections` |
+| `urltest` | — | Fields of the urltest: `failsafe-out` (`router`) or the client groups (`clients`): `url`, `interval`, `tolerance`, `idle_timeout` |
 | `rebuild` | see below | `router` only: rebuild on degradation |
+| `groups` | `[{"tag": "all"}]` | `clients` only: client groups, see below |
+| `output` | `/etc/sing-box-clients` | `clients` only: publishing directory: `<name>.json` and `by-token/<token>.json` |
+| `url` | — | `clients` only: the address of the web server serving `by-token/`, with `/` at the end; the admin panel shows the client links as this address + token |
 
 Rebuild on degradation (`pipeline.router.rebuild`). A sing-box restart drops connections, so
 the tester asks the pipeline to build the config anew only when both conditions hold: a group has been without
@@ -523,8 +546,20 @@ router build and only with `pipeline.router.enabled`. A fresh poll comes from `f
 the comparison is against the raw of the last build and the rebuild does not trigger. Each rebuild goes to the log and a `pipeline` notification.
 
 Branch filters protect sing-box from outbounds it would not accept; bare vless and vmess (without TLS and Reality)
-are always dropped. The client branch builds a single group `global-auto-out` with all nodes and
-`failsafe-out`.
+are always dropped.
+
+Client groups (`pipeline.clients.groups`). A client has no tester, so a client group is a sing-box urltest
+`{tag}-auto-out` over the nodes of the `clients` and `both` subscriptions that passed its required checks on the router: rating
+above 0, no pause, quarantine or exclusion, a fresh success of every required check. Groups with `in_global` form the client
+selector `global-auto-out` (the client bases use it). A group without nodes and candidates older than 30 minutes stop the client
+build: the previous configs stay.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `tag` | string | — | Lowercase Latin letters, digits, `_`; not `global`, `nodes`, `failsafe` |
+| `in_global` | bool | `true` | Part of the client `global-auto-out`; at least one group must have it |
+| `require` | object | — | Required checks, as in [groups](#groups), but only those the tester keeps for every node: `country`, `ip_type`, `geo_consistent`, `whitelist` |
+| `exclude_subscriptions` | list of strings | — | Tags of `clients` or `both` subscriptions whose nodes are not in the group |
 
 ## storage
 
@@ -585,5 +620,5 @@ Stopping and starting sing-box and the kill switch service from the admin panel 
 
 ## Secrets
 
-`api.secret`, `admin.token`, `notify.telegram.token` and `subscriptions[].url` give access to sing-box,
-the admin panel, the bot and the subscriptions. Replace them before publishing a config fragment.
+`api.secret`, `admin.token`, `notify.telegram.token`, `subscriptions[].url` and `clients[].token` give access to
+sing-box, the admin panel, the bot, the subscriptions and the client configs. Replace them before publishing a config fragment.

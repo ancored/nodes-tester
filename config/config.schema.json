@@ -150,7 +150,7 @@
               "both"
             ],
             "default": "router",
-            "description": "Ветвь сборки: router — nodes.json роутера, clients — whnodes.json клиентов, both — обе."
+            "description": "Где ноды подписки несут трафик: router — группы роутера, clients — группы клиентов, both — обе. Опрашиваются и проверяются тестером роутера все подписки; ноды подписок clients в sing-box роутера есть только в селекторе тестера."
           },
           "type": {
             "enum": [
@@ -264,6 +264,35 @@
         ]
       },
       "description": "Источники нод."
+    },
+    "clients": {
+      "type": "array",
+      "description": "Клиенты: конфиг собирается из singbox/clients/base_<имя>.json или берётся из singbox/clients/publish/<имя>.json и публикуется по секретному токену ссылки.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "token"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "Имя клиента: base_<имя>.json или publish/<имя>.json."
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,}$",
+            "description": "Секрет ссылки: веб-сервер отдаёт конфиг по адресу pipeline.clients.url + токен."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "false — конфиг не собирается, ссылка не работает."
+          }
+        }
+      }
     },
     "tests": {
       "type": "object",
@@ -893,7 +922,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Теги подписок роутера, ноды которых не входят в группу. Подписку, которую исключили все группы, не берут ни failsafe-out, ни тестер."
+            "description": "Теги подписок роутера (branch router или both), ноды которых не входят в группу. Подписку, которую исключили все группы, не берут ни failsafe-out, ни тестер."
           },
           "reserve": {
             "type": "integer",
@@ -1816,14 +1845,73 @@
             },
             "selector": {
               "type": "object",
-              "description": "Поля selector-ов групп sing-box (например, interrupt_exist_connections)."
+              "description": "Поля selector global-auto-out клиентов (например, interrupt_exist_connections)."
             },
             "urltest": {
               "type": "object",
-              "description": "Поля urltest failsafe-out (url, interval, tolerance, idle_timeout…)."
+              "description": "Поля urltest групп клиентов (url, interval, tolerance, idle_timeout…)."
+            },
+            "groups": {
+              "type": "array",
+              "description": "Группы клиентов: urltest {tag}-auto-out из нод подписок ветви clients, прошедших обязательные проверки на роутере. По умолчанию — одна группа all.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "tag"
+                ],
+                "properties": {
+                  "tag": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_]*$",
+                    "description": "Тег группы: латиница в нижнем регистре, цифры, _."
+                  },
+                  "in_global": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Входит в global-auto-out (на неё ссылаются базы клиентов)."
+                  },
+                  "exclude_subscriptions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Теги подписок ветви clients или both, ноды которых не входят в группу."
+                  },
+                  "require": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "country": {
+                        "$ref": "#/definitions/groupCheck"
+                      },
+                      "ip_type": {
+                        "$ref": "#/definitions/groupCheck"
+                      },
+                      "geo_consistent": {
+                        "$ref": "#/definitions/groupCheck"
+                      },
+                      "whitelist": {
+                        "$ref": "#/definitions/groupCheck"
+                      }
+                    },
+                    "description": "Обязательные проверки: только те, что тестер ведёт для каждой ноды."
+                  }
+                }
+              }
+            },
+            "output": {
+              "type": "string",
+              "default": "/etc/sing-box-clients",
+              "description": "Каталог публикации: <имя>.json и by-token/<токен>.json (его раздаёт веб-сервер)."
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https?://[^/\\s]+/(\\S*/)?$",
+              "description": "Адрес раздачи с / в конце: ссылка клиента — адрес + токен (показывает админка)."
             }
           },
-          "description": "Сборка whnodes.json для клиентских конфигов."
+          "description": "Сборка whnodes.json и конфигов клиентов из нод, проверенных тестером роутера."
         }
       },
       "description": "Конвейер: загрузка подписок, сборка, расписание."

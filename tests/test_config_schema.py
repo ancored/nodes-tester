@@ -33,6 +33,11 @@ def _loader_fields(path):
     data = _nest(path, {"zz_unknown": 1})
     if path[:2] == ("groups", 0):
         data["groups"][0].setdefault("tag", "all")     # вложенные поля группы читаются после тега
+    if path[:4] == ("pipeline", "clients", "groups", 0):
+        data["pipeline"]["clients"]["groups"][0].setdefault("tag", "all")
+    if path[:2] == ("clients", 0):
+        data["clients"][0].setdefault("name", "a")    # поля клиента проверяются по порядку
+        data["clients"][0].setdefault("token", "t" * 16)
     try:
         parse_config(data)
     except ConfigError as exc:

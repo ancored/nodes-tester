@@ -34,7 +34,7 @@ flowchart TD
 | Вкладка | Пресеты | Склеиваются с |
 |---|---|---|
 | Роутер | \`singbox/presets/\` | \`base.json\` и \`nodes.json\` → sing-box роутера |
-| Клиенты | \`singbox/clients/presets/\`, общие для всех клиентов | клиентской базой каждого клиента \`clients/base_<имя>.json\` и \`whnodes.json\` → конфиги из \`clients.list\` |
+| Клиенты | \`singbox/clients/presets/\`, общие для всех клиентов | клиентской базой каждого клиента \`clients/base_<имя>.json\` и \`whnodes.json\` → конфиги [клиентов](subscriptions.ru.md#clients) |
 
 <a id="list"></a>
 ## Пресеты
@@ -55,7 +55,7 @@ flowchart TD
 
 Пресет, которому нужна группа, которой нет в \`nodes.json\`, проверку не пройдёт: сначала добавьте группу на
 [«Подписках и сборке»](subscriptions.ru.md#groups) и запустите конвейер роутера. Под таблицей — группы текущего \`nodes.json\`, а на
-вкладке «Клиенты» — клиенты из \`clients.list\`.
+вкладке «Клиенты» — включённые клиенты (список — на [«Подписках и сборке»](subscriptions.ru.md#clients)).
 
 Новые пресеты создаются в «Файлах sing-box» как \`presets/<имя>.json\` (или \`clients/presets/<имя>.json\`); готовые лежат в
 \`/usr/share/nodes-tester/examples/singbox/presets/\`.

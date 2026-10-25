@@ -34,7 +34,6 @@ export function changedPaths(a,b,prefix = '') {
 }
 // state: только состояние — без рейтинга и резерва (у них в таблице свои столбцы).
 export function nodeFlags(n, { state = false } = {}) {
-  if (n.wh_only) return [t('Whitelists only')]      // клиентская ветвь: тестер ноду не ведёт
   return [n.present == null ? t('Presence unknown') : +n.present ? t('In the tester list') : t('Not in the current list'),
     state ? '' : n.score == null ? t('No rating measurements') : t('Rating {score}', { score: Number(n.score).toFixed(1) }),
     +n.banned ? t('Excluded manually') : '', n.gstate === 'garbage' ? t('Quarantined') : n.gstate === 'backoff' ? t('Checks paused') : '',

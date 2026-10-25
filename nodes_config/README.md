@@ -2,15 +2,20 @@
 
 # nodes_config
 
-`nodes_config` turns the `raw_nodes.json` of a branch into a ready sing-box configuration fragment. It is the
-second stage of the pipeline.
+`nodes_config` turns `raw_nodes.json` into a ready sing-box configuration fragment of the router, and the router nodes
+checked by the tester into the client fragment. It is the second stage of the pipeline.
 
 ```text
-raw_nodes.json + config.json (pipeline.<branch>, groups, subscriptions[].exclude_names)
+raw_nodes.json + config.json (pipeline.router, groups, subscriptions[].exclude_names)
     -> filters that keep sing-box from failing
     -> names and keys [node_crc.cred_crc]
     -> groups of all nodes
-    -> nodes.json (router branch) or whnodes.json (clients branch)
+    -> nodes.json
+
+nodes.json + client-candidates.json (the tester) + config.json (pipeline.clients)
+    -> client filters and domain_resolver
+    -> urltest of the client groups, global-auto-out
+    -> whnodes.json
 ```
 
 The output has `outbounds` and, when there is WireGuard or AWG, `endpoints`. The fragment must be
@@ -19,12 +24,17 @@ merged with the base configuration and checked with the sing-box that will run i
 ## Running
 
 ```sh
-python3 -m nodes_config -c config.json --branch router \
+python3 -m nodes_config -c config.json \
   --raw data/raw/router.json -o data/nodes.json --json
 ```
 
 `--raw` can be repeated. The `--check` flag builds the result and compares it with the current file,
-but writes nothing.
+but writes nothing. The client fragment:
+
+```sh
+python3 -m nodes_config -c config.json --branch clients \
+  --nodes data/nodes.json --candidates data/client-candidates.json -o data/whnodes.json
+```
 
 The file is replaced only when the JSON changes. The write is atomic and protected by a lock file. The
 `--json` summary has `changed`, `written`, the added and removed tags, the raw hashes and the number of
@@ -90,8 +100,8 @@ the second part. The same access from two subscriptions (the same key) stays one
 ## Groups
 
 The `router` branch builds groups from the [`groups`](../docs/CONFIG.md#groups) section. Each group is a
-selector `{tag}-auto-out` with **all** nodes; the tester decides which one to activate by the group
-checks. Besides the nodes, the selector has fallback members:
+selector `{tag}-auto-out` with **all** nodes of the `router` and `both` subscriptions; the tester decides which one to
+activate by the group checks. Besides the nodes, the selector has fallback members:
 
 | Group | Members on top of the nodes | Default |
 |---|---|---|
@@ -105,12 +115,16 @@ checks. Besides the nodes, the selector has fallback members:
   `{"type": "block", "tag": "block-out"}`.
 - `global-auto-out` is a selector of the groups with `in_global`.
 - `nodes-tester` is a flat selector of all nodes for the tester plus `failsafe-out`: through it the monitor
-  probes the fallback outbound of groups.
+  probes the fallback outbound of groups. Nodes of `clients` subscriptions are only here: the tester checks them, router
+  traffic does not go through them.
 
 The `selector` and `urltest` fields of the branch are added to all selectors and to `failsafe-out`.
 
-The `clients` branch builds one group: `global-auto-out` with all nodes (`failsafe-out` by
-default) and `failsafe-out`; client configs refer only to it.
+The `clients` branch takes the leaf outbounds from `nodes.json`: the nodes of `clients` and `both` subscriptions that the
+tester listed for a client group (`pipeline.clients.groups`), and the nodes their `detour` points to. On top of them come the
+`clients` filters and `domain_resolver`. Each client group is a urltest `{tag}-auto-out`; the groups with `in_global` form the
+`global-auto-out` selector, which the client configs use. A group without nodes, a group the tester did not list and candidates
+older than 30 minutes are errors: `whnodes.json` stays as it was.
 
 ## Code map
 

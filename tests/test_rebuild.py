@@ -84,7 +84,7 @@ class RebuildWatchTest(unittest.TestCase):
         from nodes_common import raw as rawfmt
         from nodes_config import build
         raw = rawfmt.load(os.path.join(self.orch.data_dir, "raw", "router.json"))
-        fragment, _ = build.build([raw], self.cfg, "router", log=lambda m: None)
+        fragment, _ = build.build([raw], self.cfg, log=lambda m: None)
         with open(self.cfg.nodes_file, "w", encoding="utf-8") as fh:
             json.dump(fragment, fh)
         self.watch.check()

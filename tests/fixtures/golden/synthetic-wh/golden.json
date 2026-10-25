@@ -273,29 +273,14 @@
     {
       "tag": "global-auto-out",
       "type": "selector",
-      "default": "failsafe-out",
+      "default": "all-auto-out",
       "outbounds": [
-        "failsafe-out",
-        "ALPHA-vless|reality-out [afa8335a.48078dde]",
-        "ALPHA-vless|grpc|reality-out [02c0336d.0caa8d26]",
-        "ALPHA-vmess|ws|tls-out [d43ea9f2.b1d5a990]",
-        "ALPHA-trojan|ws|tls-out [b76e7429.684042e1]",
-        "ALPHA-trojan|tls-out [7aa2cafb.0325d053]",
-        "ALPHA-hy2-out [0e3dee30.436e3a1a]",
-        "ALPHA-hy2-out [f53e939e.436e3a1a]",
-        "ALPHA-ss-out [604f7b3a.1b1a3cf7]",
-        "ALPHA-ss-out [ea6dff04.fe717d64]",
-        "ALPHA-tuic-out [214d456f.639c3162]",
-        "ALPHA-anytls|tls-out [4e1e14ba.436e3a1a]",
-        "ALPHA-vless|reality-out [563dd6cc.87f862ed]",
-        "BETA-trojan|tls-out [a33a9ffd.4aab053c]",
-        "BETA-vmess|ws|tls-out [f3bf51fa.f2a4fc94]",
-        "Custom-vless|reality-out [35f8dcd4.6e35fde7]"
+        "all-auto-out"
       ],
       "interrupt_exist_connections": true
     },
     {
-      "tag": "failsafe-out",
+      "tag": "all-auto-out",
       "type": "urltest",
       "outbounds": [
         "ALPHA-vless|reality-out [afa8335a.48078dde]",

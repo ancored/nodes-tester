@@ -1,4 +1,4 @@
-"""nodes_config: raw ветви + config.json → nodes.json.
+"""nodes_config: raw + config.json → nodes.json роутера; nodes.json + кандидаты → whnodes.json.
 
 Эквивалентность на записанных подписках проверяет test_golden; здесь — собственные
 контракты стадии: фильтры с учётом причин, имена и ключи, группы из всех нод с запасными
@@ -59,8 +59,8 @@ def _cfg(**sections):
     return parse_config(data)
 
 
-def _build(raws=(RAW,), branch="router", **sections):
-    return build.build(list(raws), _cfg(**sections), branch, log=lambda m: None)
+def _build(raws=(RAW,), **sections):
+    return build.build(list(raws), _cfg(**sections), log=lambda m: None)
 
 
 def _leaves(frag):
@@ -123,14 +123,17 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(ai["default"], "direct-out")
         self.assertFalse(any(o["tag"] == "failsafe-out" for o in frag["outbounds"]))   # только строгие
 
-    def test_client_branch_one_global_group(self):
-        raw = _raw([("W", "x", _vless("10.0.1.1"))])
-        frag, _ = build.build([raw], parse_config({
-            "subscriptions": [{"tag": "W", "url": "https://w", "branch": "clients"}],
-            "pipeline": {"clients": {"domain_resolver": "dns-whitelist"}}}), "clients", log=lambda m: None)
-        tags = [o["tag"] for o in frag["outbounds"] if o["type"] in ("selector", "urltest")]
-        self.assertEqual(tags, ["global-auto-out", "failsafe-out"])
-        self.assertEqual(_leaves(frag)[0]["domain_resolver"], "dns-whitelist")
+    def test_client_subscriptions_only_in_tester_selector(self):
+        # Ноды подписок только для клиентов роутер проверяет, но трафик через них не пускает.
+        frag, _ = build.build([RAW, _raw([("W", "x", _vless("10.0.1.1"))])],
+                              _cfg(subscriptions=SUBS + [{"tag": "W", "url": "https://w", "branch": "clients"}],
+                                   groups=[{"tag": "eu"}]), log=lambda m: None)
+        by_tag = {o["tag"]: o for o in frag["outbounds"]}
+        wh = [o["tag"] for o in _leaves(frag) if o["tag"].startswith("W-")]
+        self.assertEqual(len(wh), 1)
+        self.assertIn(wh[0], by_tag["nodes-tester"]["outbounds"])
+        self.assertNotIn(wh[0], by_tag["eu-auto-out"]["outbounds"])
+        self.assertNotIn(wh[0], by_tag["failsafe-out"]["outbounds"])
 
     def test_same_access_from_two_subscriptions_is_one_node(self):
         # Тот же сервер с тем же аккаунтом у двух провайдеров — один доступ, одна нода.
@@ -156,6 +159,80 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(rep["dropped"]["protocol"], 3)      # promo отброшена раньше по имени
         failsafe = next(o for o in frag["outbounds"] if o["tag"] == "failsafe-out")
         self.assertEqual(failsafe["outbounds"], ["direct-out"])      # urltest не бывает пустым
+
+
+CLIENT_SUBS = SUBS + [{"tag": "W", "url": "https://w", "branch": "clients"},
+                      {"tag": "X", "url": "https://x", "branch": "both"}]
+
+
+def _client_setup(groups=None, **clients):
+    """nodes.json роутера с нодами A, B (роутер), W (клиенты), X (обе) и Config."""
+    raws = [RAW, _raw([("W", "w1", _vless("10.0.1.1")), ("W", "w2", _vless("10.0.1.2")),
+                       ("X", "x1", _vless("10.0.2.1"))])]
+    branch = {"domain_resolver": "dns-whitelist", **clients}
+    if groups is not None:
+        branch["groups"] = groups
+    cfg = _cfg(subscriptions=CLIENT_SUBS, pipeline={"router": {"exclude_types": ["shadowsocksr"]},
+                                                   "clients": branch})
+    frag, _ = build.build(raws, cfg, log=lambda m: None)
+    return frag, cfg, [o["tag"] for o in _leaves(frag)]
+
+
+class ClientBuildTest(unittest.TestCase):
+    def test_tested_client_nodes_in_groups(self):
+        frag, cfg, tags = _client_setup([{"tag": "whitelist", "require": {"whitelist": {}}},
+                                         {"tag": "spare", "in_global": False, "exclude_subscriptions": ["X"]}])
+        (w1, w2), x1 = [t for t in tags if t.startswith("W-")], next(t for t in tags if t.startswith("X-"))
+        a = next(t for t in tags if t.startswith("A-"))
+        # Кандидат с роутерной подписки A в клиентов не попадает: у подписки ветвь router.
+        out, rep = build.build_clients(frag, {"whitelist": [x1, w1, a], "spare": [w2, x1]}, cfg)
+        by_tag = {o["tag"]: o for o in out["outbounds"]}
+        self.assertEqual(by_tag["whitelist-auto-out"]["outbounds"], [w1, x1])     # порядок nodes.json
+        self.assertEqual(by_tag["whitelist-auto-out"]["type"], "urltest")
+        self.assertEqual(by_tag["spare-auto-out"]["outbounds"], [w2])
+        self.assertEqual(by_tag["global-auto-out"]["outbounds"], ["whitelist-auto-out"])
+        self.assertEqual([o["tag"] for o in _leaves(out)], [w1, w2, x1])
+        self.assertTrue(all(o["domain_resolver"] == "dns-whitelist" for o in _leaves(out)))
+        self.assertEqual(rep["groups"], {"whitelist": 2, "spare": 1})
+        self.assertEqual(next(o for o in frag["outbounds"] if o["tag"] == w1)["domain_resolver"],
+                         "bootstrap")                    # nodes.json роутера не тронут
+
+    def test_client_filters_and_empty_group(self):
+        frag, cfg, tags = _client_setup(exclude_protocols=["reality"])
+        with self.assertRaisesRegex(ValueError, "группа all: нет нод"):
+            build.build_clients(frag, {"all": tags}, cfg)
+        frag, cfg, tags = _client_setup()
+        with self.assertRaisesRegex(ValueError, "тестер не прислал"):
+            build.build_clients(frag, {}, cfg)
+
+    def test_detour_target_follows_node(self):
+        frag, cfg, tags = _client_setup()
+        w1, w2 = [t for t in tags if t.startswith("W-")]
+        next(o for o in frag["outbounds"] if o["tag"] == w1)["detour"] = w2
+        out, _ = build.build_clients(frag, {"all": [w1]}, cfg)
+        self.assertEqual([o["tag"] for o in _leaves(out)], [w1, w2])
+        self.assertEqual(next(o for o in out["outbounds"] if o["tag"] == "all-auto-out")["outbounds"], [w1])
+
+    def test_client_group_checks_limited(self):
+        from nodes_tester.config import ConfigError
+        for groups, error in (([{"tag": "ai", "require": {"openai": {}}}], "openai: неизвестное поле"),
+                              ([{"tag": "a", "in_global": False}], "in_global"),
+                              ([{"tag": "a", "exclude_subscriptions": ["A"]}], "нет подписки ветви clients 'A'"),
+                              ([{"tag": "a", "strict": True}], "strict: неизвестное поле")):
+            with self.subTest(groups=groups), self.assertRaisesRegex(ConfigError, error):
+                _client_setup(groups)
+
+    def test_cli_candidates_age(self):
+        frag, cfg, tags = _client_setup()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "c.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"ts": 1000, "groups": {"all": tags}}, f)
+            self.assertEqual(cli.load_candidates(path, now=1000 + 60), {"all": tags})
+            with self.assertRaisesRegex(ValueError, "не обновляет"):
+                cli.load_candidates(path, now=1000 + 3600)
+            with self.assertRaisesRegex(ValueError, "тестер не запущен"):
+                cli.load_candidates(os.path.join(tmp, "nope.json"))
 
 
 class CliTest(unittest.TestCase):

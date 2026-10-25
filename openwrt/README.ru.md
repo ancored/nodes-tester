@@ -6,7 +6,7 @@
 
 Инструкция для новой установки рядом с работающим sing-box. Если на роутере уже есть ручная установка nodes-tester, сначала сохраните конфиги и БД и остановите старый сервис: два экземпляра не должны управлять одними селекторами. Не накладывайте пакетную установку поверх старой вслепую.
 
-Инструкция относится к [релизу `v0.10.0-r2`](https://github.com/ancored/nodes-tester/releases/tag/v0.10.0-r2). Нужен sing-box 1.14 или новее.
+Инструкция относится к [релизу `v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). Нужен sing-box 1.14 или новее.
 
 ## Быстрая установка
 
@@ -79,7 +79,8 @@ apk add nodes-tester
 | `/etc/config/nodes-tester` | UCI: `main.config_dir`, `main.data_dir`, `tester.enabled` |
 | `/etc/nodes-tester/config.json` | Все настройки: подписки, группы и проверки, тестер, конвейер и расписание, админка ([описание полей](../docs/CONFIG.ru.md)) |
 | `/etc/nodes-tester/singbox/` | База, правила и клиентские файлы sing-box |
-| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Собранные ноды и группы роутера и клиентов |
+| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Собранные ноды и группы роутера и клиентов; `client-candidates.json` — ноды клиентских групп от тестера |
+| `/etc/sing-box-clients/` | Опубликованные клиентские конфиги; веб-сервер раздаёт `by-token/` (`pipeline.clients.output`) |
 | `/opt/nodes-tester/results/stats.db` | Результаты и статистика; создаются при работе |
 
 Это пути по умолчанию. Если меняете их в UCI, скорректируйте дальнейшие команды и связанные пути в JSON. `data_dir` должен быть на постоянном носителе; `/tmp` и `/var` на OpenWrt находятся в RAM. На роутере с небольшим флешем используйте подходящий USB-носитель.
@@ -118,8 +119,8 @@ apk add nodes-tester
 
 ```sh
 mkdir -p /opt/nodes-tester/raw
-nodes-tester fetch -c /etc/nodes-tester/config.json --branch router -o /opt/nodes-tester/raw/router.json --json
-nodes-tester config -c /etc/nodes-tester/config.json --branch router --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
+nodes-tester fetch -c /etc/nodes-tester/config.json -o /opt/nodes-tester/raw/router.json --json
+nodes-tester config -c /etc/nodes-tester/config.json --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
 ```
 
 Проверьте отчёт обеих команд: источники, ошибки и число собранных нод. При отказе защитной проверки fetch возвращает код `2` и сохраняет предыдущий raw; это не новое успешное обновление. Не продолжайте первый запуск с пустой или неудачно загруженной подпиской.

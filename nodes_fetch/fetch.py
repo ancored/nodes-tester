@@ -180,13 +180,13 @@ def summary(raw, previous=None, written=False, output=None):
             "sources": srcs}
 
 
-def providers_from_config(cfg, branch):
-    """Подписки ветви (router или clients) и параметры загрузки из единого config.json
-    (nodes_tester.config.Config) → вход load_providers."""
-    from nodes_tester.config import branch_subscriptions
+def providers_from_config(cfg):
+    """Подписки и параметры загрузки из единого config.json (nodes_tester.config.Config) →
+    вход load_providers. Опрашиваются подписки обеих ветвей: ноды клиентов тоже проверяет
+    тестер роутера."""
     fetch = cfg.pipeline.fetch
     subscribes = [{k: v for k, v in sub.items() if k not in ("branch", "exclude_names")}
-                  for sub in branch_subscriptions(cfg.subscriptions, branch)]
+                  for sub in cfg.subscriptions]
     for sub in subscribes:
         if sub.get("type") in ("url", "file"):
             del sub["type"]

@@ -6,7 +6,7 @@
 
 A guide for a new installation next to a running sing-box. If the router already has a manual nodes-tester installation, first save the configs and the database and stop the old service: two instances must not control the same selectors. Do not install the package on top of the old installation blindly.
 
-The guide applies to [release `v0.10.0-r2`](https://github.com/ancored/nodes-tester/releases/tag/v0.10.0-r2). sing-box 1.14 or newer is required.
+The guide applies to [release `v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). sing-box 1.14 or newer is required.
 
 ## Quick install
 
@@ -79,7 +79,8 @@ Building it yourself needs Docker: from the source root run `openwrt/build.sh` f
 | `/etc/config/nodes-tester` | UCI: `main.config_dir`, `main.data_dir`, `tester.enabled` |
 | `/etc/nodes-tester/config.json` | All settings: subscriptions, groups and checks, tester, pipeline and schedule, admin panel ([field reference](../docs/CONFIG.md)) |
 | `/etc/nodes-tester/singbox/` | sing-box base, rules and client files |
-| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Built nodes and groups of the router and the clients |
+| `/opt/nodes-tester/nodes.json`, `whnodes.json` | Built nodes and groups of the router and the clients; `client-candidates.json` — the client group nodes from the tester |
+| `/etc/sing-box-clients/` | Published client configs; the web server serves `by-token/` (`pipeline.clients.output`) |
 | `/opt/nodes-tester/results/stats.db` | Results and statistics; created while running |
 
 These are the default paths. If you change them in UCI, adjust the commands below and the related paths in JSON. `data_dir` must be on persistent storage; `/tmp` and `/var` on OpenWrt are in RAM. On a router with a small flash use a suitable USB drive.
@@ -118,8 +119,8 @@ Fetch the subscriptions and build the fragment without changing the running sing
 
 ```sh
 mkdir -p /opt/nodes-tester/raw
-nodes-tester fetch -c /etc/nodes-tester/config.json --branch router -o /opt/nodes-tester/raw/router.json --json
-nodes-tester config -c /etc/nodes-tester/config.json --branch router --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
+nodes-tester fetch -c /etc/nodes-tester/config.json -o /opt/nodes-tester/raw/router.json --json
+nodes-tester config -c /etc/nodes-tester/config.json --raw /opt/nodes-tester/raw/router.json -o /opt/nodes-tester/nodes.json --json
 ```
 
 Check the report of both commands: sources, errors and the number of built nodes. When the guard check fails, fetch returns code `2` and keeps the previous raw; this is not a new successful update. Do not continue the first run with an empty or failed subscription.

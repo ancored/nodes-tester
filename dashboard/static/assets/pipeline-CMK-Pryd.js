@@ -39,11 +39,14 @@ How the configuration is merged from the base and presets: [config assembly](../
 <a id="clients"></a>
 ## The clients run
 
-The client branch fetches the subscriptions of the \`clients\` branch, builds \`whnodes.json\` and, for every client of
-\`clients.list\`, merges it with the client base \`singbox/clients/base_<name>.json\` and the enabled client presets. Each config
-passes \`sing-box check\` before it is published to \`/etc/sing-box-clients/\`; a client whose config fails stays on the previous one.
-Files from \`singbox/clients/publish/\` are copied as they are. The client run does not touch the router sing-box. A web server that
-gives the files to the clients is configured separately.
+The client run fetches no subscriptions: it builds \`whnodes.json\` from \`nodes.json\` and the nodes that passed the checks of the
+[client groups](subscriptions.md#client-groups) on the router, and for every enabled [client](subscriptions.md#clients) merges it
+with the client base \`singbox/clients/base_<name>.json\` and the enabled client presets (or takes the ready file
+\`singbox/clients/publish/<name>.json\`). Each config passes \`sing-box check\` before it is published to \`/etc/sing-box-clients/\`
+and \`by-token/<token>.json\`; a client whose config fails stays on the previous one. The links of deleted and disabled clients and
+of old tokens stop working. A client group without nodes, or tester data older than 30 minutes, stops the run, and all clients keep
+their configs. The client run does not touch the router sing-box. The web server that gives the files to the clients is configured
+separately ([example](../../scripts/router/README.md#clients)).
 
 <a id="run"></a>
 ## Running by hand

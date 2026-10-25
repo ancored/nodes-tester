@@ -6,7 +6,7 @@
 #   nodes-tester config   [args]   python3 -m nodes_config
 #   nodes-tester tester   [args]   python3 -m nodes_tester -c <config_dir>/config.json
 #   nodes-tester vacuum            VACUUM stats.db вручную (по расписанию — сам тестер, storage.vacuum)
-#   nodes-tester pipeline router|clients|fetch [--dry-run]
+#   nodes-tester pipeline router|clients|fetch|apply|apply-clients [--dry-run]
 #   nodes-tester backup   [--stable] [--pkg FILE]   снимок перед обновлением
 #   nodes-tester rollback [-y] [--keep-db] [--check] [SNAPSHOT]
 #
@@ -33,7 +33,6 @@ case "$cmd" in
 	vacuum) exec python3 -m nodes_tester -c "$CONFIG_DIR/config.json" --vacuum ;;
 	pipeline)
 		PROJECT_DIR="$APP_DIR" DATA="$DATA_DIR" CFG_ROOT="$CONFIG_DIR" \
-		CLIENTS_FILE="${CLIENTS_FILE:-$CONFIG_DIR/clients.list}" \
 			exec "$APP_DIR/scripts/router/pipeline.sh" "$@" ;;
 	backup)   exec "$APP_DIR/scripts/router/backup-nodes-tester.sh" "$@" ;;
 	rollback) exec "$APP_DIR/scripts/router/rollback-nodes-tester.sh" "$@" ;;

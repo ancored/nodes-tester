@@ -3,22 +3,24 @@
 # pipeline.sh — конвейер на роутере (до оркестратора Ф5 его зовёт cron):
 #
 #   pipeline.sh router  [--dry-run]   подписки → nodes.json → правила → применение к sing-box
-#   pipeline.sh clients [--dry-run]   WH-подписки → whnodes.json → клиентские конфиги
-#   pipeline.sh fetch   [--dry-run]   только опрос подписок роутера → raw/router.json
+#   pipeline.sh clients [--dry-run]   проверенные тестером ноды nodes.json → whnodes.json →
+#                                     клиентские конфиги (подписки не загружаются)
+#   pipeline.sh fetch   [--dry-run]   только опрос подписок → raw/router.json
 #                                     (без сборки и применения; расписание — pipeline.fetch.every)
 #   pipeline.sh apply   [--dry-run]   база + пресеты правил → применение к текущему nodes.json
 #                                     (подписки не загружаются)
 #   pipeline.sh apply-clients [--dry-run]   базы клиентов + клиентские пресеты → клиентские
 #                                     конфиги по текущему whnodes.json (подписки не загружаются)
 #
-# router:  nodes_fetch (ветвь router) → nodes_config → $DATA/nodes.json →
-#          update-rules.sh → apply-nodes.sh (рестарт только при изменениях)
-# clients: nodes_fetch (ветвь clients) → nodes_config → $DATA/whnodes.json →
-#          build-clients.sh
+# router:  nodes_fetch (все подписки) → nodes_config → $DATA/nodes.json →
+#          update-rules.sh → apply-nodes.sh (рестарт только при изменениях); ноды подписок
+#          только для клиентов — в селекторе тестера, не в группах роутера
+# clients: nodes_config --branch clients ($DATA/nodes.json + кандидаты клиентских групп от
+#          тестера, $DATA/client-candidates.json) → $DATA/whnodes.json → build-clients.sh
 #
 # --dry-run: ничего боевого не трогает — nodes.json/whnodes.json пишутся в $DATA/*.dry.json,
 # правила не обновляются, apply-nodes/build-clients работают в --dry-run.
-# Настройки — $CFG_ROOT/config.json (подписки ветви, фильтры, группы).
+# Настройки — $CFG_ROOT/config.json (подписки, фильтры, группы, клиенты).
 # PROJECT_DIR по умолчанию — корень кода рядом со скриптом.
 # guard nodes_fetch (exit 2) не прерывает конвейер: raw остаётся прошлым, сборка идёт по нему.
 # Пресеты правил — $SINGBOX/presets/*.json (включённые склеиваются после нод по приоритету),
@@ -54,8 +56,8 @@ MODE="${1:-}"; DRY=0
 log() { echo "[pipeline] $*"; logger -t nodes-pipeline "$*" 2>/dev/null || true; }
 
 case "$MODE" in
-    router|apply|fetch) BRANCH=router; OUT="$DATA/nodes.json" ;;
-    clients|apply-clients) BRANCH=clients; OUT="$DATA/whnodes.json" ;;
+    router|apply|fetch) OUT="$DATA/nodes.json" ;;
+    clients|apply-clients) OUT="$DATA/whnodes.json" ;;
     *) echo "использование: pipeline.sh router|clients|fetch|apply|apply-clients [--dry-run]" >&2; exit 2 ;;
 esac
 SINGBOX="${SINGBOX:-$CFG_ROOT/singbox}"
@@ -90,9 +92,9 @@ mkdir -p "$DATA/raw"
 
 if [ "$MODE" = fetch ]; then
     if [ "$DRY" = 1 ]; then
-        python3 -m nodes_fetch -c "$CONFIG" --branch router --dry-run
+        python3 -m nodes_fetch -c "$CONFIG" --dry-run
     else
-        python3 -m nodes_fetch -c "$CONFIG" --branch router -o "$DATA/raw/router.json"
+        python3 -m nodes_fetch -c "$CONFIG" -o "$DATA/raw/router.json"
     fi
     code=$?
     case "$code" in
@@ -102,7 +104,20 @@ if [ "$MODE" = fetch ]; then
     esac
 fi
 
-python3 -m nodes_fetch -c "$CONFIG" --branch "$BRANCH" -o "$DATA/raw/$BRANCH.json"
+if [ "$MODE" = clients ]; then
+    [ -f "$DATA/nodes.json" ] || { log "нет $DATA/nodes.json — сначала соберите роутер (pipeline router)"; exit 1; }
+    python3 -m nodes_config -c "$CONFIG" --branch clients --nodes "$DATA/nodes.json" \
+        --candidates "$DATA/client-candidates.json" -o "$OUT" \
+        || { log "config: ошибка — $OUT и конфиги клиентов не тронуты"; exit 1; }
+    if [ "$DRY" = 1 ]; then
+        "$HERE/build-clients.sh" --dry-run "$OUT"
+    else
+        "$HERE/build-clients.sh" "$OUT"
+    fi
+    exit $?
+fi
+
+python3 -m nodes_fetch -c "$CONFIG" -o "$DATA/raw/router.json"
 code=$?
 case "$code" in
     0) ;;
@@ -110,20 +125,12 @@ case "$code" in
     *) log "fetch: ошибка ($code) — конвейер остановлен, боевые файлы не тронуты"; exit 1 ;;
 esac
 
-python3 -m nodes_config -c "$CONFIG" --branch "$BRANCH" --raw "$DATA/raw/$BRANCH.json" -o "$OUT" \
+python3 -m nodes_config -c "$CONFIG" --raw "$DATA/raw/router.json" -o "$OUT" \
     || { log "config: ошибка — $OUT не тронут"; exit 1; }
 
-if [ "$MODE" = router ]; then
-    if [ "$DRY" = 1 ]; then
-        BASE="$SINGBOX/base.json" "$HERE/apply-nodes.sh" --dry-run "$OUT"
-    else
-        "$HERE/update-rules.sh" || { log "обновление правил не удалось"; exit 1; }
-        "$HERE/apply-nodes.sh" "$OUT"
-    fi
+if [ "$DRY" = 1 ]; then
+    BASE="$SINGBOX/base.json" "$HERE/apply-nodes.sh" --dry-run "$OUT"
 else
-    if [ "$DRY" = 1 ]; then
-        "$HERE/build-clients.sh" --dry-run "$OUT"
-    else
-        "$HERE/build-clients.sh" "$OUT"
-    fi
+    "$HERE/update-rules.sh" || { log "обновление правил не удалось"; exit 1; }
+    "$HERE/apply-nodes.sh" "$OUT"
 fi

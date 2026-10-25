@@ -92,14 +92,13 @@ def _keys_by_provider(tags) -> dict[str, set]:
     return out
 
 
-def _branch_diff(app: App, branch: str, raw: dict) -> dict:
-    """Разница последнего опроса с действующим конфигом ветви по подпискам: сколько нод в
+def _diff(app: App, raw: dict) -> dict:
+    """Разница последнего опроса с действующим конфигом роутера по подпискам: сколько нод в
     конфиге, сколько дала бы сборка из опроса, новых и ушедших доступов."""
     from nodes_config import build
-    nodes_file = app.cfg.nodes_file if branch == "router" else app.cfg.whnodes_file
     try:
-        fragment, _ = build.build([raw], app.cfg, branch, log=lambda m: None)
-        with open(nodes_file, encoding="utf-8") as fh:
+        fragment, _ = build.build([raw], app.cfg, log=lambda m: None)
+        with open(app.cfg.nodes_file, encoding="utf-8") as fh:
             current = json.load(fh)
     except (OSError, ValueError, KeyError, TypeError):     # нет файла, битый raw или nodes.json
         return {}
@@ -112,29 +111,38 @@ def _branch_diff(app: App, branch: str, raw: dict) -> dict:
 
 
 def _subscription_states(app: App) -> dict:
-    """Состояние подписок по последнему raw (raw/router.json, raw/clients.json): tag →
-    {ok, count, last_ok_at, stale, error, meta, diff}; diff — разница с действующим конфигом.
-    Без оркестратора (нет каталога данных) — пусто."""
+    """Состояние подписок по последнему опросу (raw/router.json): tag → {ok, count, last_ok_at,
+    stale, error, meta, diff}; diff — разница с действующим конфигом. Без оркестратора (нет
+    каталога данных) — пусто."""
     orch = getattr(getattr(app, "runner", None), "orchestrator", None)
     if orch is None:
         return {}
-    folder = os.path.join(str(orch.data_dir), "raw")
+    try:
+        with open(os.path.join(str(orch.data_dir), "raw", "router.json"), encoding="utf-8") as fh:
+            raw = json.load(fh)
+        sources = raw.get("sources") or []
+    except (OSError, ValueError, AttributeError):
+        return {}
+    diff = _diff(app, raw)
     out = {}
-    for branch in ("router", "clients"):
-        try:
-            with open(os.path.join(folder, branch + ".json"), encoding="utf-8") as fh:
-                raw = json.load(fh)
-            sources = raw.get("sources") or []
-        except (OSError, ValueError, AttributeError):
-            continue
-        diff = _branch_diff(app, branch, raw)
-        for src in sources:
-            if isinstance(src, dict) and src.get("provider"):
-                state = {k: src.get(k) for k in ("ok", "count", "fetched_at", "last_ok_at", "stale",
-                                                 "error", "meta")}
-                state["diff"] = diff.get(src["provider"])
-                out[src["provider"]] = state
+    for src in sources:
+        if isinstance(src, dict) and src.get("provider"):
+            state = {k: src.get(k) for k in ("ok", "count", "fetched_at", "last_ok_at", "stale",
+                                             "error", "meta")}
+            state["diff"] = diff.get(src["provider"])
+            out[src["provider"]] = state
     return out
+
+
+def _client_candidates(app: App) -> "dict | None":
+    """Кандидаты клиентских групп от тестера: {ts, groups: {группа: число нод}}; нет файла — None."""
+    try:
+        with open(app.cfg.client_candidates_file, encoding="utf-8") as fh:
+            data = json.load(fh)
+        groups = data.get("groups") or {}
+        return {"ts": data.get("ts"), "groups": {g: len(tags) for g, tags in groups.items()}}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
 
 
 def register(app: App) -> None:
@@ -196,10 +204,11 @@ def register(app: App) -> None:
 
     @app.route("GET", "/api/config/subscription-options", needs_token=True)
     def subscription_options(app, req):
+        from nodes_admin import clients
         from nodes_fetch import device, happ_keys
         from nodes_fetch.happ import _HEADERS
         from nodes_fetch.util import DEFAULT_UA
-        from nodes_tester.config import BUILTIN_REGIONS, CHECKS, IP_KINDS
+        from nodes_tester.config import BUILTIN_REGIONS, CHECKS, CLIENT_CHECKS, IP_KINDS
         config_path = _config_path(app)
         device_path = device.default_path(config_path)
         hwid = device.read(device_path).get("hwid") or ""
@@ -216,4 +225,7 @@ def register(app: App) -> None:
             "happ_keys": {"default_url": happ_keys.DEFAULT_URL,
                           "path": happ_keys.default_path(config_path)},
             "branches": ["router", "clients"],
-            "sources": _subscription_states(app)}
+            "sources": _subscription_states(app),
+            "client_checks": list(CLIENT_CHECKS),
+            "clients": clients.state(app.cfg, os.path.join(os.path.dirname(config_path), "singbox")),
+            "client_groups": _client_candidates(app)}

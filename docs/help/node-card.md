@@ -13,7 +13,8 @@ stays valid while the node exists. The card of a node gone from the subscription
 - the name of the node in the subscription;
 - for a [chain](checks.md#entry) — entry country → exit country with the IPs and networks (ASN) of the entry and the exit, and an exit
   through Cloudflare WARP; for a direct node — its single IP;
-- badges: the groups whose reserve has the node, presence in the list, the rating, restrictions, “Selected by the switcher”;
+- badges: the groups of the node and its [client groups](subscriptions.md#client-groups), the groups whose reserve has the node,
+  presence in the list, the rating, restrictions, “Selected by the switcher”;
 - for a paused or quarantined node — until when, after that it is checked again.
 
 “Selected by the switcher” is the choice of the tester. It does not prove that the sing-box selector really points to the node
@@ -58,7 +59,8 @@ it up the queue ([tiers](groups.md#tiers)).
 <a id="results"></a>
 ## Results tab
 
-The latest result of each measurement and check with the time it was obtained. A failure has “Details” with the error text. No
+The latest result of each measurement and check with the time it was obtained, and the ip-api data of the last exit IP: its
+type with the network (ASN) and whether the country by the databases matches the measured one. A failure has “Details” with the error text. No
 results does not mean a failed check: the node may not have been measured yet. The meaning of each value is on the
 [Results](nodes.md#results) page.
 

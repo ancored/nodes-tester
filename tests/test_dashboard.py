@@ -194,31 +194,22 @@ class LifecycleGraveyardTest(unittest.TestCase):
         self.assertEqual(rows, {"ok": None, "gone": 1})    # ушедшая — для карточки, ключ без ноды — нет
         self.assertEqual([(g["crc"], g["title"]) for g in data["graveyard"]], [("gone", "DE old")])
 
-    def test_client_nodes_listed_with_whitelist_only(self):
+    def test_client_groups_from_whnodes(self):
         import json
         import os
         from types import SimpleNamespace
+        tag = "WH-SNI-vless|reality-out [bbbb0002.00000002]"
         wh = os.path.join(os.path.dirname(self.db), "whnodes.json")
         with open(wh, "w", encoding="utf-8") as fh:
-            json.dump({"outbounds": [{"type": "selector", "tag": "global-auto-out"},
-                                     {"type": "vless", "tag": "WH-SNI-vless|reality-out [bbbb0002.00000002]",
-                                      "server": "192.0.2.1"}]}, fh)
-        self.st._db.execute("INSERT INTO results (ts,crc,test,ok,metrics) VALUES (?,?,?,?,?)",
-                            (self.now, "bbbb0002.00000002", "whitelist", 1, '{"ip_ok": true, "ips": ["192.0.2.1"]}'))
+            json.dump({"outbounds": [{"type": "selector", "tag": "global-auto-out", "outbounds": ["whitelist-auto-out"]},
+                                     {"type": "urltest", "tag": "whitelist-auto-out", "outbounds": [tag]},
+                                     {"type": "vless", "tag": tag, "server": "192.0.2.1"}]}, fh)
+        self.st._db.execute("INSERT INTO nodes (crc, tag, provider, present) VALUES (?, ?, ?, 1)",
+                            ("bbbb0002.00000002", tag, "WH-SNI"))
         self.st._db.commit()
         data = D._collect(SimpleNamespace(storage=_Cfg(self.db), whnodes_file=wh))
         node = next(n for n in data["nodes"] if n["crc"] == "bbbb0002.00000002")
-        self.assertEqual((node["provider"], node["protocol"], node["wh_only"], node["score"]),
-                         ("WH-SNI", "vless|reality", 1, None))
-        row = next(r for r in data["results"]["rows"] if r["crc"] == "bbbb0002.00000002")
-        self.assertEqual((row["provider"], row["wh_only"], row["cells"]["whitelist"]["ok"]), ("WH-SNI", 1, 1))
-        # Раньше нода была у роутера (в архиве): в клиентской ветви её результаты не прячутся.
-        self.st._db.execute("INSERT INTO nodes (crc, tag, present) VALUES (?, ?, 0)",
-                            ("bbbb0002.00000002", "WH-SNI-vless|reality-out [bbbb0002.00000002]"))
-        self.st._db.commit()
-        data = D._collect(SimpleNamespace(storage=_Cfg(self.db), whnodes_file=wh))
-        row = next(r for r in data["results"]["rows"] if r["crc"] == "bbbb0002.00000002")
-        self.assertEqual((row["wh_only"], row.get("removed")), (1, None))
+        self.assertEqual((node["provider"], node["client_groups"], node["groups"]), ("WH-SNI", ["whitelist"], []))
 
 
 if __name__ == "__main__":

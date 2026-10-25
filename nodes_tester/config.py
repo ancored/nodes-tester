@@ -271,6 +271,18 @@ def _group_checks(obj, path: str, checks: dict) -> dict[str, dict]:
     return out
 
 
+def _group_tag(item: dict, path: str, seen: set) -> str:
+    """Тег группы (уникальный в своём списке); добавляется в seen."""
+    tag = item.get("tag")
+    if not isinstance(tag, str) or not _TAG.fullmatch(tag) or tag in ("global", "nodes", "failsafe"):
+        raise ConfigError(f"{path}.tag: латиница в нижнем регистре, цифры и _; не global, nodes, "
+                          f"failsafe (получено {tag!r})")
+    if tag in seen:
+        raise ConfigError(f"{path}.tag: группа {tag!r} уже есть")
+    seen.add(tag)
+    return tag
+
+
 def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleConfig") -> list[GroupConfig]:
     if obj is None:
         obj = [{"tag": "all"}]
@@ -281,13 +293,7 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
         path = f"groups[{i}]"
         item = _fields(item, path, ("tag", "strict", "direct_fallback", "in_global", "reserve",
                                     "tier_floor", "require", "prefer", "monitor", "exclude_subscriptions"))
-        tag = item.get("tag")
-        if not isinstance(tag, str) or not _TAG.fullmatch(tag) or tag in ("global", "nodes", "failsafe"):
-            raise ConfigError(f"{path}.tag: латиница в нижнем регистре, цифры и _; не global, nodes, "
-                              f"failsafe (получено {tag!r})")
-        if tag in seen:
-            raise ConfigError(f"{path}.tag: группа {tag!r} уже есть")
-        seen.add(tag)
+        tag = _group_tag(item, path, seen)
         group = GroupConfig(tag=tag, strict=_bool(item, "strict", path, False),
                             direct_fallback=_bool(item, "direct_fallback", path, False),
                             in_global=_bool(item, "in_global", path, True),
@@ -307,6 +313,41 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
                     raise ConfigError(f"{path}.{part}.country.{key}: неизвестный регион {unknown[0]!r} "
                                       f"(есть: {', '.join(sorted(regions))})")
         out.append(group)
+    return out
+
+
+# Проверки, которые тестер ведёт для каждой ноды (замеры, ip-api, белые списки): по ним можно
+# отбирать ноды клиентских групп. Проверки доступа к сервисам и heavy гоняет только резерв
+# групп роутера.
+CLIENT_CHECKS = ("country", "ip_type", "geo_consistent", "whitelist")
+
+
+def _client_groups(obj, checks: dict, regions: dict) -> list[GroupConfig]:
+    """pipeline.clients.groups: urltest `{tag}-auto-out` клиентов из нод, прошедших обязательные
+    проверки на роутере; группы с in_global — в global-auto-out (на неё ссылаются базы клиентов)."""
+    path = "pipeline.clients.groups"
+    if obj is None:
+        obj = [{"tag": "all"}]
+    if not isinstance(obj, list):
+        raise ConfigError(f"{path}: ожидается список групп")
+    out, seen = [], set()
+    for i, item in enumerate(obj):
+        ipath = f"{path}[{i}]"
+        item = _fields(item, ipath, ("tag", "in_global", "require", "exclude_subscriptions"))
+        tag = _group_tag(item, ipath, seen)
+        require = _fields(item.get("require"), f"{ipath}.require", CLIENT_CHECKS)
+        group = GroupConfig(tag=tag, in_global=_bool(item, "in_global", ipath, True),
+                            require=_group_checks(require, f"{ipath}.require", checks),
+                            exclude_subscriptions=_strings(item, "exclude_subscriptions", ipath))
+        unknown = [r for key in ("regions", "exclude_regions")
+                   for r in group.require.get("country", {}).get(key, []) if r not in regions]
+        if unknown:
+            raise ConfigError(f"{ipath}.require.country: неизвестный регион {unknown[0]!r} "
+                              f"(есть: {', '.join(sorted(regions))})")
+        out.append(group)
+    if out and not any(g.in_global for g in out):
+        raise ConfigError(f"{path}: нужна хотя бы одна группа с in_global — базы клиентов ссылаются "
+                          f"на global-auto-out")
     return out
 
 
@@ -662,7 +703,8 @@ class FetchConfig:
 
 @dataclass
 class BranchConfig:
-    """Ветвь сборки: router (nodes.json для sing-box роутера) или clients (whnodes.json)."""
+    """Ветвь сборки: router (nodes.json для sing-box роутера) или clients (whnodes.json из
+    проверенных на роутере нод)."""
     enabled: bool = True
     at: list[str] = field(default_factory=list)
     exclude_types: list[str] = field(default_factory=list)
@@ -671,6 +713,9 @@ class BranchConfig:
     selector: dict = field(default_factory=dict)
     urltest: dict = field(default_factory=dict)
     rebuild: dict = field(default_factory=dict)
+    groups: list[GroupConfig] = field(default_factory=list)   # только clients
+    output: str = "/etc/sing-box-clients"     # clients: куда публикуются конфиги
+    url: str = ""                             # clients: адрес раздачи (ссылка = url + токен)
 
 
 @dataclass
@@ -685,12 +730,11 @@ _REBUILD_DEFAULTS = {"degraded_for": 900.0, "few_candidates_for": 3600.0, "gone_
 _TIME = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 
-def _branch(obj, name: str) -> BranchConfig:
+def _branch(obj, name: str, checks: dict, regions: dict) -> BranchConfig:
     path = f"pipeline.{name}"
     allowed = ["enabled", "at", "exclude_types", "exclude_protocols", "domain_resolver",
                "selector", "urltest"]
-    if name == "router":
-        allowed.append("rebuild")
+    allowed += ["rebuild"] if name == "router" else ["groups", "output", "url"]
     d = getattr(PipelineConfig(), name)
     obj = _fields(obj, path, allowed)
     at = _strings(obj, "at", path, d.at)
@@ -704,6 +748,9 @@ def _branch(obj, name: str) -> BranchConfig:
             raise ConfigError(f"{path}.{key}: ожидается объект полей группы sing-box")
     rpath = f"{path}.rebuild"
     rebuild = _fields(obj.get("rebuild"), rpath, _REBUILD_DEFAULTS)
+    url = _string(obj, "url", path, d.url)
+    if url and not re.fullmatch(r"https?://[^/\s]+/(\S*/)?", url):
+        raise ConfigError(f"{path}.url: нужен адрес вида https://хост:порт/ (с / в конце), получено {url!r}")
     return BranchConfig(
         enabled=_bool(obj, "enabled", path, True), at=at,
         exclude_types=_strings(obj, "exclude_types", path),
@@ -711,10 +758,12 @@ def _branch(obj, name: str) -> BranchConfig:
         domain_resolver=_string(obj, "domain_resolver", path, d.domain_resolver),
         selector=dict(obj.get("selector") or {}), urltest=dict(obj.get("urltest") or {}),
         rebuild={k: (_number(rebuild, k, rpath, v, 0, 1) if k == "gone_share" else _duration(rebuild, k, rpath, v))
-                 for k, v in _REBUILD_DEFAULTS.items()})
+                 for k, v in _REBUILD_DEFAULTS.items()},
+        groups=_client_groups(obj.get("groups"), checks, regions) if name == "clients" else [],
+        output=_string(obj, "output", path, d.output) or d.output, url=url)
 
 
-def _pipeline(obj) -> PipelineConfig:
+def _pipeline(obj, checks: dict, regions: dict) -> PipelineConfig:
     path, d = "pipeline", PipelineConfig()
     obj = _fields(obj, path, ("timeout", "fetch", "router", "clients"))
     fpath, f = f"{path}.fetch", FetchConfig()
@@ -732,8 +781,8 @@ def _pipeline(obj) -> PipelineConfig:
                           keep_stale=_duration(fetch, "keep_stale", fpath, f.keep_stale),
                           min_ratio=_number(fetch, "min_ratio", fpath, f.min_ratio, 0, 1),
                           happ_keys_url=_string(fetch, "happ_keys_url", fpath, f.happ_keys_url)),
-        router=_branch(obj.get("router"), "router"),
-        clients=_branch(obj.get("clients"), "clients"))
+        router=_branch(obj.get("router"), "router", checks, regions),
+        clients=_branch(obj.get("clients"), "clients", checks, regions))
 
 
 @dataclass
@@ -942,21 +991,57 @@ def _subscriptions(obj) -> list[dict]:
     return out
 
 
-def branch_subscriptions(subscriptions: list[dict], branch: str) -> list[dict]:
-    """Подписки ветви сборки: router или clients (both — в обе)."""
-    return [s for s in subscriptions if s.get("branch", "router") in (branch, "both")]
+def branch_subscriptions(subscriptions: list[dict], branch: str) -> list[str]:
+    """Теги подписок, чьи ноды идут в группы ветви: router или clients (both — в обе). Опрашиваются
+    и тестируются на роутере все подписки: ноды подписок только для клиентов в sing-box роутера
+    есть лишь в селекторе тестера."""
+    return [s["tag"] for s in subscriptions if s.get("branch", "router") in (branch, "both")]
+
+
+# --- Клиенты ---------------------------------------------------------------
+
+CLIENT_NAME = re.compile(r"[A-Za-z0-9_-]+")
+CLIENT_TOKEN = re.compile(r"[A-Za-z0-9_-]{16,}")
+
+
+def _clients(obj) -> list[dict]:
+    """Клиенты: имя (база singbox/clients/base_<имя>.json или готовый файл clients/publish/<имя>.json)
+    и секретный токен ссылки; enabled: false — конфиг не собирается, ссылка не работает."""
+    if obj is None:
+        return []
+    if not isinstance(obj, list):
+        raise ConfigError("clients: ожидается список клиентов")
+    out, names, tokens = [], set(), set()
+    for i, item in enumerate(obj):
+        path = f"clients[{i}]"
+        item = _fields(item, path, ("name", "token", "enabled"))
+        name, token = item.get("name"), item.get("token")
+        if not isinstance(name, str) or not CLIENT_NAME.fullmatch(name):
+            raise ConfigError(f"{path}.name: латиница, цифры, _ и - (получено {name!r})")
+        if not isinstance(token, str) or not CLIENT_TOKEN.fullmatch(token):
+            raise ConfigError(f"{path}.token: не короче 16 символов из латиницы, цифр, _ и -")
+        if name in names:
+            raise ConfigError(f"{path}.name: клиент {name!r} уже есть")
+        if token in tokens:
+            raise ConfigError(f"{path}.token: такой токен уже у другого клиента")
+        names.add(name)
+        tokens.add(token)
+        out.append({"name": name, "token": token, "enabled": _bool(item, "enabled", path, True)})
+    return out
 
 
 # --- Конфиг целиком --------------------------------------------------------
 
-_SECTIONS = ("$schema", "api", "subscriptions", "tests", "checks", "regions", "groups", "rating",
-             "selection", "tester", "monitor", "pipeline", "storage", "admin", "notify", "singbox")
+_SECTIONS = ("$schema", "api", "subscriptions", "clients", "tests", "checks", "regions", "groups",
+             "rating", "selection", "tester", "monitor", "pipeline", "storage", "admin", "notify",
+             "singbox")
 
 
 @dataclass
 class Config:
     api: ApiConfig = field(default_factory=ApiConfig)
     subscriptions: list[dict] = field(default_factory=list)
+    clients: list[dict] = field(default_factory=list)
     tests: dict[str, dict] = field(default_factory=dict)
     checks: dict[str, dict] = field(default_factory=dict)
     regions: dict[str, list[str]] = field(default_factory=dict)
@@ -979,6 +1064,11 @@ class Config:
     def whnodes_file(self) -> str:
         return os.path.join(os.path.dirname(self.nodes_file), "whnodes.json")
 
+    @property
+    def client_candidates_file(self) -> str:
+        """Кандидаты клиентских групп по проверкам тестера — вход сборки клиентов."""
+        return os.path.join(os.path.dirname(self.nodes_file), "client-candidates.json")
+
     def raw_file(self, branch: str) -> str:
         """raw ветви (выход опроса подписок) — в raw/ рядом с nodes.json."""
         return os.path.join(os.path.dirname(self.nodes_file), "raw", f"{branch}.json")
@@ -996,18 +1086,22 @@ def parse_config(data: Any) -> Config:
     monitor = _monitor(data.get("monitor"))
     subscriptions = _subscriptions(data.get("subscriptions"))
     groups = _groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors)
-    router_subs = {s["tag"] for s in subscriptions if s.get("branch", "router") == "router"}
-    for i, group in enumerate(groups):
-        unknown = [t for t in group.exclude_subscriptions if t not in router_subs]
-        if unknown:
-            raise ConfigError(f"groups[{i}].exclude_subscriptions: нет подписки роутера {unknown[0]!r}")
+    pipeline = _pipeline(data.get("pipeline"), checks, regions)
+    for path, branch, items in (("groups", "router", groups),
+                                ("pipeline.clients.groups", "clients", pipeline.clients.groups)):
+        own = branch_subscriptions(subscriptions, branch)
+        for i, group in enumerate(items):
+            unknown = [t for t in group.exclude_subscriptions if t not in own]
+            if unknown:
+                raise ConfigError(f"{path}[{i}].exclude_subscriptions: нет подписки ветви {branch} "
+                                  f"{unknown[0]!r}")
     return Config(api=_api(data.get("api")),
-                  subscriptions=subscriptions,
+                  subscriptions=subscriptions, clients=_clients(data.get("clients")),
                   tests=_tests(data.get("tests")), checks=checks, regions=regions,
                   groups=groups,
                   rating=_rating(data.get("rating")), selection=selection,
                   tester=_tester(data.get("tester")), monitor=monitor,
-                  pipeline=_pipeline(data.get("pipeline")), storage=_storage(data.get("storage")),
+                  pipeline=pipeline, storage=_storage(data.get("storage")),
                   admin=_admin(data.get("admin")), notify=_notify(data.get("notify")),
                   singbox=_singbox(data.get("singbox")))
 

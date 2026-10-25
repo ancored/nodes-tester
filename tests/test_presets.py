@@ -290,7 +290,7 @@ class PresetApiTest(unittest.TestCase):
         (clients / "presets").mkdir(parents=True)
         (clients / "base_a.json").write_text('{"log": {}}', encoding="utf-8")
         (clients / "base_b.json").write_text('{"log": {"level": "warn"}}', encoding="utf-8")
-        (self.config / "clients.list").write_text("# клиенты\na\nb  # второй\nc\n", encoding="utf-8")
+        self.app.cfg.clients = [{"name": n, "token": "t" * 16 + n, "enabled": n != "d"} for n in "abcd"]
         whnodes = Path(self.temp.name) / "whnodes.json"
         whnodes.write_text(json.dumps({"outbounds": [{"tag": "global-auto-out"}]}), encoding="utf-8")
         return clients

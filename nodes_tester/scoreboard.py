@@ -365,6 +365,16 @@ class Scoreboard:
                      "ts": self._check_ts(r, check)}
                     for part in ("require", "prefer") for check, params in getattr(g, part).items()]
 
+    def fitting(self, group, providers) -> list[str]:
+        """Ноды подписок providers, прошедшие обязательные проверки группы group (GroupConfig вне
+        политики роутера — клиентская группа): рейтинг выше 0, без ограничений; лучшие первыми."""
+        with self._lock:
+            rows = [r for r in self.rows.values()
+                    if r.get("provider") in providers and float(r.get("score") or 0) > 0
+                    and r.get("id") not in self._restricted
+                    and all(self._verdict(r, c, p) == "1" for c, p in group.require.items())]
+            return [r["node"] for r in sorted(rows, key=lambda r: float(r["score"]), reverse=True)]
+
     def node_by_key(self, key: str) -> "str | None":
         """Тег ноды по ключу node_crc.cred_crc."""
         with self._lock:

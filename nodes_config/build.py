@@ -1,4 +1,5 @@
-"""Стадия nodes_config: raw ветви + config.json → фрагмент nodes.json (ноды и группы sing-box).
+"""Стадия nodes_config: raw + config.json → фрагмент nodes.json (ноды и группы sing-box роутера);
+nodes.json + кандидаты клиентских групп → whnodes.json клиентов.
 
 Порядок операций:
   1. raw → рабочие ноды (tag = исходное имя в подписке, _provider);
@@ -11,11 +12,16 @@
 
 Страну сборка не определяет и ноды по ней не делит: в каждой группе все ноды, а какую
 активировать, решает тестер по проверкам группы.
+
+Клиенты (build_clients): ноды берутся из nodes.json роутера — их уже проверил тестер. В группу
+клиента идут ноды подписок ветви clients, прошедшие обязательные проверки группы (кандидаты
+тестер записывает в client-candidates.json); фильтры и domain_resolver — pipeline.clients.
 """
 
 from collections import Counter
 
-from naming import node_key, node_payload, node_protocol
+from naming import node_key, node_payload, node_protocol, parse_node
+from nodes_tester.config import branch_subscriptions
 
 from . import groups
 
@@ -93,37 +99,82 @@ def finalize_nodes(nodes, branch, exclude_names, dropped):
     return kept
 
 
-def build(raws, cfg, branch_name="router", log=print):
-    """raw-конверты ветви + Config (nodes_tester.config) → (фрагмент, отчёт).
+def _fragment(leaf_nodes, group_outbounds):
+    """Ноды и группы → фрагмент. В sing-box 1.14 wireguard-outbound удалён: WG-узлы живут в
+    endpoints[] (type:"wireguard"). Их теги остаются в едином пространстве с outbounds, поэтому
+    селекторы/urltest по-прежнему на них ссылаются."""
+    wg_eps = [n for n in leaf_nodes if n.get('type') == 'wireguard']
+    non_wg = [n for n in leaf_nodes if n.get('type') != 'wireguard']
+    fragment = {'outbounds': non_wg + group_outbounds}
+    if wg_eps:
+        fragment['endpoints'] = wg_eps
+    return fragment
+
+
+def build(raws, cfg, log=print):
+    """raw-конверты + Config (nodes_tester.config) → (фрагмент роутера, отчёт).
     Фрагмент — {"outbounds": […], "endpoints": […]?} для склейки с базой."""
-    branch = getattr(cfg.pipeline, branch_name)
+    branch = cfg.pipeline.router
     exclude_names = {s["tag"]: s.get("exclude_names") or [] for s in cfg.subscriptions}
     dropped = Counter({k: 0 for k in ("type", "name", "ungrouped_protocol", "protocol", "duplicate")})
     nodes = raw_to_nodes(raws)
     total = len(nodes)
     leaf_nodes = finalize_nodes(nodes, branch, exclude_names, dropped)
     tags = [n['tag'] for n in leaf_nodes]
-    if branch_name == "router":
-        group_outbounds = groups.router_groups(tags, cfg.groups, branch.selector, branch.urltest,
-                                               {n['tag']: n['_provider'] for n in leaf_nodes})
-    else:
-        group_outbounds = groups.client_groups(tags, branch.selector, branch.urltest)
+    tester_only = {s["tag"] for s in cfg.subscriptions if s.get("branch") == "clients"}
+    group_outbounds = groups.router_groups(tags, cfg.groups, branch.selector, branch.urltest,
+                                           {n['tag']: n['_provider'] for n in leaf_nodes}, tester_only)
     for node in leaf_nodes:
         for key in _META_KEYS:
             node.pop(key, None)
-    # В sing-box 1.14 wireguard-outbound удалён: WG-узлы живут в endpoints[]
-    # (type:"wireguard"). Их теги остаются в едином пространстве с outbounds, поэтому
-    # селекторы/urltest по-прежнему на них ссылаются.
-    wg_eps = [n for n in leaf_nodes if n.get('type') == 'wireguard']
-    non_wg = [n for n in leaf_nodes if n.get('type') != 'wireguard']
-    fragment = {'outbounds': non_wg + group_outbounds}
-    if wg_eps:
-        fragment['endpoints'] = wg_eps
     if not leaf_nodes:
         log("  [groups] нод нет: группы ведут на запасные outbound-ы")
     report = {"raw_nodes": total, "leaf_nodes": len(leaf_nodes), "groups": len(group_outbounds),
               "dropped": {k: v for k, v in dropped.items() if v}}
-    return fragment, report
+    return _fragment(leaf_nodes, group_outbounds), report
+
+
+def build_clients(fragment, candidates, cfg):
+    """nodes.json роутера + {группа: теги кандидатов} → (whnodes.json, отчёт). Группа без нод —
+    ValueError: прежний whnodes.json и конфиги клиентов остаются."""
+    branch = cfg.pipeline.clients
+    own = set(branch_subscriptions(cfg.subscriptions, "clients"))
+    dropped = Counter({k: 0 for k in ("type", "ungrouped_protocol", "protocol")})
+    leaves, provider = {}, {}
+    for ob in fragment.get("outbounds", []) + fragment.get("endpoints", []):
+        ident = parse_node(str(ob.get("tag", "")))
+        if ident.node_id:
+            leaves[ob["tag"]], provider[ob["tag"]] = ob, ident.provider
+    usable = [tag for tag, ob in leaves.items() if provider[tag] in own
+              and not _excluded(dict(ob, _provider=provider[tag]), branch, {}, dropped)]
+    members = {}
+    for g in branch.groups:
+        if g.tag not in candidates:
+            raise ValueError(f"группа {g.tag}: тестер не прислал кандидатов (перезапустите тестер "
+                             f"после правки групп)")
+        fits, allowed = set(candidates[g.tag]), own - set(g.exclude_subscriptions)
+        members[g.tag] = [t for t in usable if t in fits and provider[t] in allowed]
+        if not members[g.tag]:
+            raise ValueError(f"группа {g.tag}: нет нод, прошедших её проверки на роутере")
+    chosen = {t for tags in members.values() for t in tags}
+    pending = list(chosen)
+    while pending:                     # detour цепочки — вместе с нодой, на которую он ведёт
+        target = leaves[pending.pop()].get("detour")
+        if target in leaves and target not in chosen:
+            chosen.add(target)
+            pending.append(target)
+    leaf_nodes = []
+    for tag, ob in leaves.items():
+        if tag not in chosen:
+            continue
+        node = dict(ob)
+        if node.get("type") != "wireguard":
+            node["domain_resolver"] = branch.domain_resolver
+        leaf_nodes.append(node)
+    group_outbounds = groups.client_groups(members, branch.groups, branch.selector, branch.urltest)
+    report = {"leaf_nodes": len(leaf_nodes), "groups": {tag: len(m) for tag, m in members.items()},
+              "dropped": {k: v for k, v in dropped.items() if v}}
+    return _fragment(leaf_nodes, group_outbounds), report
 
 
 def tags(fragment):

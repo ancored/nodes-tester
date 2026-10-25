@@ -7,7 +7,7 @@ import Msg from '../components/Msg.vue'
 import HelpButton from '../components/HelpButton.vue'
 
 // Две ветки с одинаковым устройством: роутер (presets/ + nodes.json → sing-box роутера)
-// и клиенты (clients/presets/ + whnodes.json → конфиги из clients.list).
+// и клиенты (clients/presets/ + whnodes.json → конфиги клиентов из раздела clients config.json).
 const BRANCHES = {
   router: {
     title: t('Router'), dir: 'presets/', nodes: 'nodes.json', mode: 'apply',
@@ -137,7 +137,7 @@ onBeforeUnmount(() => clearTimeout(timer))
       </div>
       <p v-if="presets.some(p => p.missing_groups?.length)" class="notice bad">{{ t('Missing groups are enabled in “Subscriptions and build” → “Build parameters”.') }}</p>
       <p class="mut">{{ t('Groups in the current {file}: {groups}.', { file: b.nodes, groups: groups ? groups.join(', ') : t('unknown') }) }}</p>
-      <p v-if="branch === 'clients'" class="mut">{{ t('Clients from clients.list: {clients}.', { clients: clients.length ? clients.join(', ') : t('none') }) }}</p>
+      <p v-if="branch === 'clients'" class="mut">{{ t('Clients: {clients}.', { clients: clients.length ? clients.join(', ') : t('none') }) }} <RouterLink to="/subscriptions">{{ t('The list and links are in “Subscriptions and build” → “Clients”.') }}</RouterLink></p>
     </section>
     <section class="panel">
       <h2>{{ branch === 'clients' ? t('Client build') : t('Applying') }}<HelpButton :topic="branch === 'clients' ? 'rules#clients' : 'rules#apply'" /></h2>

@@ -270,11 +270,12 @@ class SchemaContractTest(FetchTestBase):
             {"tag": "A", "url": "https://a"}, {"tag": "W", "url": "https://w", "branch": "clients"},
             {"tag": "B", "url": "https://b", "branch": "both"}],
             "pipeline": {"fetch": {"keep_stale": "12h", "timeout": "1m"}}})
-        router = fetch.providers_from_config(cfg, "router")
-        self.assertEqual([s["tag"] for s in router["subscribes"]], ["A", "B"])
-        self.assertEqual([s["tag"] for s in fetch.providers_from_config(cfg, "clients")["subscribes"]], ["W", "B"])
-        self.assertEqual((router["fetch"]["stale_max_hours"], router["fetch"]["timeout"]), (12, 60))
-        fetch.load_providers(router, log=lambda m: None)
+        # Опрашиваются подписки обеих ветвей: клиентские ноды тоже проверяет тестер роутера.
+        providers = fetch.providers_from_config(cfg)
+        self.assertEqual([s["tag"] for s in providers["subscribes"]], ["A", "W", "B"])
+        self.assertFalse(any("branch" in s for s in providers["subscribes"]))
+        self.assertEqual((providers["fetch"]["stale_max_hours"], providers["fetch"]["timeout"]), (12, 60))
+        fetch.load_providers(providers, log=lambda m: None)
 
 
 if __name__ == "__main__":

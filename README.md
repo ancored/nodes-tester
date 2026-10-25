@@ -34,20 +34,20 @@ Manual install:
    is explained in detail in the [help](docs/help/README.md), with flowcharts of the algorithms; the admin panel shows it
    by the **?** icons.
 
-Current release: [`v0.10.0-r2`](https://github.com/ancored/nodes-tester/releases/tag/v0.10.0-r2). It needs sing-box 1.14 or newer with the API service (`services[type=api]`). The release has an `.apk` for OpenWrt 25.x. OpenWrt 24.10 needs a separately built `.ipk`. The package is signed with the project key and is available from the `apk` repository on GitHub Pages; how to add it is described in the [guide](openwrt/README.md).
+Current release: [`v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). It needs sing-box 1.14 or newer with the API service (`services[type=api]`). The release has an `.apk` for OpenWrt 25.x. OpenWrt 24.10 needs a separately built `.ipk`. The package is signed with the project key and is available from the `apk` repository on GitHub Pages; how to add it is described in the [guide](openwrt/README.md).
 
 ## How updates work
 
 ```text
-Router subscriptions → fetch → raw/router.json → build → nodes.json
-                                              + sing-box base and rules
-                                              → check → apply → connectivity check
+All subscriptions → fetch → raw/router.json → build → nodes.json
+                                           + sing-box base and rules
+                                           → check → apply → connectivity check
 
-Client subscriptions → fetch → whnodes.json + client bases
-                                  → /etc/sing-box-clients/ → web server → client links
+nodes.json + nodes checked by the tester for the client groups → whnodes.json + client bases
+                                  → /etc/sing-box-clients/by-token/ → web server → client links
 ```
 
-The pipeline keeps the previous data when a fetch fails, checks the resulting config before replacing it and brings back the working version if connectivity is lost after a restart. The client branch builds separate files and does not switch the router sing-box. Details and the manual run order are in the [guide](docs/USAGE.md#how-subscriptions-and-configs-are-updated).
+The pipeline keeps the previous data when a fetch fails, checks the resulting config before replacing it and brings back the working version if connectivity is lost after a restart. The router tester checks the nodes of client subscriptions too, so the clients get only measured nodes; the client branch builds separate files and does not switch the router sing-box. Details and the manual run order are in the [guide](docs/USAGE.md#how-subscriptions-and-configs-are-updated).
 
 The admin panel shows the tester state, measurement history, traffic and switches. In it you can configure subscriptions and groups, run the pipeline, set the schedule, read the logs, edit the sing-box source files and manage nodes. The “Rules” page checks and applies the base with presets without fetching subscriptions again. Changes need the administrator token. The same state and actions are available to MCP clients at `/mcp` ([tools](dashboard/README.md#mcp)). The interface is in English and Russian: the browser language by default, the choice is remembered.
 
