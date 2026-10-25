@@ -8,7 +8,7 @@
 The images switch automatically between the GitHub light and dark themes. Click a
 screenshot to open it in full size.
 
-The gallery was taken for the 0.5.0 interface on demo data, before the interface became bilingual, so the screenshots show the Russian interface. The current workflow is described in the [guide](../USAGE.md).
+The gallery shows the 0.11.0 interface on demo data; the Russian interface is in the [Russian gallery](README.ru.md). The current workflow is described in the [guide](../USAGE.md).
 
 ## Main screens
 
@@ -200,13 +200,25 @@ The gallery was taken for the 0.5.0 interface on demo data, before the interface
   <img alt="Node groups" src="groups-light.png">
 </picture>
 
-### Group membership preview
+### Client node groups
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="groups-preview.png">
-  <source media="(prefers-color-scheme: light)" srcset="groups-preview-light.png">
-  <img alt="Group membership preview" src="groups-preview-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="client-groups.png">
+  <source media="(prefers-color-scheme: light)" srcset="client-groups-light.png">
+  <img alt="Client node groups" src="client-groups-light.png">
 </picture>
+
+A client group is a urltest of the nodes that passed its checks on the router, for example the whitelists.
+
+### Clients and links
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="clients.png">
+  <source media="(prefers-color-scheme: light)" srcset="clients-light.png">
+  <img alt="Clients and their links" src="clients-light.png">
+</picture>
+
+The client list, link tokens and the state of every config.
 
 ### Rules and presets
 

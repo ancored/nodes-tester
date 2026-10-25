@@ -7,9 +7,9 @@
 Проект работает с уже установленным sing-box. Он не устанавливает прокси-ядро и не настраивает маршрутизацию роутера за пользователя. Для первого запуска нужны SSH-доступ и знание основ конфигурации sing-box.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/overview-light.png">
-  <img alt="Обзор состояния nodes-tester в веб-админке" src="docs/screenshots/overview-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ru/overview.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/ru/overview-light.png">
+  <img alt="Обзор состояния nodes-tester в веб-админке" src="docs/screenshots/ru/overview-light.png">
 </picture>
 
 <p align="center">

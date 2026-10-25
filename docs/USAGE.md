@@ -15,7 +15,7 @@ The guide applies to package [`v0.11.0`](https://github.com/ancored/nodes-tester
   <img alt="Node list with state, rating and filters" src="screenshots/nodes-light.png">
 </picture>
 
-The screenshots were updated for version 0.3.4, including [groups, preview, presets and node actions](screenshots/README.md#groups-rules-and-actions). The full gallery is in [`docs/screenshots`](screenshots/README.md).
+The screenshots were updated for version 0.11.0, including [groups, clients, presets and node actions](screenshots/README.md#groups-rules-and-actions). The full gallery is in [`docs/screenshots`](screenshots/README.md).
 
 ## Where to find what
 

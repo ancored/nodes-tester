@@ -8,15 +8,15 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../docs/screenshots/mobile-overview.png">
-    <source media="(prefers-color-scheme: light)" srcset="../docs/screenshots/mobile-overview-light.png">
-    <img alt="Мобильный обзор nodes-tester" src="../docs/screenshots/mobile-overview-light.png" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="../docs/screenshots/ru/mobile-overview.png">
+    <source media="(prefers-color-scheme: light)" srcset="../docs/screenshots/ru/mobile-overview-light.png">
+    <img alt="Мобильный обзор nodes-tester" src="../docs/screenshots/ru/mobile-overview-light.png" width="360">
   </picture>
   &nbsp;
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../docs/screenshots/mobile-nodes.png">
-    <source media="(prefers-color-scheme: light)" srcset="../docs/screenshots/mobile-nodes-light.png">
-    <img alt="Список нод на мобильном экране" src="../docs/screenshots/mobile-nodes-light.png" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="../docs/screenshots/ru/mobile-nodes.png">
+    <source media="(prefers-color-scheme: light)" srcset="../docs/screenshots/ru/mobile-nodes-light.png">
+    <img alt="Список нод на мобильном экране" src="../docs/screenshots/ru/mobile-nodes-light.png" width="360">
   </picture>
 </p>
 

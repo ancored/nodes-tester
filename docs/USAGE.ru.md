@@ -10,12 +10,12 @@
 Руководство относится к пакету [`v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). Обновление исходников на компьютере не обновляет установленный пакет.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="screenshots/nodes.png">
-  <source media="(prefers-color-scheme: light)" srcset="screenshots/nodes-light.png">
-  <img alt="Список нод с состоянием, рейтингом и фильтрами" src="screenshots/nodes-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/nodes.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/nodes-light.png">
+  <img alt="Список нод с состоянием, рейтингом и фильтрами" src="screenshots/ru/nodes-light.png">
 </picture>
 
-Скриншоты обновлены для версии 0.3.4, включая [группы, предпросмотр, пресеты и действия с нодой](screenshots/README.ru.md#группы-правила-и-действия). Полная галерея доступна в [`docs/screenshots`](screenshots/README.ru.md).
+Скриншоты обновлены для версии 0.11.0, включая [группы, клиентов, пресеты и действия с нодой](screenshots/README.ru.md#группы-правила-и-действия). Полная галерея доступна в [`docs/screenshots`](screenshots/README.ru.md).
 
 ## Где что искать
 
@@ -97,16 +97,16 @@ XHTTP и AWG рассчитаны на `sing-box-lx`. Обычное ядро н
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="screenshots/subscriptions.png">
-        <source media="(prefers-color-scheme: light)" srcset="screenshots/subscriptions-light.png">
-        <img alt="Редактор источников подписок" src="screenshots/subscriptions-light.png">
+        <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/subscriptions.png">
+        <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/subscriptions-light.png">
+        <img alt="Редактор источников подписок" src="screenshots/ru/subscriptions-light.png">
       </picture>
     </td>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="screenshots/config.png">
-        <source media="(prefers-color-scheme: light)" srcset="screenshots/config-light.png">
-        <img alt="Настройки тестера и подключения" src="screenshots/config-light.png">
+        <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/config.png">
+        <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/config-light.png">
+        <img alt="Настройки тестера и подключения" src="screenshots/ru/config-light.png">
       </picture>
     </td>
   </tr>
@@ -145,9 +145,9 @@ nodes-tester pipeline clients
 История показывает ветку, ручной или плановый запуск, начало, конец и результат; откройте запись для полного журнала. Значение `ok` означает успех, `error` сообщает об ошибке, `busy` показывает занятость конвейера (код 75), `timeout` указывает на превышение времени. Статус `interrupted` появляется, если после сбоя процесса нет подтверждённого кода завершения. Лимит времени — `pipeline.timeout`, по умолчанию `30m`. Подписки роутера опрашиваются чаще сборки: `pipeline.fetch.every` (по умолчанию `3h`, `0s` — выключить; поле «Опрашивать подписки роутера каждые» в «Подписках и сборке») обновляет только сырые ноды и состояние подписок — sing-box не трогается; в истории такие запуски отмечены как «опрос подписок». Плановая сборка, наступившая во время опроса, дожидается его окончания. Журналы лежат в `<data_dir>/pipeline/runs/`, история хранится в `<data_dir>/pipeline.db`. Храните `data_dir` на постоянном носителе.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="screenshots/pipeline.png">
-  <source media="(prefers-color-scheme: light)" srcset="screenshots/pipeline-light.png">
-  <img alt="Конвейер: ручной запуск, расписание и история" src="screenshots/pipeline-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/pipeline.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/pipeline-light.png">
+  <img alt="Конвейер: ручной запуск, расписание и история" src="screenshots/ru/pipeline-light.png">
 </picture>
 
 Тестер проверяет ноды, у которых истёк срок годности тестов. «Запустить тестирование сейчас» в разделе «Проверки» проверяет все доступные тестеру ноды, не дожидаясь сроков; эта кнопка не обновляет подписки. Пока тестирование по запросу идёт, повторный запрос недоступен.
@@ -160,8 +160,8 @@ nodes-tester pipeline clients
 
 <table>
   <tr>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-light.png"><img alt="Редактор исходных файлов sing-box" src="screenshots/singbox-light.png"></picture></td>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/singbox-rules.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/singbox-rules-light.png"><img alt="Редактор источников правил sing-box" src="screenshots/singbox-rules-light.png"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/singbox.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/ru/singbox-light.png"><img alt="Редактор исходных файлов sing-box" src="screenshots/ru/singbox-light.png"></picture></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/singbox-rules.png"><source media="(prefers-color-scheme: light)" srcset="screenshots/ru/singbox-rules-light.png"><img alt="Редактор источников правил sing-box" src="screenshots/ru/singbox-rules-light.png"></picture></td>
   </tr>
   <tr><td>База, клиентские файлы и история версий.</td><td>Источники правил и локальные JSON-файлы.</td></tr>
 </table>
@@ -228,16 +228,16 @@ DNS-серверы и наборы правил. Например, пресет 
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="screenshots/node-card.png">
-        <source media="(prefers-color-scheme: light)" srcset="screenshots/node-card-light.png">
-        <img alt="Карточка ноды с результатами проверок" src="screenshots/node-card-light.png">
+        <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/node-card.png">
+        <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/node-card-light.png">
+        <img alt="Карточка ноды с результатами проверок" src="screenshots/ru/node-card-light.png">
       </picture>
     </td>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="screenshots/lifecycle.png">
-        <source media="(prefers-color-scheme: light)" srcset="screenshots/lifecycle-light.png">
-        <img alt="Ограничения и качество нод" src="screenshots/lifecycle-light.png">
+        <source media="(prefers-color-scheme: dark)" srcset="screenshots/ru/lifecycle.png">
+        <source media="(prefers-color-scheme: light)" srcset="screenshots/ru/lifecycle-light.png">
+        <img alt="Ограничения и качество нод" src="screenshots/ru/lifecycle-light.png">
       </picture>
     </td>
   </tr>
