@@ -19,7 +19,6 @@ config/config.json
 config/providers.json
 config/user_nodes.json
 config/awg/*.conf
-scripts/router/clients.list
 
 # собранные пакеты (openwrt/build.sh)
 /dist/
