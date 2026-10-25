@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import unittest
+from unittest import mock
 
 from tests.helpers import fresh_nodes_json, load_test_config, temp_dir
 from tests.test_api_control import FakeRunner
 from nodes_tester.storage import Storage
+from dashboard import mcp
 from dashboard.mcp import TOOLS
 from dashboard.server import build_app
 
@@ -149,6 +152,7 @@ class McpTest(unittest.TestCase):
         data, error = self._tool("overview")
         self.assertFalse(error)
         self.assertTrue(data["tester"]["running"])
+        self.assertIn("core", data)
         self.assertIn("error", data["pipeline"])         # у фейкового Runner нет конвейера
 
     def test_config_round_trip(self):
@@ -164,6 +168,64 @@ class McpTest(unittest.TestCase):
         status, error = self._tool("call_api", method="GET", path="/api/status")
         self.assertFalse(error)
         self.assertTrue(status["running"])
+
+
+LX_VERSION = """sing-box version 1.14.3-lx.21
+
+Environment: go1.25.3 linux/amd64
+Tags: with_gvisor,with_quic,with_utls,with_xhttp,with_awg
+Revision: 0123abcd
+CGO: disabled
+"""
+
+
+class CoreAndDocsTest(unittest.TestCase):
+    def setUp(self):
+        mcp._core_info.cache_clear()
+        self.addCleanup(mcp._core_info.cache_clear)
+        self.binary = os.path.join(temp_dir(), "sing-box")
+        open(self.binary, "w").close()
+
+    def _core(self, stdout):
+        done = subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
+        with mock.patch.object(mcp.shutil, "which", return_value=self.binary), \
+                mock.patch.object(mcp.subprocess, "run", return_value=done):
+            return mcp.core_info(), mcp._instructions()
+
+    def test_lx_core_links_its_docs(self):
+        info, text = self._core(LX_VERSION)
+        self.assertEqual(info["version"], "1.14.3-lx.21")
+        self.assertIn("with_xhttp", info["tags"])
+        self.assertIn("next to sing-box-lx 1.14.3-lx.21", text)
+        self.assertIn("Leadaxe/sing-box-lx/blob/v1.14.3-lx.21/docs-lx/lx-config.md", text)
+        self.assertIn("docs/CONFIG_ASSEMBLY.md", text)
+
+    def test_official_core_and_missing_core(self):
+        _, text = self._core("sing-box version 1.14.3\n")
+        self.assertIn("SagerNet/sing-box/blob/v1.14.3/docs/configuration", text)
+        with mock.patch.object(mcp.shutil, "which", return_value=None):
+            self.assertEqual(mcp.core_info(), {})
+            self.assertIn("https://sing-box.sagernet.org/configuration/", mcp._instructions())
+        mcp._core_info.cache_clear()
+        with mock.patch.object(mcp.shutil, "which", return_value=self.binary), \
+                mock.patch.object(mcp.subprocess, "run", side_effect=subprocess.TimeoutExpired("sing-box", 10)):
+            self.assertEqual(mcp.core_info(), {})
+        self.assertEqual(self._core(LX_VERSION)[0]["version"], "1.14.3-lx.21")   # сбой не закэширован
+
+    def test_docs_list_and_sections(self):
+        listing = mcp.docs(None)["documents"]
+        paths = {d["path"] for d in listing}
+        self.assertIn("docs/CONFIG_ASSEMBLY.md", paths)
+        self.assertFalse(any(p.endswith(".ru.md") for p in paths))
+        merging = mcp.docs(None, "docs/CONFIG_ASSEMBLY.md", "merging")
+        self.assertTrue(merging.startswith("## Merging"))
+        self.assertNotIn("## Preset library", merging)
+        with self.assertRaises(mcp.ToolError):
+            mcp.docs(None, "../LICENSE")
+        with self.assertRaises(mcp.ToolError):
+            mcp.docs(None, section="merging")
+        with self.assertRaises(mcp.ToolError):
+            mcp.docs(None, "docs/CONFIG_ASSEMBLY.md", "no such heading")
 
 
 if __name__ == "__main__":

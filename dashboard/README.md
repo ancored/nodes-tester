@@ -101,9 +101,15 @@ Client configuration (the usual `mcpServers` format):
 The tools call the same API routes, so checks, revisions and errors are as in the interface. Long lists
 are cut by `limit` with a `_truncated` count.
 
+On connection the server sends the client instructions: how to work with the tools safely, the main rules of the
+sing-box config assembly and of the security model, and links to the documentation of the running versions: nodes-tester by
+its tag, the sing-box configuration of the running core (for `sing-box-lx` its copy of the upstream documentation and the
+description of its extensions). The core version comes from `sing-box version`. The package carries the English
+documentation (`docs/`, module READMEs), and the `docs` tool returns it without internet access.
+
 | Tool | Kind | What it does |
 |---|---|---|
-| `overview` | read | capabilities, tester status, groups with candidates and reserve, sing-box and kill switch, pipeline |
+| `overview` | read | capabilities, core version and build tags, tester status, groups with candidates and reserve, sing-box and kill switch, pipeline |
 | `list_nodes` | read | nodes with filters by group, provider, country, protocol, state and text |
 | `get_node` | read | one node: identity, rating components, latest result of every test, group checks, restrictions, events, activations, score history; `include_config` adds the outbound JSON |
 | `get_view` | read | a ready-made view: `rating`, `history`, `results`, `traffic`, `lifecycle`, `graveyard` |
@@ -111,6 +117,7 @@ are cut by `limit` with a `_truncated` count.
 | `pipeline` | read | schedule and runs, or one run with its log |
 | `get_config`, `config_schema` | read | `config.json` with its revision; the schema of a section with descriptions and defaults |
 | `singbox_files` | read | the list of sing-box source files and presets, a file with its versions |
+| `docs` | read | documentation of this version: the list with sections, a document or only the sections matching a heading |
 | `query_db` | read | one `SELECT` over `stats.db`: read-only connection, no `ATTACH` or `PRAGMA` except the schema ones, 5 s and up to 5000 rows |
 | `node_action` | action | ban, unban, quarantine, lift quarantine |
 | `switch_group` | action | activate a candidate in a group |

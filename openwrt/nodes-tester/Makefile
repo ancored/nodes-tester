@@ -71,6 +71,10 @@ define Build/Prepare
 	$(foreach f,config.example.json config.schema.json awg/de.conf.example,\
 		cp $(REPO_ROOT)/config/$(f) $(PKG_BUILD_DIR)/config/$(f);)
 	cp $(REPO_ROOT)/LICENSE $(REPO_ROOT)/THIRD_PARTY_LICENSES $(PKG_BUILD_DIR)/
+	# английская документация для инструмента docs MCP-сервера (dashboard/mcp.py)
+	mkdir -p $(PKG_BUILD_DIR)/docs/help
+	cp $(filter-out %.ru.md,$(wildcard $(REPO_ROOT)/docs/*.md)) $(PKG_BUILD_DIR)/docs/
+	cp $(filter-out %.ru.md,$(wildcard $(REPO_ROOT)/docs/help/*.md)) $(PKG_BUILD_DIR)/docs/help/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox
 	cp $(REPO_ROOT)/config/singbox/rules.example.json $(PKG_BUILD_DIR)/config/singbox/
 	mkdir -p $(PKG_BUILD_DIR)/config/singbox/rules
@@ -93,6 +97,9 @@ define Package/nodes-tester/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/sockshandler.py $(1)$(APP_DIR)/
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/PySocks-$(PYSOCKS_VERSION)/LICENSE $(1)$(APP_DIR)/LICENSE.PySocks
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/LICENSE $(PKG_BUILD_DIR)/THIRD_PARTY_LICENSES $(1)$(APP_DIR)/
+	$(INSTALL_DIR) $(1)$(APP_DIR)/docs/help
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/docs/*.md $(1)$(APP_DIR)/docs/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/docs/help/*.md $(1)$(APP_DIR)/docs/help/
 	$(foreach s,$(ROUTER_SCRIPTS),$(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/router/$(s) $(1)$(APP_DIR)/scripts/router/;)
 
 	# Шаблоны: из них uci-defaults создаёт рабочие конфиги при первой установке

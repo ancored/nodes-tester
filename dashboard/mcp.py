@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
 
@@ -21,13 +24,14 @@ from nodes_tester import __version__
 from nodes_tester.monitor import singbox_log_path
 
 from .api_read import _SLICES
+from .api_session import SOURCE_URL
 from .webapp import App, HttpError, Response
 
 # Первая — та, что предлагаем клиенту, не назвавшему свою.
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 INSTRUCTIONS = """\
-nodes-tester runs next to sing-box on an OpenWrt router. The pipeline fetches proxy subscriptions,
+nodes-tester {version} runs next to {core} on an OpenWrt router. The pipeline fetches proxy subscriptions,
 builds and applies the sing-box config; the tester measures every node and keeps each group's
 selector (eu, us, ai, ...) on the best candidate.
 
@@ -38,7 +42,65 @@ selector (eu, us, ai, ...) on the best candidate.
   write restarts the tester. Say what you are going to change before doing it.
 - `query_db` answers questions the ready-made views do not (tables: nodes, scores, results,
   score_history, activations, node_events, garbage, traffic, endpoints, ip_info, meta).
+
+Read the rules before changing configs. The `docs` tool returns the documents of this version
+(also online: {docs_url}).
+- config.json (`update_config`): field reference docs/CONFIG.md, defaults in `config_schema`.
+- sing-box sources (`edit_singbox_file`), docs/CONFIG_ASSEMBLY.md: the config is base.json, then
+  nodes.json, then the enabled presets by `_preset.priority` (lower first). Scalars: base.json wins,
+  then the lower priority. Arrays are joined in that order; the same `tag` with other content and a
+  reference to an outbound, DNS server or rule set nobody declares are errors. A preset declares the
+  DNS servers and rule sets it uses and routes to zone outbounds (`ai-out`, `google-out`, `us-out`),
+  not to node groups. A saved file has passed the merge and `sing-box check`, but takes effect only
+  with `run_pipeline` (`apply` rebuilds from the fetched subscriptions without fetching them again).
+- Security, docs/SECURITY_MODEL.md: the untrusted LAN goes to `direct-out`, and its rule stays above
+  every rule meant for trusted sources; DNS rules mirror the route rules; `route.final` is a node
+  group. Configs, node JSON and subscription URLs are secrets.
+- sing-box syntax of the running core: {singbox_docs}
 """
+
+
+def core_info() -> dict:
+    """Версия и build-теги ядра из `sing-box version`; пусто, если бинаря нет."""
+    path = shutil.which("sing-box")
+    if not path:
+        return {}
+    # Ключ кэша — mtime бинаря: после обновления ядра ответ сменится без перезапуска тестера.
+    # Исключение lru_cache не запоминает: неудачный запуск повторится при следующем вызове.
+    try:
+        return _core_info(path, os.stat(path).st_mtime)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+
+
+@lru_cache(maxsize=4)
+def _core_info(path: str, _mtime: float) -> dict:
+    out = subprocess.run([path, "version"], capture_output=True, text=True, timeout=10).stdout
+    info = {"path": path}
+    for line in out.splitlines():
+        if line.startswith("sing-box version "):
+            info["version"] = line.split()[-1]
+        elif line.startswith("Tags: "):
+            info["tags"] = line.removeprefix("Tags: ").strip().split(",")
+    return info
+
+
+def _instructions() -> str:
+    """INSTRUCTIONS со ссылками на документацию работающих версий тестера и ядра."""
+    version = core_info().get("version")
+    if version is None:
+        core, singbox_docs = "sing-box", "https://sing-box.sagernet.org/configuration/"
+    elif "-lx" in version:
+        # У форка своя копия документации upstream по тегу сборки и описание расширений.
+        repo = f"https://github.com/Leadaxe/sing-box-lx/blob/v{version}"
+        core = f"sing-box-lx {version}"
+        singbox_docs = (f"{repo}/docs/configuration/index.md, lx extensions (XHTTP, AmneziaWG, urltest "
+                        f"modes, WARP, DNS server groups, chains): {repo}/docs-lx/lx-config.md")
+    else:
+        core = f"sing-box {version}"
+        singbox_docs = f"https://github.com/SagerNet/sing-box/blob/v{version}/docs/configuration/index.md"
+    return INSTRUCTIONS.format(version=__version__, core=core, singbox_docs=singbox_docs,
+                               docs_url=f"{SOURCE_URL}/tree/v{__version__}/docs")
 
 
 class ToolError(Exception):
@@ -204,12 +266,13 @@ def _check_args(spec: dict, args: dict) -> dict:
 # --- Чтение --------------------------------------------------------------------
 
 
-@tool("overview", "Snapshot of the router: version and capabilities, tester status (active node per "
-      "group, progress, outage), groups with their top candidates and reserve, sing-box and kill switch "
-      "state, pipeline schedule and last runs. Start here.")
+@tool("overview", "Snapshot of the router: version and capabilities, sing-box core version and build tags, "
+      "tester status (active node per group, progress, outage), groups with their top candidates and "
+      "reserve, sing-box and kill switch state, pipeline schedule and last runs. Start here.")
 def overview(app):
     return {
         "capabilities": _soft(app, "GET", "/api/capabilities"),
+        "core": core_info(),
         "tester": _soft(app, "GET", "/api/status"),
         "groups": _soft(app, "GET", "/api/groups"),
         "singbox": _soft(app, "GET", "/api/singbox/control"),
@@ -419,6 +482,69 @@ def singbox_files(app, path=None, ts=None, branch="router"):
     return {**_api(app, "GET", url), "versions": _api(app, "GET", url + "/history")["versions"]}
 
 
+_ROOT = Path(__file__).resolve().parent.parent
+# Пакет кладёт docs/ рядом с модулями (/usr/lib/nodes-tester), как в репозитории; только английские.
+_DOC_DIRS = ("docs", "docs/help", "naming", "nodes_common", "nodes_fetch", "nodes_config", "nodes_tester",
+             "nodes_admin", "dashboard")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+
+
+def _documents() -> dict[str, Path]:
+    found = {}
+    for folder in _DOC_DIRS:
+        for path in sorted((_ROOT / folder).glob("*.md")):
+            if not path.name.endswith(".ru.md"):
+                found[f"{folder}/{path.name}"] = path
+    return found
+
+
+def _headings(lines: list[str]):
+    """(номер строки, уровень, текст) заголовков вне блоков кода."""
+    fence = False
+    for number, line in enumerate(lines):
+        if line.lstrip().startswith(("```", "~~~")):     # блок кода бывает и с отступом в списке
+            fence = not fence
+        elif not fence and (m := _HEADING.match(line)):
+            yield number, len(m.group(1)), m.group(2)
+
+
+@tool("docs", "Documentation of the running nodes-tester version, offline: config.json field reference "
+      "(docs/CONFIG.md), sing-box config assembly and presets (docs/CONFIG_ASSEMBLY.md), security model "
+      "(docs/SECURITY_MODEL.md), sing-box compatibility, admin panel help (docs/help), module READMEs "
+      "(checks, scoring, storage). Without `path` — the list with titles and sections; with `section` — "
+      "only the sections whose heading contains that text.", {
+          "path": _str("Document path from the list, e.g. docs/CONFIG_ASSEMBLY.md."),
+          "section": _str("Case-insensitive part of a heading; the section is returned with its subsections."),
+      })
+def docs(app, path=None, section=None):
+    if path is None and section is not None:
+        raise ToolError("section — только вместе с path")
+    found = _documents()
+    if path is None:
+        listing = []
+        for name, file in found.items():
+            heads = list(_headings(file.read_text(encoding="utf-8").splitlines()))
+            listing.append({"path": name, "size": file.stat().st_size,
+                            "title": next((text for _, level, text in heads if level == 1), name),
+                            "sections": [text for _, level, text in heads if level == 2]})
+        return {"documents": listing, "online": f"{SOURCE_URL}/tree/v{__version__}"}
+    if path not in found:
+        raise ToolError(f"нет документа {path}; список — docs без path")
+    lines = found[path].read_text(encoding="utf-8").splitlines()
+    if section is None:
+        return "\n".join(lines)
+    heads = list(_headings(lines))
+    parts, taken = [], 0
+    for n, (start, level, text) in enumerate(heads):
+        if start < taken or section.lower() not in text.lower():
+            continue
+        taken = next((line for line, deeper, _ in heads[n + 1:] if deeper <= level), len(lines))
+        parts.append("\n".join(lines[start:taken]))
+    if not parts:
+        raise ToolError(f"в {path} нет раздела с «{section}»")
+    return "\n\n".join(parts)
+
+
 @tool("query_db", "Read-only SQL (one SELECT or WITH statement, SQLite) over the tester database "
       "stats.db; 5 s limit. Key column `crc` = node key. Main tables: nodes (identity, present, banned, "
       "title), scores (current rating and components), results (ts, crc, test, ok, metrics JSON, error), "
@@ -585,7 +711,7 @@ def _handle(app: App, msg) -> dict | None:
         result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
                   "capabilities": {"tools": {"listChanged": False}},
                   "serverInfo": {"name": "nodes-tester", "version": __version__},
-                  "instructions": INSTRUCTIONS}
+                  "instructions": _instructions()}
     elif method == "ping":
         result = {}
     elif method == "tools/list":
