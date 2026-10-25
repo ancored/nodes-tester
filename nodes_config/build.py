@@ -135,8 +135,8 @@ def build(raws, cfg, log=print):
 
 
 def build_clients(fragment, candidates, cfg):
-    """nodes.json роутера + {группа: теги кандидатов} → (whnodes.json, отчёт). Группа без нод —
-    ValueError: прежний whnodes.json и конфиги клиентов остаются."""
+    """nodes.json роутера + {группа: теги кандидатов} → (whnodes.json, отчёт). Группа без нод и без
+    fallback — ValueError: прежний whnodes.json и конфиги клиентов остаются."""
     branch = cfg.pipeline.clients
     own = set(branch_subscriptions(cfg.subscriptions, "clients"))
     dropped = Counter({k: 0 for k in ("type", "ungrouped_protocol", "protocol")})
@@ -154,7 +154,7 @@ def build_clients(fragment, candidates, cfg):
                              f"после правки групп)")
         fits, allowed = set(candidates[g.tag]), own - set(g.exclude_subscriptions)
         members[g.tag] = [t for t in usable if t in fits and provider[t] in allowed]
-        if not members[g.tag]:
+        if not members[g.tag] and not g.fallback:
             raise ValueError(f"группа {g.tag}: нет нод, прошедших её проверки на роутере")
     chosen = {t for tags in members.values() for t in tags}
     pending = list(chosen)

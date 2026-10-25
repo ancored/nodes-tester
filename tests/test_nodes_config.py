@@ -205,6 +205,18 @@ class ClientBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "тестер не прислал"):
             build.build_clients(frag, {}, cfg)
 
+    def test_fallback_always_in_group(self):
+        # Запасной член из базы клиента (туннель домой) — последним; без нод группа из него одного.
+        frag, cfg, tags = _client_setup([{"tag": "whitelist", "fallback": "global-router-auto-out"}])
+        w1 = next(t for t in tags if t.startswith("W-"))
+        out, rep = build.build_clients(frag, {"whitelist": [w1]}, cfg)
+        by_tag = {o["tag"]: o for o in out["outbounds"]}
+        self.assertEqual(by_tag["whitelist-auto-out"]["outbounds"], [w1, "global-router-auto-out"])
+        out, rep = build.build_clients(frag, {"whitelist": []}, cfg)
+        by_tag = {o["tag"]: o for o in out["outbounds"]}
+        self.assertEqual(by_tag["whitelist-auto-out"]["outbounds"], ["global-router-auto-out"])
+        self.assertEqual((_leaves(out), rep["groups"]), ([], {"whitelist": 0}))
+
     def test_detour_target_follows_node(self):
         frag, cfg, tags = _client_setup()
         w1, w2 = [t for t in tags if t.startswith("W-")]

@@ -237,6 +237,7 @@ class GroupConfig:
     prefer: dict[str, dict] = field(default_factory=dict)
     errors: "ErrorRuleConfig | None" = None   # None — monitor.errors
     exclude_subscriptions: list[str] = field(default_factory=list)   # их ноды не в группе
+    fallback: str = ""              # клиентская группа: outbound базы клиента, всегда в urltest
 
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9_]*")
@@ -324,7 +325,9 @@ CLIENT_CHECKS = ("country", "ip_type", "geo_consistent", "whitelist")
 
 def _client_groups(obj, checks: dict, regions: dict) -> list[GroupConfig]:
     """pipeline.clients.groups: urltest `{tag}-auto-out` клиентов из нод, прошедших обязательные
-    проверки на роутере; группы с in_global — в global-auto-out (на неё ссылаются базы клиентов)."""
+    проверки на роутере; группы с in_global — в global-auto-out (на неё ссылаются базы клиентов).
+    fallback — outbound из базы клиента (например, туннель домой), который всегда в группе: без
+    подходящих нод группа состоит из него одного, а не останавливает сборку."""
     path = "pipeline.clients.groups"
     if obj is None:
         obj = [{"tag": "all"}]
@@ -333,12 +336,13 @@ def _client_groups(obj, checks: dict, regions: dict) -> list[GroupConfig]:
     out, seen = [], set()
     for i, item in enumerate(obj):
         ipath = f"{path}[{i}]"
-        item = _fields(item, ipath, ("tag", "in_global", "require", "exclude_subscriptions"))
+        item = _fields(item, ipath, ("tag", "in_global", "require", "exclude_subscriptions", "fallback"))
         tag = _group_tag(item, ipath, seen)
         require = _fields(item.get("require"), f"{ipath}.require", CLIENT_CHECKS)
         group = GroupConfig(tag=tag, in_global=_bool(item, "in_global", ipath, True),
                             require=_group_checks(require, f"{ipath}.require", checks),
-                            exclude_subscriptions=_strings(item, "exclude_subscriptions", ipath))
+                            exclude_subscriptions=_strings(item, "exclude_subscriptions", ipath),
+                            fallback=_string(item, "fallback", ipath, "").strip())
         unknown = [r for key in ("regions", "exclude_regions")
                    for r in group.require.get("country", {}).get(key, []) if r not in regions]
         if unknown:

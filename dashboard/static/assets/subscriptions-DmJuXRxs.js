@@ -229,7 +229,10 @@ global-auto-out” form the client \`global-auto-out\` selector, which the clien
   databases and the whitelists. Service access checks and the heavy download are run only for router groups.
 - The tester writes the nodes of each client group to \`client-candidates.json\` every 5 minutes; the block shows how many nodes
   pass now. The client build takes the nodes from it and from \`nodes.json\` and refuses data older than 30 minutes (the tester is not
-  running) and a group without nodes: then the previous client configs stay.
+  running) and a group without nodes and without a fallback outbound: then the previous client configs stay.
+- **Fallback outbound** (\`fallback\`) — an outbound of the client bases that is always the last member of the group, for example
+  \`global-router-auto-out\`, the tunnel home. Without fitting nodes the group consists of it alone, so the build does not stop;
+  in a whitelist-only network it usually does not answer, and urltest picks the nodes.
 - The client configs change only with the client build: by its schedule, “Run” on the [“Pipeline”](pipeline.md) page, or “Build
   clients” on the [“Rules”](rules.md#clients) page (it uses the current \`whnodes.json\`).
 

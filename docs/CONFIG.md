@@ -184,7 +184,7 @@ Default values are shown so that all fields are visible.
       "exclude_types": ["shadowsocksr"],
       "exclude_protocols": ["xhttp", "wg"],
       "domain_resolver": "dns-whitelist",
-      "groups": [ { "tag": "whitelist", "require": { "whitelist": {} } } ],
+      "groups": [ { "tag": "whitelist", "require": { "whitelist": {} }, "fallback": "global-router-auto-out" } ],
       "output": "/etc/sing-box-clients",
       "url": "https://<router-domain>:8443/"
     }
@@ -552,7 +552,7 @@ Client groups (`pipeline.clients.groups`). A client has no tester, so a client g
 `{tag}-auto-out` over the nodes of the `clients` and `both` subscriptions that passed its required checks on the router: rating
 above 0, no pause, quarantine or exclusion, a fresh success of every required check. Groups with `in_global` form the client
 selector `global-auto-out` (the client bases use it). A group without nodes and candidates older than 30 minutes stop the client
-build: the previous configs stay.
+build (unless the group has `fallback`): the previous configs stay.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -560,6 +560,7 @@ build: the previous configs stay.
 | `in_global` | bool | `true` | Part of the client `global-auto-out`; at least one group must have it |
 | `require` | object | — | Required checks, as in [groups](#groups), but only those the tester keeps for every node: `country`, `ip_type`, `geo_consistent`, `whitelist` |
 | `exclude_subscriptions` | list of strings | — | Tags of `clients` or `both` subscriptions whose nodes are not in the group |
+| `fallback` | string | — | An outbound of the client bases (for example `global-router-auto-out`, the tunnel home) that is always the last member of the group; without fitting nodes the group consists of it alone instead of stopping the build. Where it does not answer (a whitelist-only network), urltest picks the nodes |
 
 ## storage
 

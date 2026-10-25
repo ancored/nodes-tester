@@ -34,7 +34,7 @@ Manual install:
    is explained in detail in the [help](docs/help/README.md), with flowcharts of the algorithms; the admin panel shows it
    by the **?** icons.
 
-Current release: [`v0.11.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0). It needs sing-box 1.14 or newer with the API service (`services[type=api]`). The release has an `.apk` for OpenWrt 25.x. OpenWrt 24.10 needs a separately built `.ipk`. The package is signed with the project key and is available from the `apk` repository on GitHub Pages; how to add it is described in the [guide](openwrt/README.md).
+Current release: [`v0.11.0-r2`](https://github.com/ancored/nodes-tester/releases/tag/v0.11.0-r2). It needs sing-box 1.14 or newer with the API service (`services[type=api]`). The release has an `.apk` for OpenWrt 25.x. OpenWrt 24.10 needs a separately built `.ipk`. The package is signed with the project key and is available from the `apk` repository on GitHub Pages; how to add it is described in the [guide](openwrt/README.md).
 
 ## How updates work
 

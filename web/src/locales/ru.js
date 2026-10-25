@@ -6,6 +6,8 @@ export default {
   'urltest of the nodes that passed the checks on the router; without them the client configs are not rebuilt':
     'urltest из нод, прошедших проверки на роутере; без них конфиги клиентов не пересобираются',
   'Client node groups': 'Группы нод клиентов',
+  'Fallback outbound of the client bases (always in the group)': 'Запасной outbound клиентских баз (всегда в группе)',
+  'urltest of the nodes that passed the checks on the router and {fallback}': 'urltest из нод, прошедших проверки на роутере, и {fallback}',
   '{day}: appeared {n}': '{day}: появилось {n}',
   '{day}: removed {n}, to quarantine {q}': '{day}: удалено {n}, в карантин {q}',
   'appeared': 'появилось',

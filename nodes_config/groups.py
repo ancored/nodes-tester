@@ -73,8 +73,11 @@ def router_groups(nodes, groups, selector=None, urltest=None, provider_of=None, 
 
 def client_groups(members, groups, selector=None, urltest=None):
     '''whnodes.json: global-auto-out (группы с in_global) и urltest каждой группы.
-    members — группа → теги её нод (не пусто: группу без нод сборка клиентов не пишет).'''
+    members — группа → теги её нод; fallback группы (outbound базы клиента) — последним членом.'''
     selector, urltest = selector or {}, urltest or {}
     top = ['{}-auto-out'.format(g.tag) for g in groups if g.in_global]
-    tests = [_urltest('{}-auto-out'.format(g.tag), list(members[g.tag]), urltest) for g in groups]
+    tests = []
+    for g in groups:
+        outbounds = list(members[g.tag]) + ([g.fallback] if g.fallback else [])
+        tests.append(_urltest('{}-auto-out'.format(g.tag), outbounds, urltest))
     return [_selector('global-auto-out', top, top[0], selector)] + tests

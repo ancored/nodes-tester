@@ -49,6 +49,7 @@ function toggleSub(g,tag,on){
   if(cur.length)g.exclude_subscriptions=cur; else delete g.exclude_subscriptions
   changed()
 }
+function setFallback(g,e){const v=e.target.value.trim();if(v)g.fallback=v; else delete g.fallback;changed()}
 function setReserve(g,e){if(e.target.value==='')delete g.reserve; else g.reserve=Number(e.target.value);changed()}
 // Проверка в группе: require (без свежего успеха нода не кандидат), prefer (влияет на выбор) или не используется.
 function mode(g,check){return g.require?.[check] ? 'require' : g.prefer?.[check] ? 'prefer' : ''}
@@ -72,7 +73,8 @@ function unknown(g,key){
   return values.filter(v=>!/^[a-z]{2}$/i.test(v))
 }
 function fallbackText(g){
-  if(clients.value)return t('urltest of the nodes that passed the checks on the router; without them the client configs are not rebuilt')
+  if(clients.value)return g.fallback ? t('urltest of the nodes that passed the checks on the router and {fallback}',{fallback:g.fallback})
+    : t('urltest of the nodes that passed the checks on the router; without them the client configs are not rebuilt')
   const direct=flag(g,'direct_fallback',false)
   if(flag(g,'strict',false))return direct ? t('without candidates: direct-out') : t('without candidates: block-out, the group traffic is blocked')
   return direct ? t('without candidates: failsafe-out; if it does not respond either, the tester switches the group to direct-out') : t('without candidates: failsafe-out (the best node by urltest)')
@@ -95,6 +97,7 @@ function setRegions(v){if(v && Object.keys(v).length)props.doc.regions=v; else d
             <label class="check"><input type="checkbox" :checked="flag(g,'direct_fallback',false)" @change="setFlag(g,'direct_fallback',$event)" /> {{ t('Allow direct outbound (direct-out)') }}</label>
           </template>
           <label class="check"><input type="checkbox" :checked="flag(g,'in_global',true)" @change="setFlag(g,'in_global',$event)" /> {{ t('Part of global-auto-out') }}</label>
+          <label v-if="clients">{{ t('Fallback outbound of the client bases (always in the group)') }}<input :value="g.fallback || ''" placeholder="global-router-auto-out" @input="setFallback(g,$event)" /></label>
         </div>
         <div v-if="branchSubs.length" class="toolbar">
           <span>{{ t('Except subscriptions') }}:</span>
