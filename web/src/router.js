@@ -10,6 +10,7 @@ import Control from './views/Control.vue'
 import Runs from './views/Runs.vue'
 import Config from './views/Config.vue'
 import NodeDetail from './views/NodeDetail.vue'
+import ProviderCard from './views/ProviderCard.vue'
 import Pipeline from './views/Pipeline.vue'
 import Singbox from './views/Singbox.vue'
 import Presets from './views/Presets.vue'
@@ -40,5 +41,6 @@ const HELP = Object.fromEntries([...sections, ...nodeSections].map(x => [x.path,
 export const helpTopic = route => route.meta?.help || HELP[route.path] || ''
 export const router = createRouter({ history: createWebHashHistory(), routes: [
   ...sections, ...nodeSections.slice(1), { path: '/nodes/:crc', name: 'Node card', component: NodeDetail, meta: { help: 'node-card' } },
+  { path: '/providers/:tag', name: 'Provider card', component: ProviderCard, meta: { help: 'subscriptions#provider-card' } },
   { path: '/control', redirect: '/nodes' }, { path: '/:pathMatch(.*)*', redirect: '/' },
 ] })

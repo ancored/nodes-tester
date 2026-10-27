@@ -6,12 +6,14 @@ import json
 import os
 import sqlite3
 import time
+from collections import Counter
 from contextlib import closing
 from contextvars import ContextVar
 from pathlib import Path
 
 from naming import parse_node
 from naming.regions import alpha3_to_alpha2
+from nodes_tester.tests.gemini import DEFAULT_FORBIDDEN as GEMINI_FORBIDDEN
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -71,6 +73,99 @@ def node_detail(cfg, crc: str, include_config=False) -> dict:
                           calculated_crc=node_key(fragment), fragment_source=source,
                           nodes_file=cfg.nodes_file)
         return result
+
+
+PROVIDER_WINDOW = 7 * 86400
+
+
+def provider_card(cfg, tag: str, source: "dict | None") -> dict:
+    """Карточка провайдера (подписки): ноды и их живость, доля времени активной нодой в
+    группах за PROVIDER_WINDOW, проход AI-проверок, трафик, причины последних провалов;
+    source — состояние подписки по последнему опросу (срок и трафик тарифа)."""
+    from nodes_tester.diagnose import cause
+    out = {"tag": tag, "window": PROVIDER_WINDOW, "source": source,
+           "nodes": {"total": 0, "live": 0, "restricted": 0, "active": [], "reserve": 0},
+           "activity": [], "ai": {}, "traffic": {"up": 0, "down": 0}, "causes": {}}
+    db = cfg.storage.path
+    if not db or not os.path.exists(db):
+        return out
+    now = int(time.time())
+    since = now - PROVIDER_WINDOW
+    with closing(sqlite3.connect(Path(db).resolve().as_uri() + "?mode=ro", uri=True)) as con:
+        con.row_factory = sqlite3.Row
+        con.execute("BEGIN")
+        nodes = [dict(r) for r in con.execute("""
+            SELECT n.crc, s.score, s.active, s.reserve, g.until
+            FROM nodes n LEFT JOIN scores s ON s.crc = n.crc LEFT JOIN garbage g ON g.crc = n.crc
+            WHERE n.provider = ? AND n.present = 1""", (tag,))]
+        out["nodes"].update(
+            total=len(nodes), live=sum(1 for n in nodes if (n["score"] or 0) > 0),
+            restricted=sum(1 for n in nodes if (n["until"] or 0) > now),
+            reserve=sum(1 for n in nodes if n["reserve"]))
+        # Активации до начала окна тоже нужны: группа могла стоять на ноде с тех пор.
+        acts = con.execute("""
+            SELECT region, tag, reason, ts FROM activations
+            WHERE ts >= (SELECT COALESCE(MAX(ts), 0) FROM activations a2
+                         WHERE a2.region = activations.region AND a2.ts < ?)
+            ORDER BY region, ts""", (since,)).fetchall()
+        out["activity"], out["nodes"]["active"] = _provider_activity(tag, acts, since, now)
+        latest = con.execute("""
+            SELECT r.crc, r.test, r.ok, r.metrics, r.error FROM results r
+            JOIN (SELECT crc, test, MAX(ts) AS ts FROM results
+                  WHERE crc IN (SELECT crc FROM nodes WHERE provider = ? AND present = 1)
+                  GROUP BY crc, test) m ON m.crc = r.crc AND m.test = r.test AND m.ts = r.ts""",
+                             (tag,)).fetchall()
+        failed: dict = {}
+        for r in latest:
+            if r["test"] in ("gemini", "openai", "anthropic"):
+                ai = out["ai"].setdefault(r["test"], {"ok": 0, "total": 0})
+                ai["total"] += 1
+                ai["ok"] += 1 if r["ok"] else 0
+            if not r["ok"]:
+                try:
+                    metrics = json.loads(r["metrics"] or "{}")
+                except ValueError:
+                    metrics = {}
+                code = cause(r["test"], metrics, r["error"] or "")
+                # Одна причина на ноду: самая ранняя по ходу проверки (связность раньше скорости).
+                if code and (r["crc"] not in failed or r["test"] == "connectivity"):
+                    failed[r["crc"]] = code
+        out["causes"] = dict(Counter(failed.values()))
+        row = con.execute("""
+            SELECT COALESCE(SUM(t.up), 0) AS up, COALESCE(SUM(t.down), 0) AS down
+            FROM traffic t JOIN nodes n ON n.crc = t.crc
+            WHERE n.provider = ? AND t.is_tester = 0 AND t.ts >= ?""", (tag, since)).fetchone()
+        out["traffic"] = {"up": row["up"], "down": row["down"]}
+    return out
+
+
+def _provider_activity(tag: str, acts, since: int, now: int) -> tuple[list, list]:
+    """По группам: доля окна, когда активной была нода провайдера, число его активаций и
+    аварийных уходов с его нод; плюс группы, где его нода активна сейчас."""
+    by_group: dict = {}
+    for a in acts:
+        by_group.setdefault(a["region"], []).append(a)
+    activity, active_now = [], []
+    for group, rows in sorted(by_group.items()):
+        held = switches = emergencies = 0
+        mine = [parse_node(a["tag"] or "").provider == tag for a in rows]
+        for i, a in enumerate(rows):
+            start = max(a["ts"], since)
+            end = rows[i + 1]["ts"] if i + 1 < len(rows) else now
+            if mine[i] and end > start:
+                held += end - start
+            if a["ts"] < since:
+                continue
+            if mine[i]:
+                switches += 1
+            if i > 0 and mine[i - 1] and str(a["reason"]).startswith("emergency"):
+                emergencies += 1
+        if mine[-1]:
+            active_now.append(group)
+        if held or switches:
+            activity.append({"group": group, "share": round(held / (now - since), 3), "seconds": held,
+                             "activations": switches, "emergencies": emergencies})
+    return activity, active_now
 
 
 _AUTO_SUFFIX = "-auto-out"
@@ -369,8 +464,10 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 
 # Порядок колонок-тестов в своде результатов.
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
-               "heavy_download", "gemini", "openai", "anthropic", "whitelist"]
+               "heavy_download", "gemini", "google_country", "openai", "anthropic", "whitelist"]
 _AI_TESTS = ("gemini", "openai", "anthropic", "upstream")
+# Страны, где сервисы Google AI недоступны (alpha-2), — для отметки в колонке google_country.
+_GOOGLE_FORBIDDEN = frozenset(alpha3_to_alpha2(c) for c in GEMINI_FORBIDDEN)
 
 
 def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
@@ -405,6 +502,14 @@ def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
     return cell
 
 
+def _google_country_cell(ok, m: dict, error: str) -> dict:
+    """Страна по мнению Google: флаг; крест — страна, где Google AI недоступен."""
+    if not ok:
+        return {"v": "Не определено", "ok": 0, "unk": 1, "ai": 1, "title": (error or "").strip()}
+    cc = m.get("country") or ""
+    return {"v": cc, "ok": 0 if cc in _GOOGLE_FORBIDDEN else 1, "ai": 1, "cc": cc}
+
+
 def _whitelist_cell(ok, m: dict) -> dict:
     """Ячейка белых списков: галка или крест, подробности — адреса и SNI."""
     parts = [f"IP {', '.join(m.get('ips') or []) or '?'}: {'в списке' if m.get('ip_ok') else 'нет в списке'}"]
@@ -416,15 +521,31 @@ def _whitelist_cell(ok, m: dict) -> dict:
 
 
 def _cell(test: str, ok, metrics_json: str, error: str = "") -> dict:
-    """Компактное значение теста для ячейки: {v, ok, title?}."""
+    """Компактное значение теста для ячейки: {v, ok, title?, cause?}. У провала — код
+    причины (diagnose.CAUSES), в подсказке — и ошибка sing-box за время теста."""
     try:
         m = json.loads(metrics_json) if metrics_json else {}
     except (TypeError, ValueError):
         m = {}
+    cell = _value_cell(test, ok, m, error)
+    if not ok:
+        from nodes_tester.diagnose import cause
+        code = cause(test, m, error)
+        if code:
+            cell["cause"] = code
+        if m.get("core_error"):
+            core = "sing-box: " + m["core_error"]
+            cell["title"] = f"{cell['title']}\n{core}" if cell.get("title") else core
+    return cell
+
+
+def _value_cell(test: str, ok, m: dict, error: str) -> dict:
     if test in _AI_TESTS:
         return _ai_cell(test, ok, m, error)
     if test == "whitelist":
         return _whitelist_cell(ok, m)
+    if test == "google_country":
+        return _google_country_cell(ok, m, error)
     if test == "connectivity":                # галка или крест: страна — во флаге строки
         cell = {"v": "Есть" if ok else "Провал", "ok": 1 if ok else 0, "ai": 1}
         if not ok and (error or "").strip():

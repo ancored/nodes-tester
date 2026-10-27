@@ -294,12 +294,13 @@ working one is accepted by the gateway, the other one gets HTTP 500.
 
 ## tests
 
-Rating measurements: `connectivity`, `latency`, `jitter`, `download`, `reachability`. The tester
+Rating measurements: `connectivity`, `latency`, `jitter`, `download`, `reachability`; besides them,
+`google_country` (only shown in the admin panel, does not affect the rating or the choice of a node). The tester
 checks a node when its measurement has expired (see
 [result lifetimes](../nodes_tester/README.md#result-lifetimes)). The fields set lifetimes, addresses and timeouts;
 unset ones come from the test code, `timeout` from `tester.request_timeout`.
 
-Each test has `ttl` (`3h` by default) and `ttl_jitter` (a tenth of `ttl` by default):
+Each test has `ttl` (`3h` by default, `google_country` — `24h`) and `ttl_jitter` (a tenth of `ttl` by default):
 a result lives from `ttl − ttl_jitter` to `ttl`. The lifetime is set for the whole test, `for_region` does not have it.
 
 | Test | Fields |
@@ -309,6 +310,7 @@ a result lives from `ttl − ttl_jitter` to `ttl`. The lifetime is set for the w
 | `jitter` | `url`, `samples`, `interval`, `timeout` |
 | `download` | `url`, `duration`, `window_mb`, `timeout` |
 | `reachability` | `urls`, `timeout`, `workers` |
+| `google_country` | `url` (the Chrome variations server by default): a HEAD request, the country is in the `X-Country` header; `timeout` |
 
 `for_region` holds test fields for nodes with an exit in the region (by the measured country). The block is written either
 inside the test (`"latency": {"for_region": {"ru": {"url": "…"}}}`) or as a shared section

@@ -70,7 +70,7 @@ class ResultsTest(unittest.TestCase):
 
     def test_all_check_columns_even_without_results(self):
         res = self._run([self._row("connectivity", int(time.time()), 7)])
-        self.assertEqual(res["tests"][-4:], ["gemini", "openai", "anthropic", "whitelist"])
+        self.assertEqual(res["tests"][-5:], ["gemini", "google_country", "openai", "anthropic", "whitelist"])
         self.assertNotIn("whitelist", res["rows"][0]["cells"])     # ячейка — прочерк
 
 

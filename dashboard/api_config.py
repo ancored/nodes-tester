@@ -110,7 +110,7 @@ def _diff(app: App, raw: dict) -> dict:
             for provider in set(fresh) | set(config)}
 
 
-def _subscription_states(app: App) -> dict:
+def subscription_states(app: App) -> dict:
     """Состояние подписок по последнему опросу (raw/router.json): tag → {ok, count, last_ok_at,
     stale, error, meta, diff}; diff — разница с действующим конфигом. Без оркестратора (нет
     каталога данных) — пусто."""
@@ -225,7 +225,7 @@ def register(app: App) -> None:
             "happ_keys": {"default_url": happ_keys.DEFAULT_URL,
                           "path": happ_keys.default_path(config_path)},
             "branches": ["router", "clients"],
-            "sources": _subscription_states(app),
+            "sources": subscription_states(app),
             "client_checks": list(CLIENT_CHECKS),
             "clients": clients.state(app.cfg, os.path.join(os.path.dirname(config_path), "singbox")),
             "client_groups": _client_candidates(app)}

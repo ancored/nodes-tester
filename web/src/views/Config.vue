@@ -277,6 +277,7 @@ const FETCH_FIELDS=[['pipeline.fetch.timeout',t('Download timeout'),'duration'],
         <template v-else-if="subscriptions">
           <section v-for="(sub,index) in document.subscriptions || []" :key="index" class="panel">
             <h2>{{ t('Subscription {n}', { n: index+1 }) }} · {{ sub.tag || t('new') }}<span v-if="(sub.branch || 'router')!=='router'" class="mut"> · {{ SUB_BRANCHES[sub.branch] || sub.branch }}</span><HelpButton :topic="SUB_HELP[sourceKind(sub)] || 'subscriptions#sources'" /></h2>
+            <p v-if="sub.tag"><RouterLink :to="'/providers/' + encodeURIComponent(sub.tag)">{{ t('Provider card') }}</RouterLink></p>
             <div class="form-grid">
               <label>{{ t('Provider name (unique tag)') }}<input v-model="sub.tag" /></label>
               <label class="check"><input type="checkbox" :checked="sub.enabled !== false" @change="sub.enabled=$event.target.checked" /> {{ t('Use the subscription') }}</label>

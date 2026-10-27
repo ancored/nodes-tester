@@ -4,12 +4,20 @@ const translated = table => Object.defineProperties({}, Object.fromEntries(Objec
   .map(([k, text]) => [k, { get: text, enumerable: true }])))
 export const TEST_NAMES = translated({ connectivity: () => t('Connection'), latency: () => t('Latency'), jitter: () => t('Jitter / loss'),
   download: () => t('Speed / throttling'), reachability: () => t('Site reachability'), heavy_download: () => t('Heavy download'),
-  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), whitelist: () => t('Whitelist') })
+  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), whitelist: () => t('Whitelist'),
+  google_country: () => t('Country for Google') })
 // Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
 export const TEST_UNITS = translated({ latency: () => t('ms'), jitter: () => t('ms / %'), download: () => t('Mbit/s'), heavy_download: () => t('Mbit/s') })
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).
 export const CHECK_NAMES = translated({ country: () => t('Exit country'), ip_type: () => t('Exit IP type'), geo_consistent: () => t('IP country by databases'),
   gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), heavy: () => t('Heavy download'), whitelist: () => t('Whitelists') })
+// Причина провала проверки (nodes_tester/diagnose.py CAUSES): код из ячейки результата.
+export const FAILURE_CAUSES = translated({ dns: () => t('DNS: the name of the node server does not resolve'),
+  tls: () => t('TLS: the certificate or Reality check failed'), tcp: () => t('TCP: no connection to the node server'),
+  transport: () => t('Transport: the server answered with an HTTP error'),
+  handshake: () => t('The handshake hung after connecting: blocking or a dead server'), reset: () => t('The connection was reset'),
+  freeze: () => t('The transfer froze midway'), slow: () => t('Too slow'), service: () => t('The service refused: region or limit'),
+  target: () => t('An error of the check target, not of the node'), timeout: () => t('No answer in time'), other: () => t('Other cause') })
 export const checkNames = list => (list || []).map(c => CHECK_NAMES[c] || c).join(', ')
 export function verdictMark(v) { return v === '1' ? '✓' : v === '0' ? '✗' : '?' }
 export function verdictClass(v) { return v === '1' ? 'good' : v === '0' ? 'bad' : 'mut' }

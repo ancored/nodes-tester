@@ -292,12 +292,13 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 
 ## tests
 
-Замеры рейтинга: `connectivity`, `latency`, `jitter`, `download`, `reachability`. Тестер
+Замеры рейтинга: `connectivity`, `latency`, `jitter`, `download`, `reachability`; кроме них —
+`google_country` (только показывается в админке, на рейтинг и выбор ноды не влияет). Тестер
 проверяет ноду, когда истёк срок годности её замера (см.
 [сроки годности](../nodes_tester/README.ru.md#сроки-годности)). Поля задают сроки, адреса и тайм-ауты;
 не заданные берутся из кода теста, `timeout` — из `tester.request_timeout`.
 
-У каждого теста `ttl` (по умолчанию `3h`) и `ttl_jitter` (по умолчанию десятая часть `ttl`):
+У каждого теста `ttl` (по умолчанию `3h`, у `google_country` — `24h`) и `ttl_jitter` (по умолчанию десятая часть `ttl`):
 результат живёт от `ttl − ttl_jitter` до `ttl`. Срок задаётся для теста целиком, в `for_region` его нет.
 
 | Тест | Поля |
@@ -307,6 +308,7 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | `jitter` | `url`, `samples`, `interval`, `timeout` |
 | `download` | `url`, `duration`, `window_mb`, `timeout` |
 | `reachability` | `urls`, `timeout`, `workers` |
+| `google_country` | `url` (по умолчанию сервер вариаций Chrome) — запрос HEAD, страна — в заголовке `X-Country`; `timeout` |
 
 `for_region` — поля тестов для нод с выходом в регионе (по измеренной стране). Блок пишется либо
 внутри теста (`"latency": {"for_region": {"ru": {"url": "…"}}}`), либо общим разделом

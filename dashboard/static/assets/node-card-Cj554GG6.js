@@ -60,8 +60,24 @@ it up the queue ([tiers](groups.md#tiers)).
 ## Results tab
 
 The latest result of each measurement and check with the time it was obtained, and the ip-api data of the last exit IP: its
-type with the network (ASN) and whether the country by the databases matches the measured one. A failure has “Details” with the error text. No
-results does not mean a failed check: the node may not have been measured yet. The meaning of each value is on the
+type with the network (ASN) and whether the country by the databases matches the measured one. A failure shows its cause in words,
+and “Details” has the error text and the sing-box error for the tester connection at the time of the check:
+
+| Cause | What happened |
+|---|---|
+| DNS | sing-box could not resolve the name of the node server |
+| TLS | the server certificate or the Reality check did not pass |
+| TCP | no TCP connection to the node server: timeout, refusal, no route |
+| Transport | the node server answered the transport (WebSocket, XHTTP) with an HTTP error |
+| Handshake | TCP connected, but the protocol handshake hung: blocking on the path or a dead server |
+| Reset | the connection was reset or closed by the other side |
+| Froze | the transfer stopped midway |
+| Too slow | the speed is below the threshold |
+| Service refused | an AI service refused by region or limit; the tunnel works |
+| Check target | the check server answered with an error (404, 5xx): the node is not to blame |
+| No answer | the request timed out without a sing-box error |
+
+No results does not mean a failed check: the node may not have been measured yet. The meaning of each value is on the
 [Results](nodes.md#results) page.
 
 <a id="traffic"></a>

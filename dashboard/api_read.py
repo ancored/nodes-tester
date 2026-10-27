@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from naming import NODE_KEY_RE
 
-from .data import collect, node_detail
+from .api_config import subscription_states
+from .data import collect, node_detail, provider_card
 from .webapp import App, HttpError
 
 # Узкий эндпоинт → какие ключи снимка collect() он отдаёт.
@@ -46,6 +47,21 @@ def register(app: App) -> None:
     @app.route("GET", "/api/nodes/{crc}/details", needs_token=True)
     def details(app, req, crc):
         return read_node(app, crc, include_config=True)
+
+    @app.route("GET", "/api/providers/{tag}", needs_token=not open_read)
+    def provider(app, req, tag):
+        source = subscription_states(app).get(tag)
+        if source is not None:
+            # Объявление провайдера и ошибка загрузки бывают с адресом подписки — в карточку
+            # идёт только срок, трафик тарифа и ссылки поддержки.
+            meta = source.get("meta") or {}
+            source = {**{k: source.get(k) for k in ("ok", "count", "fetched_at", "last_ok_at", "stale")},
+                      "meta": {k: meta.get(k) for k in ("upload", "download", "total", "expire", "title",
+                                                        "support_url", "web_page_url")}}
+        try:
+            return provider_card(app.cfg, tag, source)
+        except Exception as exc:
+            raise HttpError(500, f"Не удалось собрать карточку провайдера: {exc}") from exc
 
     @app.route("GET", "/api/groups", needs_token=not open_read)
     def groups(app, req):

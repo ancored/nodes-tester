@@ -88,6 +88,23 @@ After the subscriptions are fetched, each block shows:
 
 The end of a subscription and 90 % traffic usage can be sent as an \`expiry\` [notification](settings.md#notifications).
 
+<a id="provider-card"></a>
+### Provider card
+
+The “Provider card” link under the subscription title opens a page about the provider as a whole:
+
+- **Subscription** — the result of the last fetch, the paid term with the days left and the plan traffic, if the panel sends them;
+- **Nodes** — how many nodes of the subscription are in the database now, how many work (rating above zero), how many are paused or
+  quarantined, in which groups a node of the provider is active now and how many are in reserve;
+- **Active node over 7 days** — for each group: the share of time its active node belonged to this provider, the activations and the
+  emergency replacements away from its nodes;
+- **AI services** — how many of the checked nodes pass Google AI, OpenAI and Claude by the latest result;
+- **Why nodes fail** — the [cause](node-card.md#results) of the latest failure of each failing node;
+- **User traffic over 7 days** through the nodes of the provider.
+
+The card helps to decide whether to renew a subscription: a provider whose nodes rarely become active or are replaced in emergencies
+gives little for its price.
+
 <a id="happ-keys"></a>
 ### Happ keys
 

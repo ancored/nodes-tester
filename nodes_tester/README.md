@@ -91,6 +91,9 @@ spread out in time and do not expire in a batch.
   node is refreshed once per full round, and the active ones and candidates by their own deadline.
 - One visit to a node runs all its measurements that are closer to their deadline than their spread;
   `connectivity` always, and first. Without connectivity the rest is not run.
+- A node no group needs (a fresh failure of a required check, usually the exit country, in every router
+  group it belongs to and in every client group of its subscription) gets only `connectivity`, an hour
+  before its country expires (`checks.country.ttl`).
 - The “Run testing now” button in the admin panel and `--once` check all nodes without waiting for
   the deadlines.
 
@@ -105,6 +108,7 @@ Rating measurements (the `tests` section) run by their lifetimes:
 | `jitter` | mean, minimum and maximum latency, jitter and loss |
 | `download` | speed, stability and signs of throttling |
 | `reachability` | availability of a set of targets |
+| `google_country` | the country in which Google sees the exit (the `X-Country` header of the Chrome variations server, once a day); not part of the rating |
 
 `connectivity` is the GATE: its failure zeroes the total score.
 

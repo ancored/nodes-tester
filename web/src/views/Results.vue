@@ -12,10 +12,10 @@ const s=useSnapshot()
 const tests=computed(()=>s.data.results?.tests || [])
 const rows=computed(()=>(s.data.results?.rows || []).filter(r => !r.removed))
 // AI-тесты — узкие колонки: галка, крест или «?» (сеть, вердикт прежний); у Google AI — флаг страны.
-// Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список.
-const AI={gemini:1,openai:1,anthropic:1,upstream:1,connectivity:1,whitelist:1}
+// Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список, страна для Google.
+const AI={gemini:1,openai:1,anthropic:1,upstream:1,connectivity:1,whitelist:1,google_country:1}
 // Короткие заголовки, чтобы таблица помещалась; полное название — в пояснениях и сортировке.
-const HEADS={connectivity:t('Link'),whitelist:t('Whitelist'),reachability:t('Sites'),download:t('Speed, Mbit/s')}
+const HEADS={connectivity:t('Link'),whitelist:t('Whitelist'),reachability:t('Sites'),download:t('Speed, Mbit/s'),google_country:'G'}
 // Последнее соединение не прошло — страна или цепочка из прошлого успешного замера: бледно, с временем замера.
 function staleCountry(cols) {
   const route = cols[3]

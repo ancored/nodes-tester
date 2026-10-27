@@ -375,6 +375,21 @@ class Scoreboard:
                     and all(self._verdict(r, c, p) == "1" for c, p in group.require.items())]
             return [r["node"] for r in sorted(rows, key=lambda r: float(r["score"]), reverse=True)]
 
+    def useless(self, node: str, client_groups) -> bool:
+        """Нода не нужна ни одной группе: в каждой группе роутера, куда она входит, и в каждой
+        клиентской группе её подписки (client_groups — [(GroupConfig, подписки)]) у неё свежий
+        провал обязательной проверки, чаще всего страны выхода. Ни одной такой группы или о
+        ноде ничего не известно — нужна."""
+        with self._lock:
+            r = self.rows.get(node)
+            if r is None:
+                return False
+            failed = [self._failed(r, g) for g, tags in self._members.items()
+                      if node in tags and g in self._policy]
+            failed += [any(self._verdict(r, c, p) == "0" for c, p in g.require.items())
+                       for g, providers in client_groups if r.get("provider") in providers]
+            return bool(failed) and all(failed)
+
     def node_by_key(self, key: str) -> "str | None":
         """Тег ноды по ключу node_crc.cred_crc."""
         with self._lock:

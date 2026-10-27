@@ -2,7 +2,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSnapshot } from '../store.js'
-import { nodeFlags, nodeJsonLines, testTitle, CHECK_NAMES, verdictMark, verdictClass } from '../ux.js'
+import { nodeFlags, nodeJsonLines, testTitle, CHECK_NAMES, FAILURE_CAUSES, verdictMark, verdictClass } from '../ux.js'
 import { dateTime, bytes, dur } from '../format.js'
 import { useQuery } from '../query.js'
 import NodeActions from '../components/NodeActions.vue'
@@ -108,7 +108,7 @@ const TABS = [['state',t('State')],['groups',t('Groups')],['results',t('Results'
       <HelpButton topic="node-card#results" />
       <p v-if="!result">{{ t('No saved results. This does not mean a failed check.') }}</p>
       <template v-else>
-        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>{{ t('Details') }}</summary><pre>{{ cell.title }}</pre></details></dd></template>
+        <dl class="facts"><template v-for="(cell,test) in result.cells" :key="test"><dt>{{ testTitle(test) }}</dt><dd>{{ cell.v }}<span v-if="cell.cause" class="bad"> · {{ FAILURE_CAUSES[cell.cause] || cell.cause }}</span><small class="cell-note">{{ dateTime(cell.ts) }}</small><details v-if="!cell.ok && cell.title" class="failure-detail"><summary>{{ t('Details') }}</summary><pre>{{ cell.title }}</pre></details></dd></template>
           <template v-if="result.ip_kind"><dt>{{ CHECK_NAMES.ip_type }}</dt><dd><IpTypeIcon :kind="result.ip_kind" /><IpTypeIcon v-if="result.ip_proxy" kind="proxy" /> {{ [IP_KINDS[result.ip_kind], result.ip_proxy ? IP_KINDS.proxy : '', result.ip_asn].filter(Boolean).join(' · ') }}<small class="cell-note">{{ dateTime(result.ip_ts) }}</small></dd>
             <dt>{{ CHECK_NAMES.geo_consistent }}</dt><dd :class="{bad:result.ip_db_cc}">{{ result.ip_db_cc ? t('the databases give {cc}, not the measured country',{cc:String(result.ip_db_cc).toUpperCase()}) : t('matches the measured country') }}<small class="cell-note">{{ dateTime(result.ip_ts) }}</small></dd></template></dl>
       </template>

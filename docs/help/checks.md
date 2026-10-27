@@ -58,6 +58,12 @@ The queue order:
 If the queue cannot keep up with `ttl` (many nodes, slow nodes), every node is still refreshed once per full
 round, and active nodes and candidates keep their own deadlines.
 
+A node no group needs is not measured in full. These are nodes with a fresh failure of a required check in every
+router group they belong to and in every client group of their subscription — usually because of the exit
+country (for example, an exit in Russia when every group excludes it). Such a node only gets `connectivity`, an
+hour before its exit country expires (`checks.country.ttl`, a day by default): if the country changes, the node
+is measured in full again. The client groups count only while the client branch is on (`pipeline.clients.enabled`).
+
 <a id="host-gap"></a>
 ### Pauses between requests to one host
 
@@ -82,6 +88,7 @@ testing runs, a second request is not accepted; the page shows how many nodes ar
 | `jitter` | several requests in a row (`samples`, 5 by default, every `interval`) | mean, minimum, maximum latency, jitter, loss % |
 | `download` | downloads a file for up to `duration` (20 s), 5 MB from Cloudflare by default | speed Mbit/s; throttling (the speed of the last 2 MB window to the first); hold (share of the file received) |
 | `reachability` | opens several sites in parallel (Google, Cloudflare, YouTube by default) | how many of them answered |
+| `google_country` | once a day, a HEAD request to the Chrome variations server | the country in which Google sees the node exit (the `X-Country` header). Chrome turns its features on by it, for example Gemini in Chrome; it can differ both from the Cloudflare country and from the country on the Gemini page. Does not affect the rating or the choice of a node |
 
 Addresses, sizes and timeouts are set in the `tests` section ([reference](../CONFIG.md#tests)). Nodes with an
 exit in a region can use their own addresses (`for_region`): for example, speed test servers in Russia for

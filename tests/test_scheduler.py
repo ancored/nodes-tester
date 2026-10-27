@@ -6,7 +6,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from nodes_tester.config import TESTS
+from nodes_tester.config import TESTS, GroupConfig
 from nodes_tester.freshness import expires
 from nodes_tester.identity import parse_node
 from tests.helpers import make_runner, temp_dir
@@ -41,6 +41,58 @@ class _Base(unittest.TestCase):
 
     def _plan(self, raw):
         return self.r._plan(raw, parse_node(raw), self.now)
+
+
+class UselessNodeTest(_Base):
+    """Нода, которой не подходит ни одна группа (страна выхода): только связность раз в сутки."""
+
+    def setUp(self):
+        super().setUp()
+        day = {"ttl": 24 * HOUR, "ttl_jitter": 0}
+        self.r.board.set_policy([GroupConfig("eu", require={"country": {"regions": ["eu"], **day}}),
+                                 GroupConfig("us", require={"country": {"regions": ["us"], **day}})],
+                                self.r.cfg.regions)
+        self.r.cfg.checks["country"] = day
+        self.wl = GroupConfig("whitelist", require={"whitelist": day})
+
+    def _country(self, raw, cc, ago):
+        self.r.board.rows[raw] = {"node": raw, "id": parse_node(raw).node_id, "provider": "DEMO",
+                                  "exit_cc": cc, "country_ts": int(self.now - ago), "score": 0}
+
+    def test_foreign_to_every_group_waits_for_country_expiry(self):
+        self._country(A, "RU", ago=2 * HOUR)
+        self._measured(A, ago=2 * HOUR)                       # остальные тесты истекли
+        start, tests = self._plan(A)
+        self.assertEqual(tests, [])
+        self.assertAlmostEqual(start, self.now - 2 * HOUR + 23 * HOUR, delta=1)
+
+    def test_only_connectivity_before_country_expires(self):
+        self._country(A, "RU", ago=23.5 * HOUR)
+        self._measured(A, ago=2 * HOUR)
+        self.assertEqual(self._plan(A)[1], ["connectivity"])
+
+    def test_node_fitting_a_group_runs_everything(self):
+        self._country(A, "NL", ago=2 * HOUR)
+        self._measured(A, ago=2 * HOUR)
+        self.assertEqual(self._plan(A)[1], list(TESTS))
+
+    def test_unknown_country_runs_everything(self):
+        self._country(A, "", ago=2 * HOUR)
+        self._measured(A, ago=2 * HOUR)
+        self.assertEqual(self._plan(A)[1], list(TESTS))
+
+    def test_client_group_keeps_the_node(self):
+        self._country(A, "RU", ago=2 * HOUR)
+        self._measured(A, ago=2 * HOUR)
+        self.r.board.set_required_result(A, "whitelist", True)
+        self.r._client_groups = [(self.wl, {"DEMO"})]
+        self.r.cfg.pipeline.clients.enabled = True
+        self.assertEqual(self._plan(A)[1], list(TESTS))
+        self.r.cfg.pipeline.clients.enabled = False           # ветвь клиентов выключена
+        self.assertEqual(self._plan(A)[1], [])
+        self.r.cfg.pipeline.clients.enabled = True
+        self.r.board.set_required_result(A, "whitelist", False)
+        self.assertEqual(self._plan(A)[1], [])
 
 
 class PlanTest(_Base):

@@ -132,16 +132,19 @@ def _tester(obj) -> TesterConfig:
 # каждая читает, проверяет и записывает весь файл.
 WRITE_LOCK = threading.Lock()
 
-# Замеры рейтинга и их параметры. Каждый замер живёт ttl (по умолчанию 3 ч), срок
-# укорачивается на случайную долю ttl_jitter (по умолчанию ttl/10).
-TESTS = ("connectivity", "latency", "jitter", "download", "reachability")
+# Замеры при обходе ноды и их параметры. Каждый замер живёт ttl (по умолчанию 3 ч,
+# google_country — 24 ч), срок укорачивается на случайную долю ttl_jitter (по умолчанию
+# ttl/10). google_country в рейтинг не входит: только сведения для админки.
+TESTS = ("connectivity", "latency", "jitter", "download", "reachability", "google_country")
 _TEST_TTL = 3 * 3600.0
+_TEST_TTLS = {"google_country": 24 * 3600.0}
 _TEST_FIELDS = {
     "connectivity": ("service", "timeout"),
     "latency": ("url", "timeout"),
     "jitter": ("url", "samples", "interval", "timeout"),
     "download": ("url", "duration", "window_mb", "timeout"),
     "reachability": ("urls", "timeout", "workers"),
+    "google_country": ("url", "timeout"),
 }
 _DURATION_KEYS = ("timeout", "interval", "duration", "ttl", "ttl_jitter")
 _TTL_KEYS = ("ttl", "ttl_jitter")
@@ -172,7 +175,7 @@ def _tests(obj) -> dict[str, dict]:
         opts = _options(obj.get(name) or {}, f"{path}.{name}", (*_TEST_FIELDS[name], *_TTL_KEYS))
         for region, over in (opts.get("for_region") or {}).items():
             _no_ttl(over, f"{path}.{name}.for_region.{region}")
-        out[name] = _with_jitter(opts, opts.get("ttl", _TEST_TTL))
+        out[name] = _with_jitter(opts, opts.get("ttl", _TEST_TTLS.get(name, _TEST_TTL)))
     for region, over in _mapping(obj.get("for_region"), f"{path}.for_region").items():
         over = _fields(over, f"{path}.for_region.{region}", TESTS)
         for name, opts in over.items():

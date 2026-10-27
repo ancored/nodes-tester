@@ -28,6 +28,7 @@ from nodes_common.fileio import atomic_write_text, dumps_json
 from .amnezia_slots import AmneziaSlots
 from .api import ApiClient, ApiError
 from .config import TESTS, Config, branch_subscriptions, region_of
+from .diagnose import CoreErrors
 from .freshness import expires, fresh
 from .identity import NodeIdentity, parse_node
 from .logbuffer import LogRing, TeeStream
@@ -63,6 +64,9 @@ _SERVICE = 300.0
 _LOW_SCORE_MIN_SAMPLES = 3
 # Снятая для резерва из карантина нода, снова провалившая проверку, — повторно не раньше.
 _RELEASE_RETRY = 6 * 3600.0
+# Нода, не нужная ни одной группе, проверяет только связность — за столько до конца срока
+# страны выхода, чтобы вердикт страны не успел устареть до замера.
+_COUNTRY_MARGIN = 3600.0
 
 
 def _traffic_provider_factory(storage, window_seconds: float, ttl: float = 60.0):
@@ -103,6 +107,7 @@ class Runner:
         # Сериализует доступ к tester-селектору (self._top) и socks между тестером,
         # резервом и внеплановым зондом монитора.
         self._tester_lock = threading.Lock()
+        self._core_errors = CoreErrors(singbox_log_path(cfg.singbox.config), self._top)
         # Тестируемые ноды и анти-ТСПУ зазоры: их читает и процесс резерва.
         self._node_by_raw: dict = {}
         self._endpoints: dict = {}
@@ -151,6 +156,8 @@ class Runner:
         self.board.set_policy(cfg.groups, cfg.regions)
         self.board.set_heavy_ttl(cfg.checks["heavy"]["ttl"], cfg.checks["heavy"]["ttl_jitter"])
         self.board.tier_floor = cfg.selection.tier_floor
+        own = set(branch_subscriptions(cfg.subscriptions, "clients"))
+        self._client_groups = [(g, own - set(g.exclude_subscriptions)) for g in cfg.pipeline.clients.groups]
         balance = cfg.selection.rotation.balance
         traffic_provider = (_traffic_provider_factory(self.storage, balance.window)
                             if balance.enabled else None)
@@ -294,12 +301,24 @@ class Runner:
         ts = ((self._latest.get(ident.node_id) or {}).get(name) or (0,))[0]
         return expires(ts, params["ttl"], params["ttl_jitter"], f"{ident.node_id}/{name}")
 
+    def _country_expiry(self, raw: str, ident: NodeIdentity) -> float:
+        """Когда устареет страна выхода ноды (checks.country.ttl)."""
+        params = self.cfg.checks["country"]
+        ts = (self.board.get(raw) or {}).get("country_ts") or 0
+        return expires(ts, params["ttl"], params["ttl_jitter"], f"{ident.node_id}/country")
+
     def _plan(self, raw: str, ident: NodeIdentity, now: float) -> tuple[float, list[str]]:
         """(когда ноду пора проверять — срок самого старого теста, какие тесты сейчас). За одно
         обращение идут и тесты, которым до срока меньше их разброса. connectivity — всегда,
         первым."""
         if raw in self._forced:
             return now, list(TESTS)
+        clients = self._client_groups if self.cfg.pipeline.clients.enabled else []
+        if self.board.useless(raw, clients):
+            # Ни одной группе не нужна (обычно — по стране выхода): остальные замеры — трафик
+            # впустую; связность — чтобы знать страну, если нода её сменит.
+            start = self._country_expiry(raw, ident) - _COUNTRY_MARGIN
+            return start, (["connectivity"] if start <= now else [])
         expiry = {name: self._expiry(ident, name) for name in TESTS}
         start = min(expiry.values())
         if start > now:
@@ -464,9 +483,7 @@ class Runner:
         """Кандидаты клиентских групп (pipeline.clients.groups) для сборки клиентов: ноды подписок
         ветви clients, прошедшие на роутере обязательные проверки группы. Время записи — признак
         того, что тестер работает: устаревшие кандидаты сборка не берёт."""
-        own = set(branch_subscriptions(self.cfg.subscriptions, "clients"))
-        groups = {g.tag: self.board.fitting(g, own - set(g.exclude_subscriptions))
-                  for g in self.cfg.pipeline.clients.groups}
+        groups = {g.tag: self.board.fitting(g, providers) for g, providers in self._client_groups}
         try:
             atomic_write_text(self.cfg.client_candidates_file,
                               dumps_json({"ts": int(time.time()), "groups": groups}))
@@ -907,12 +924,23 @@ class Runner:
             session = make_session(self.cfg.tester.socks)
             ctx = TestContext(session=session, node=ident.raw,
                               default_timeout=self.cfg.tester.request_timeout, regions=regions)
+            mark = self._core_errors.mark()
             try:
-                return test.run(ctx).to_dict()
+                res = test.run(ctx).to_dict()
             except Exception as exc:  # noqa: BLE001 — сбой теста не рушит тестер
-                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             finally:
                 session.close()
+            self._add_core_error(res, mark)
+            return res
+
+    def _add_core_error(self, res: dict, mark: tuple) -> None:
+        """Провал теста — ошибка sing-box за время теста в результат (core_error):
+        по ней админка называет причину (diagnose.cause)."""
+        if not res.get("ok"):
+            core = self._core_errors.since(mark)
+            if core:
+                res["core_error"] = core
 
     def _score_and_maybe_switch(self, regions: frozenset, ident, tests: dict) -> bool:
         _final, _s_run, gate = self.board.record(ident, ",".join(sorted(regions)), tests)
@@ -1105,10 +1133,12 @@ class Runner:
             results = {"_select": {"ok": True}}
             try:
                 for name in (n for n in TESTS if n in tests):
+                    mark = self._core_errors.mark()
                     try:
                         res = self._rating_test(name).run(ctx).to_dict()
                     except Exception as exc:  # noqa: BLE001 — один тест не рушит ноду
                         res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                    self._add_core_error(res, mark)
                     results[name] = res
                     if name == "connectivity" and not res.get("ok"):
                         break                      # нет связности → не гоняем остальное (трафик)
