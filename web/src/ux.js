@@ -5,7 +5,7 @@ const translated = table => Object.defineProperties({}, Object.fromEntries(Objec
 export const TEST_NAMES = translated({ connectivity: () => t('Connection'), latency: () => t('Latency'), jitter: () => t('Jitter / loss'),
   download: () => t('Speed / throttling'), reachability: () => t('Site reachability'), heavy_download: () => t('Heavy download'),
   gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), whitelist: () => t('Whitelist'),
-  google_country: () => t('Country for Google') })
+  google_country: () => t('Country seen by Google') })
 // Единицы значений тестов: в ячейках только числа, единицы — в заголовке.
 export const TEST_UNITS = translated({ latency: () => t('ms'), jitter: () => t('ms / %'), download: () => t('Mbit/s'), heavy_download: () => t('Mbit/s') })
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).

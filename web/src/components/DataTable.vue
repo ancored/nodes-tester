@@ -58,7 +58,7 @@ function order(c) { update('sort',sort.value === c.key ? '-'+c.key : sort.value 
     <div class="toolbar table-toolbar"><FilterBar :state="filterState" /><label v-if="showSearch">{{ t('Search') }} <input v-model="query" type="search" :placeholder="t('Name, provider, country, CRC…')" /></label><label v-if="showSort">{{ t('Sort') }}<select v-model="sortModel"><option value="">{{ t('Original order') }}</option><template v-for="c in sortable" :key="c.key"><option :value="c.key">{{ c.title }} ↑</option><option :value="'-'+c.key">{{ c.title }} ↓</option></template></select></label><span>{{ t('Shown {n} of {total}', { n: filtered.length, total: total ?? rows.length }) }}</span></div>
     <div class="wrap">
       <table class="responsive-table">
-        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap,narrow:c.narrow}" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
+        <thead><tr><th v-for="c in columns" :key="c.key" :class="{l:c.l,nowrap:c.nowrap,narrow:c.narrow}" :style="c.width ? { width: c.width, minWidth: c.width } : null" :aria-sort="sort.replace(/^-/, '') === c.key ? sort.startsWith('-') ? 'descending' : 'ascending' : 'none'">
           <button v-if="showSort && sortable.includes(c)" class="sort-button" @click="order(c)">{{ c.head ?? c.title }} {{ sort === c.key ? '↑' : sort === '-'+c.key ? '↓' : '' }}</button><template v-else>{{ c.head ?? c.title }}</template>
         </th></tr></thead>
         <tbody>

@@ -15,7 +15,9 @@ const rows=computed(()=>(s.data.results?.rows || []).filter(r => !r.removed))
 // Узкие колонки-отметки: AI, соединение (страна — во флаге строки), белый список, страна для Google.
 const AI={gemini:1,openai:1,anthropic:1,upstream:1,connectivity:1,whitelist:1,google_country:1}
 // Короткие заголовки, чтобы таблица помещалась; полное название — в пояснениях и сортировке.
-const HEADS={connectivity:t('Link'),whitelist:t('Whitelist'),reachability:t('Sites'),download:t('Speed, Mbit/s'),google_country:'G'}
+const HEADS={connectivity:t('Link'),whitelist:t('Whitelist'),reachability:t('Sites'),download:t('Speed, Mbit/s'),google_country:t('Google country')}
+// Колонки-отметки проверок в конце таблицы — одной ширины, независимо от длины заголовка.
+const MARK_WIDTH='4.5rem'
 // Последнее соединение не прошло — страна или цепочка из прошлого успешного замера: бледно, с временем замера.
 function staleCountry(cols) {
   const route = cols[3]
@@ -29,7 +31,7 @@ const aiTitle = c => [c.v, c.title].filter(Boolean).join('\n')
 const columns=computed(()=>[
   ...staleCountry(nodeColumns({ route: true })),
   {key:'ip_type',title:t('IP type'),head:'IP',slot:true,narrow:true},
-  ...tests.value.map(k=>k in AI ? {key:k,title:testTitle(k),head:HEADS[k],slot:true,narrow:true} : {key:k,title:testTitle(k),head:HEADS[k],slot:true,l:true}),
+  ...tests.value.map(k=>k in AI ? {key:k,title:testTitle(k),head:HEADS[k],slot:true,narrow:true,width:k === 'connectivity' ? undefined : MARK_WIDTH} : {key:k,title:testTitle(k),head:HEADS[k],slot:true,l:true}),
 ])
 </script>
 <template>

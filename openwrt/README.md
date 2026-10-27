@@ -6,7 +6,7 @@
 
 A guide for a new installation next to a running sing-box. If the router already has a manual nodes-tester installation, first save the configs and the database and stop the old service: two instances must not control the same selectors. Do not install the package on top of the old installation blindly.
 
-The guide applies to [release `v0.13.0`](https://github.com/ancored/nodes-tester/releases/tag/v0.13.0). sing-box 1.14 or newer is required.
+The guide applies to [release `v0.13.0-r2`](https://github.com/ancored/nodes-tester/releases/tag/v0.13.0-r2). sing-box 1.14 or newer is required.
 
 ## Quick install
 
