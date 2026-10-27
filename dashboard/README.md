@@ -131,6 +131,11 @@ documentation (`docs/`, module READMEs), and the `docs` tool returns it without 
 Read tools are marked `readOnlyHint`, those that can break connectivity or restart a service —
 `destructiveHint`, so a client can ask for confirmation before them.
 
+The client itself often reaches its model and `/mcp` through the same router. A sing-box restart by the
+pipeline breaks that link for up to a minute, a config write makes `/mcp` unavailable for about 10 s, and
+`singbox_control stop` with the kill switch on cuts the client off until someone starts sing-box by hand.
+The server instructions say this, and advise a `wait` on `run_pipeline` longer than the run.
+
 ## File handling
 
 The editor checks `config.json` with the same loader as the tester and the pipeline

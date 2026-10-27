@@ -40,6 +40,14 @@ selector (eu, us, ai, ...) on the best candidate.
 - Read tools are safe. Others change the live router of a home network: run `run_pipeline` with
   `dry_run: true` first; `singbox_control stop` cuts the internet of the whole home; a config
   write restarts the tester. Say what you are going to change before doing it.
+- Your own link may run through this router: the client's requests to its model API, and to `/mcp`
+  from outside the LAN, pass sing-box. A sing-box restart (`run_pipeline` router or apply without
+  `dry_run` when the config changed, `singbox_control start`) breaks it for seconds to a minute, and
+  `singbox_control stop` with the kill switch on breaks it until sing-box starts again, which you
+  then cannot do: only the user can. A config write restarts the tester and `/mcp` for about 10 s.
+  Before such an action warn the user; give `run_pipeline` a `wait` longer than the run, so the
+  restart happens while the call is open. After a failed call do not repeat the action: when the
+  link is back, read `overview` and `pipeline` to see what happened.
 - `query_db` answers questions the ready-made views do not (tables: nodes, scores, results,
   score_history, activations, node_events, garbage, traffic, endpoints, ip_info, meta).
 
@@ -589,7 +597,8 @@ def run_tests(app):
 @tool("run_pipeline", "Start the pipeline. router — fetch subscriptions, build and apply the router config "
       "(restarts sing-box if it changed, checks connectivity, rolls back on failure); clients — build client "
       "configs; apply / apply-clients — rebuild from the last fetched subscriptions. `dry_run` builds and "
-      "checks without applying. `wait` seconds to wait for the end and return the log.", {
+      "checks without applying. `wait` seconds to wait for the end and return the log. A sing-box restart "
+      "may break your own link through the router for up to a minute: set `wait` longer than the run.", {
           "mode": _str("Pipeline mode.", ("router", "clients", "apply", "apply-clients")),
           "dry_run": {"type": "boolean", "description": "Build and check only, change nothing."},
           "wait": {"type": "integer", "default": 0, "minimum": 0, "maximum": 600,
@@ -610,7 +619,8 @@ def run_pipeline(app, mode, dry_run, wait):
 
 
 @tool("update_config", "Replace top-level sections of config.json (null removes a section). The file is "
-      "validated like the tester loads it; the tester restarts itself unless the pipeline is running. "
+      "validated like the tester loads it; the tester restarts itself unless the pipeline is running, and "
+      "`/mcp` is unavailable for about 10 s. "
       "Pass the `revision` from get_config to refuse the write if the file changed since.", {
           "changes": {"type": "object", "description": "{section: new value or null}; whole sections, not patches."},
           "revision": _str("Revision from get_config."),
@@ -649,7 +659,8 @@ def edit_singbox_file(app, path, action, revision, content=None, ts=None):
 
 
 @tool("singbox_control", "Stop or start sing-box, turn the router kill switch service on or off (OpenWrt). "
-      "Stopping sing-box takes the internet away from the whole home network while the kill switch is on.", {
+      "Stopping sing-box takes the internet away from the whole home network while the kill switch is on, "
+      "and possibly your own link: you will not be able to start it again, only the user can.", {
           "action": _str("What to do.", ("stop", "start", "killswitch_on", "killswitch_off")),
       }, required=("action",), read_only=False, destructive=True)
 def singbox_control(app, action):

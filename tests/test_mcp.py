@@ -64,6 +64,7 @@ class McpTest(unittest.TestCase):
         self.assertEqual(init["protocolVersion"], "2025-06-18")
         self.assertIn("tools", init["capabilities"])
         self.assertIn("overview", init["instructions"])
+        self.assertIn("only the user can", init["instructions"])     # агент может отрезать себе связь
         tools = self._rpc("tools/list")["result"]["tools"]
         self.assertEqual({t["name"] for t in tools}, set(TOOLS))
         reading = {t["name"] for t in tools if t["annotations"]["readOnlyHint"]}
