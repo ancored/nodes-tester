@@ -1,19 +1,28 @@
 """Дашборд: свод результатов — последний результат каждого теста со своим временем."""
 
+import sqlite3
 import time
 import unittest
 
 from dashboard import data as D
+from nodes_tester.storage import _SCHEMA
 
 
 class ResultsTest(unittest.TestCase):
     def _run(self, rows):
-        orig = D._query
-        D._query = lambda db, sql: rows
+        """Строки истории — в настоящую базу: выборку последних делает SQL."""
+        con = sqlite3.connect(":memory:")
+        con.row_factory = sqlite3.Row
+        con.executescript(_SCHEMA)
+        con.execute("INSERT INTO nodes (crc, provider, protocol, country) VALUES ('z', 'P', 'vless', 'nl')")
+        con.executemany("INSERT INTO results (ts, crc, test, ok, metrics, error) "
+                        "VALUES (:ts, :crc, :test, :ok, :metrics, :error)", rows)
+        token = D._connection.set(con)
         try:
             return D._results("nodb")
         finally:
-            D._query = orig
+            D._connection.reset(token)
+            con.close()
 
     def _row(self, test, ts, _seq=0):
         return {"crc": "z", "test": test, "ok": 1, "metrics": "{}", "error": "",
@@ -30,6 +39,26 @@ class ResultsTest(unittest.TestCase):
         self.assertEqual(node["cells"]["latency"]["ts"], now)
         self.assertEqual(node["cells"]["connectivity"]["ts"], now - 3600)
         self.assertEqual(node["ts"], now)
+
+    def test_same_time_later_row_wins(self):
+        now = int(time.time())
+        first = self._row("latency", now)
+        first["ok"] = 0
+        self.assertEqual(self._run([first, self._row("latency", now)])["rows"][0]["cells"]["latency"]["ok"], 1)
+
+    def test_score_spark_keeps_last_points_in_order(self):
+        con = sqlite3.connect(":memory:")
+        con.row_factory = sqlite3.Row
+        con.executescript(_SCHEMA)
+        con.executemany("INSERT INTO score_history (ts, crc, score) VALUES (?, ?, ?)",
+                        [(ts, "z", ts) for ts in range(30, 0, -1)] + [(5, "y", 1.25)])
+        token = D._connection.set(con)
+        try:
+            spark = D._score_spark("nodb")
+        finally:
+            D._connection.reset(token)
+            con.close()
+        self.assertEqual(spark, {"y": [1.2], "z": [float(ts) for ts in range(7, 31)]})
 
     def test_heavy_success_has_no_failure_details(self):
         now = int(time.time())

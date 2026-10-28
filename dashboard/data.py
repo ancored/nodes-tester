@@ -622,21 +622,28 @@ def _chains(db: str) -> dict:
 def _results(db: str) -> dict:
     """Свод по ноде: последний результат каждого теста со временем замера. Служебная
     запись _select ('переключ.') в таблицу не выводится."""
+    # Только последняя строка каждого теста ноды: вся история results за retention в памяти
+    # обходилась в сотни мегабайт на каждый опрос админки.
     rows = _query(db, """
         SELECT r.crc AS crc, r.test AS test, r.ok AS ok, r.metrics AS metrics,
                r.error AS error, r.ts AS ts,
                n.provider AS provider, n.protocol AS protocol, n.country AS country
-        FROM results r LEFT JOIN nodes n ON n.crc = r.crc
-        WHERE r.test != '_select' ORDER BY r.ts, r.rowid""")
+        FROM (SELECT rowid AS id, ROW_NUMBER() OVER (PARTITION BY crc, test
+                                                     ORDER BY ts DESC, rowid DESC) AS k
+              FROM results WHERE test != '_select') last
+        JOIN results r ON r.rowid = last.id
+        LEFT JOIN nodes n ON n.crc = r.crc
+        WHERE last.k = 1 ORDER BY r.ts, r.rowid""")
+    # Ключ ноды → время последнего соединения
+    connected = {r["crc"]: r["ts"] for r in _query(db, """
+        SELECT crc, MAX(ts) AS ts FROM results
+        WHERE test = 'connectivity' AND ok GROUP BY crc""")}
     ip_rows = _query(db, "SELECT ip, asn, as_name, isp, org, country, mobile, proxy, hosting, ts "
                          "FROM ip_info")
     ip_info = {r.get("ip"): r for r in ip_rows if r.get("ip")}
     latest: dict[str, dict] = {}
-    connected: dict[str, int] = {}             # ключ ноды → время последнего соединения
-    for r in rows:                             # по возрастанию времени: последний перекрывает
+    for r in rows:
         latest.setdefault(r["crc"], {})[r["test"]] = r
-        if r["test"] == "connectivity" and r["ok"]:
-            connected[r["crc"]] = r["ts"]
 
     tests_seen: set[str] = set()
     node_rows: list[dict] = []
@@ -822,9 +829,14 @@ def _attrition(db: str) -> list[dict]:
 def _score_spark(db: str, points: int = 24) -> dict:
     """crc -> последние N значений score (по ts ↑) для спарклайна истории рейтинга."""
     out: dict[str, list] = {}
-    for r in _query(db, "SELECT crc, score FROM score_history ORDER BY crc, ts"):
+    for r in _query(db, f"""
+            SELECT crc, score FROM (
+                SELECT crc, score, ts, rowid AS id,
+                       ROW_NUMBER() OVER (PARTITION BY crc ORDER BY ts DESC, rowid DESC) AS k
+                FROM score_history)
+            WHERE k <= {int(points)} ORDER BY crc, ts, id"""):
         out.setdefault(r["crc"], []).append(round(float(r["score"] or 0), 1))
-    return {c: v[-points:] for c, v in out.items()}
+    return out
 
 
 def _nodes_list(db: str) -> list[dict]:
