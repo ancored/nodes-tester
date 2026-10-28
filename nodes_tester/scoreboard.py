@@ -343,22 +343,26 @@ class Scoreboard:
         return any(v == "0" for v in self._checks(r, group, "require").values())
 
     def _tier(self, r: dict, group: str) -> int:
-        """Ярус кандидата: сколько приоритетных проверок группы не пройдено. Рейтинг ниже
-        tier_floor — ярус после всех остальных: слабая нода, прошедшая приоритетные проверки,
-        не обходит сильные, которые их не прошли."""
-        prefer = self._checks(r, group, "prefer")
-        missed = sum(v != "1" for v in prefer.values())
+        """Ярус кандидата: какие приоритетные проверки группы не пройдены. Порядок в prefer —
+        важность: непройденная проверка весит больше всех следующих вместе (вес 2^k, k —
+        сколько проверок после неё), меньший ярус — раньше. Рейтинг ниже tier_floor — ярус
+        после всех остальных: слабая нода, прошедшая приоритетные проверки, не обходит
+        сильные, которые их не прошли."""
+        verdicts = list(self._checks(r, group, "prefer").values())
+        n = len(verdicts)
+        missed = sum(1 << (n - 1 - i) for i, v in enumerate(verdicts) if v != "1")
         g = self._policy.get(group)
         floor = g.tier_floor if g is not None and g.tier_floor is not None else self.tier_floor
         if float(r.get("score") or 0) < floor:
-            missed += len(prefer) + 1
+            missed += 1 << n
         return missed
 
     def tier(self, node: str, group: str) -> int:
         with self._lock:
             r = self.rows.get(node)
             g = self._policy.get(group)
-            return self._tier(r, group) if r is not None else len(g.prefer if g else ())
+            # Неизвестная нода — все приоритетные проверки не пройдены.
+            return self._tier(r, group) if r is not None else (1 << len(g.prefer if g else ())) - 1
 
     def _check_ts(self, r: dict, check: str) -> "int | None":
         """Когда получен результат проверки (для возраста в админке)."""

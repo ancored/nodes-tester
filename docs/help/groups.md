@@ -71,7 +71,7 @@ flowchart TD
     req -->|yes| hv{"Fresh failure of<br>the heavy download?"}
     hv -->|"yes, and there are<br>other candidates"| out
     hv -->|"no (or no one else)"| cand["Candidate"]
-    cand --> tier["Tier: how many preferred<br>checks are not passed"]
+    cand --> tier["Tier: which preferred<br>checks are not passed"]
 ```
 
 A failed heavy download excludes a node only while there are other candidates: if every candidate failed it, the
@@ -89,7 +89,10 @@ The candidates of a group are always visible:
 
 Candidates are ordered by **tier**, and inside a tier by rating:
 
-1. tier 0 — all preferred checks passed; tier 1 — one is not passed; and so on;
+1. tier 0 — all preferred checks passed. The order of checks in `prefer` is their importance: a failed check
+   weighs more than all the following ones together. With `"prefer": {"google_country": {}, "ip_type": {…}}` a
+   node that Google sees outside Russia with a data-centre IP comes before a residential node that Google sees in
+   Russia;
 2. a node rated below `tier_floor` (75 by default, `selection.tier_floor` or the group's own `tier_floor`) goes
    after all other tiers: a weak node that passed the preferred checks should not overtake strong nodes that did
    not;

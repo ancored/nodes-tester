@@ -102,6 +102,21 @@ class GoogleCountryCheckTest(unittest.TestCase):
         self.sb.rows["A"]["required"]["google_country"]["ts"] = int(time.time()) - 3 * 86400   # старше 48 ч
         self.assertEqual(self._verdicts()["A"], "")
 
+    def test_prefer_order_is_importance(self):
+        """Первая проверка prefer важнее всех следующих: не RU у Google с ДЦ раньше RU с домашним IP."""
+        cfg = parse_config({"groups": [{"tag": "ai", "prefer": {"google_country": {},
+                                                                "ip_type": {"kinds": ["residential"]}}}]})
+        self.sb.set_policy(cfg.groups, {})
+        self.sb.set_ip_info({"1.1.1.1": {"hosting": True, "country": "PL", "ts": int(time.time())},
+                             "2.2.2.2": {"country": "PL", "ts": int(time.time())}})
+        for node, ip, google in (("A", "1.1.1.1", "PL"), ("B", "2.2.2.2", "RU"), ("C", "1.1.1.1", "RU")):
+            self.sb.rows[node].update(exit_ip=ip, exit_cc="PL")
+            self.sb.set_required_result(node, "google_country", True, google)
+        self.assertEqual([self.sb.tier(n, "ai") for n in "ABC"], [1, 2, 3])
+        self.sb.tier_floor = 90                             # слабая нода — после всех ярусов
+        self.assertEqual(self.sb.tier("A", "ai"), 1 + 4)
+        self.assertEqual(self.sb.tier("unknown", "ai"), 3)
+
     def test_restore_from_latest_results(self):
         self._policy()
         now = int(time.time())

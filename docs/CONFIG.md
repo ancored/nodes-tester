@@ -374,7 +374,7 @@ outbound and, with `direct_fallback`, `direct-out`. The tester picks the active 
 | `reserve` | number | `selection.reserve` | Reserve candidates |
 | `tier_floor` | number | `selection.tier_floor` | A lower rating puts the node into a tier after all other nodes of the group |
 | `require` | object | — | Required checks: without a fresh success the node is not a candidate |
-| `prefer` | object | — | Preferred checks: successes move the node up the choice queue |
+| `prefer` | object | — | Preferred checks: successes move the node up the choice queue; the order is importance, a check weighs more than all the following ones together |
 | `monitor.errors` | object | `monitor.errors` | The group's own rule of an emergency by connection errors; fields that are not set come from `monitor.errors` |
 
 A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl` (except
