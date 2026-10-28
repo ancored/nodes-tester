@@ -295,7 +295,7 @@ working one is accepted by the gateway, the other one gets HTTP 500.
 ## tests
 
 Rating measurements: `connectivity`, `latency`, `jitter`, `download`, `reachability`; besides them,
-`google_country` (only shown in the admin panel, does not affect the rating or the choice of a node). The tester
+`google_country` (not part of the rating; groups use it through the `google_country` check). The tester
 checks a node when its measurement has expired (see
 [result lifetimes](../nodes_tester/README.md#result-lifetimes)). The fields set lifetimes, addresses and timeouts;
 unset ones come from the test code, `timeout` from `tester.request_timeout`.
@@ -328,6 +328,7 @@ at once. These are the defaults; a group refers to a check by name in `require` 
 | `country` | exit country by the connection measurement | `ttl` `24h` |
 | `ip_type` | exit IP type by ip-api: `residential`, `mobile`, `hosting`, `proxy` | `ttl` `24h`, `url`, `timeout` `10s`, `via_tester` `true` |
 | `geo_consistent` | the IP country by the database matches the measured one | `ttl` `24h` |
+| `google_country` | the country in which Google sees the node exit (the `tests.google_country` measurement) is not in the list of the group | `ttl` `48h` |
 | `gemini`, `openai`, `anthropic` | access to the AI service | `ttl` `24h`, `attempts` `3`, `timeout` |
 | `upstream` | whether an upstream proxy works through the node: a sing-box outbound of type `socks` with `detour` to the group | `ttl` `6h`, `outbound` (required if the check is in a group), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
 | `heavy` | a heavy download of reserve candidates; slower than `min_mbps` is a failure | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2`, `min_mbps` `5` |
@@ -377,12 +378,14 @@ outbound and, with `direct_fallback`, `direct-out`. The tester picks the active 
 | `monitor.errors` | object | `monitor.errors` | The group's own rule of an emergency by connection errors; fields that are not set come from `monitor.errors` |
 
 A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl` (except
-`ip_type` and `geo_consistent`: the ip-api data is refreshed by `checks.ip_type.ttl`), and `country` and
-`ip_type` can set conditions:
+`ip_type` and `geo_consistent`: the ip-api data is refreshed by `checks.ip_type.ttl`), and `country`,
+`ip_type` and `google_country` can set conditions:
 
 - `country`: `countries`, `regions`, `exclude_countries`, `exclude_regions` (ISO codes and region names);
 - `ip_type`: `kinds`, the allowed IP types. The ip-api `proxy` sign does not cancel the type: a residential IP
-  with it is still residential; `proxy` in `kinds` lets through any IP with the sign.
+  with it is still residential; `proxy` in `kinds` lets through any IP with the sign;
+- `google_country`: `exclude_countries`, the countries (by Google) in which the node does not fit; by default the
+  countries where Google AI is not available (`ru`, `by`, `cn`, `hk`, `mo`, `ir`, `kp`, `cu`, `sy`).
 
 A group candidate passes the gate, has a rating above zero, is not paused or quarantined, and all its
 `require` checks are fresh and successful. Among the candidates, nodes with successes in

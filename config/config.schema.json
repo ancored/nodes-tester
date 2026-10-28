@@ -45,7 +45,7 @@
           "items": {
             "type": "string"
           },
-          "description": "country: недопустимые страны."
+          "description": "country: недопустимые страны; google_country: страны по мнению Google, в которых нода не подходит (по умолчанию — где Google AI недоступен)."
         },
         "exclude_regions": {
           "type": "array",
@@ -79,6 +79,9 @@
           "$ref": "#/definitions/groupCheck"
         },
         "geo_consistent": {
+          "$ref": "#/definitions/groupCheck"
+        },
+        "google_country": {
           "$ref": "#/definitions/groupCheck"
         },
         "gemini": {
@@ -655,6 +658,32 @@
             }
           },
           "description": "Страна IP по базе совпадает с измеренной."
+        },
+        "google_country": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ttl": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Срок годности вердикта.",
+              "default": "48h"
+            },
+            "ttl_jitter": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Разброс срока: вердикт живёт от ttl − ttl_jitter до ttl; по умолчанию ttl/10.",
+              "default": "4h48m"
+            },
+            "for_region": {
+              "type": "object",
+              "description": "Поля проверки для нод с выходом в регионе: регион → поля.",
+              "additionalProperties": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "Страна, в которой Google видит выход ноды (замер tests.google_country), вне списка стран группы."
         },
         "gemini": {
           "type": "object",

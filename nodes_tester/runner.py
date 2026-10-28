@@ -396,6 +396,7 @@ class Runner:
             print(f"Хранилище: {self.cfg.storage.path}"
                   + (" + сбор трафика" if self.cfg.storage.traffic.enabled else ""))
             self._latest = self.storage.latest_results(TESTS)
+            self.board.restore_google_country(self._latest)
             if self.once:
                 self._force_requested.set()
             self.monitor.start()
@@ -518,6 +519,9 @@ class Runner:
             results = {**{name: res for name, (_ts, res) in latest.items()},
                        "_select": results["_select"]}
         gate = self._score_and_maybe_switch(regions, ident, results)
+        google = record["tests"].get("google_country") or {}
+        if google.get("ok"):                   # проверка группы google_country — по свежему замеру
+            self.board.set_required_result(ident.raw, "google_country", True, google["country"])
         self._backoff_update(ident.node_id, gate, low=gate and self._low_score(ident.raw))
         self.switcher.after_measure(ident.raw)
         self.reserve.wake()                    # новый рейтинг может вытеснить кандидата резерва

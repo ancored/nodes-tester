@@ -88,7 +88,7 @@ testing runs, a second request is not accepted; the page shows how many nodes ar
 | \`jitter\` | several requests in a row (\`samples\`, 5 by default, every \`interval\`) | mean, minimum, maximum latency, jitter, loss % |
 | \`download\` | downloads a file for up to \`duration\` (20 s), 5 MB from Cloudflare by default | speed Mbit/s; throttling (the speed of the last 2 MB window to the first); hold (share of the file received) |
 | \`reachability\` | opens several sites in parallel (Google, Cloudflare, YouTube by default) | how many of them answered |
-| \`google_country\` | once a day, a HEAD request to the Chrome variations server | the country in which Google sees the node exit (the \`X-Country\` header). Chrome turns its features on by it, for example Gemini in Chrome; it can differ both from the Cloudflare country and from the country on the Gemini page. Does not affect the rating or the choice of a node |
+| \`google_country\` | once a day, a HEAD request to the Chrome variations server | the country in which Google sees the node exit (the \`X-Country\` header). Chrome turns its features on by it, for example Gemini in Chrome; it can differ both from the Cloudflare country and from the country on the Gemini page. Not part of the rating; groups use it through the [\`google_country\` check](#checks) |
 
 Addresses, sizes and timeouts are set in the \`tests\` section ([reference](../CONFIG.md#tests)). Nodes with an
 exit in a region can use their own addresses (\`for_region\`): for example, speed test servers in Russia for
@@ -119,6 +119,7 @@ AI checks, \`upstream\` and \`heavy\` run only for the groups that use them.
 | \`country\` | Is the exit country allowed for the group? | the \`connectivity\` measurement; \`ttl\` 24 h |
 | \`ip_type\` | What kind of exit IP: residential, mobile, data centre, known proxy? | the tester every 5 minutes for new exit IPs (ip-api.com); \`ttl\` 24 h |
 | \`geo_consistent\` | Does the IP country in the databases match the measured one? | together with \`ip_type\` |
+| \`google_country\` | Does Google see the node outside the excluded countries (by default — where Google AI is not available)? | the [\`google_country\`](#measurements) measurement once a day; \`ttl\` 48 h |
 | \`gemini\` | Does Google Gemini let the node in, and from which country does Google see it? | the [reserve](groups.md#reserve); \`ttl\` 24 h |
 | \`openai\` | Does OpenAI let the node in? | the reserve; \`ttl\` 24 h |
 | \`anthropic\` | Does Claude (Anthropic) let the node in? | the reserve; \`ttl\` 24 h |
@@ -165,6 +166,9 @@ healthy node (DNS filters on the router often block ip-api.com); if that fails, 
   refreshed by \`checks.ip_type.ttl\`.
 - \`geo_consistent\` passes when the database country equals the measured exit country. AI services and
   streaming sites look at the databases: a node whose IP is listed in another country is treated as that country.
+- \`google_country\` passes when the country in which Google sees the exit is not in \`exclude_countries\` of the
+  group (by default Russia, Belarus, China, Hong Kong, Macau, Iran, North Korea, Cuba, Syria). Chrome turns on Gemini
+  in Chrome by this country, and most node exits are Russian for Google even when Cloudflare sees another country.
 
 <a id="entry"></a>
 ### Node entry and chains

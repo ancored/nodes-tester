@@ -1,3 +1,3 @@
 """Тестер leaf-нод sing-box через SOCKS5 inbound + API-сервис sing-box."""
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"

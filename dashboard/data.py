@@ -13,7 +13,7 @@ from pathlib import Path
 
 from naming import parse_node
 from naming.regions import alpha3_to_alpha2
-from nodes_tester.tests.gemini import DEFAULT_FORBIDDEN as GEMINI_FORBIDDEN
+from nodes_tester.tests.google_country import GOOGLE_AI_FORBIDDEN
 
 _connection = ContextVar("dashboard_connection", default=None)
 
@@ -466,8 +466,6 @@ def _top_nodes(rows: list[dict], limit: int = 10) -> list[dict]:
 _TEST_ORDER = ["connectivity", "latency", "jitter", "download", "reachability",
                "heavy_download", "gemini", "google_country", "openai", "anthropic", "whitelist"]
 _AI_TESTS = ("gemini", "openai", "anthropic", "upstream")
-# Страны, где сервисы Google AI недоступны (alpha-2), — для отметки в колонке google_country.
-_GOOGLE_FORBIDDEN = frozenset(alpha3_to_alpha2(c) for c in GEMINI_FORBIDDEN)
 
 
 def _ai_cell(test: str, ok, m: dict, error: str) -> dict:
@@ -507,7 +505,7 @@ def _google_country_cell(ok, m: dict, error: str) -> dict:
     if not ok:
         return {"v": "Не определено", "ok": 0, "unk": 1, "ai": 1, "title": (error or "").strip()}
     cc = m.get("country") or ""
-    return {"v": cc, "ok": 0 if cc in _GOOGLE_FORBIDDEN else 1, "ai": 1, "cc": cc}
+    return {"v": cc, "ok": 0 if cc.lower() in GOOGLE_AI_FORBIDDEN else 1, "ai": 1, "cc": cc}
 
 
 def _whitelist_cell(ok, m: dict) -> dict:

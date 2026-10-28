@@ -5,14 +5,20 @@
 всегда совпадает ни со страной по Cloudflare (`connectivity`), ни со страной на странице
 Gemini (тест `gemini`): у одной ноды бывает PL, GBR и RU сразу. Запрос HEAD — без тела.
 
-Тест только измеряет: на рейтинг и выбор ноды не влияет. ok — страна получена.
+На рейтинг тест не влияет; группа может требовать или предпочитать ноды со страной вне
+списка (проверка `google_country`, вердикт считает scoreboard). ok — страна получена.
 """
 
 from __future__ import annotations
 
+from naming.regions import alpha3_to_alpha2
+
 from .base import BROWSER_HEADERS, BaseTest, TestContext, TestResult, register
+from .gemini import DEFAULT_FORBIDDEN
 
 DEFAULT_URL = "https://clientservices.googleapis.com/chrome-variations/seed"
+# Страны, где Google AI недоступен (alpha-2, нижний регистр): по умолчанию для проверки группы.
+GOOGLE_AI_FORBIDDEN = frozenset(alpha3_to_alpha2(c).lower() for c in DEFAULT_FORBIDDEN)
 
 
 @register

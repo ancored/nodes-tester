@@ -293,7 +293,7 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 ## tests
 
 Замеры рейтинга: `connectivity`, `latency`, `jitter`, `download`, `reachability`; кроме них —
-`google_country` (только показывается в админке, на рейтинг и выбор ноды не влияет). Тестер
+`google_country` (в рейтинг не входит; группы используют его через проверку `google_country`). Тестер
 проверяет ноду, когда истёк срок годности её замера (см.
 [сроки годности](../nodes_tester/README.ru.md#сроки-годности)). Поля задают сроки, адреса и тайм-ауты;
 не заданные берутся из кода теста, `timeout` — из `tester.request_timeout`.
@@ -326,6 +326,7 @@ HWID роутера хранится в `device.json`, ключи `happ://crypt�
 | `country` | страна выхода по замеру соединения | `ttl` `24h` |
 | `ip_type` | тип выходного IP по ip-api: `residential`, `mobile`, `hosting`, `proxy` | `ttl` `24h`, `url`, `timeout` `10s`, `via_tester` `true` |
 | `geo_consistent` | страна IP по базе совпадает с измеренной | `ttl` `24h` |
+| `google_country` | страна, в которой Google видит выход ноды (замер `tests.google_country`), не из списка группы | `ttl` `48h` |
 | `gemini`, `openai`, `anthropic` | доступ к AI-сервису | `ttl` `24h`, `attempts` `3`, `timeout` |
 | `upstream` | проходит ли через ноду вышестоящий прокси — outbound sing-box типа `socks` с `detour` на группу | `ttl` `6h`, `outbound` (обязателен, если проверка есть в группе), `url` `https://www.cloudflare.com/cdn-cgi/trace`, `attempts` `2`, `timeout` `15s` |
 | `heavy` | тяжёлая закачка кандидатов резерва; медленнее `min_mbps` — провал | `ttl` `6h`, `url`, `duration` `30s`, `window_mb` `2`, `min_mbps` `5` |
@@ -375,12 +376,14 @@ SOCKS5-рукопожатие с сервером `outbound` (логин и па
 | `monitor.errors` | объект | `monitor.errors` | Своё правило аварии по ошибкам соединений для группы; незаданные поля — из `monitor.errors` |
 
 Проверка внутри группы — объект, обычно пустой (`"gemini": {}`). В нём можно задать свой `ttl` (кроме
-`ip_type` и `geo_consistent`: сведения ip-api обновляются по `checks.ip_type.ttl`), а у `country` и
-`ip_type` — условия:
+`ip_type` и `geo_consistent`: сведения ip-api обновляются по `checks.ip_type.ttl`), а у `country`,
+`ip_type` и `google_country` — условия:
 
 - `country`: `countries`, `regions`, `exclude_countries`, `exclude_regions` (ISO-коды и имена регионов);
 - `ip_type`: `kinds` — допустимые типы IP. Признак `proxy` от ip-api тип не отменяет: домашний IP с ним
-  остаётся домашним; `proxy` в `kinds` пропускает любой IP с этим признаком.
+  остаётся домашним; `proxy` в `kinds` пропускает любой IP с этим признаком;
+- `google_country`: `exclude_countries` — страны (по мнению Google), в которых нода не подходит; по умолчанию —
+  страны, где Google AI недоступен (`ru`, `by`, `cn`, `hk`, `mo`, `ir`, `kp`, `cu`, `sy`).
 
 Кандидат группы проходит gate, имеет рейтинг больше нуля, не стоит на паузе или в карантине, а все
 проверки `require` у него свежие и успешные. Среди кандидатов первыми идут ноды с успехами по

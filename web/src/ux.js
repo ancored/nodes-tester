@@ -10,7 +10,8 @@ export const TEST_NAMES = translated({ connectivity: () => t('Connection'), late
 export const TEST_UNITS = translated({ latency: () => t('ms'), jitter: () => t('ms / %'), download: () => t('Mbit/s'), heavy_download: () => t('Mbit/s') })
 // Проверки групп (config.json checks): названия и вердикт «1» / «0» / «» (неизвестно или устарел).
 export const CHECK_NAMES = translated({ country: () => t('Exit country'), ip_type: () => t('Exit IP type'), geo_consistent: () => t('IP country by databases'),
-  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), heavy: () => t('Heavy download'), whitelist: () => t('Whitelists') })
+  gemini: () => 'Google AI', openai: () => 'OpenAI', anthropic: () => 'Claude AI', upstream: () => t('Proxy through the node'), heavy: () => t('Heavy download'), whitelist: () => t('Whitelists'),
+  google_country: () => t('Country seen by Google') })
 // Причина провала проверки (nodes_tester/diagnose.py CAUSES): код из ячейки результата.
 export const FAILURE_CAUSES = translated({ dns: () => t('DNS: the name of the node server does not resolve'),
   tls: () => t('TLS: the certificate or Reality check failed'), tcp: () => t('TCP: no connection to the node server'),

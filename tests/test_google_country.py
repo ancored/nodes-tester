@@ -1,13 +1,18 @@
 """Тест google_country: страна по заголовку X-Country сервера вариаций Chrome, срок 24 ч,
-ячейка в своде результатов."""
+ячейка в своде результатов; проверка группы google_country (prefer/require)."""
 
 import json
+import os
+import time
 import unittest
 
 from dashboard import data as D
-from nodes_tester.config import parse_config
+from nodes_tester.config import RatingConfig, StorageConfig, parse_config
+from nodes_tester.scoreboard import Scoreboard
+from nodes_tester.storage import Storage
 from nodes_tester.tests import TestContext
 from nodes_tester.tests.google_country import GoogleCountryTest
+from tests.helpers import temp_dir
 
 
 class _Resp:
@@ -62,6 +67,50 @@ class GoogleCountryTestTest(unittest.TestCase):
         self.assertEqual((gb["ok"], gb["cc"]), (1, "GB"))
         failed = D._cell("google_country", 0, "{}", "HTTP 503")
         self.assertEqual((failed["unk"], failed["title"]), (1, "HTTP 503"))
+
+
+class GoogleCountryCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.storage = Storage(StorageConfig(path=os.path.join(temp_dir(), "s.db")))
+        self.sb = Scoreboard(self.storage, RatingConfig())
+        self.sb.rows = {n: {"node": n, "id": n, "score": 80, "provider": "P", "protocol": "vless"} for n in "ABC"}
+        self.sb.set_groups({"ai": set(self.sb.rows)})
+
+    def tearDown(self):
+        self.storage.close()
+
+    def _policy(self, **params):
+        cfg = parse_config({"groups": [{"tag": "ai", "prefer": {"google_country": params}}]})
+        self.sb.set_policy(cfg.groups, {})
+
+    def _verdicts(self):
+        return {n: self.sb.check_report(n, "ai")[0]["verdict"] for n in "ABC"}
+
+    def test_prefer_country_outside_list(self):
+        self._policy()
+        self.sb.set_required_result("A", "google_country", True, "RU")
+        self.sb.set_required_result("B", "google_country", True, "NL")
+        self.assertEqual(self._verdicts(), {"A": "0", "B": "1", "C": ""})
+        self.assertEqual((self.sb.tier("A", "ai"), self.sb.tier("B", "ai")), (1, 0))
+
+    def test_own_countries_and_expiry(self):
+        self._policy(exclude_countries=["NL"])
+        self.sb.set_required_result("A", "google_country", True, "RU")
+        self.sb.set_required_result("B", "google_country", True, "NL")
+        verdicts = self._verdicts()
+        self.assertEqual((verdicts["A"], verdicts["B"]), ("1", "0"))
+        self.sb.rows["A"]["required"]["google_country"]["ts"] = int(time.time()) - 3 * 86400   # старше 48 ч
+        self.assertEqual(self._verdicts()["A"], "")
+
+    def test_restore_from_latest_results(self):
+        self._policy()
+        now = int(time.time())
+        self.sb.set_required_result("B", "google_country", True, "NL")
+        self.sb.restore_google_country({
+            "A": {"google_country": (now - 60, {"ok": True, "country": "US"})},
+            "B": {"google_country": (now - 86400, {"ok": True, "country": "RU"})},   # старее известного
+            "C": {"google_country": (now, {"ok": False, "error": "HTTP 503"})}})
+        self.assertEqual(self._verdicts(), {"A": "1", "B": "1", "C": ""})
 
 
 if __name__ == "__main__":

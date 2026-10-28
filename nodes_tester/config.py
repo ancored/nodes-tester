@@ -134,7 +134,7 @@ WRITE_LOCK = threading.Lock()
 
 # Замеры при обходе ноды и их параметры. Каждый замер живёт ttl (по умолчанию 3 ч,
 # google_country — 24 ч), срок укорачивается на случайную долю ttl_jitter (по умолчанию
-# ttl/10). google_country в рейтинг не входит: только сведения для админки.
+# ttl/10). google_country в рейтинг не входит: по нему — проверка группы checks.google_country.
 TESTS = ("connectivity", "latency", "jitter", "download", "reachability", "google_country")
 _TEST_TTL = 3 * 3600.0
 _TEST_TTLS = {"google_country": 24 * 3600.0}
@@ -195,6 +195,8 @@ _CHECK_DEFAULTS = {
     "country": {"ttl": 86400.0},
     "ip_type": {"ttl": 86400.0, "url": "http://ip-api.com/batch", "timeout": 10.0, "via_tester": True},
     "geo_consistent": {"ttl": 86400.0},
+    # Вердикт по замеру tests.google_country (раз в сутки): живёт дольше интервала замера.
+    "google_country": {"ttl": 2 * 86400.0},
     "gemini": {"ttl": 86400.0, "attempts": 3, "timeout": 20.0},
     "openai": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
     "anthropic": {"ttl": 86400.0, "attempts": 3, "timeout": 15.0},
@@ -212,6 +214,7 @@ _GROUP_CHECK_FIELDS = {
     "country": (*_TTL_KEYS, "countries", "regions", "exclude_countries", "exclude_regions"),
     "ip_type": ("kinds",),
     "geo_consistent": (),
+    "google_country": (*_TTL_KEYS, "exclude_countries"),
 }
 IP_KINDS = ("residential", "mobile", "hosting", "proxy")
 

@@ -62,7 +62,7 @@ The latest result of each measurement and check of every node. The time of each 
 | Sites | how many sites of `reachability` answered, of how many |
 | Heavy download | Mbit/s of the long download (reserve candidates only) |
 | Google AI, OpenAI, Claude AI | ✓ available, ✗ not available, ? network failure (the previous verdict stays); under Google AI — the country in which Google sees the node. Only candidates of groups that require these checks are checked |
-| Google country | `google_country`: the flag of the country in which Google sees the node exit; ✗ — Google AI is not available in that country (Russia, Belarus, China and others), ? — not measured. Does not affect the choice of a node |
+| Google country | `google_country`: the flag of the country in which Google sees the node exit; ✗ — Google AI is not available in that country (Russia, Belarus, China and others), ? — not measured. Groups use it through the [`google_country` check](checks.md#checks) |
 | Proxy through the node | the [upstream](checks.md#upstream) check |
 | Whitelist | ✓ — the whitelist mode lets the node through: its IP and SNI are in the lists ([details](checks.md#whitelist)); hover for the addresses and SNI |
 

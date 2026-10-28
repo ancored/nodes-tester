@@ -19,6 +19,7 @@ from .config import region_of
 from .freshness import expires, fresh
 from .identity import NodeIdentity
 from .ipinfo import db_country_mismatch, kind
+from .tests.google_country import GOOGLE_AI_FORBIDDEN
 
 # Проверки, которые резерв догоняет сам (по одной на ноду); прочие дают замеры тестера.
 RUNNABLE_CHECKS = ("gemini", "openai", "anthropic", "upstream", "heavy")
@@ -270,6 +271,18 @@ class Scoreboard:
                                                       "ts": int(time.time()), "cc": detail or ""}
                 self._persist(r)
 
+    def restore_google_country(self, latest: dict) -> None:
+        """Страна по мнению Google из последних замеров базы ({ключ ноды: {тест: (ts, результат)}})
+        у нод, где в рейтинге её нет или она старее: замер идёт раз в сутки, после обновления
+        тестера проверка группы иначе ждала бы его до суток."""
+        with self._lock:
+            for r in self.rows.values():
+                ts, res = (latest.get(r.get("id")) or {}).get("google_country") or (0, {})
+                known = (r.get("required") or {}).get("google_country") or {}
+                if res.get("ok") and res.get("country") and ts > int(known.get("ts") or 0):
+                    r.setdefault("required", {})["google_country"] = {"ok": "1", "ts": ts, "cc": res["country"]}
+                    self._persist(r)
+
     def set_ip_info(self, infos: dict) -> None:
         """Сведения о выходных IP (кэш ip_info): {ip: {country, mobile, proxy, hosting, …}}."""
         with self._lock:
@@ -302,6 +315,11 @@ class Scoreboard:
         if check == "heavy":
             return str(r.get("heavy_ok", "")) if current(r.get("heavy_ts")) else ""
         result = (r.get("required") or {}).get(check) or {}
+        if check == "google_country":          # страна — в cc, условие — у группы
+            if not result.get("cc") or not current(result.get("ts")):
+                return ""
+            excluded = params.get("exclude_countries") or GOOGLE_AI_FORBIDDEN
+            return "0" if result["cc"].lower() in excluded else "1"
         return str(result.get("ok", "")) if current(result.get("ts")) else ""
 
     def _country_fits(self, cc: str, params: dict) -> bool:

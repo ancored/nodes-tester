@@ -119,6 +119,7 @@ Checks (the `checks` section) give a “yes / no / unknown” verdict with a lif
 | `country` | the exit country fits the group | the `connectivity` measurement |
 | `ip_type` | exit IP type: residential, mobile, data centre, proxy | the tester every 5 minutes (ip-api) |
 | `geo_consistent` | the IP country by the database matches the measured one | the tester every 5 minutes (ip-api) |
+| `google_country` | Google sees the exit outside the excluded countries of the group | the `google_country` measurement |
 | `gemini`, `openai`, `anthropic` | the AI service lets the node in | the reserve |
 | `upstream` | an upstream proxy works through the node (an outbound with `detour` to the group) | the reserve |
 | `heavy` | a heavy control download | the reserve |
