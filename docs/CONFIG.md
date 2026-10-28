@@ -465,6 +465,15 @@ always the node itself: it cannot be connected to (`connect`), did not answer in
   connections. During the first `fresh` after a node is chosen, `fresh_min` errors in a window are enough: a node fails most
   often right after it is chosen. Errors of connections started before the switch (the line time minus the connection age)
   belong to the previous node and are not counted.
+- **Emergency by drops** (`drops`): the node breaks HTTP/2 streams (grpc, xhttp, naive) in the middle of a transfer, and
+  the log gets lines `connection download closed: stream error: …; INTERNAL_ERROR; received from peer`. Long connections
+  (streamed AI answers, video) fail, while short requests and the probe pass. The line has no outbound: the tester finds
+  the node by a connection of the same duration closed at the same time in the sing-box API stream. Only a drop of a
+  transfer in progress counts (bytes moved within the last 10 s): a server also closes an idle connection normally
+  (grpc after a minute of idling). Drops within one
+  second are one event: the shared transport to the node fails. At least `min` such seconds in the last `window` and at
+  least `prev_min` in the window before it, the node is replaced without a probe. sing-box does not write normal closes
+  to this log, and the codes `NO_ERROR` and `CANCEL`, GOAWAY and QUIC cancels are not counted.
 - **Traffic**: live traffic flows, the node is alive; `error_burst` errors within a tick, a probe right away; quiet for longer than
   `silence`, an unscheduled probe, but only if the node had connections or errors in that time (`silence_min_conns`): nobody
   uses the group, there is nothing to check. A failure, a retry after `retry`; `fails` failures in a row, an emergency and a
@@ -495,6 +504,9 @@ always the node itself: it cannot be connected to (`connect`), did not answer in
 | `errors.classes` | `connect`, `timeout`, `reset` | Counted error classes; also `canceled`, a connection cancelled by the application. A failed lookup of the node's own domain (`lookup …`, a `bootstrap` failure) is never counted |
 | `errors.fresh`, `errors.fresh_min` | `10m`, `2` | After a node is chosen, during `fresh` an emergency needs `fresh_min` errors in a window, without the condition on the previous window |
 | `errors.probe_confirm` | `false` | Before a replacement one probe; if it passes, the node stays |
+| `drops.enabled` | `true` | Emergency by drops of open connections |
+| `drops.window` | `10m` | Drop counting window |
+| `drops.min`, `drops.prev_min` | `10`, `5` | Seconds with drops in the last window and in the window before it; `prev_min` `0` drops the second condition |
 | `outage.enabled` | `true` | General outage guard |
 | `outage.interval` | `1m` | Background check of the direct exit; `0` means only on a signal |
 | `outage.targets` | `77.88.8.8:443`, `vk.com:443`, `www.gosuslugi.ru:443` | Direct exit targets, `host:port` |

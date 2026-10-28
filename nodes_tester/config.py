@@ -581,6 +581,18 @@ class ErrorRuleConfig:
 
 
 @dataclass
+class DropRuleConfig:
+    """Авария по обрывам открытых соединений: нода посреди передачи присылает ошибку потока
+    HTTP/2 (grpc, xhttp, naive), и длинные соединения рвутся, хотя короткие запросы и зонд
+    проходят. Обрывы одной секунды — одно событие: падает общий транспорт до ноды. За последние
+    `window` не меньше `min` событий и за окно до него не меньше `prev_min` — замена без зонда."""
+    enabled: bool = True
+    window: float = 600.0
+    min: int = 10
+    prev_min: int = 5
+
+
+@dataclass
 class OutageConfig:
     """Общая авария — отказ не ноды, а общего звена (WAN, DNS нод): все проверки и замены
     останавливаются, пока прямой выход и ноды не ответят `recover` проверок подряд.
@@ -607,7 +619,7 @@ class MonitorConfig:
     """Надзор за активными нодами: идёт боевой трафик — нода жива; тихо дольше `silence` и
     были соединения — внеплановый зонд (закачка probe_mb через socks); провал (нет ответа или
     скорость ниже probe_min_mbps — так ловится троттлинг) `fails` раз подряд — авария. Ошибки
-    соединений в логе sing-box — авария по правилу `errors`."""
+    соединений в логе sing-box — авария по правилу `errors`, обрывы открытых соединений — `drops`."""
     interval: float = 10.0
     reassert_drift: bool = True       # вернуть выбор селекторов, если его сменили в обход
     silence: float = 300.0
@@ -621,6 +633,7 @@ class MonitorConfig:
     error_burst: int = 5              # ошибок соединений через группу за тик — зонд; 0 — выкл.
     silence_min_conns: int = 1        # меньше соединений за тишину — группой не пользуются, зонд не нужен
     errors: ErrorRuleConfig = field(default_factory=ErrorRuleConfig)
+    drops: DropRuleConfig = field(default_factory=DropRuleConfig)
     outage: OutageConfig = field(default_factory=OutageConfig)
 
     @property
@@ -647,6 +660,15 @@ def _error_rule(obj, path: str, base: ErrorRuleConfig) -> ErrorRuleConfig:
                            fresh=_duration(obj, "fresh", path, base.fresh),
                            fresh_min=_number(obj, "fresh_min", path, base.fresh_min, 1, integer=True),
                            probe_confirm=_bool(obj, "probe_confirm", path, base.probe_confirm))
+
+
+def _drop_rule(obj, path: str) -> DropRuleConfig:
+    d = DropRuleConfig()
+    obj = _fields(obj, path, ("enabled", "window", "min", "prev_min"))
+    return DropRuleConfig(enabled=_bool(obj, "enabled", path, d.enabled),
+                          window=_duration(obj, "window", path, d.window),
+                          min=_number(obj, "min", path, d.min, 1, integer=True),
+                          prev_min=_number(obj, "prev_min", path, d.prev_min, 0, integer=True))
 
 
 def _outage(obj, path: str) -> OutageConfig:
@@ -676,7 +698,7 @@ def _outage(obj, path: str) -> OutageConfig:
 def _monitor(obj) -> MonitorConfig:
     path, d = "monitor", MonitorConfig()
     obj = _fields(obj, path, ("interval", "reassert_drift", "silence", "silence_floor_mb", "probe", "fails",
-                              "retry", "error_burst", "silence_min_conns", "errors", "outage"))
+                              "retry", "error_burst", "silence_min_conns", "errors", "drops", "outage"))
     ppath = f"{path}.probe"
     probe = _fields(obj.get("probe"), ppath, ("url", "size_mb", "min_mbps", "timeout"))
     return MonitorConfig(interval=_duration(obj, "interval", path, d.interval),
@@ -693,6 +715,7 @@ def _monitor(obj) -> MonitorConfig:
                          silence_min_conns=_number(obj, "silence_min_conns", path, d.silence_min_conns, 0,
                                                    integer=True),
                          errors=_error_rule(obj.get("errors"), f"{path}.errors", d.errors),
+                         drops=_drop_rule(obj.get("drops"), f"{path}.drops"),
                          outage=_outage(obj.get("outage"), f"{path}.outage"))
 
 

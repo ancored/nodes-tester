@@ -13,14 +13,16 @@
 
 Нода — первый элемент цепочки (leaf), CRC из её тега; трафик тестера — цепочка, где есть
 `nodes-tester`. Раз в flush_interval агрегаты пишутся в storage (traffic + endpoints).
-Для монитора ведутся накопительные счётчики боевого трафика по CRC (user_bytes()).
+Для монитора ведутся накопительные счётчики боевого трафика по CRC (user_bytes()) и
+закрытые за последнюю минуту боевые соединения (recent_closed()): по ним монитор находит ноду
+обрыва из лога sing-box, где выхода нет.
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from nodes_common.box_api import EVENT_CLOSED, EVENT_NEW, EVENT_UPDATE, connection_events, decode
 
@@ -28,6 +30,7 @@ from .api import ApiError
 from .identity import parse_node
 
 _BACKOFF_MAX = 30.0
+_CLOSED_KEEP = 60.0     # сколько секунд помнить закрытые соединения для монитора
 
 
 def _host(addr: str) -> str:
@@ -39,11 +42,12 @@ def _host(addr: str) -> str:
 
 
 class _Conn:
-    __slots__ = ("crc", "is_tester", "endpoint", "up", "down")
+    __slots__ = ("crc", "is_tester", "endpoint", "up", "down", "moved")
 
     def __init__(self, crc, is_tester, endpoint, up=0, down=0):
         self.crc, self.is_tester, self.endpoint = crc, is_tester, endpoint
         self.up, self.down = up, down          # уже учтено
+        self.moved = time.time()               # когда последний раз шли байты
 
 
 def _meta(conn: dict | None) -> tuple:
@@ -72,6 +76,7 @@ class TrafficCollector:
         self._by_ep: dict[tuple, list] = defaultdict(lambda: [0, 0, 0])    # crc,src,dst,net -> [up,down,flows]
         self._user: dict[str, int] = defaultdict(int)                      # crc -> байт (накопительно)
         self._user_conns: dict[str, int] = defaultdict(int)                # crc -> соединений (накопительно)
+        self._closed: deque = deque()                                      # (закрыто, длилось, crc, шла передача)
         self._lock = threading.Lock()
         self._connected = False
 
@@ -118,6 +123,12 @@ class TrafficCollector:
         with self._lock:
             return dict(self._user_conns)
 
+    def recent_closed(self) -> list[tuple]:
+        """Боевые соединения, закрытые за последнюю минуту:
+        [(когда закрыто, сколько длилось, crc, шла ли передача)]."""
+        with self._lock:
+            return list(self._closed)
+
     # --- Внутреннее -----------------------------------------------------
 
     def _loop(self) -> None:
@@ -152,6 +163,8 @@ class TrafficCollector:
         up, down = max(0, up), max(0, down)
         if not (up or down or new):
             return
+        if up or down:
+            rec.moved = time.time()
         nb = self._by_node[(rec.crc, rec.is_tester)]
         ep = self._by_ep[rec.endpoint]
         nb[0] += up; nb[1] += down
@@ -192,6 +205,18 @@ class TrafficCollector:
                     if conn:
                         self._add(rec, conn["uplink_total"] - rec.up,
                                   conn["downlink_total"] - rec.down)
+                        if not rec.is_tester:
+                            self._remember_closed(rec, conn["created_at"], ev["closed_at"] or conn["closed_at"])
+
+    def _remember_closed(self, rec: _Conn, created_ms: int, closed_ms: int) -> None:
+        """Запомнить закрытое боевое соединение; «шла передача» — байты были за два последних
+        периода UPDATE: простаивающее соединение сервер закрывает и штатно."""
+        if not (created_ms and closed_ms):
+            return
+        busy = time.time() - rec.moved <= 2 * self.cfg.poll
+        self._closed.append((closed_ms / 1000, (closed_ms - created_ms) / 1000, rec.crc, busy))
+        while self._closed and self._closed[0][0] < time.time() - _CLOSED_KEEP:
+            self._closed.popleft()
 
     def _apply_snapshot(self, events: list) -> None:
         known, self._conns = self._conns, {}

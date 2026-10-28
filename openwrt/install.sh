@@ -19,7 +19,7 @@ NT_FEED=https://ancored.github.io/nodes-tester/packages.adb
 SB_DIR=/etc/sing-box
 NT_DIR=/etc/nodes-tester
 NODES=/opt/nodes-tester/nodes.json        # data_dir пакета по умолчанию
-SB_LOG=/var/log/sing-box.log              # монитор тестера считает по нему ошибки групп
+SB_LOG=/var/log/sing-box.log              # монитор тестера считает по нему ошибки групп и обрывы соединений
 SUB_URL="${1:-}"
 
 log() { echo "[install] $*"; }

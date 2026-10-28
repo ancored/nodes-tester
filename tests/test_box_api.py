@@ -15,9 +15,11 @@ CHAIN = [LEAF, "eu-auto-out-failsafe", "eu-auto-out", "global-auto-out"]
 
 
 def _conn(cid, chain=CHAIN, up=0, down=0, closed=0, source="192.168.1.20:5000",
-          dest="1.2.3.4:443", domain="example.com"):
+          dest="1.2.3.4:443", domain="example.com", created=0):
     fields = [box_api._field(1, cid), box_api._field(5, "tcp"), box_api._field(6, source),
               box_api._field(7, dest), box_api._field(8, domain)]
+    if created:
+        fields.append(box_api._field(12, created))
     if closed:
         fields.append(box_api._field(13, closed))
     if up:
@@ -185,8 +187,8 @@ class TransportTest(unittest.TestCase):
 
 
 class _Cfg:
-    poll_interval = 5
-    flush_interval = 60
+    poll = 5.0
+    flush = 60.0
 
 
 class CollectorTest(unittest.TestCase):
@@ -252,6 +254,28 @@ class CollectorTest(unittest.TestCase):
         self.col.apply(_events(_event(EVENT_CLOSED, "u2", _conn("u2", closed=1))))
         self.assertEqual(self.col.open_user_conns("0c0a0001"), ["u1"])
         self.assertEqual(self.col.open_user_conns("ffffffff"), [])
+
+    def test_recent_closed_user_connections(self):
+        import time
+        now_ms = int(time.time() * 1000)
+        self.col.apply(_events(
+            _event(EVENT_CLOSED, "old", _conn("old", created=now_ms - 200_000, closed=now_ms - 90_000)),
+            _event(EVENT_CLOSED, "u1", _conn("u1", created=now_ms - 93_500, closed=now_ms)),
+            _event(EVENT_CLOSED, "t1", _conn("t1", chain=[LEAF, "nodes-tester"],
+                                             created=now_ms - 1000, closed=now_ms))))
+        self.assertEqual(self.col.recent_closed(), [(now_ms / 1000, 93.5, "0c0a0001", True)])
+
+    def test_closed_connection_was_busy_if_bytes_moved_recently(self):
+        import time
+        now_ms = int(time.time() * 1000)
+        self.col.apply(_events(_event(EVENT_NEW, "c1", _conn("c1"))))
+        self.col.apply(_events(_event(EVENT_NEW, "c2", _conn("c2"))))
+        for cid in ("c1", "c2"):
+            self.col._conns[cid].moved -= 60                  # минуту простоя
+        self.col.apply(_events(
+            _event(EVENT_CLOSED, "c1", _conn("c1", down=500, created=now_ms - 61_000, closed=now_ms)),
+            _event(EVENT_CLOSED, "c2", _conn("c2", created=now_ms - 61_000, closed=now_ms))))
+        self.assertEqual([busy for *_, busy in self.col.recent_closed()], [True, False])
 
     def test_host_parsing(self):
         from nodes_tester.traffic import _host

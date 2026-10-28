@@ -1615,6 +1615,36 @@
             }
           }
         },
+        "drops": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Авария по обрывам открытых соединений: нода посреди передачи рвёт потоки HTTP/2 (лог sing-box). Обрывы одной секунды — одно событие; за окно ≥ min и за окно до него ≥ prev_min — замена ноды без зонда.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Правило включено.",
+              "default": true
+            },
+            "window": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+              "description": "Окно счёта обрывов.",
+              "default": "10m"
+            },
+            "min": {
+              "type": "integer",
+              "description": "Секунд с обрывами за последнее окно.",
+              "default": 10,
+              "minimum": 1
+            },
+            "prev_min": {
+              "type": "integer",
+              "description": "Секунд с обрывами за окно до него; 0 — без условия.",
+              "default": 5,
+              "minimum": 0
+            }
+          }
+        },
         "outage": {
           "type": "object",
           "additionalProperties": false,

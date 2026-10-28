@@ -149,6 +149,10 @@ flowchart TD
   no answer, connection broken). A single-connection probe often passes through a node that drops part of its
   connections, so the rule replaces the node without a probe (\`monitor.errors\`). Errors of connections started
   before the switch belong to the previous node and are not counted.
+- A node may pass short requests but break open connections in the middle of a transfer (an HTTP/2 stream error
+  from it) during a transfer. Then long connections fail: streamed AI answers, video. Closing idle connections
+  does not count. 10 seconds with such drops within 10 minutes and
+  5 within the 10 minutes before them are an emergency without a probe too (\`monitor.drops\`).
 - Live user traffic is the best proof: while it flows, no probes are made. A group nobody uses is not probed.
 - Connection errors are read from the sing-box log file (\`log.output\` of the running config). Without a log file
   this signal does not work.

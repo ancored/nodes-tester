@@ -14,7 +14,13 @@
      после выбора ноды хватает fresh_min ошибок за окно. Ошибки соединений, начатых до смены
      ноды (время строки минус возраст соединения), не считаются — это хвост прежней ноды.
      Зонд одним соединением здесь не решает: мигающая нода часто его пропускает.
-  3. ЗДОРОВЬЕ ПО ТРАФИКУ:
+  3. ОБРЫВЫ ОТКРЫТЫХ СОЕДИНЕНИЙ — строки «connection download closed: stream error: …;
+     INTERNAL_ERROR; received from peer»: нода посреди передачи рвёт потоки HTTP/2 (grpc, xhttp,
+     naive), длинные соединения падают, а короткие запросы и зонд проходят. В строке нет выхода:
+     ноду находим по закрытым боевым соединениям из потока API (TrafficCollector.recent_closed) —
+     время закрытия и длительность должны совпасть со строкой. Обрывы одной секунды — одно
+     событие (падает общий транспорт). Правило monitor.drops — как errors, только без зонда.
+  4. ЗДОРОВЬЕ ПО ТРАФИКУ:
        • в логе за тик не меньше error_burst ошибок через группу → зонд сразу, даже если
          трафик идёт;
        • идёт трафик (≥ silence_floor за окно) → нода заведомо жива, не трогаем;
@@ -56,6 +62,14 @@ from .identity import parse_node
 _CONN_ERROR = re.compile(
     r"^(?:([+-]\d{4}) (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) )?\w+ (?:\[\d+ ([^\]]+)\] )?connection: "
     r"open connection to \S+ using outbound/selector\[([^\]]+)\]: (.*)$")
+# Обрыв открытого соединения нодой — ошибка потока HTTP/2 от неё:
+# "+0000 2026-10-28 03:00:14 ERROR [3302469114 1m0s] connection: connection download closed:
+#  stream error: stream ID 3; INTERNAL_ERROR; received from peer". NO_ERROR и CANCEL — штатное закрытие.
+# Штатные завершения sing-box пишет в debug/trace, а GOAWAY и отмены QUIC с кодом 0 здесь не ловятся.
+_DROP = re.compile(
+    r"^(?:([+-]\d{4}) (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) )?\w+ \[\d+ ([^\]]+)\] connection: connection "
+    r"(?:download|upload) closed: stream error: stream ID \d+; (\w+); received from peer$")
+_CLEAN_CLOSE = ("NO_ERROR", "CANCEL")
 _GO_DURATION = re.compile(r"(\d+(?:\.\d+)?)(h|ms|µs|us|ns|m|s)")
 _UNIT = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 1e-3, "µs": 1e-6, "us": 1e-6, "ns": 1e-9}
 _CONNECT = re.compile(r"dial tcp \S+: (i/o timeout|connect: connection refused|connect: no route to host"
@@ -91,12 +105,42 @@ def parse_error(line: str, now: float) -> "tuple | None":
     if not m:
         return None
     offset, stamp, age, tag, error = m.groups()
-    logged = now
-    if stamp:
-        utc = calendar.timegm(time.strptime(stamp, "%Y-%m-%d %H:%M:%S"))
-        sign = -1 if offset[0] == "-" else 1
-        logged = utc - sign * (int(offset[1:3]) * 3600 + int(offset[3:5]) * 60)
+    logged = _logged(offset, stamp, now)
     return tag, error, logged, logged - _go_seconds(age)
+
+
+def _logged(offset: "str | None", stamp: "str | None", now: float) -> float:
+    """Время записи строки лога; без метки времени — сейчас."""
+    if not stamp:
+        return now
+    utc = calendar.timegm(time.strptime(stamp, "%Y-%m-%d %H:%M:%S"))
+    sign = -1 if offset[0] == "-" else 1
+    return utc - sign * (int(offset[1:3]) * 3600 + int(offset[3:5]) * 60)
+
+
+def parse_drop(line: str, now: float) -> "tuple | None":
+    """(когда записана, сколько длилось соединение) для обрыва открытого соединения нодой."""
+    m = _DROP.match(line)
+    if not m or m.group(4) in _CLEAN_CLOSE:
+        return None
+    offset, stamp, age = m.group(1, 2, 3)
+    return _logged(offset, stamp, now), _go_seconds(age)
+
+
+def drop_node(logged: float, age: float, closed) -> "str | None":
+    """CRC ноды обрыва по закрытым соединениям [(когда закрыто, сколько длилось, crc, шла ли
+    передача)] или None. Метка строки — до секунды; возраст от минуты пишется до секунды, короче —
+    до сотых, но считается от приёма соединения, а длительность в API — от выбора маршрута
+    (сниффинг). Подошли соединения разных нод — обрыв не засчитываем никому. Простаивающее
+    соединение сервер закрывает и штатно (grpc — через минуту простоя): засчитываем обрыв, только
+    если по соединению шла передача."""
+    slack = 1.5 if age >= 60 else 0.5
+    matched = [(crc, busy) for at, lasted, crc, busy in closed
+               if logged - 1 <= at <= logged + 2 and abs(lasted - age) <= slack]
+    crcs = {crc for crc, _ in matched}
+    if len(crcs) != 1 or not any(busy for _, busy in matched):
+        return None
+    return crcs.pop()
 
 
 class _LogTail:
@@ -150,7 +194,7 @@ def singbox_log_path(config_path: str) -> str:
 
 class ProductionMonitor:
     def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None,
-                 on_tick=None, singbox_log="", conns=None, group_rules=None, log_max=0):
+                 on_tick=None, singbox_log="", conns=None, group_rules=None, log_max=0, closed=None):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
@@ -162,6 +206,10 @@ class ProductionMonitor:
         # conns() -> {crc: накопительное число боевых соединений} (TrafficCollector.user_conns).
         self.traffic = traffic
         self.conns = conns or dict
+        # closed() -> [(когда закрыто, сколько длилось, crc)] (TrafficCollector.recent_closed).
+        self.closed = closed or list
+        # Обрывы, для которых закрытое соединение ещё не пришло из API: [(когда записан, длительность)].
+        self._unmatched: list[tuple] = []
         # Правило аварии по ошибкам у групп со своим groups[].monitor.errors.
         self.group_rules = group_rules or {}
         # pause_check — пауза применения конфига или общая авария: зондов и замен нет, только
@@ -173,7 +221,7 @@ class ProductionMonitor:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Состояние по региону: тихий таймер, накопленные байты и соединения, страйки зонда,
-        # ошибки соединений активной ноды [(когда записана, класс)].
+        # ошибки соединений активной ноды [(когда записана, класс)], секунды её обрывов.
         self._state: dict[str, dict] = {}
         # Счётчики traffic()/conns() на прошлом тике — для дельты между тиками.
         self._last_bytes: dict[str, int] | None = None
@@ -229,6 +277,7 @@ class ProductionMonitor:
             self.reassert()
             if self._log is not None:
                 self._log.lines()               # ошибки паузы — не про ноды, пропускаем
+            self._unmatched.clear()
             self._state.clear()
             return
         try:
@@ -240,7 +289,9 @@ class ProductionMonitor:
         node_bytes, self._last_bytes = _delta(self.traffic(), self._last_bytes)
         node_conns, self._last_conns = _delta(self.conns(), self._last_conns)
         regions = self.sw.active_regions()
-        errors = self._conn_errors(proxies, regions)
+        lines = self._log.lines() if self._log is not None else []
+        errors = self._conn_errors(lines, proxies, regions)
+        drops = self._drops(lines)
         now = time.monotonic()
         wall = time.time()
 
@@ -258,14 +309,15 @@ class ProductionMonitor:
             if st is None or st["node"] != node:
                 st = self._state[region] = {"node": node, "quiet_since": now, "quiet_bytes": 0,
                                             "quiet_conns": 0, "strikes": 0, "next_probe": 0.0,
-                                            "errors": collections.deque()}
+                                            "errors": collections.deque(), "drops": collections.deque()}
             crc = parse_node(node).node_id or node
             st["quiet_bytes"] += node_bytes.get(crc, 0)
             region_errors = errors.get(region, ())
             counted = self._add_errors(region, region_errors, st)
             st["quiet_conns"] += node_conns.get(crc, 0) + counted
+            self._add_drops(region, drops.get(crc, ()), st)
 
-            if self._errors_rule(region, node, st, wall):
+            if self._errors_rule(region, node, st, wall) or self._drops_rule(region, node, st, wall):
                 continue
             if st["strikes"]:
                 # Прошлый зонд провален — повтор через retry, трафик его не отменяет.
@@ -344,6 +396,32 @@ class ProductionMonitor:
         errs.clear()
         return True
 
+    def _add_drops(self, region: str, events, st: dict) -> None:
+        """Секунды обрывов активной ноды; соединения, начатые до её выбора, — хвост прежней."""
+        since = self.sw.last_switch(region)
+        for logged, started in events:
+            if started >= since and (not st["drops"] or st["drops"][-1] != logged):
+                st["drops"].append(logged)
+
+    def _drops_rule(self, region: str, node: str, st: dict, now: float) -> bool:
+        """Правило аварии по обрывам открытых соединений (monitor.drops). True — авария."""
+        rule = self.cfg.drops
+        drops = st["drops"]
+        while drops and drops[0] < now - 2 * rule.window:
+            drops.popleft()
+        if not rule.enabled:
+            return False
+        current = sum(1 for t in drops if t >= now - rule.window)
+        previous = len(drops) - current
+        if current < rule.min or previous < rule.prev_min:
+            return False
+        print(f"  [monitor] {region}: обрывов открытых соединений за {rule.window:.0f} с: {current}, "
+              f"за окно до него: {previous} — EMERGENCY")
+        self.sw.penalize(node)
+        self.sw.evaluate_region(region, emergency=True)
+        drops.clear()
+        return True
+
     def _watch_failsafe(self, proxies: dict, node_bytes: dict, now: float) -> None:
         """failsafe-out групп без кандидатов наблюдается как нода: трафик через выбранную им
         ноду — жив, тишина дольше silence — один зонд через тестовый селектор на все группы.
@@ -411,17 +489,34 @@ class ProductionMonitor:
             self.sw.evaluate_region(region, emergency=True)
             st.update(strikes=0, next_probe=now)
 
-    def _conn_errors(self, proxies: dict, regions: list[str]) -> dict[str, list]:
+    def _drops(self, lines: list[str]) -> dict[str, list]:
+        """Обрывы открытых соединений по нодам: crc → [(когда записан, когда началось соединение)].
+        Обрыв без закрытого соединения в потоке API ждёт его до следующего тика."""
+        now = time.time()
+        parsed = (parse_drop(line, now) for line in lines)
+        pending = self._unmatched + [drop for drop in parsed if drop]
+        self._unmatched = []
+        if not pending:
+            return {}
+        closed = self.closed()
+        out: dict[str, list] = collections.defaultdict(list)
+        for logged, age in pending:
+            crc = drop_node(logged, age, closed)
+            if crc is not None:
+                out[crc].append((logged, logged - age))
+            elif logged > now - 5:              # событие закрытия приходит из API за доли секунды
+                self._unmatched.append((logged, age))
+        return out
+
+    def _conn_errors(self, lines: list[str], proxies: dict, regions: list[str]) -> dict[str, list]:
         """Ошибки соединений через группы из новых строк лога sing-box: группа → [(когда
         записана, когда началось соединение, класс)]. Селектор выше группы (global-auto-out) —
         по его выбору вниз до селектора группы; ошибки не про ноду (block-out группы без
         кандидатов) не в счёт."""
         out: dict[str, list] = collections.defaultdict(list)
-        if self._log is None:
-            return out
         by_tag = {f"{r}-auto-out": r for r in regions}
         now = time.time()
-        for line in self._log.lines():
+        for line in lines:
             parsed = parse_error(line, now)
             if parsed is None:
                 continue

@@ -8,7 +8,7 @@ import time
 import unittest
 
 from nodes_tester.config import ErrorRuleConfig, MonitorConfig, parse_config
-from nodes_tester.monitor import ProductionMonitor, error_class, parse_error
+from nodes_tester.monitor import ProductionMonitor, drop_node, error_class, parse_drop, parse_error
 from tests.helpers import temp_dir
 
 NODE = "P-vless-out [aaaa0001.00000001]"
@@ -136,6 +136,109 @@ class ErrorRuleTest(unittest.TestCase):
         self.assertEqual(self.sw.emergencies, [])
 
 
+class DropRuleTest(unittest.TestCase):
+    """Обрывы открытых соединений: ≥10 секунд с обрывами за 10 мин и ≥5 за 10 мин до них — авария."""
+
+    def setUp(self, switched_ago=7200):
+        self.log = os.path.join(temp_dir(), "sing-box.log")
+        open(self.log, "w").close()
+        self.now = time.time()
+        self.sw = FakeSwitcher(self.now - switched_ago)
+        self.probes, self.closed = [], []
+        self.mon = ProductionMonitor(cfg=MonitorConfig(), api=FakeApi(), switcher=self.sw,
+                                     prober=lambda region, node: self.probes.append(region) or GOOD,
+                                     traffic=lambda: {CRC: 10 ** 9}, singbox_log=self.log,
+                                     closed=lambda: list(self.closed))
+        self._tick()
+
+    def _drop(self, ago, age=93.0, crc=CRC, code="INTERNAL_ERROR", streams=1, busy=True):
+        """Обрыв `streams` соединений одной секундой и их закрытия в потоке API."""
+        t = int(self.now - ago)
+        with open(self.log, "a", encoding="utf-8") as fh:
+            for _ in range(streams):
+                fh.write(f"+0000 {stamp(t)} ERROR [7 {int(age) // 60}m{int(age) % 60}s] connection: "
+                         f"connection download closed: stream error: stream ID 3; {code}; received from peer\n")
+        self.closed += [(t + 0.4, age + 0.2, crc, busy)] * streams
+
+    def _tick(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.mon._tick()
+
+    def test_sustained_drops_switch_without_probe(self):
+        for ago in range(1100, 600, -100):                  # 5 в окне до последнего
+            self._drop(ago)
+        for ago in range(550, 50, -50):                     # 10 в последнем окне
+            self._drop(ago)
+        self._tick()
+        self.assertEqual(self.sw.emergencies, ["eu"])
+        self.assertEqual(self.sw.penalized, [NODE])
+        self.assertEqual(self.probes, [])
+
+    def test_streams_of_one_second_are_one_drop(self):
+        for ago in range(1100, 600, -100):
+            self._drop(ago)
+        for ago in (500, 400, 300):
+            self._drop(ago, streams=5)
+        self._tick()
+        self.assertEqual(self.sw.emergencies, [])
+
+    def test_other_node_and_clean_close_are_not_counted(self):
+        for ago in range(1100, 600, -100):
+            self._drop(ago)
+        for ago in range(550, 50, -50):
+            self._drop(ago, crc="bbbb0002.00000001" if ago % 100 else CRC)
+            self._drop(ago - 1, code="NO_ERROR")
+        self._tick()
+        self.assertEqual(self.sw.emergencies, [])
+
+    def test_drop_waits_for_its_closed_connection(self):
+        self._drop(1)
+        self.closed.clear()
+        self._tick()
+        self.assertEqual(self.mon._unmatched, [(int(self.now - 1), 93.0)])
+        self.closed.append((int(self.now - 1) + 0.4, 93.2, CRC, True))
+        self._tick()
+        self.assertEqual(self.mon._unmatched, [])
+        self.assertEqual(len(self.mon._state["eu"]["drops"]), 1)
+
+    def test_idle_connections_closed_by_server_are_not_counted(self):
+        for ago in range(1100, 600, -100):
+            self._drop(ago, busy=False)
+        for ago in range(550, 50, -50):
+            self._drop(ago, busy=False)
+        self._tick()
+        self.assertEqual(self.sw.emergencies, [])
+
+    def test_connections_started_before_switch_are_ignored(self):
+        self.setUp(switched_ago=60)
+        for ago in range(55, 5, -5):
+            self._drop(ago, age=120.0)
+        self._tick()
+        self.assertEqual(len(self.mon._state["eu"]["drops"]), 0)
+
+
+class DropMatchTest(unittest.TestCase):
+    def test_parse_drop(self):
+        line = ("+0000 2026-10-28 03:00:44 ERROR [1389443394 1m18s] connection: connection download closed: "
+                "stream error: stream ID 5; INTERNAL_ERROR; received from peer")
+        logged, age = parse_drop(line, now=0)
+        self.assertEqual((time.strftime("%H:%M:%S", time.gmtime(logged)), age), ("03:00:44", 78.0))
+        for tail in ("stream error: stream ID 5; NO_ERROR; received from peer",
+                     "stream error: stream ID 5; CANCEL; received from peer",
+                     "http2: server sent GOAWAY and closed the connection; LastStreamID=5, ErrCode=NO_ERROR",
+                     "stream 9392 canceled by remote with error code 0"):
+            with self.subTest(tail=tail):
+                self.assertIsNone(parse_drop(line.split("closed: ")[0] + "closed: " + tail, now=0))
+
+    def test_match_needs_one_node(self):
+        closed = [(100.6, 78.3, "a", True), (100.9, 12.0, "b", True)]
+        self.assertEqual(drop_node(100.0, 78.0, closed), "a")
+        self.assertIsNone(drop_node(100.0, 40.0, closed))                     # длительность не та
+        self.assertIsNone(drop_node(110.0, 78.0, closed))                     # время не то
+        self.assertIsNone(drop_node(100.0, 78.0, closed + [(101.0, 77.5, "b", True)]))   # две ноды
+        self.assertIsNone(drop_node(100.0, 78.0, [(100.6, 78.3, "a", False)]))         # простаивало
+
+
 class ParseErrorTest(unittest.TestCase):
     def test_start_from_age_and_offset(self):
         line = ("+0300 2026-10-21 22:07:30 ERROR [3774252907 1m5s] connection: open connection to "
@@ -197,6 +300,10 @@ class ConfigRuleTest(unittest.TestCase):
         ai, eu = cfg.groups
         self.assertEqual((ai.errors.window, ai.errors.min, ai.errors.prev_min), (120.0, 1, 2))
         self.assertIsNone(eu.errors)
+
+    def test_drops_rule(self):
+        drops = parse_config({"monitor": {"drops": {"window": "5m", "min": 6}}}).monitor.drops
+        self.assertEqual((drops.enabled, drops.window, drops.min, drops.prev_min), (True, 300.0, 6, 5))
 
     def test_bad_values_are_errors(self):
         from nodes_tester.config import ConfigError

@@ -283,7 +283,9 @@ The Monitor watches the active nodes between their measurements. Connection erro
 in the sing-box log decide first: at least 3 errors in a minute and at least 2 in the minute before it
 (`monitor.errors`, a group can have its own rule) replace the node at once, without a probe. During the first
 10 minutes after a node is chosen 2 errors in a minute are enough; errors of connections started before the switch
-are not counted. When there is user traffic, the node is considered alive. After a quiet period the monitor runs a
+are not counted. Drops of open connections by the node (HTTP/2 stream errors from it, `monitor.drops`) are matched
+to the node by the connection closed at that time in the API stream, only if bytes were moving over it; 10 seconds with drops within 10 minutes and 5
+within the 10 minutes before also replace the node without a probe. When there is user traffic, the node is considered alive. After a quiet period the monitor runs a
 short SOCKS probe, but only if the node had connections: an unused group is not probed. A burst of errors within a
 tick (`monitor.error_burst`) starts a probe right away. A failed probe is repeated after `monitor.retry` (30 s);
 `fails` failures in a row start an emergency choice. The error text goes to the log.
