@@ -172,7 +172,7 @@ class Runner:
         self.monitor = ProductionMonitor(
             cfg.monitor, self.api, self.switcher,
             prober=self._probe_node, traffic=self.collector.user_bytes,
-            conns=self.collector.user_conns, closed=self.collector.recent_closed,
+            conns=self.collector.user_conns, closed=self.collector.recent_closed, storage=self.storage,
             group_rules={g.tag: g.errors for g in cfg.groups if g.errors is not None},
             pause_check=self._paused,
             on_tick=self.rebuild.check,

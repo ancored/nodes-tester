@@ -127,20 +127,22 @@ def parse_drop(line: str, now: float) -> "tuple | None":
     return _logged(offset, stamp, now), _go_seconds(age)
 
 
-def drop_node(logged: float, age: float, closed) -> "str | None":
-    """CRC ноды обрыва по закрытым соединениям [(когда закрыто, сколько длилось, crc, шла ли
-    передача)] или None. Метка строки — до секунды; возраст от минуты пишется до секунды, короче —
-    до сотых, но считается от приёма соединения, а длительность в API — от выбора маршрута
-    (сниффинг). Подошли соединения разных нод — обрыв не засчитываем никому. Простаивающее
-    соединение сервер закрывает и штатно (grpc — через минуту простоя): засчитываем обрыв, только
-    если по соединению шла передача."""
+def drop_node(logged: float, age: float, closed) -> tuple:
+    """(crc, исход) обрыва по закрытым соединениям [(когда закрыто, сколько длилось, crc, шла ли
+    передача)]. Метка строки — до секунды; возраст от минуты пишется до секунды, короче — до
+    сотых, но считается от приёма соединения, а длительность в API — от выбора маршрута
+    (сниффинг). Исходы: busy — нода найдена, шла передача (засчитывается); idle — простаивающее
+    соединение, его сервер закрывает и штатно (grpc — через минуту простоя); ambiguous — подошли
+    соединения разных нод; unmatched — не подошло ни одно."""
     slack = 1.5 if age >= 60 else 0.5
     matched = [(crc, busy) for at, lasted, crc, busy in closed
                if logged - 1 <= at <= logged + 2 and abs(lasted - age) <= slack]
     crcs = {crc for crc, _ in matched}
-    if len(crcs) != 1 or not any(busy for _, busy in matched):
-        return None
-    return crcs.pop()
+    if not crcs:
+        return None, "unmatched"
+    if len(crcs) > 1:
+        return None, "ambiguous"
+    return crcs.pop(), "busy" if any(busy for _, busy in matched) else "idle"
 
 
 class _LogTail:
@@ -194,7 +196,8 @@ def singbox_log_path(config_path: str) -> str:
 
 class ProductionMonitor:
     def __init__(self, cfg, api, switcher, prober, traffic, pause_check=None,
-                 on_tick=None, singbox_log="", conns=None, group_rules=None, log_max=0, closed=None):
+                 on_tick=None, singbox_log="", conns=None, group_rules=None, log_max=0, closed=None,
+                 storage=None):
         self.cfg = cfg                 # MonitorConfig
         self.api = api
         self.sw = switcher
@@ -210,6 +213,8 @@ class ProductionMonitor:
         self.closed = closed or list
         # Обрывы, для которых закрытое соединение ещё не пришло из API: [(когда записан, длительность)].
         self._unmatched: list[tuple] = []
+        # Storage для разбора задним числом: сводка обрывов (drops) и аварии с правилом.
+        self.storage = storage
         # Правило аварии по ошибкам у групп со своим groups[].monitor.errors.
         self.group_rules = group_rules or {}
         # pause_check — пауза применения конфига или общая авария: зондов и замен нет, только
@@ -391,10 +396,16 @@ class ProductionMonitor:
                 st["next_probe"] = time.monotonic() + 2 * self.cfg.retry
                 return True
         print(f"  [monitor] {region}: {why} — EMERGENCY")
-        self.sw.penalize(node)
-        self.sw.evaluate_region(region, emergency=True)
+        self._emergency(region, node, "errors", current, previous)
         errs.clear()
         return True
+
+    def _emergency(self, region: str, node: str, rule: str, current: int = 0, previous: int = 0) -> None:
+        """Аварийная замена активной ноды: штраф её хоста, выбор замены и запись причины."""
+        self.sw.penalize(node)
+        self.sw.evaluate_region(region, emergency=True)
+        if self.storage is not None:
+            self.storage.add_monitor_emergency(region, parse_node(node).node_id, rule, current, previous)
 
     def _add_drops(self, region: str, events, st: dict) -> None:
         """Секунды обрывов активной ноды; соединения, начатые до её выбора, — хвост прежней."""
@@ -417,8 +428,7 @@ class ProductionMonitor:
             return False
         print(f"  [monitor] {region}: обрывов открытых соединений за {rule.window:.0f} с: {current}, "
               f"за окно до него: {previous} — EMERGENCY")
-        self.sw.penalize(node)
-        self.sw.evaluate_region(region, emergency=True)
+        self._emergency(region, node, "drops", current, previous)
         drops.clear()
         return True
 
@@ -485,8 +495,7 @@ class ProductionMonitor:
               f"{st['strikes']}/{self.cfg.fails}")
         if st["strikes"] >= self.cfg.fails:
             print(f"  [monitor] {region}: активная нода не тянет трафик — EMERGENCY")
-            self.sw.penalize(node)
-            self.sw.evaluate_region(region, emergency=True)
+            self._emergency(region, node, "probe", st["strikes"])
             st.update(strikes=0, next_probe=now)
 
     def _drops(self, lines: list[str]) -> dict[str, list]:
@@ -500,12 +509,17 @@ class ProductionMonitor:
             return {}
         closed = self.closed()
         out: dict[str, list] = collections.defaultdict(list)
+        counts: collections.Counter = collections.Counter()
         for logged, age in pending:
-            crc = drop_node(logged, age, closed)
-            if crc is not None:
-                out[crc].append((logged, logged - age))
-            elif logged > now - 5:              # событие закрытия приходит из API за доли секунды
+            crc, outcome = drop_node(logged, age, closed)
+            if outcome == "unmatched" and logged > now - 5:   # закрытие приходит из API за доли секунды
                 self._unmatched.append((logged, age))
+                continue
+            counts[(int(logged // 600 * 600), crc or "", outcome)] += 1
+            if outcome == "busy":
+                out[crc].append((logged, logged - age))
+        if counts and self.storage is not None:
+            self.storage.add_drops(counts)
         return out
 
     def _conn_errors(self, lines: list[str], proxies: dict, regions: list[str]) -> dict[str, list]:

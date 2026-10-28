@@ -28,6 +28,8 @@ renames it to `<file>.v<version>-<time>` and starts the history anew: there are 
 | `score_history` | rating dynamics by measurement |
 | `garbage` | pause, quarantine, streak and the time of the next attempt |
 | `activations` | history of applied switches |
+| `monitor_emergencies` | emergencies of the monitor: group, node, rule (`errors`, `drops`, `probe`) and the count in the window and in the window before it |
+| `drops` | drops of open connections from the sing-box log in 10-minute buckets: node and outcome — `busy` (counted), `idle` (an idle connection), `ambiguous` (connections of several nodes fit), `unmatched` (no connection fit) |
 | `switch_state` | active node, deadlines and counters of the region |
 | `switch_recent` | recently used candidates |
 | `switch_activations` | cumulative number of times a node was chosen |

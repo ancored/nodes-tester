@@ -49,7 +49,8 @@ selector (eu, us, ai, ...) on the best candidate.
   restart happens while the call is open. After a failed call do not repeat the action: when the
   link is back, read `overview` and `pipeline` to see what happened.
 - `query_db` answers questions the ready-made views do not (tables: nodes, scores, results,
-  score_history, activations, node_events, garbage, traffic, endpoints, ip_info, meta).
+  score_history, activations, monitor_emergencies, drops, node_events, garbage, traffic, endpoints,
+  ip_info, meta).
 
 Read the rules before changing configs. The `docs` tool returns the documents of this version
 (also online: {docs_url}).
@@ -556,7 +557,9 @@ def docs(app, path=None, section=None):
 @tool("query_db", "Read-only SQL (one SELECT or WITH statement, SQLite) over the tester database "
       "stats.db; 5 s limit. Key column `crc` = node key. Main tables: nodes (identity, present, banned, "
       "title), scores (current rating and components), results (ts, crc, test, ok, metrics JSON, error), "
-      "score_history, activations (ts, region, crc, reason, prev), node_events, garbage (pause and "
+      "score_history, activations (ts, region, crc, reason, prev), monitor_emergencies (ts, region, crc, "
+      "rule errors|drops|probe, current, previous), drops (10-min ts, crc, outcome busy|idle|ambiguous|"
+      "unmatched, n), node_events, garbage (pause and "
       "quarantine), traffic (ts, crc, up, down, conns, is_tester), endpoints, ip_info. Schema: "
       "SELECT sql FROM sqlite_master.", {
           "sql": _str("The query; use ? placeholders with `params`."),

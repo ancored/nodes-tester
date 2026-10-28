@@ -50,6 +50,19 @@ class RetentionTest(unittest.TestCase):
         self.st.cleanup()
         self.assertEqual(self._count("bbbb"), 0)   # удалена
 
+    def test_drops_add_up_and_expire(self):
+        now = int(time.time()) // 600 * 600
+        old = now - 31 * 86400
+        self.st.add_drops({(now, "aaaa", "busy"): 2, (old, "aaaa", "idle"): 1})
+        self.st.add_drops({(now, "aaaa", "busy"): 3})
+        self.st.add_monitor_emergency("eu", "aaaa", "drops", 10, 5)
+        self.st.cleanup()
+        rows = self.st._db.execute("SELECT ts, crc, outcome, n FROM drops").fetchall()
+        self.assertEqual(rows, [(now, "aaaa", "busy", 5)])
+        self.assertEqual(self.st._db.execute("SELECT region, crc, rule, current, previous "
+                                             "FROM monitor_emergencies").fetchall(),
+                         [("eu", "aaaa", "drops", 10, 5)])
+
 
 if __name__ == "__main__":
     unittest.main()

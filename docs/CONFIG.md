@@ -473,7 +473,8 @@ always the node itself: it cannot be connected to (`connect`), did not answer in
   (grpc after a minute of idling). Drops within one
   second are one event: the shared transport to the node fails. At least `min` such seconds in the last `window` and at
   least `prev_min` in the window before it, the node is replaced without a probe. sing-box does not write normal closes
-  to this log, and the codes `NO_ERROR` and `CANCEL`, GOAWAY and QUIC cancels are not counted.
+  to this log, and the codes `NO_ERROR` and `CANCEL`, GOAWAY and QUIC cancels are not counted. Every such line with the
+  outcome of matching goes to the `drops` table of the database, an emergency with its rule to `monitor_emergencies`.
 - **Traffic**: live traffic flows, the node is alive; `error_burst` errors within a tick, a probe right away; quiet for longer than
   `silence`, an unscheduled probe, but only if the node had connections or errors in that time (`silence_min_conns`): nobody
   uses the group, there is nothing to check. A failure, a retry after `retry`; `fails` failures in a row, an emergency and a

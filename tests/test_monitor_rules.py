@@ -1,6 +1,7 @@
 """Монитор: авария по ошибкам соединений (monitor.errors), разбор строки лога sing-box,
 зонд тишины только при соединениях."""
 
+import collections
 import contextlib
 import io
 import os
@@ -47,6 +48,17 @@ class FakeSwitcher:
 
     def evaluate_region(self, region, emergency=False):
         self.emergencies.append(region)
+
+
+class FakeStorage:
+    def __init__(self):
+        self.drops, self.emergencies = collections.Counter(), []
+
+    def add_drops(self, counts):
+        self.drops.update(counts)
+
+    def add_monitor_emergency(self, region, crc, rule, current=0, previous=0):
+        self.emergencies.append((region, crc, rule, current, previous))
 
 
 def stamp(t):
@@ -209,6 +221,22 @@ class DropRuleTest(unittest.TestCase):
         self._tick()
         self.assertEqual(self.sw.emergencies, [])
 
+    def test_drops_and_emergency_are_stored(self):
+        storage = FakeStorage()
+        self.mon.storage = storage
+        for ago in range(1100, 600, -100):
+            self._drop(ago)
+        for ago in range(550, 50, -50):
+            self._drop(ago)
+        self._drop(30, busy=False)
+        self._drop(20, crc="bbbb0002.00000001")
+        self._tick()
+        outcomes = collections.Counter()
+        for (_ts, crc, outcome), n in storage.drops.items():
+            outcomes[(crc, outcome)] += n
+        self.assertEqual(outcomes, {(CRC, "busy"): 15, (CRC, "idle"): 1, ("bbbb0002.00000001", "busy"): 1})
+        self.assertEqual(storage.emergencies, [("eu", CRC, "drops", 10, 5)])
+
     def test_connections_started_before_switch_are_ignored(self):
         self.setUp(switched_ago=60)
         for ago in range(55, 5, -5):
@@ -232,11 +260,11 @@ class DropMatchTest(unittest.TestCase):
 
     def test_match_needs_one_node(self):
         closed = [(100.6, 78.3, "a", True), (100.9, 12.0, "b", True)]
-        self.assertEqual(drop_node(100.0, 78.0, closed), "a")
-        self.assertIsNone(drop_node(100.0, 40.0, closed))                     # длительность не та
-        self.assertIsNone(drop_node(110.0, 78.0, closed))                     # время не то
-        self.assertIsNone(drop_node(100.0, 78.0, closed + [(101.0, 77.5, "b", True)]))   # две ноды
-        self.assertIsNone(drop_node(100.0, 78.0, [(100.6, 78.3, "a", False)]))         # простаивало
+        self.assertEqual(drop_node(100.0, 78.0, closed), ("a", "busy"))
+        self.assertEqual(drop_node(100.0, 40.0, closed), (None, "unmatched"))     # длительность не та
+        self.assertEqual(drop_node(110.0, 78.0, closed), (None, "unmatched"))     # время не то
+        self.assertEqual(drop_node(100.0, 78.0, closed + [(101.0, 77.5, "b", True)]), (None, "ambiguous"))
+        self.assertEqual(drop_node(100.0, 78.0, [(100.6, 78.3, "a", False)]), ("a", "idle"))
 
 
 class ParseErrorTest(unittest.TestCase):

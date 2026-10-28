@@ -11,6 +11,8 @@ node_crc — CRC настроек сервера, cred_crc — CRC учётны�
   endpoints(crc, source_ip, dest_host, network, up, down, flows, last_seen)
   results(ts, crc, test, ok, url, metrics JSON, error)
   activations(ts, region, crc, tag, reason, score, prev)       — история переключений
+  monitor_emergencies(ts, region, crc, rule, current, previous) — аварии монитора и их правило
+  drops(ts, crc, outcome, n)       — обрывы открытых соединений из лога sing-box по 10 мин
   scores(crc PK, …)                — снимок рейтинга
   score_history(ts, crc, region, score, s_run, gate)           — динамика рейтинга
   switch_state / switch_recent / switch_activations            — состояние switcher
@@ -68,6 +70,11 @@ CREATE TABLE IF NOT EXISTS activations (
   ts INTEGER, region TEXT, crc TEXT, tag TEXT, reason TEXT, score REAL, prev TEXT);
 CREATE INDEX IF NOT EXISTS idx_activations_ts ON activations(ts);
 CREATE INDEX IF NOT EXISTS idx_activations_crc ON activations(crc);
+CREATE TABLE IF NOT EXISTS monitor_emergencies (
+  ts INTEGER, region TEXT, crc TEXT, rule TEXT, current INTEGER, previous INTEGER);
+CREATE INDEX IF NOT EXISTS idx_monitor_emergencies_ts ON monitor_emergencies(ts);
+CREATE TABLE IF NOT EXISTS drops (
+  ts INTEGER, crc TEXT, outcome TEXT, n INTEGER, PRIMARY KEY (ts, crc, outcome));
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS garbage (
   crc TEXT PRIMARY KEY, since INTEGER, until INTEGER, reason TEXT, streak INTEGER);
@@ -497,6 +504,24 @@ class Storage:
                  float(score or 0), prev))
             self._db.commit()
 
+    def add_monitor_emergency(self, region: str, crc: str, rule: str, current: int = 0,
+                              previous: int = 0) -> None:
+        """Авария монитора: правило errors, drops или probe и счёт за окно и окно до него."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO monitor_emergencies (ts,region,crc,rule,current,previous) VALUES (?,?,?,?,?,?)",
+                (int(time.time()), region, crc or "", rule, current, previous))
+            self._db.commit()
+
+    def add_drops(self, counts: dict) -> None:
+        """Прибавить обрывы {(начало 10 мин, crc, исход): число} к сводке drops."""
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO drops (ts,crc,outcome,n) VALUES (?,?,?,?) "
+                "ON CONFLICT (ts,crc,outcome) DO UPDATE SET n = n + excluded.n",
+                [(*key, n) for key, n in counts.items()])
+            self._db.commit()
+
     def stability_stats(self, window: float, now: "float | None" = None) -> dict[str, list]:
         """Боевая надёжность нод за window: {crc: [часы активной, аварий]}. Период ноды — от
         выбора в группе до следующей записи этой группы; авария — следующая запись с причиной
@@ -730,7 +755,8 @@ class Storage:
                 ph = ",".join("?" * len(stale))
                 # дочерние строки раньше родителя (порядок логический; FK нет)
                 for tbl in ("activations", "endpoints", "results", "traffic", "garbage",
-                            "score_history", "node_events", "scores", "nodes"):
+                            "score_history", "node_events", "monitor_emergencies", "drops",
+                            "scores", "nodes"):
                     self._db.execute(f"DELETE FROM {tbl} WHERE crc IN ({ph})", stale)
             # давно истёкший backoff (старше retention) — подчистить, чтобы не пух;
             # свежий истёкший оставляем: его streak нужен для продолжения серии при
@@ -747,6 +773,8 @@ class Storage:
             self._db.execute("DELETE FROM ip_info WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM entry_dns WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM node_events WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM monitor_emergencies WHERE ts < ?", (cutoff,))
+            self._db.execute("DELETE FROM drops WHERE ts < ?", (cutoff,))
             self._db.execute("DELETE FROM endpoints WHERE last_seen < ?", (cutoff,))
             self._db.commit()
         if stale:
