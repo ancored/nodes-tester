@@ -16,24 +16,11 @@
     ],
     "rules": [
       {
-        "type": "logical",
-        "mode": "or",
-        "rules": [
-          {
-            "rule_set": [
-              "claude",
-              "openai"
-            ]
-          },
-          {
-            "domain_suffix": [
-              "grok.com",
-              "x.ai",
-              "perplexity.ai",
-              "perplexity.com",
-              "pplx.ai"
-            ]
-          }
+        "rule_set": [
+          "claude",
+          "openai",
+          "xai",
+          "perplexity"
         ],
         "server": "dns-ai"
       }
@@ -56,16 +43,9 @@
               {
                 "rule_set": [
                   "claude",
-                  "openai"
-                ]
-              },
-              {
-                "domain_suffix": [
-                  "grok.com",
-                  "x.ai",
-                  "perplexity.ai",
-                  "perplexity.com",
-                  "pplx.ai"
+                  "openai",
+                  "xai",
+                  "perplexity"
                 ]
               },
               {
@@ -92,16 +72,9 @@
           {
             "rule_set": [
               "claude",
-              "openai"
-            ]
-          },
-          {
-            "domain_suffix": [
-              "grok.com",
-              "x.ai",
-              "perplexity.ai",
-              "perplexity.com",
-              "pplx.ai"
+              "openai",
+              "xai",
+              "perplexity"
             ]
           },
           {
@@ -126,6 +99,18 @@
         "tag": "openai",
         "format": "binary",
         "path": "/etc/sing-box/rules/openai.srs"
+      },
+      {
+        "type": "local",
+        "tag": "xai",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/xai.srs"
+      },
+      {
+        "type": "local",
+        "tag": "perplexity",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/perplexity.srs"
       },
       {
         "type": "local",

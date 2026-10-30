@@ -11,6 +11,8 @@
     {"dest": "zoom-ip.srs", "url": "https://github.com/ancored/zoom-ip/releases/latest/download/zoom-ip.srs"},
     {"dest": "anthropic.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/anthropic.srs"},
     {"dest": "openai.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/openai.srs"},
+    {"dest": "xai.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/xai.srs"},
+    {"dest": "perplexity.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/perplexity.srs"},
     {"dest": "google-deepmind.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-deepmind.srs"},
     {"dest": "google-gemini.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-gemini.srs"},
     {"dest": "geoip-google.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs"},

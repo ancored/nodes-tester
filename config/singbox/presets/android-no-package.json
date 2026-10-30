@@ -23,14 +23,9 @@
           {
             "rule_set": [
               "claude",
-              "openai"
-            ],
-            "domain_suffix": [
-              "grok.com",
-              "x.ai",
-              "perplexity.ai",
-              "perplexity.com",
-              "pplx.ai"
+              "openai",
+              "xai",
+              "perplexity"
             ],
             "ip_cidr": [
               "160.79.104.0/21",
@@ -60,6 +55,18 @@
         "tag": "openai",
         "format": "binary",
         "path": "/etc/sing-box/rules/openai.srs"
+      },
+      {
+        "type": "local",
+        "tag": "xai",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/xai.srs"
+      },
+      {
+        "type": "local",
+        "tag": "perplexity",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/perplexity.srs"
       }
     ]
   }
