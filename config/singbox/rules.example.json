@@ -14,6 +14,7 @@
     {"dest": "google-deepmind.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-deepmind.srs"},
     {"dest": "google-gemini.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google-gemini.srs"},
     {"dest": "geoip-google.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs"},
+    {"dest": "geoip-cloudflare.srs", "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cloudflare.srs"},
     {"dest": "ru-app-list.srs", "url": "https://raw.githubusercontent.com/legiz-ru/sb-rule-sets/main/ru-app-list.srs"},
     {"dest": "russia-mobile-whitelist-domains.srs", "url": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-sni.srs"},
     {"dest": "russia-mobile-whitelist-cidr.srs", "url": "https://github.com/ancored/ru-mobile-whitelist/releases/latest/download/ru-mobile-whitelist-ip.srs"},
