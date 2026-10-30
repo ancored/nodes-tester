@@ -113,11 +113,12 @@ presets/*.json     ← включённые пресеты по priority (мен
 |---|---|---|
 | `out-ai`, `out-us` | роутер | объявляют `ai-out`, `google-out`, `us-out` из групп `ai` и `us` |
 | `core` | роутер | `sniff`, перехват DNS, домен по IP из ответов DNS (`dns.reverse_mapping`), локальные адреса → `direct-lan`, тестер; домен URL-теста — через `bootstrap` |
-| `untrusted-lan` | роутер | LAN вне доверенного сегмента → `direct-out`; см. [модель безопасности](SECURITY_MODEL.ru.md#модель-доверия) |
+| `untrusted-lan` | роутер | LAN вне доверенного сегмента → `direct-out`, ИИ-сервисы для него и для самого роутера → `reject`; см. [модель безопасности](SECURITY_MODEL.ru.md#модель-доверия) |
+| `block-ech` | везде | без ECH: DNS не отдаёт HTTPS-записи, `cloudflare-ech.com` → `reject` |
 | `block-ads`, `block-adult` | везде | реклама и трекеры, взрослый контент: `reject` и `NXDOMAIN` |
 | `ip-check` | везде | `ifconfig.me` → `ai-out`: какой IP видят ИИ |
 | `zone-ai` | роутер | пользователь `ai` → `ai-out`, без QUIC |
-| `ai-services` | везде | Claude, OpenAI, Grok, Perplexity → `ai-out`, без QUIC |
+| `ai-services` | везде | Claude, OpenAI, Grok, Perplexity и адреса Anthropic → `ai-out`, без QUIC к ним и к Cloudflare |
 | `ai-google` | везде | Gemini, адреса Google и домены YouTube → `google-out`, без QUIC |
 | `ai-google-smartdns` | везде | Gemini через прокси SmartDNS: напрямую только TCP на адреса прокси (подставьте свои), остальные адреса Google и домены YouTube → `google-out`; вместо `ai-google` |
 | `zone-us` | везде | пользователь `us` и `us-domains` → `us-out` |
@@ -126,7 +127,7 @@ presets/*.json     ← включённые пресеты по priority (мен
 | `geoip-ru` | везде | адреса России и Беларуси → `direct-out` |
 | `final-global` | роутер | `route.final` → `global-auto-out`, сервер `dns-global`; в базе задайте `dns.final: "dns-global"`; вместо пресета `direct` |
 | `client-core` | клиент | `sniff`, перехват DNS |
-| `android-no-package` | Android | соединения без пакета → `direct-out` (обход per-app-proxy через tun0) |
+| `android-no-package` | Android | соединения без пакета → `direct-out` (обход per-app-proxy через tun0), к ИИ-сервисам → `reject` |
 | `client-home-lan` | клиент | домашняя сеть: дома напрямую, вне дома — через `home-out` |
 | `mode-whitelist` | клиент | `clash_mode` «Белые списки»: белый список напрямую, остальное — через ноды клиента |
 | `android-ai-apps` | Android | приложения ChatGPT, Claude, Grok, Perplexity целиком → `ai-out`, включая голос |

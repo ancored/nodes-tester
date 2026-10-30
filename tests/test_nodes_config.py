@@ -80,6 +80,16 @@ class BuildTest(unittest.TestCase):
         for o in frag["outbounds"]:
             self.assertFalse(any(k.startswith("_") for k in o))
 
+    def test_router_addresses_dropped(self):
+        wg = {"type": "wireguard", "address": ["10.8.0.2/32"], "private_key": "k",
+              "peers": [{"address": "127.0.0.1", "port": 51820, "public_key": "p"}]}
+        raw = _raw([("A", "zero", _vless("0.0.0.0")), ("A", "loop", _vless("::1")),
+                    ("A", "host", _vless("localhost")), ("A", "wg", wg),
+                    ("A", "lan", _vless("192.168.1.30")), ("A", "name", _vless("de.example.com"))])
+        frag, rep = _build(raws=(raw,))
+        self.assertEqual(len(_leaves(frag)), 2)
+        self.assertEqual(rep["dropped"], {"local_address": 4})
+
     def test_groups_hold_every_node_with_fallbacks(self):
         frag, _ = _build(groups=[{"tag": "eu"}, {"tag": "ai", "strict": True, "in_global": False},
                                  {"tag": "us", "direct_fallback": True}])

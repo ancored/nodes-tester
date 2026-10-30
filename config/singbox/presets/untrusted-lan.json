@@ -1,7 +1,7 @@
 {
   "_preset": {
     "title": "Роутер: недоверенный LAN напрямую",
-    "description": "Устройства LAN вне доверенного сегмента (здесь 192.168.1.0/25 — статические адреса DHCP) идут напрямую, их DNS — dns-direct. Подставьте свой сегмент. Правило стоит выше правил зон, чтобы гости не получали доступ к нодам; см. SECURITY_MODEL",
+    "description": "Устройства LAN вне доверенного сегмента (здесь 192.168.1.0/25 — статические адреса DHCP) идут напрямую, их DNS — dns-direct; ИИ-сервисы для них и для самого роутера запрещены, чтобы не показать им домашний IP. Подставьте свой сегмент. Правило стоит выше правил зон, чтобы гости не получали доступ к нодам; см. SECURITY_MODEL",
     "enabled": false,
     "priority": 120
   },
@@ -14,6 +14,34 @@
       }
     ],
     "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "source_ip_cidr": "192.168.1.0/25",
+            "invert": true
+          },
+          {
+            "rule_set": [
+              "claude",
+              "openai"
+            ],
+            "domain_suffix": [
+              "grok.com",
+              "x.ai",
+              "perplexity.ai",
+              "perplexity.com",
+              "pplx.ai"
+            ]
+          }
+        ],
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      },
       {
         "type": "logical",
         "mode": "and",
@@ -42,9 +70,54 @@
           {
             "source_ip_cidr": "192.168.1.0/25",
             "invert": true
+          },
+          {
+            "rule_set": [
+              "claude",
+              "openai"
+            ],
+            "domain_suffix": [
+              "grok.com",
+              "x.ai",
+              "perplexity.ai",
+              "perplexity.com",
+              "pplx.ai"
+            ],
+            "ip_cidr": [
+              "160.79.104.0/21",
+              "2607:6bc0::/48"
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "source_ip_cidr": "192.168.1.0/25",
+            "invert": true
           }
         ],
         "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "claude",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/anthropic.srs"
+      },
+      {
+        "type": "local",
+        "tag": "openai",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/openai.srs"
       }
     ]
   }

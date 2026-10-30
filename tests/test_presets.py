@@ -190,7 +190,7 @@ class PresetLibraryTest(unittest.TestCase):
         self.assertEqual(config["route"]["final"], "global-auto-out")
 
     def test_client(self):
-        names = CLIENT_PRESETS | {"block-ads", "ip-check", "ai-services", "ai-google-smartdns",
+        names = CLIENT_PRESETS | {"block-ads", "block-ech", "ip-check", "ai-services", "ai-google-smartdns",
                                   "zone-us", "ru-direct", "geoip-ru"}
         base = {"dns": {"servers": [{"type": "https", "tag": "bootstrap", "server": "9.9.9.9"}]},
                 "outbounds": [{"type": "direct", "tag": "direct-out"}] + [
@@ -199,7 +199,10 @@ class PresetLibraryTest(unittest.TestCase):
                 "route": {"final": "global-out"}}
         config = self.assemble(names, base, {"outbounds": [_selector("global-auto-out")]})
         self.assert_refs_resolved(config)
-        self.assertEqual(config["route"]["rules"][0]["package_name_regex"], [".*"])
+        rules = config["route"]["rules"]
+        self.assertEqual(rules[0], {"action": "sniff"})
+        self.assertEqual(rules[1]["action"], "reject")      # ИИ без пакета
+        self.assertEqual(rules[2]["package_name_regex"], [".*"])
 
 
 def _fake_run(returncode=0, stderr=""):

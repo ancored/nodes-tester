@@ -5,7 +5,7 @@ nodes.json + кандидаты клиентских групп → whnodes.json
   1. raw → рабочие ноды (tag = исходное имя в подписке, _provider);
   2. фильтры против падения sing-box: exclude_types, exclude_protocols (токены
      naming.node_protocol), голые vless/vmess (XHTTP без транспорта); exclude_names
-     подписки — подстроки исходного имени;
+     подписки — подстроки исходного имени; сервер — сам роутер (0.0.0.0, loopback);
   3. имя {provider}-{protocol}-out [node_crc.cred_crc], domain_resolver (кроме wireguard);
   4. одинаковый доступ из двух подписок — одна нода; detour — на новое имя;
   5. группы (nodes_config.groups) → {outbounds: ноды+группы, endpoints: wireguard}.
@@ -18,6 +18,7 @@ nodes.json + кандидаты клиентских групп → whnodes.json
 тестер записывает в client-candidates.json); фильтры и domain_resolver — pipeline.clients.
 """
 
+import ipaddress
 from collections import Counter
 
 from naming import node_key, node_payload, node_protocol, parse_node
@@ -39,6 +40,22 @@ def raw_to_nodes(raws):
     return nodes
 
 
+def _local_server(node):
+    '''Сервер ноды — сам роутер: 0.0.0.0, loopback, link-local, multicast. Частные адреса
+    остаются: соединения нод уходят в WAN, и такая нода просто не отвечает. Домены не проверяются.'''
+    hosts = [node.get("server")] + [peer.get("address") for peer in node.get("peers") or ()]
+    for host in hosts:
+        if host == "localhost":
+            return True
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            continue
+        if address.is_unspecified or address.is_loopback or address.is_link_local or address.is_multicast:
+            return True
+    return False
+
+
 def _excluded(node, branch, exclude_names, dropped):
     '''True — ноду нельзя отдавать sing-box (причина считается в dropped).'''
     if node.get("type") in branch.exclude_types:
@@ -47,6 +64,9 @@ def _excluded(node, branch, exclude_names, dropped):
     title = node.get("tag", "")
     if any(s and s in title for s in exclude_names.get(node["_provider"], ())):
         dropped["name"] += 1
+        return True
+    if _local_server(node):
+        dropped["local_address"] += 1
         return True
     protocol = node_protocol(node)
     if protocol in UNGROUPED_PROTOCOLS:
@@ -116,7 +136,8 @@ def build(raws, cfg, log=print):
     Фрагмент — {"outbounds": […], "endpoints": […]?} для склейки с базой."""
     branch = cfg.pipeline.router
     exclude_names = {s["tag"]: s.get("exclude_names") or [] for s in cfg.subscriptions}
-    dropped = Counter({k: 0 for k in ("type", "name", "ungrouped_protocol", "protocol", "duplicate")})
+    dropped = Counter({k: 0 for k in ("type", "name", "local_address", "ungrouped_protocol", "protocol",
+                                      "duplicate")})
     nodes = raw_to_nodes(raws)
     total = len(nodes)
     leaf_nodes = finalize_nodes(nodes, branch, exclude_names, dropped)

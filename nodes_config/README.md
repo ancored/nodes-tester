@@ -43,7 +43,8 @@ dropped nodes by reason.
 ## Processing order
 
 1. Nodes are extracted from the raw with their original name and provider.
-2. `exclude_types` of the branch and `exclude_names` of the subscription are applied.
+2. `exclude_types` of the branch and `exclude_names` of the subscription are applied; a node whose server
+   is the router itself (`0.0.0.0`, loopback, link-local, multicast, `localhost`) is dropped.
 3. Bare VLESS and VMess without a recognised transport or Reality are dropped; `exclude_protocols`
    of the branch is applied.
 4. The node gets its name, `domain_resolver` and key.

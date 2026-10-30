@@ -43,7 +43,8 @@ python3 -m nodes_config -c config.json --branch clients \
 ## Порядок обработки
 
 1. Ноды извлекаются из raw с исходным названием и провайдером.
-2. Применяются `exclude_types` ветви и `exclude_names` подписки.
+2. Применяются `exclude_types` ветви и `exclude_names` подписки; нода, у которой сервер — сам роутер
+   (`0.0.0.0`, loopback, link-local, multicast, `localhost`), отбрасывается.
 3. Голые VLESS и VMess без распознанного транспорта или Reality отбрасываются; применяются
    `exclude_protocols` ветви.
 4. Нода получает имя, `domain_resolver` и ключ.

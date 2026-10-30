@@ -1,0 +1,29 @@
+{
+  "_preset": {
+    "title": "Без ECH",
+    "description": "DNS не отдаёт HTTPS-записи (в них ключи ECH), соединения с внешним именем cloudflare-ech.com → reject. С ECH sniff видит не настоящий домен, и правила по доменам не срабатывают; см. SECURITY_MODEL",
+    "enabled": false,
+    "priority": 105
+  },
+  "dns": {
+    "rules": [
+      {
+        "query_type": [
+          "HTTPS"
+        ],
+        "action": "predefined",
+        "rcode": "NOERROR"
+      }
+    ]
+  },
+  "route": {
+    "rules": [
+      {
+        "domain": [
+          "cloudflare-ech.com"
+        ],
+        "action": "reject"
+      }
+    ]
+  }
+}

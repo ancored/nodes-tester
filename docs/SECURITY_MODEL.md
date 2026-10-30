@@ -68,6 +68,12 @@ unknown goes directly.
 ```
 
   In `dns.rules` it is the same condition with `"server": "<direct DNS>"`.
+- **AI services never get the direct outbound.** It shows the home IP, so right above the untrusted LAN rule
+  the same condition plus the AI sets (Claude, OpenAI, Grok, Perplexity domains and the Anthropic addresses
+  `160.79.104.0/21`) → `reject`, in DNS → `NXDOMAIN` (the `untrusted-lan` preset). The router's own connections
+  match it too: their source is the WAN address, outside the trusted segment. The tester is not affected: it
+  enters through its own SOCKS inbound, whose rule stands higher. Google is left out on purpose: an isolated
+  profile with its own Google account uses it directly.
 - Trust by `source_ip` depends on static address assignment and can be spoofed in the LAN; a MAC↔IP
   binding on the firewall is stricter. sing-box 1.14 has `source_mac_address`; switching to it removes
   the dependency on DHCP, but a MAC in the LAN can be spoofed too.
@@ -134,7 +140,11 @@ chmod +x /etc/init.d/killswitch
 - Emergency removal: `/etc/init.d/killswitch stop`. The admin panel shows whether the table is loaded and
   how many packets were blocked, and turns the service on or off (see [`nodes_tester`](../nodes_tester/README.md#sing-box-stop-and-killswitch)).
 - A non-zero counter while sing-box is running is a reason to check whether some traffic bypasses
-  the capture.
+  the capture. Small numbers are normal: the tails of TCP connections after a restart and UDP “full cone”.
+  When a packet from a new peer comes to a device over a UDP flow, sing-box writes it into the TUN, and the
+  conntrack entry of that pair has no capture mark: the replies of the device go straight to the WAN, past
+  sing-box. For the trusted segment the kill switch rejects them (DHT, WebRTC), so it works in normal
+  operation too, not only while sing-box restarts.
 - Remote clients are protected on their own devices: on Android with “Always-on VPN” and “Block
   connections without VPN”.
 
@@ -154,13 +164,15 @@ The danger is rated by the consequences for the user, not by probability:
 |---|---|---|
 | Apps of Russian services compare their visible IP with the IP of other requests and report a VPN | medium | on clients such apps go `direct` entirely (a rule by `package_name` above the node rules): all their requests come from one IP, there is no mismatch |
 | Apps collect the list of installed programs, including VPN clients | medium | on Android such apps are installed into an isolated profile (Knox, work profile) without a VPN client; the VPN of the main profile does not cover it, the traffic reaches the router “bare” from the untrusted pool and goes `direct`: this is expected, not a leak |
-| An app excluded from the VPN (per-app proxy or an isolated profile) binds its socket to `tun0` (`SO_BINDTODEVICE`) and goes out through the tunnel; Android does not tell sing-box the owner (`INVALID_UID`), the `package_name` rule does not match, and the traffic would go to `final` with the node IP | medium; very high if the traffic must not leave with the real IP | the first client rule sends a connection without a determined package → `direct-out`: `{"package_name_regex": [".*"], "invert": true, "outbound": "direct-out"}`. Not `reject`: it does not hide the fact of a VPN; what matters is not to show the node IP and an address mismatch. It needs a client that determines the package of connections, otherwise all traffic goes directly; enable it after checking on the particular device. The “Block connections without VPN” mode takes the network away from excluded apps entirely |
+| An app excluded from the VPN (per-app proxy or an isolated profile) binds its socket to `tun0` (`SO_BINDTODEVICE`) and goes out through the tunnel; Android does not tell sing-box the owner (`INVALID_UID`), the `package_name` rule does not match, and the traffic would go to `final` with the node IP | medium; very high if the traffic must not leave with the real IP | the first client rule sends a connection without a determined package → `direct-out`: `{"package_name_regex": [".*"], "invert": true, "outbound": "direct-out"}`. Not `reject`: it does not hide the fact of a VPN; what matters is not to show the node IP and an address mismatch. The same connections to AI services → `reject` (`sniff` stands before these rules): they must not see the direct IP either. It needs a client that determines the package of connections, otherwise all traffic goes directly; enable it after checking on the particular device. The “Block connections without VPN” mode takes the network away from excluded apps entirely |
 | The client tunnel went down, and traffic to a blocked or geo-dependent service went directly with the real IP | very high | on Android, “Always-on VPN” and “Block connections without VPN”; on a laptop, a local kill switch with the firewall (not implemented yet, see below) |
 | A service blocks or limits access by the exit country (AI services, Google) | very high | a separate node group checked “through the eyes of the service” (Google, OpenAI, Claude), without a mismatch of the exit IP country by the database and with priority for residential and mobile IPs, AI zone presets; see [`nodes_tester`](../nodes_tester/README.md) and the presets in [`config/singbox/presets`](../config/singbox/presets) |
 | A whole protocol or transport is blocked | medium | nodes of different protocols and providers in shared groups; clients enter the router through two inbounds with different transports (naive, vless+reality) |
 | Separate billing of foreign traffic by the client's provider | medium | the client sends into the tunnel only what needs a proxy, and the tunnel goes to the home (Russian) IP; the router takes the traffic out to a foreign node |
 | The client entry point is blocked by traffic symmetry: an intermediate multi-hop VPN node in Russia sends out as much as it receives | very high | clients enter their own home router, not an intermediate node: their traffic is mixed with the regular home traffic, so the incoming and outgoing volumes do not match |
-| QUIC is not sniffed, the domain is not detected, the flow goes to `final` past the zone | medium; very high for a sensitive zone | UDP/443 to the domains and IP sets of the zone → `reject`, the client falls back to TCP |
+| QUIC is not sniffed, the domain is not detected, the flow goes to `final` past the zone | medium; very high for a sensitive zone | UDP/443 to the domains and IP sets of the zone → `reject`, the client falls back to TCP. OpenAI lives on Cloudflare addresses, and a flow without a domain cannot be told from other Cloudflare sites: UDP/443 to all Cloudflare ranges → `reject`, otherwise the service sees TCP from one exit and QUIC from another at the same time |
+| ECH hides the real domain: `sniff` sees only the outer name (`cloudflare-ech.com`), domain rules do not match, and the flow goes by IP past its zone or directly | very high | DNS does not return HTTPS records, where the ECH keys come from, and connections with the outer name `cloudflare-ech.com` → `reject` (the `block-ech` preset); a browser with its own DoH can still get the keys |
+| A subscription gives a node whose server is the router itself (`0.0.0.0`, loopback) | low | `nodes_config` drops such nodes; private addresses stay: the connections of nodes go to the WAN, and such a node just does not answer |
 | Sites are unavailable from foreign IPs (Russian, Belarusian) | very high | RU and BY `geosite`/`geoip` → `direct-out` |
 | Torrents, RDP, video calls through nodes: load, complaints to the node provider, latency | medium | `protocol: bittorrent/rdp`, tracker and video call sets → `direct-out` |
 | Ads, trackers, adult content | medium | sets → `reject` in routes and `NXDOMAIN` in DNS |

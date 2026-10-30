@@ -1,18 +1,65 @@
 {
   "_preset": {
     "title": "Android: соединения без пакета напрямую",
-    "description": "Первое правило: соединение, для которого Android не сообщил пакет, → direct-out. Закрывает обход per-app-proxy через tun0 (приложение вне VPN выходило бы с IP ноды). Включать после проверки на устройстве: если клиент не определяет пакеты, напрямую уйдёт всё; см. SECURITY_MODEL",
+    "description": "Первые правила: соединение, для которого Android не сообщил пакет, → direct-out, а к ИИ-сервисам — reject. Закрывает обход per-app-proxy через tun0 (приложение вне VPN выходило бы с IP ноды) и не показывает ИИ-сервисам прямой IP; sniff стоит раньше, чтобы домен был известен. Включать после проверки на устройстве: если клиент не определяет пакеты, напрямую уйдёт всё; см. SECURITY_MODEL",
     "enabled": false,
     "priority": 90
   },
   "route": {
     "rules": [
       {
+        "action": "sniff"
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "package_name_regex": [
+              ".*"
+            ],
+            "invert": true
+          },
+          {
+            "rule_set": [
+              "claude",
+              "openai"
+            ],
+            "domain_suffix": [
+              "grok.com",
+              "x.ai",
+              "perplexity.ai",
+              "perplexity.com",
+              "pplx.ai"
+            ],
+            "ip_cidr": [
+              "160.79.104.0/21",
+              "2607:6bc0::/48"
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
         "package_name_regex": [
           ".*"
         ],
         "invert": true,
         "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "claude",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/anthropic.srs"
+      },
+      {
+        "type": "local",
+        "tag": "openai",
+        "format": "binary",
+        "path": "/etc/sing-box/rules/openai.srs"
       }
     ]
   }

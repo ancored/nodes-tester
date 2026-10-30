@@ -113,11 +113,12 @@ go through home, the rest directly.
 |---|---|---|
 | `out-ai`, `out-us` | router | declare `ai-out`, `google-out`, `us-out` from the `ai` and `us` groups |
 | `core` | router | `sniff`, DNS hijacking, the domain of an IP from DNS answers (`dns.reverse_mapping`), local addresses → `direct-lan`, the tester; the URL test domain goes through `bootstrap` |
-| `untrusted-lan` | router | LAN outside the trusted segment → `direct-out`; see the [security model](SECURITY_MODEL.md#trust-model) |
+| `untrusted-lan` | router | LAN outside the trusted segment → `direct-out`, AI services for it and for the router itself → `reject`; see the [security model](SECURITY_MODEL.md#trust-model) |
+| `block-ech` | everywhere | no ECH: DNS does not return HTTPS records, `cloudflare-ech.com` → `reject` |
 | `block-ads`, `block-adult` | everywhere | ads and trackers, adult content: `reject` and `NXDOMAIN` |
 | `ip-check` | everywhere | `ifconfig.me` → `ai-out`: which IP AI services see |
 | `zone-ai` | router | the `ai` user → `ai-out`, without QUIC |
-| `ai-services` | everywhere | Claude, OpenAI, Grok, Perplexity → `ai-out`, without QUIC |
+| `ai-services` | everywhere | Claude, OpenAI, Grok, Perplexity and the Anthropic addresses → `ai-out`, without QUIC to them and to Cloudflare |
 | `ai-google` | everywhere | Gemini, Google addresses and YouTube domains → `google-out`, without QUIC |
 | `ai-google-smartdns` | everywhere | Gemini through a SmartDNS proxy: directly only TCP to the proxy addresses (put in your own), other Google addresses and YouTube domains → `google-out`; instead of `ai-google` |
 | `zone-us` | everywhere | the `us` user and `us-domains` → `us-out` |
@@ -126,7 +127,7 @@ go through home, the rest directly.
 | `geoip-ru` | everywhere | addresses of Russia and Belarus → `direct-out` |
 | `final-global` | router | `route.final` → `global-auto-out`, server `dns-global`; set `dns.final: "dns-global"` in the base; instead of the `direct` preset |
 | `client-core` | client | `sniff`, DNS hijacking |
-| `android-no-package` | Android | connections without a package → `direct-out` (bypassing per-app proxy through tun0) |
+| `android-no-package` | Android | connections without a package → `direct-out` (bypassing per-app proxy through tun0), to AI services → `reject` |
 | `client-home-lan` | client | home network: directly at home, through `home-out` away from home |
 | `mode-whitelist` | client | `clash_mode` “Whitelists”: the whitelist directly, the rest through the client nodes |
 | `android-ai-apps` | Android | the ChatGPT, Claude, Grok, Perplexity apps entirely → `ai-out`, including voice |
