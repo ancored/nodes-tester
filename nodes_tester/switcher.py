@@ -34,6 +34,7 @@ import time
 from nodes_config.groups import BLOCK, DIRECT, FAILSAFE
 
 from .api import ApiClient, ApiError
+from .config import RotationConfig
 from .identity import parse_node
 from .scoreboard import Scoreboard
 
@@ -195,7 +196,7 @@ class Switcher:
     def rotate_deadline(self, region: str) -> "float | None":
         """Когда группа сменит активную по ротации: не раньше last_switch + min_dwell — как в
         rotation_due. None — ротация выключена или активной нет."""
-        if not self.cfg.rotation.enabled:
+        if not self._rotation(region).enabled:
             return None
         with self._lock:
             st = self.state.get(region) or {}
@@ -204,6 +205,13 @@ class Switcher:
             return max(float(st["rotate_deadline"]),
                        float(st.get("last_switch") or 0) + float(self.cfg.rotation.min_dwell),
                        self._spread_until(region))
+
+    def _rotation(self, region: str) -> RotationConfig:
+        """Настройки ротации группы: groups[].rotation, иначе selection.rotation."""
+        g = self._groups.get(region)
+        if g is None or g.rotation is None:
+            return self.cfg.rotation
+        return g.rotation
 
     def _spread_until(self, region: str) -> float:
         """До какого момента группа не ротируется: плановая ротация другой группы была
@@ -257,7 +265,7 @@ class Switcher:
             if not st.get("active"):
                 return True
             now = time.time()
-            return (self.cfg.rotation.enabled
+            return (self._rotation(region).enabled
                     and now >= st.get("rotate_deadline", 0)
                     and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
                     and now >= self._spread_until(region))
@@ -332,10 +340,10 @@ class Switcher:
         # сбой API), иначе будил бы таймер ротации раз за разом.
         st = self.state.get(region) or {}
         now = time.time()
-        if (self.cfg.rotation.enabled and st.get("active")
+        if (self._rotation(region).enabled and st.get("active")
                 and float(st.get("rotate_deadline") or 0) <= now
                 and now >= self._spread_until(region)):    # ждёт разноса — срок не переносим
-            st["rotate_deadline"] = max(self._next_deadline(now), now + 60.0)
+            st["rotate_deadline"] = max(self._next_deadline(now, region), now + 60.0)
             print(f"  [switch] {region}: ротация сейчас невозможна — срок перенесён")
 
     def _evaluate_region_core(self, region: str, emergency: bool, measured: "str | None") -> None:
@@ -394,7 +402,7 @@ class Switcher:
         # вышло (резерв пуст, сбой API) — срок перенесёт _evaluate_region_locked.
         active_tier = self.board.tier(active, region)
         top = _top_tier(pool)
-        if (self.cfg.rotation.enabled
+        if (self._rotation(region).enabled
                 and now >= st.get("rotate_deadline", 0)
                 and now - st.get("last_switch", 0) >= self.cfg.rotation.min_dwell
                 and now >= self._spread_until(region)
@@ -538,7 +546,7 @@ class Switcher:
         st.pop("emg_stuck", None)           # переключились — эпизод emergency закрыт
         st.pop("failsafe", None)
         st.pop("fallback", None)
-        st["rotate_deadline"] = self._next_deadline(now)
+        st["rotate_deadline"] = self._next_deadline(now, region)
         if reason == "rotation":
             self._rotated[region] = now
         recent = [node] + [n for n in st.get("recent", []) if n != node]
@@ -597,10 +605,10 @@ class Switcher:
                 pass
         return groups
 
-    def _next_deadline(self, now: float) -> float:
-        """Срок следующей ротации после переключения в момент now: у каждой группы свой,
+    def _next_deadline(self, now: float, region: str = "") -> float:
+        """Срок следующей ротации группы после переключения в момент now: у каждой группы свой,
         interval ± jitter — группы не переключаются разом."""
-        rot = self.cfg.rotation
+        rot = self._rotation(region)
         return now + rot.interval + (random.uniform(-rot.jitter, rot.jitter) if rot.jitter else 0.0)
 
 

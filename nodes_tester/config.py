@@ -11,7 +11,7 @@ import json
 import os
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from nodes_common.units import parse_duration
@@ -244,6 +244,8 @@ class GroupConfig:
     errors: "ErrorRuleConfig | None" = None   # None — monitor.errors
     exclude_subscriptions: list[str] = field(default_factory=list)   # их ноды не в группе
     fallback: str = ""              # клиентская группа: outbound базы клиента, всегда в urltest
+    # Ротация группы: selection.rotation с её enabled/interval/jitter. None — как у selection.
+    rotation: "RotationConfig | None" = None
 
 
 _TAG = re.compile(r"[a-z0-9][a-z0-9_]*")
@@ -290,7 +292,16 @@ def _group_tag(item: dict, path: str, seen: set) -> str:
     return tag
 
 
-def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleConfig") -> list[GroupConfig]:
+def _group_rotation(obj, path: str, base: "RotationConfig") -> "RotationConfig":
+    """groups[].rotation: enabled, interval, jitter поверх selection.rotation; остальное — общее."""
+    obj = _fields(obj, path, ("enabled", "interval", "jitter"))
+    return replace(base, enabled=_bool(obj, "enabled", path, base.enabled),
+                   interval=_duration(obj, "interval", path, base.interval),
+                   jitter=_duration(obj, "jitter", path, base.jitter))
+
+
+def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleConfig",
+            rotation: "RotationConfig") -> list[GroupConfig]:
     if obj is None:
         obj = [{"tag": "all"}]
     if not isinstance(obj, list):
@@ -299,7 +310,8 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
     for i, item in enumerate(obj):
         path = f"groups[{i}]"
         item = _fields(item, path, ("tag", "strict", "direct_fallback", "in_global", "reserve",
-                                    "tier_floor", "require", "prefer", "monitor", "exclude_subscriptions"))
+                                    "tier_floor", "require", "prefer", "monitor", "exclude_subscriptions",
+                                    "rotation"))
         tag = _group_tag(item, path, seen)
         group = GroupConfig(tag=tag, strict=_bool(item, "strict", path, False),
                             direct_fallback=_bool(item, "direct_fallback", path, False),
@@ -308,7 +320,8 @@ def _groups(obj, checks: dict, regions: dict, reserve: int, errors: "ErrorRuleCo
                             tier_floor=_number(item, "tier_floor", path, None, 0, 100),
                             require=_group_checks(item.get("require"), f"{path}.require", checks),
                             prefer=_group_checks(item.get("prefer"), f"{path}.prefer", checks),
-                            exclude_subscriptions=_strings(item, "exclude_subscriptions", path))
+                            exclude_subscriptions=_strings(item, "exclude_subscriptions", path),
+                            rotation=_group_rotation(item.get("rotation"), f"{path}.rotation", rotation))
         own = _fields(item.get("monitor"), f"{path}.monitor", ("errors",))
         if "errors" in own:
             group.errors = _error_rule(own["errors"], f"{path}.monitor.errors", errors)
@@ -1118,7 +1131,8 @@ def parse_config(data: Any) -> Config:
     selection = _selection(data.get("selection"))
     monitor = _monitor(data.get("monitor"))
     subscriptions = _subscriptions(data.get("subscriptions"))
-    groups = _groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors)
+    groups = _groups(data.get("groups"), checks, regions, selection.reserve, monitor.errors,
+                    selection.rotation)
     pipeline = _pipeline(data.get("pipeline"), checks, regions)
     for path, branch, items in (("groups", "router", groups),
                                 ("pipeline.clients.groups", "clients", pipeline.clients.groups)):

@@ -376,6 +376,7 @@ outbound and, with `direct_fallback`, `direct-out`. The tester picks the active 
 | `require` | object | — | Required checks: without a fresh success the node is not a candidate |
 | `prefer` | object | — | Preferred checks: successes move the node up the choice queue; the order is importance, a check weighs more than all the following ones together |
 | `monitor.errors` | object | `monitor.errors` | The group's own rule of an emergency by connection errors; fields that are not set come from `monitor.errors` |
+| `rotation` | object | `selection.rotation` | The group's own schedule: `enabled`, `interval`, `jitter`; missing keys come from `selection.rotation`. `min_dwell`, `spread`, `min_score`, `avoid_recent` and `balance` are shared and set only in `selection.rotation`. `enabled: false` — the group never rotates on schedule and changes the node only by quality and on emergency; for example, `ai` with accounts, where a stable exit country matters more than spreading load. Not available for client groups (`pipeline.clients.groups`) |
 
 A check inside a group is an object, usually empty (`"gemini": {}`). It can set its own `ttl` (except
 `ip_type` and `geo_consistent`: the ip-api data is refreshed by `checks.ip_type.ttl`), and `country`,
@@ -389,7 +390,8 @@ A check inside a group is an object, usually empty (`"gemini": {}`). It can set 
 
 A group candidate passes the gate, has a rating above zero, is not paused or quarantined, and all its
 `require` checks are fresh and successful. Among the candidates, nodes with successes in
-`prefer` go first, then by rating.
+`prefer` go first, then by rating. The active node's `require` and `prefer` checks (except `heavy`) are repeated 5
+minutes before they expire: a failed required check replaces the node, a failed preferred one lowers its tier.
 
 No candidates: a non-strict group switches to the shared `failsafe-out` (urltest over all nodes), a strict one
 to `block-out`, and with `direct_fallback` to `direct-out`. The monitor watches `failsafe-out` as a node:
@@ -428,8 +430,8 @@ Choosing the active node in groups.
 | `tier_floor` | `75` | A lower rating puts the node into a tier after all other nodes of the group: a weak node that passed the preferred checks (`prefer`) does not overtake strong ones that did not |
 | `cooldown` | `5m` | Pause between switches of a group |
 | `host_penalty` | `3h` | How long not to choose the host of a node that the monitor removed in an emergency; `0` means no penalty |
-| `rotation.enabled` | `true` | Scheduled rotation |
-| `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once. A node fails most often in the first minutes after it is chosen, not after long work, so every rotation is an extra risk |
+| `rotation.enabled` | `true` | Scheduled rotation; a group can set its own with `groups[].rotation` |
+| `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once. A node fails most often in the first minutes after it is chosen, not after long work, so every rotation is an extra risk. A group can set its own with `groups[].rotation` |
 | `rotation.min_dwell` | `30m` | Minimum time on a node |
 | `rotation.spread` | `10m` | Scheduled rotations of different groups are at least this far apart: a group whose deadline came waits until this much time passes since the rotation of another group (each rotation breaks the connections of its group) |
 | `rotation.min_score` | `55` | Minimum rating of a rotation candidate |

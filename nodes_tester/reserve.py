@@ -105,8 +105,8 @@ class ReserveKeeper:
             runner.switcher.evaluate_region(group)   # init или выход из failsafe
 
     def _refresh_active(self, group: str, active: str) -> None:
-        """Повторить обязательные проверки активной ноды до истечения результата. Не прошла
-        или результат истёк — оценка группы сразу заменит её нодой из резерва."""
+        """Повторить обязательные и желательные проверки активной ноды до истечения результата.
+        Не прошла или результат истёк — оценка группы сразу заменит её нодой из резерва."""
         runner = self.runner
         due = runner.board.due_checks(active, group, _ACTIVE_AHEAD)
         if not due:

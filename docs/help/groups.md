@@ -127,8 +127,10 @@ Details of how the reserve works:
 
 - A fresh result is not repeated: a node that passed Gemini an hour ago is not checked again.
 - After the active node changes (rotation, emergency, quality), the reserve is refilled at once.
-- When a check of a reserve member expires, it is repeated. The required checks of the active node are repeated 5
-  minutes before they expire; a failure means a replacement from the reserve.
+- Rotation can be set per group with `groups[].rotation` (`enabled`, `interval`, `jitter`). For example, `"rotation": {"enabled": false}` on `ai`
+  keeps its exit country stable: the node changes only by quality or in an emergency.
+- When a check of a reserve member expires, it is repeated. The required and preferred checks of the active node (except `heavy`) are repeated 5
+  minutes before they expire; a failed required check means a replacement from the reserve, a failed preferred one lowers the node's tier.
 - When the reserve is full, after every measurement the tester looks for a node better than the worst reserve
   member: a better tier or a rating higher by `selection.reserve_margin`. Such a node runs the same checks and takes
   the place; if it fails, it is not tried again for 15 minutes.

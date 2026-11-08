@@ -982,6 +982,27 @@
             "description": "Входит в global-auto-out.",
             "default": true
           },
+          "rotation": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Своя плановая ротация группы; не заданное берётся из selection.rotation. min_dwell, spread, min_score, avoid_recent и balance общие.",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Плановая ротация группы. false — группа меняет ноду только по качеству и аварии."
+              },
+              "interval": {
+                "type": "string",
+                "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                "description": "Интервал ротации группы."
+              },
+              "jitter": {
+                "type": "string",
+                "pattern": "^([0-9]+(\\.[0-9]+)?(ms|s|m|h|d))+$",
+                "description": "Случайный сдвиг срока ротации группы."
+              }
+            }
+          },
           "exclude_subscriptions": {
             "type": "array",
             "items": {

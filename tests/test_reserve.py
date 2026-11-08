@@ -7,6 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from nodes_tester.config import GroupConfig
 from nodes_tester.identity import parse_node
 from tests.helpers import make_runner, temp_dir
 
@@ -148,6 +149,39 @@ class KeeperTest(_Base):
         self.assertEqual(self.checks[:2], [(B, "heavy"), (B, "openai")])
         self.assertEqual(self.r.board.reserve("eu")[0], B)
         self.assertEqual(self.r.board.tier(B, "eu"), 1)
+
+
+class ActiveDueChecksTest(_Base):
+    """Проверки активной ноды, которые резерв перепроверяет до истечения (require и prefer)."""
+
+    def _due(self, node=A):
+        return self.r.board.due_checks(node, "eu", 300)
+
+    def _set_policy(self, require=None, prefer=None):
+        self.r.board.set_policy([GroupConfig("eu", require=require or {}, prefer=prefer or {}),
+                                 GroupConfig("us")], self.r.cfg.regions)
+
+    def test_prefer_expiring_returned(self):
+        self._set_policy(prefer={"upstream": {"ttl": 3600}})
+        self.r.board.set_required_result(A, "upstream", True)
+        self.r.board.rows[A]["required"]["upstream"]["ts"] = int(time.time()) - 3600 + 120
+        self.assertEqual(self._due(), ["upstream"])
+
+    def test_fresh_prefer_not_returned(self):
+        self._set_policy(prefer={"upstream": {"ttl": 3600}})
+        self.r.board.set_required_result(A, "upstream", True)
+        self.assertEqual(self._due(), [])
+
+    def test_expired_heavy_prefer_not_returned(self):
+        self._set_policy(prefer={"heavy": {}})
+        self.r.board.rows[A]["heavy_ts"] = int(time.time()) - 7 * 3600
+        self.assertEqual(self._due(), [])
+
+    def test_check_in_require_and_prefer_listed_once(self):
+        self._set_policy(require={"upstream": {"ttl": 3600}}, prefer={"upstream": {"ttl": 3600}})
+        self.r.board.set_required_result(A, "upstream", True)
+        self.r.board.rows[A]["required"]["upstream"]["ts"] = int(time.time()) - 3600 + 120
+        self.assertEqual(self._due(), ["upstream"])
 
 
 class DisplaceTest(_Base):

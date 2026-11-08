@@ -483,16 +483,18 @@ class Scoreboard:
                     if verdict == "" and check in RUNNABLE_CHECKS]
 
     def due_checks(self, node: str, group: str, ahead: float) -> list[str]:
-        """Обязательные проверки группы, которые гоняет резерв, с результатом, истёкшим или
-        истекающим в ближайшие ahead секунд (для активной ноды: резерв её не проверяет)."""
+        """Обязательные и желательные проверки группы, которые гоняет резерв, с результатом,
+        истёкшим или истекающим в ближайшие ahead секунд (для активной ноды: резерв её не
+        проверяет). Heavy не продлевается: это загрузка 20 МБ. Желательные нужны, чтобы
+        активная нода сохранила свой ярус, иначе группа переключится без причины."""
         with self._lock:
             r, g = self.rows.get(node), self._policy.get(group)
             if r is None or g is None:
                 return []
             soon = time.time() + ahead
             due = []
-            for check, params in g.require.items():
-                if check not in RUNNABLE_CHECKS:
+            for check, params in [*g.require.items(), *g.prefer.items()]:
+                if check in due or check == "heavy" or check not in RUNNABLE_CHECKS:
                     continue
                 until = expires(self._check_ts(r, check), float(params.get("ttl") or 0),
                                 float(params.get("ttl_jitter") or 0), f"{r.get('id')}/{check}")
