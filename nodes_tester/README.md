@@ -69,7 +69,7 @@ selector is not inherited.
 
 The node host is the server address (`server`, for WireGuard the address of the first peer), without the port and the provider.
 Nodes of one host (different accesses, TLS settings, ports) fail and get blocked together: the
-group reserve has one node per host and not from the host of the active node, rotation and replacement by quality
+group reserve has one node per host (/24 subnet of the entry address) and not from the host of the active node, rotation and replacement by quality
 do not take a node of the active host, and an emergency takes one only if there are no other candidates.
 
 The queue takes the host into account: of the nodes due for a check, the next one is a node of the
@@ -238,7 +238,7 @@ The reserve flag and the group name are shown in the admin panel (rating, lifecy
 The Switcher uses the rating, restrictions, the reserve and the current active node. It supports:
 
 - an emergency replacement of an unavailable node from the reserve (if the reserve is empty, by any passed candidate
-  of another host). If the monitor removed the node, its host is not chosen for `selection.host_penalty` (3 h)
+  of another host). If the monitor removed the node, its host (the /24 subnet of the entry address) is not chosen for `selection.host_penalty` (3 h)
   either into the reserve or as a replacement;
 - a replacement by quality with a node from the reserve when the advantage holds for `confirm_cycles` measurements
   in a row of the active node or the reserve leader;

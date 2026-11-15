@@ -429,7 +429,7 @@ Choosing the active node in groups.
 | `comfort_floor` | `50` | Above this rating the active node is not replaced by quality |
 | `tier_floor` | `75` | A lower rating puts the node into a tier after all other nodes of the group: a weak node that passed the preferred checks (`prefer`) does not overtake strong ones that did not |
 | `cooldown` | `5m` | Pause between switches of a group |
-| `host_penalty` | `3h` | How long not to choose the host of a node that the monitor removed in an emergency; `0` means no penalty |
+| `host_penalty` | `3h` | How long not to choose the host ([/24 subnet](help/concepts.md) of the node's entry address) of a node that the monitor removed in an emergency; `0` means no penalty |
 | `rotation.enabled` | `true` | Scheduled rotation; a group can set its own with `groups[].rotation` |
 | `rotation.interval`, `rotation.jitter` | `6h`, `15m` | Rotation period and random shift; each group has its own deadline from its switch, groups do not switch at once. A node fails most often in the first minutes after it is chosen, not after long work, so every rotation is an extra risk. A group can set its own with `groups[].rotation` |
 | `rotation.min_dwell` | `30m` | Minimum time on a node |

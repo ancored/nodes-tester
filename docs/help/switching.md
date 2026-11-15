@@ -65,7 +65,7 @@ refusing, the result expired). The replacement is immediate, without cooldown an
 
 - The new node is taken from another **provider** if possible: blocks often hit a whole provider or subnet.
 - The choice is weighted and [balanced](#balance), not just the top-rated node.
-- If the monitor removed the node, its host is penalised for `selection.host_penalty` (3 h): neither the reserve
+- If the monitor removed the node, its host (the whole /24 subnet of the entry address) is penalised for `selection.host_penalty` (3 h): neither the reserve
   nor a replacement takes nodes of that host.
 - Connections left on the failed node are closed (also when the group goes to its fallback outbound), and applications
   reopen them through the new one. A scheduled rotation does not close them if `selector.interrupt_exist_connections`

@@ -119,8 +119,8 @@ class ReserveKeeper:
             runner.switcher.evaluate_region(group)
 
     def _fits(self, group: str, node: str, others: list, excluded: set) -> bool:
-        """Нода годится в резерв рядом с others. Доступы одного хоста падают вместе: в
-        резерве по одному на хост, и не хост активной ноды или под штрафом."""
+        """Нода годится в резерв рядом с others. Доступы одной подсети (/24 входа) падают
+        вместе: в резерве по одному на подсеть, и не подсеть активной ноды или под штрафом."""
         sw = self.runner.switcher
         hosts = {sw.host(n) for n in others} | sw.avoided_hosts(group)
         return (node not in excluded and sw.host(node) not in hosts

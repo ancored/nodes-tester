@@ -111,6 +111,7 @@ class Runner:
         # Тестируемые ноды и анти-ТСПУ зазоры: их читает и процесс резерва.
         self._node_by_raw: dict = {}
         self._endpoints: dict = {}
+        self._entry_ips: dict = {}   # домен входа → IP из DNS-кэша (storage.load_entry)
         self._host_ep_last: dict = {}           # хост → {(порт, протокол): monotonic}
         self._released_at: dict = {}            # crc → когда снята для резерва (monotonic)
         self._whitelist = None              # WhitelistCheck: списки и адреса в кэше
@@ -163,7 +164,7 @@ class Runner:
                             if balance.enabled else None)
         self.switcher = Switcher(cfg.selection, self.api, self.board, self._top,
                                  cfg.groups, traffic_provider, self.storage,
-                                 server_of=lambda node: self._server(parse_node(node).node_id))
+                                 server_of=self._failure_domain)
         self.switcher.on_activation = self._on_activation
         self.reserve = ReserveKeeper(self)
         self.rebuild = RebuildWatch(cfg, self.board, self.switcher, lambda: self.orchestrator,
@@ -218,6 +219,7 @@ class Runner:
         self.storage.maybe_load_nodes(self.cfg.nodes_file, self.cfg.raw_file("router"))
         self._backoff = self.storage.load_backoff()
         self._endpoints = self.storage.endpoints_by_crc()
+        self._entry_ips = self.storage.load_entry()
         self._banned = self.storage.banned_crcs()
         self._box_pid = self.singbox.pid()
         nodes = self._enumerate_nodes()
@@ -243,6 +245,20 @@ class Runner:
         """Адрес сервера ноды из storage (нижний регистр); пусто — неизвестен."""
         ep = self._endpoints.get(node_id)
         return (ep[0] or "").lower() if ep else ""
+
+    def _failure_domain(self, node: str) -> str:
+        """Домен отказа ноды: IPv4 /24 адреса входа («a.b.c.0/24»), цензор блокирует подсетями.
+        Домен берёт первый IPv4 из кэша DNS входа; IPv6 и нерезолвленный домен — как есть."""
+        server = self._server(parse_node(node).node_id)
+        if not server:
+            return ""
+        from .entry import is_ip
+        ips = [server] if is_ip(server) else self._entry_ips.get(server, [])
+        for ip in ips:
+            parts = ip.split(".")
+            if len(parts) == 4 and is_ip(ip):
+                return ".".join(parts[:3]) + ".0/24"
+        return server
 
     def _ratings_by_endpoint(self) -> dict[str, float]:
         """{«адрес:порт» сервера: рейтинг} нод с замерами — для стран Amnezia Premium."""
@@ -689,7 +705,7 @@ class Runner:
             resolved = resolve(stale, self.cfg.singbox.config)
             self.storage.save_entry(resolved)
             print(f"  · адреса входа нод: получено {len(resolved)} из {len(stale)}")
-        known = self.storage.load_entry()
+        known = self._entry_ips = self.storage.load_entry()
         return [ip for h in hosts for ip in ([h] if is_ip(h) else known.get(h, []))]
 
     def _refresh_ip_info(self, ips) -> None:

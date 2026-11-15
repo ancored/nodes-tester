@@ -290,8 +290,8 @@ class ReleaseTest(_Base):
     def test_occupied_host_not_released(self):
         r = self.r
         r._endpoints = {"aaaa0005": ("1.2.3.4", 443), "aaaa0004": ("5.6.7.8", 443)}
-        self.assertEqual(r.release_for_reserve("eu", set(), {"1.2.3.4"}), D)
-        self.assertIsNone(r.release_for_reserve("eu", {D}, {"1.2.3.4"}))
+        self.assertEqual(r.release_for_reserve("eu", set(), {"1.2.3.0/24"}), D)
+        self.assertIsNone(r.release_for_reserve("eu", {D}, {"1.2.3.0/24"}))
 
     def test_keeper_releases_few_per_round(self):
         r = self.r
@@ -388,7 +388,7 @@ class SameHostTest(_Base):
         r = self.r
         with contextlib.redirect_stdout(io.StringIO()):
             r.switcher.penalize(C)
-        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.4", "h.example"})
+        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.0/24", "h.example"})
         r.board.set_reserve("eu", [D, E])
         r.switcher.evaluate_region("eu", emergency=True)
         self.assertEqual(self.activated[-1][1], E)
@@ -417,7 +417,7 @@ class SameHostTest(_Base):
         r = self.r
         with patch.object(r.switcher.cfg, "host_penalty", 0):
             r.switcher.penalize(C)
-        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.4"})
+        self.assertEqual(r.switcher.avoided_hosts("eu"), {"1.2.3.0/24"})
 
 
 if __name__ == "__main__":

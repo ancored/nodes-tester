@@ -81,7 +81,7 @@ country is always measured.
 **Host** — the server address of a node without the port. Several nodes of one host (different
 accesses, ports, protocols) usually fail together, so the tester treats them as a unit: it spreads
 requests to one host in time, keeps at most one node per host in a group reserve and does not replace an
-active node with a node of the same host.
+active node with a node of the same host. Here a host is the IPv4 /24 subnet of the node's entry address (the server IP, or the IPv4 a domain resolves to from the entry DNS cache); when the address is unknown, the server name is used, and IPv6 servers count by name.
 
 <a id="branches"></a>
 ## Router and client branches
