@@ -134,7 +134,7 @@ Details of how the reserve works:
 - When the reserve is full, after every measurement the tester looks for a node better than the worst reserve
   member: a better tier or a rating higher by `selection.reserve_margin`. Such a node runs the same checks and takes
   the place; if it fails, it is not tried again for 15 minutes.
-- A reserve has at most one node per host (/24 subnet) and no node of the host of the active node: nodes of one server fail
+- A reserve has at most one node per host (/24 subnet) and no node of the host of the active node: nodes of one subnet fail
   together.
 
 <a id="lifting"></a>
