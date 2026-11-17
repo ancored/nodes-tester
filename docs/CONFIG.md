@@ -499,7 +499,7 @@ always the node itself: it cannot be connected to (`connect`), did not answer in
 | `silence` | `5m` | Quiet for longer: a probe |
 | `silence_floor_mb` | `0` | MB per window that count as traffic; `0` means `probe.min_mbps × silence` |
 | `probe.url`, `probe.size_mb` | speed.cloudflare.com, `1` | Probe address and size |
-| `probe.min_mbps`, `probe.timeout` | `1`, `8s` | Minimum probe speed and timeout |
+| `probe.min_mbps`, `probe.timeout` | `1`, `8s` | Minimum probe speed (measured from the first byte: connection setup and TLS are not counted) and timeout |
 | `fails` | `2` | Failures in a row before an emergency |
 | `retry` | `30s` | Probe retry after a failure |
 | `error_burst` | `5` | Connection errors through the group per tick: a probe right away; `0` turns it off |

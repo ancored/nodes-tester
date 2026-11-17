@@ -167,5 +167,37 @@ class HeavyMinSpeedTest(unittest.TestCase):
         self.assertTrue(self._run(0.1, server_limit=True)["ok"])
 
 
+class ProbeExcludeConnectTest(unittest.TestCase):
+    """exclude_connect: скорость зонда — от первого байта, установка соединения не в счёт."""
+
+    def _run(self, stream, **opts):
+        with patch.object(download, "stream_single", lambda *a, **k: stream):
+            return DownloadTest(opts).run(_ctx(_Session())).to_dict()
+
+    def _stream(self, **extra):
+        # 2 с на установку соединения и TLS, затем 1 МБ за 1 с
+        return {"samples": [(0.0, 0), (2.0, 500_000), (3.0, 1_000_000)], "total": 1_000_000,
+                "expected": 1_000_000, "seconds": 3.0, "capped": False, "broken": False,
+                "server_limit": False, "http_error": False, "http_status": None,
+                "error": None, **extra}
+
+    def test_speed_from_first_byte(self):
+        r = self._run(self._stream(), exclude_connect=True)
+        self.assertEqual(r["speed_mbps"], 8.0)
+        self.assertEqual(r["seconds"], 3.0)              # метрика времени — полная
+        self.assertEqual(r["first_byte_ms"], 2000)
+
+    def test_setup_counted_without_option(self):
+        r = self._run(self._stream())
+        self.assertEqual(r["speed_mbps"], 2.67)          # 8 Мбит за все 3 с
+        self.assertNotIn("first_byte_ms", r)
+
+    def test_no_data_samples_does_not_crash(self):
+        r = self._run(self._stream(samples=[(0.0, 0)], total=0, expected=None),
+                      exclude_connect=True)
+        self.assertNotIn("speed_mbps", r)
+        self.assertNotIn("first_byte_ms", r)
+
+
 if __name__ == "__main__":
     unittest.main()

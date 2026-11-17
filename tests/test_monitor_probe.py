@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from nodes_tester.config import MonitorConfig
 from nodes_tester.monitor import ProductionMonitor
+from nodes_tester.tests import TestResult
 from tests.helpers import make_runner, temp_dir
 
 BREAK = (False, 0.0, False, "ssl_read returned")
@@ -162,6 +163,28 @@ class MonitorProbeRetryTest(unittest.TestCase):
 
 
 NODE = "P-vless-out [aaaa0001.00000001]"
+
+
+class ProbeOptionsTest(unittest.TestCase):
+    """Зонд монитора просит закачку с замером от первого байта."""
+
+    def test_probe_passes_exclude_connect(self):
+        runner = make_runner(temp_dir(), tester={"switch_delay": "0s"})
+        seen = {}
+
+        class FakeDownload:
+            def __init__(self, options):
+                seen.update(options)
+
+            def run(self, ctx):
+                return TestResult("download", ok=True, metrics={"speed_mbps": 10.0})
+
+        with patch("nodes_tester.runner.get_test_class", lambda name: FakeDownload):
+            result = runner._probe_node("eu", NODE)
+        self.assertEqual(result, (True, 10.0, False, ""))
+        self.assertTrue(seen["exclude_connect"])
+        self.assertEqual(seen["duration"], runner.cfg.monitor.probe_timeout)
+        self.assertEqual(seen["connect_timeout"], runner.cfg.monitor.probe_timeout)
 
 
 class FakeApi:

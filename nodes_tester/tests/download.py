@@ -2,7 +2,8 @@
 
 Раньше было два теста (download + stability), качавших по 10 МБ одно и то же. Слито
 в один — все метрики снимаем с ОДНОЙ закачки:
-  - speed_mbps     — общая скорость (весь объём / время);
+  - speed_mbps     — общая скорость (весь объём / время); с опцией `exclude_connect`
+    — от первого байта, установка соединения и TLS не входят;
   - throttle_ratio — скорость последнего байтового окна / первого (замедление ТСПУ,
     сравнение внутри одной закачки — не зависит от абс. скорости ноды);
   - hold_ratio     — доля скачанного от Content-Length (обрыв → < 1);
@@ -32,13 +33,22 @@ class DownloadTest(BaseTest):
         duration = max(1.0, float(self.option(ctx, "duration", 20)))
         window_bytes = max(1, int(float(self.option(ctx, "window_mb", 2)) * 1_000_000))
         connect_timeout = max(1.0, float(self.options.get("connect_timeout", 10)))
+        exclude_connect = bool(self.option(ctx, "exclude_connect", False))
 
         r = stream_single(ctx.session, url, duration, connect_timeout)
         total, expected, samples, secs = r["total"], r["expected"], r["samples"], r["seconds"]
 
         metrics: dict = {"downloaded": total, "seconds": secs}
-        if secs > 0 and total > 0:
-            metrics["speed_mbps"] = round(total * 8 / secs / 1_000_000, 2)
+        speed_secs = secs
+        if exclude_connect and len(samples) > 1:
+            # Первый семпл — старт, samples[1] — первый кусок данных: всё до него
+            # (SOCKS, TLS, ожидание ответа) — не передача.
+            first_byte_s = samples[1][0]
+            metrics["first_byte_ms"] = round(first_byte_s * 1000)
+            if secs > first_byte_s:
+                speed_secs = secs - first_byte_s
+        if speed_secs > 0 and total > 0:
+            metrics["speed_mbps"] = round(total * 8 / speed_secs / 1_000_000, 2)
         if expected:
             metrics["expected"] = expected
             metrics["hold_ratio"] = round(min(1.0, total / expected), 3)

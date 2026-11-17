@@ -1069,6 +1069,8 @@ class Runner:
     def _probe_node(self, group: str, leaf: str) -> tuple[bool, float, bool, str]:
         """Внеплановый зонд активной ноды группы для монитора: закачка ~probe_mb через socks.
 
+        Скорость считается от первого байта — установка соединения (SOCKS, TLS) не входит,
+        иначе на дальних нодах она съедает заметную долю окна и даёт ложный троттлинг.
         Возвращает (ok, mbps, inconclusive, error). inconclusive — туннель жив, но замер не
         показателен (429/limited, http-ошибка): монитор трактует как «не throttle», без
         страйка. ApiError (переключение/API) пробрасывает наверх — монитор пропустит.
@@ -1084,7 +1086,7 @@ class Runner:
             try:
                 cls = get_test_class("download")
                 test = cls({"url": url, "duration": mon.probe_timeout,
-                            "connect_timeout": mon.probe_timeout})
+                            "connect_timeout": mon.probe_timeout, "exclude_connect": True})
                 ctx = TestContext(session=session, node=leaf, default_timeout=mon.probe_timeout)
                 res = test.run(ctx).to_dict()
             finally:
