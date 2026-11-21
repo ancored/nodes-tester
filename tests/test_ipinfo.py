@@ -71,6 +71,13 @@ class IpInfoTest(unittest.TestCase):
         self.assertEqual(ipinfo.db_country_mismatch({"country": "DE"}, ""), "")
         self.assertEqual(ipinfo.db_country_mismatch(None, "NL"), "")
 
+    def test_kind_proxy_rank(self):
+        # Чистый VPN/прокси (WARP и пр.) — «proxy»; мобильный и хостинг сильнее признака прокси.
+        self.assertEqual(ipinfo.kind({"proxy": True}), "proxy")
+        self.assertEqual(ipinfo.kind({"mobile": True, "proxy": True}), "mobile")
+        self.assertEqual(ipinfo.kind({"hosting": True, "proxy": True}), "hosting")
+        self.assertEqual(ipinfo.kind({}), "residential")
+
 
 if __name__ == "__main__":
     unittest.main()

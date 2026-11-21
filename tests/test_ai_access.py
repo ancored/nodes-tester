@@ -153,6 +153,18 @@ class StrictExitIpTest(unittest.TestCase):
                            BUILTIN_REGIONS)
         self.assertEqual(self._cands(), ["PROXY"])
 
+    def test_pure_proxy_exit_worse_tier_but_stays_candidate(self):
+        # Чистый VPN/прокси (WARP): не проходит residential/mobile — ярус хуже, но из кандидатов
+        # не выбывает (ip_type в prefer, не в require). При пустом резерве его всё равно возьмут.
+        self.sb.set_ip_info({**IPS, "1.0.0.6": {"country": "NL", "proxy": 1}})
+        self.sb.rows["WARP"] = _row("WARP", 88, "1.0.0.6")
+        self.sb.set_groups({"eu": set(self.sb.rows)})
+        self._strict()
+        cands = self.sb.candidates("eu")
+        tiers = {c["node"]: c["tier"] for c in cands}
+        self.assertIn("WARP", tiers)
+        self.assertGreater(tiers["WARP"], tiers["HOME"])
+
     def _switcher(self, active):
         from nodes_tester.config import SelectionConfig
         from nodes_tester.switcher import Switcher

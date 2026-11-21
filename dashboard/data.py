@@ -568,7 +568,7 @@ def _value_cell(test: str, ok, m: dict, error: str) -> dict:
     return {"v": "ok", "ok": 1}
 
 
-_IP_KIND = {"hosting": "ДЦ", "mobile": "мобильный", "residential": "домашний"}
+_IP_KIND = {"hosting": "ДЦ", "mobile": "мобильный", "proxy": "прокси", "residential": "домашний"}
 
 
 def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
@@ -586,7 +586,7 @@ def _ip_type(node: dict, metrics_json: str, ip_info: dict) -> None:
     node["ip_kind"] = k
     node["ip_proxy"] = 1 if info.get("proxy") else 0
     node["ip_db_cc"] = db_country_mismatch(info, m.get("country") or "")
-    node["ip_type"] = _IP_KIND[k] + (", прокси" if node["ip_proxy"] else "")
+    node["ip_type"] = _IP_KIND[k] + (", прокси" if node["ip_proxy"] and k != "proxy" else "")
     if node["ip_db_cc"]:
         node["ip_type"] += f", по базе {node['ip_db_cc']}"
     node["ip_asn"] = network(info)

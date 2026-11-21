@@ -9,8 +9,8 @@ ip_info на `ttl`.
 Тип для показа:
   mobile      — мобильная сеть;
   hosting     — дата-центр/хостинг (часть сервисов режет такие IP);
-  residential — ни то, ни другое (домашний/провайдерский);
-proxy=1 — IP известен как VPN/прокси/Tor.
+  proxy       — известный VPN/прокси/Tor (не мобильный и не хостинг);
+  residential — ни то, ни другое (домашний/провайдерский).
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ def kind(info: dict) -> str:
         return "mobile"
     if info.get("hosting"):
         return "hosting"
+    if info.get("proxy"):
+        return "proxy"
     return "residential"
 
 
